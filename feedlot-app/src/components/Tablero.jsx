@@ -18,7 +18,22 @@ export default function Tablero({ usuario }) {
 
   async function cargarDatos() {
     const [{ data: c }, { data: a }, { data: m }] = await Promise.all([
-      supabase.from('corrales').select('*').order('numero'),
+      async function cargarDatos() {
+  const [{ data: c }, { data: a }, { data: m }] = await Promise.all([
+    supabase.from('corrales').select('*').order('id'),
+    supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
+    supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero), lotes(codigo)').order('fecha', { ascending: false }).limit(5),
+  ])
+  const corralesNorm = (c || []).map(x => ({
+    ...x,
+    numero: x.numero || x['número'] || x.id,
+    animales: x.animales || 0,
+  }))
+  setCorrales(corralesNorm)
+  setAlertas(a || [])
+  setMovimientos(m || [])
+  setLoading(false)
+}
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero), lotes(codigo)').order('fecha', { ascending: false }).limit(5),
     ])
