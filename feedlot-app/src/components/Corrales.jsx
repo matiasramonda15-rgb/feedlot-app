@@ -41,6 +41,7 @@ export default function Corrales({ usuario }) {
   async function cargarCorrales() {
     const { data, error } = await supabase.from('corrales').select('*').order('id')
     if (error) console.error('Error cargando corrales:', error)
+console.log('Datos recibidos:', data)
     setCorrales((data || []).map(normalizar))
     setLoading(false)
   }
