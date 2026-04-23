@@ -38,8 +38,7 @@ export default function Ingresos({ usuario }) {
       kg_bascula: parseFloat(form.kg_bascula),
       peso_prom_ingreso: Math.round(peso_prom * 100) / 100,
       corral_cuarentena_id: form.corral_cuarentena_id || null,
-      remito: form.remito,
-      observaciones: form.observaciones,
+      Observaciones: form.observaciones,
       registrado_por: usuario?.id,
     })
 
