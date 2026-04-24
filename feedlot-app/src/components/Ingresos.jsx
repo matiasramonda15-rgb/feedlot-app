@@ -42,7 +42,7 @@ export default function Ingresos({ usuario }) {
       registrado_por: usuario?.id,
     })
 
-    if (!error) {
+    if (error) console.log('Error detalle:', JSON.stringify(error))if (!error) {
       // Crear alerta de cuarentena (10 días)
       const fechaFin = new Date(); fechaFin.setDate(fechaFin.getDate() + 10)
       await supabase.from('alertas').insert({
