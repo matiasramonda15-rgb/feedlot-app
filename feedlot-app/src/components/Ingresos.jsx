@@ -41,7 +41,7 @@ export default function Ingresos({ usuario }) {
       Observaciones: form.observaciones,
       registrado_por: usuario?.id,
     })
-    if (error) console.log('Error detalle:', JSON.stringify(error))
+
     if (!error) {
       // Crear alerta de cuarentena (10 días)
       const fechaFin = new Date(); fechaFin.setDate(fechaFin.getDate() + 10)
