@@ -32,13 +32,13 @@ export default function Ingresos({ usuario }) {
     const { error } = await supabase.from('lotes').insert({
       codigo,
       fecha_ingreso: new Date().toISOString().split('T')[0],
-      Procedencia: form.procedencia,
-      Categoria: form.categoria,
+      procedencia: form.procedencia,
+      categoria: form.categoria,
       cantidad: parseInt(form.cantidad),
       kg_bascula: parseFloat(form.kg_bascula),
       peso_prom_ingreso: Math.round(peso_prom * 100) / 100,
       corral_cuarentena_id: form.corral_cuarentena_id || null,
-      Observaciones: form.observaciones,
+      observaciones: form.observaciones,
       registrado_por: usuario?.id,
     })
 
