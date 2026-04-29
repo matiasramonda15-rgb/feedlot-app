@@ -54,7 +54,9 @@ export default function Pesada({ usuario }) {
 
       await supabase.from('pesada_animales').insert(animales)
 
-      console.log('Actualizando corral ID:', corralSel, 'total:', totalClasificado)// Actualizar animales en corral
+      console.log('Actualizando corral ID:', corralSel, 'total:', totalClasificado)
+
+// Actualizar animales en corral
       if (corralSel) {
         const totalClasificado = ['A','B','C','D'].reduce((s,k) => s + (parseInt(form[k])||0), 0)
         const menores = parseInt(form.menores) || 0
