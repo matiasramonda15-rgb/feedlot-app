@@ -48,7 +48,7 @@ export default function App() {
 
   // Empleados de campo → app móvil (también si acceden desde celu)
   const esEmpleado = usuario?.rol === 'empleado' || usuario?.rol === 'encargado'
-  if (esEmpleado || esMobil) {
+ if (esEmpleado && esMobil) {
     return <AppMovil usuario={usuario} onLogout={() => supabase.auth.signOut()} />
   }
 
