@@ -49,22 +49,7 @@ export default function Ingresos({ usuario }) {
         tipo: 'cuarentena_vence',
         titulo: `Pase a acumulación · ${codigo}`,
         descripcion: `${form.cantidad} animales terminan cuarentena`,
-        fecha_vence: fechaFin.toISOString().split('T')[0],// Actualizar animales en corral de cuarentena
-if (form.corral_cuarentena_id) {
-  const { data: corral } = await supabase
-    .from('corrales')
-    .select('animales')
-    .eq('id', form.corral_cuarentena_id)
-    .single()
-  
-  await supabase
-    .from('corrales')
-    .update({ 
-      animales: (corral?.animales || 0) + parseInt(form.cantidad),
-      rol: 'cuarentena'
-    })
-    .eq('id', form.corral_cuarentena_id)
-}
+        fecha_vence: fechaFin.toISOString().split('T')[0],
       })
       // Si peso < 180 → alerta segunda dosis
       if (peso_prom < 180) {
@@ -75,6 +60,11 @@ if (form.corral_cuarentena_id) {
           descripcion: `${form.cantidad} animales ingresaron con ${Math.round(peso_prom)} kg prom. (< 180 kg)`,
           fecha_vence: fecha2da.toISOString().split('T')[0],
         })
+      }
+      // Actualizar animales en corral de cuarentena
+      if (form.corral_cuarentena_id) {
+        const { data: corral } = await supabase.from('corrales').select('animales').eq('id', form.corral_cuarentena_id).single()
+        await supabase.from('corrales').update({ animales: (corral?.animales || 0) + parseInt(form.cantidad), rol: 'cuarentena' }).eq('id', form.corral_cuarentena_id)
       }
       await cargarDatos()
       setVista('lista')
@@ -216,5 +206,4 @@ function Campo({ label, children }) {
 const SS = {
   input: { border: '1px solid #E2DDD6', borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: '#1A1916', background: '#fff', width: '100%', boxSizing: 'border-box' },
   select: { border: '1px solid #E2DDD6', borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: '#1A1916', background: '#fff', width: '100%' },
-}             
- 
+}
