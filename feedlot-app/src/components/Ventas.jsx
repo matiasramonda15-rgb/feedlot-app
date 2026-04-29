@@ -45,7 +45,13 @@ export default function Ventas({ usuario }) {
       registrado_por: usuario?.id,
     })
 
-    if (!error) {
+   if (!error) {
+      // Actualizar animales en corral
+      if (form.corral_id) {
+        const { data: corral } = await supabase.from('corrales').select('animales').eq('id', form.corral_id).single()
+        const nuevosAnimales = Math.max(0, (corral?.animales || 0) - parseInt(form.cantidad))
+        await supabase.from('corrales').update({ animales: nuevosAnimales }).eq('id', form.corral_id)
+      }
       await cargarDatos()
       setVista('lista')
       setForm({ corral_id: '', cantidad: '', kg_vivo: '', precio_kg: '', comprador: '', observaciones: '' })
