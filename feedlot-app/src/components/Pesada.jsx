@@ -50,9 +50,32 @@ export default function Pesada({ usuario }) {
       
       if (parseInt(form.menores) > 0) {
         animales.push({ pesada_id: pesada.id, rango: 'menores', cantidad: parseInt(form.menores) })
-      }
+      }await supabase.from('pesada_animales').insert(animales)
+
+      // Actualizar animales en corral clasificado
+      if (corralSel) {
+        const totalClasificado = ['A','B','C','D'].reduce((s,k) => s + (parseInt(form[k])||0), 0)
+        const menores = parseInt(form.menores) || 0
+        await supabase.from('corrales').update({ animales: totalClasificado }).eq('id', parseInt(corralSel))
+        
+        // Si hay menores, sumarlos al corral de acumulación (corral 13)
+        if (menores > 0) {
+          const { data: ac } = await supabase.from('corrales').select('animales').eq('numero', '13').single()
+          await supabase.from('corrales').update({ animales: (ac?.animales || 0) + menores }).eq('numero', '13')
+        }
 
       await supabase.from('pesada_animales').insert(animales)
+
+      // Actualizar animales en corral clasificado
+      if (corralSel) {
+        const totalClasificado = ['A','B','C','D'].reduce((s,k) => s + (parseInt(form[k])||0), 0)
+        const menores = parseInt(form.menores) || 0
+        await supabase.from('corrales').update({ animales: totalClasificado }).eq('id', parseInt(corralSel))
+        if (menores > 0) {
+          const { data: ac } = await supabase.from('corrales').select('animales').eq('numero', '13').single()
+          await supabase.from('corrales').update({ animales: (ac?.animales || 0) + menores }).eq('numero', '13')
+        }
+      }
       await cargarDatos()
       setVista('lista')
       setForm({ A: '', B: '', C: '', D: '', menores: '', observaciones: '' })
