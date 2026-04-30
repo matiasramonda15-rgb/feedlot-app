@@ -20,7 +20,7 @@ export default function Tablero({ usuario }) {
     const [{ data: c }, { data: a }, { data: m }] = await Promise.all([
       supabase.from('corrales').select('*').order('id'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
-      supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero), lotes(codigo)').order('fecha', { ascending: false }).limit(5),
+      supabase.from('movimientos').select('*').order('fecha', { ascending: false }).limit(5)
     ])
     // normalizar campo numero (puede venir como "número" con tilde)
     const corralesNorm = (c || []).map(x => ({
