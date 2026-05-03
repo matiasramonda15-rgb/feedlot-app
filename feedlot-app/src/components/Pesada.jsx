@@ -17,6 +17,7 @@ export default function Pesada({ usuario }) {
   const [corralSel, setCorralSel] = useState('')
   const [form, setForm] = useState({ A: '', B: '', C: '', D: '', menores: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
+  const esDueno = ['dueno', 'secretaria'].includes(usuario?.rol)
 
   useEffect(() => { cargarDatos() }, [])
 
@@ -30,7 +31,7 @@ export default function Pesada({ usuario }) {
     setLoading(false)
   }
 
-async function guardarPesada() {
+  async function guardarPesada() {
     if (!corralSel) { alert('Selecciona un corral'); return }
     const rangoA = parseInt(form.A) || 0
     const rangoB = parseInt(form.B) || 0
@@ -60,8 +61,7 @@ async function guardarPesada() {
       await supabase.from('pesada_animales').insert(animales)
 
       const { data: origen } = await supabase.from('corrales').select('animales').eq('id', corralId).single()
-      const animalesOrigen = (origen?.animales || 0) - (rangoA + rangoB + rangoC + rangoD + menores)
-      await supabase.from('corrales').update({ animales: Math.max(0, animalesOrigen) }).eq('id', corralId)
+      await supabase.from('corrales').update({ animales: Math.max(0, (origen?.animales || 0) - total) }).eq('id', corralId)
 
       const destinos = [
         { numero: '2', cantidad: rangoA },
@@ -91,6 +91,13 @@ async function guardarPesada() {
     setGuardando(false)
   }
 
+  async function eliminarPesada(id) {
+    if (!confirm('Eliminar esta pesada?')) return
+    await supabase.from('pesada_animales').delete().eq('pesada_id', id)
+    await supabase.from('pesadas').delete().eq('id', id)
+    await cargarDatos()
+  }
+
   if (loading) return <Loader />
 
   if (vista === 'nueva') {
@@ -103,7 +110,7 @@ async function guardarPesada() {
           <Btn ghost sm onClick={() => setVista('lista')}>Volver</Btn>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 600 }}>Nueva pesada</h1>
-            <div style={{ fontSize: 12, color: '#6B6760', fontFamily: "'IBM Plex Mono', monospace" }}>Clasificacion por rangos de peso</div>
+            <div style={{ fontSize: 12, color: '#6B6760' }}>Clasificacion por rangos de peso</div>
           </div>
         </div>
 
@@ -129,8 +136,7 @@ async function guardarPesada() {
                 <div style={{ fontSize: 11, fontWeight: 600, color: r.text, textTransform: 'uppercase', marginBottom: 4 }}>
                   {r.label} - {r.rango}
                 </div>
-                <input type="number" min="0" placeholder="0"
-                  value={form[r.key]}
+                <input type="number" min="0" placeholder="0" value={form[r.key]}
                   onChange={e => setForm({...form, [r.key]: e.target.value})}
                   style={{ width: '100%', padding: '8px 10px', border: `1px solid ${r.border}`, borderRadius: 6, fontSize: 16, fontWeight: 600, background: '#fff', boxSizing: 'border-box' }}
                 />
@@ -142,8 +148,7 @@ async function guardarPesada() {
             <div style={{ fontSize: 11, fontWeight: 600, color: '#7A1A1A', textTransform: 'uppercase', marginBottom: 4 }}>
               Menores de 200 kg - vuelven a acumulacion
             </div>
-            <input type="number" min="0" placeholder="0"
-              value={form.menores}
+            <input type="number" min="0" placeholder="0" value={form.menores}
               onChange={e => setForm({...form, menores: e.target.value})}
               style={{ width: '100%', padding: '8px 10px', border: '1px solid #F09595', borderRadius: 6, fontSize: 16, fontWeight: 600, background: '#fff', boxSizing: 'border-box' }}
             />
@@ -154,8 +159,7 @@ async function guardarPesada() {
             <span style={{ fontWeight: 600 }}>{totalIngresado} animales</span>
           </div>
 
-          <textarea placeholder="Observaciones (opcional)"
-            value={form.observaciones}
+          <textarea placeholder="Observaciones (opcional)" value={form.observaciones}
             onChange={e => setForm({...form, observaciones: e.target.value})}
             style={{ width: '100%', padding: '10px 12px', border: '1px solid #E2DDD6', borderRadius: 8, fontSize: 13, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' }}
           />
@@ -190,7 +194,10 @@ async function guardarPesada() {
                 <div style={{ fontWeight: 600, fontSize: 13 }}>
                   Corral {p.corrales?.numero} - {new Date(p.creado_en).toLocaleDateString('es-AR')}
                 </div>
-                <Badge info>{p.tipo}</Badge>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Badge info>{p.tipo}</Badge>
+                  {esDueno && <button onClick={() => eliminarPesada(p.id)} style={{ background: '#FDF0F0', border: '1px solid #F09595', borderRadius: 6, color: '#7A1A1A', fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>Borrar</button>}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {(p.pesada_animales || []).map(a => {
@@ -206,6 +213,7 @@ async function guardarPesada() {
                   )
                 })}
               </div>
+              {p.observaciones && <div style={{ fontSize: 12, color: '#9E9A94', marginTop: 4 }}>{p.observaciones}</div>}
             </div>
           ))
         }
