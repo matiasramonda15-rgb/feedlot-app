@@ -179,14 +179,14 @@ function CorralBox({ c, label, sel, onClick }) {
   const rc = ROL_COLOR[c.rol] || ROL_COLOR.libre
   const isSelected = sel?.id === c.id
   const pct = c.capacidad > 0 ? Math.round((c.animales||0) / c.capacidad * 100) : 0
-  const disabled = c.rol === 'deshabilitado'
+  const disabled = false
 
   return (
     <div onClick={() => !disabled && onClick(c)}
       style={{
         flex: 1, borderRadius: 8, border: `2px solid ${isSelected ? '#1A3D6B' : rc.border}`,
         padding: '.6rem .4rem', textAlign: 'center', cursor: disabled ? 'default' : 'pointer',
-        background: rc.bg, opacity: disabled ? .4 : 1, transition: 'all .15s',
+        background: rc.bg, opacity: c.rol === 'deshabilitado' ? .5 : 1, transition: 'all .15s',
         outline: isSelected ? '3px solid #1A3D6B' : 'none', outlineOffset: 2,
       }}>
       <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: rc.text, lineHeight: 1, marginBottom: 2 }}>
