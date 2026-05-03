@@ -100,6 +100,13 @@ export default function Pesada({ usuario }) {
 
   if (loading) return <Loader />
 
+  // Calcular proxima pesada
+  const ultimaPesada = pesadas[0]?.creado_en ? new Date(pesadas[0].creado_en) : null
+  const proximaPesadaFecha = ultimaPesada ? new Date(ultimaPesada.getTime() + 40 * 24 * 60 * 60 * 1000) : null
+  const diasRestantes = proximaPesadaFecha ? Math.ceil((proximaPesadaFecha - new Date()) / (1000 * 60 * 60 * 24)) : null
+  const proximaPesadaStr = proximaPesadaFecha ? proximaPesadaFecha.toLocaleDateString('es-AR') : 'Sin pesadas registradas'
+  const alertaProxima = diasRestantes !== null && diasRestantes <= 7
+
   if (vista === 'nueva') {
     const totalIngresado = ['A','B','C','D'].reduce((s,k) => s + (parseInt(form[k])||0), 0)
     const corral = corrales.find(c => c.id === parseInt(corralSel))
@@ -183,6 +190,30 @@ export default function Pesada({ usuario }) {
           <div style={{ fontSize: 12, color: '#6B6760' }}>Rangos: A=200-230 - B=231-260 - C=261-290 - D=291+ - Objetivo: 400 kg</div>
         </div>
         <Btn onClick={() => setVista('nueva')}>+ Nueva pesada</Btn>
+      </div>
+
+      {/* Alerta proxima pesada */}
+      <div style={{
+        background: alertaProxima ? '#FDF0E0' : '#E8F4EB',
+        border: `1px solid ${alertaProxima ? '#EF9F27' : '#7BC67A'}`,
+        borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem', fontSize: 13
+      }}>
+        <div style={{ fontWeight: 600, color: alertaProxima ? '#7A4500' : '#1E5C2E', marginBottom: 3 }}>
+          {alertaProxima ? 'Pesada proxima' : 'Proxima pesada fija'}
+        </div>
+        <div style={{ color: alertaProxima ? '#7A4500' : '#1E5C2E', fontSize: 12 }}>
+          {proximaPesadaStr}
+          {diasRestantes !== null && (
+            <span style={{ marginLeft: 8, fontWeight: 600 }}>
+              {diasRestantes <= 0 ? 'Vencida - realizar hoy' : `en ${diasRestantes} dias`}
+            </span>
+          )}
+        </div>
+        {!ultimaPesada && <div style={{ color: '#9E9A94', fontSize: 12 }}>No hay pesadas registradas aun.</div>}
+      </div>
+
+      <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem', fontSize: 13 }}>
+        <strong>Recordatorio:</strong> Rangos A=200-230 kg - B=231-260 kg - C=261-290 kg - D=291+ kg - Objetivo venta: 400 kg - Desbaste: 8%
       </div>
 
       <Card titulo="Historial de pesadas">
