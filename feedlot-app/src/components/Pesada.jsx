@@ -30,14 +30,18 @@ export default function Pesada({ usuario }) {
     setLoading(false)
   }
 
-  async function guardarPesada() {
+async function guardarPesada() {
     if (!corralSel) { alert('Selecciona un corral'); return }
-    const total = ['A','B','C','D'].reduce((s, k) => s + (parseInt(form[k]) || 0), 0)
-    if (total === 0) { alert('Ingresa al menos un rango'); return }
+    const rangoA = parseInt(form.A) || 0
+    const rangoB = parseInt(form.B) || 0
+    const rangoC = parseInt(form.C) || 0
+    const rangoD = parseInt(form.D) || 0
+    const menores = parseInt(form.menores) || 0
+    const total = rangoA + rangoB + rangoC + rangoD + menores
+    if (total === 0) { alert('Ingresa al menos un animal'); return }
     setGuardando(true)
 
     const corralId = parseInt(corralSel)
-    const menores = parseInt(form.menores) || 0
 
     const { data: pesada, error } = await supabase.from('pesadas').insert({
       corral_id: corralId,
@@ -47,16 +51,30 @@ export default function Pesada({ usuario }) {
     }).select().single()
 
     if (!error && pesada) {
-      const animales = RANGOS
-        .filter(r => parseInt(form[r.key]) > 0)
-        .map(r => ({ pesada_id: pesada.id, rango: r.key, cantidad: parseInt(form[r.key]) }))
-
-      if (menores > 0) {
-        animales.push({ pesada_id: pesada.id, rango: 'menores', cantidad: menores })
-      }
-
+      const animales = []
+      if (rangoA > 0) animales.push({ pesada_id: pesada.id, rango: 'A', cantidad: rangoA })
+      if (rangoB > 0) animales.push({ pesada_id: pesada.id, rango: 'B', cantidad: rangoB })
+      if (rangoC > 0) animales.push({ pesada_id: pesada.id, rango: 'C', cantidad: rangoC })
+      if (rangoD > 0) animales.push({ pesada_id: pesada.id, rango: 'D', cantidad: rangoD })
+      if (menores > 0) animales.push({ pesada_id: pesada.id, rango: 'menores', cantidad: menores })
       await supabase.from('pesada_animales').insert(animales)
-      await supabase.from('corrales').update({ animales: total }).eq('id', corralId)
+
+      const { data: origen } = await supabase.from('corrales').select('animales').eq('id', corralId).single()
+      const animalesOrigen = (origen?.animales || 0) - (rangoA + rangoB + rangoC + rangoD + menores)
+      await supabase.from('corrales').update({ animales: Math.max(0, animalesOrigen) }).eq('id', corralId)
+
+      const destinos = [
+        { numero: '2', cantidad: rangoA },
+        { numero: '4', cantidad: rangoB },
+        { numero: '7', cantidad: rangoC },
+        { numero: '5', cantidad: rangoD },
+      ]
+      for (const d of destinos) {
+        if (d.cantidad > 0) {
+          const { data: dc } = await supabase.from('corrales').select('animales').eq('numero', d.numero).single()
+          await supabase.from('corrales').update({ animales: (dc?.animales || 0) + d.cantidad }).eq('numero', d.numero)
+        }
+      }
 
       if (menores > 0) {
         const { data: ac } = await supabase.from('corrales').select('animales').eq('numero', '13').single()
