@@ -17,18 +17,31 @@ export default function Pesada({ usuario }) {
   const [corralSel, setCorralSel] = useState('')
   const [form, setForm] = useState({ A: '', B: '', C: '', D: '', menores: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
+  const [proximaFecha, setProximaFecha] = useState('')
+  const [editandoFecha, setEditandoFecha] = useState(false)
+  const [nuevaFecha, setNuevaFecha] = useState('')
   const esDueno = ['dueno', 'secretaria'].includes(usuario?.rol)
 
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: c }, { data: p }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: cfg }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('id'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(*)').order('creado_en', { ascending: false }).limit(20),
+      supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
     ])
     setCorrales(c || [])
     setPesadas(p || [])
+    if (cfg?.valor) setProximaFecha(cfg.valor)
     setLoading(false)
+  }
+
+  async function guardarFecha() {
+    if (!nuevaFecha) return
+    await supabase.from('configuracion').update({ valor: nuevaFecha, actualizado_en: new Date().toISOString() }).eq('clave', 'proxima_pesada')
+    setProximaFecha(nuevaFecha)
+    setEditandoFecha(false)
+    setNuevaFecha('')
   }
 
   async function guardarPesada() {
@@ -81,6 +94,13 @@ export default function Pesada({ usuario }) {
         await supabase.from('corrales').update({ animales: (ac?.animales || 0) + menores }).eq('numero', '13')
       }
 
+      // Actualizar proxima pesada automaticamente +40 dias
+      const nuevaProxima = new Date(pesada.creado_en)
+      nuevaProxima.setDate(nuevaProxima.getDate() + 40)
+      const nuevaProximaStr = nuevaProxima.toISOString().split('T')[0]
+      await supabase.from('configuracion').update({ valor: nuevaProximaStr, actualizado_en: new Date().toISOString() }).eq('clave', 'proxima_pesada')
+      setProximaFecha(nuevaProximaStr)
+
       await cargarDatos()
       setVista('lista')
       setForm({ A: '', B: '', C: '', D: '', menores: '', observaciones: '' })
@@ -100,11 +120,8 @@ export default function Pesada({ usuario }) {
 
   if (loading) return <Loader />
 
-  // Calcular proxima pesada
-  const ultimaPesada = pesadas[0]?.creado_en ? new Date(pesadas[0].creado_en) : null
-  const proximaPesadaFecha = ultimaPesada ? new Date(ultimaPesada.getTime() + 40 * 24 * 60 * 60 * 1000) : null
-  const diasRestantes = proximaPesadaFecha ? Math.ceil((proximaPesadaFecha - new Date()) / (1000 * 60 * 60 * 24)) : null
-  const proximaPesadaStr = proximaPesadaFecha ? proximaPesadaFecha.toLocaleDateString('es-AR') : 'Sin pesadas registradas'
+  const proximaDate = proximaFecha ? new Date(proximaFecha + 'T12:00:00') : null
+  const diasRestantes = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
   const alertaProxima = diasRestantes !== null && diasRestantes <= 7
 
   if (vista === 'nueva') {
@@ -196,24 +213,45 @@ export default function Pesada({ usuario }) {
       <div style={{
         background: alertaProxima ? '#FDF0E0' : '#E8F4EB',
         border: `1px solid ${alertaProxima ? '#EF9F27' : '#7BC67A'}`,
-        borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem', fontSize: 13
+        borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem',
       }}>
-        <div style={{ fontWeight: 600, color: alertaProxima ? '#7A4500' : '#1E5C2E', marginBottom: 3 }}>
-          {alertaProxima ? 'Pesada proxima' : 'Proxima pesada fija'}
-        </div>
-        <div style={{ color: alertaProxima ? '#7A4500' : '#1E5C2E', fontSize: 12 }}>
-          {proximaPesadaStr}
-          {diasRestantes !== null && (
-            <span style={{ marginLeft: 8, fontWeight: 600 }}>
-              {diasRestantes <= 0 ? 'Vencida - realizar hoy' : `en ${diasRestantes} dias`}
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontWeight: 600, color: alertaProxima ? '#7A4500' : '#1E5C2E', fontSize: 13, marginBottom: 3 }}>
+              {alertaProxima ? 'Pesada proxima' : 'Proxima pesada fija'}
+            </div>
+            {!editandoFecha && (
+              <div style={{ color: alertaProxima ? '#7A4500' : '#1E5C2E', fontSize: 12 }}>
+                {proximaDate ? proximaDate.toLocaleDateString('es-AR') : 'No configurada'}
+                {diasRestantes !== null && (
+                  <span style={{ marginLeft: 8, fontWeight: 600 }}>
+                    {diasRestantes <= 0 ? '- Realizar hoy' : `- en ${diasRestantes} dias`}
+                  </span>
+                )}
+              </div>
+            )}
+            {editandoFecha && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                <input type="date" value={nuevaFecha} onChange={e => setNuevaFecha(e.target.value)}
+                  style={{ padding: '6px 10px', border: '1px solid #E2DDD6', borderRadius: 6, fontSize: 13 }} />
+                <button onClick={guardarFecha}
+                  style={{ background: '#1E5C2E', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, color: '#fff', cursor: 'pointer' }}>
+                  Guardar
+                </button>
+                <button onClick={() => setEditandoFecha(false)}
+                  style={{ background: 'transparent', border: '1px solid #E2DDD6', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#6B6760', cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+              </div>
+            )}
+          </div>
+          {esDueno && !editandoFecha && (
+            <button onClick={() => { setEditandoFecha(true); setNuevaFecha(proximaFecha) }}
+              style={{ background: 'transparent', border: '1px solid #E2DDD6', borderRadius: 6, padding: '5px 10px', fontSize: 11, color: '#6B6760', cursor: 'pointer' }}>
+              Modificar fecha
+            </button>
           )}
         </div>
-        {!ultimaPesada && <div style={{ color: '#9E9A94', fontSize: 12 }}>No hay pesadas registradas aun.</div>}
-      </div>
-
-      <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem', fontSize: 13 }}>
-        <strong>Recordatorio:</strong> Rangos A=200-230 kg - B=231-260 kg - C=261-290 kg - D=291+ kg - Objetivo venta: 400 kg - Desbaste: 8%
       </div>
 
       <Card titulo="Historial de pesadas">
