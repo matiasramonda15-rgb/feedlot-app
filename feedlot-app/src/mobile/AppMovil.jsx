@@ -27,7 +27,7 @@ export default function AppMovil({ usuario, onLogout }) {
     home:        <Home usuario={usuario} nav={nav} onLogout={onLogout} datos={datos} />,
     corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
-    pesada:      <PlaceholderMovil titulo="Pesada" nav={nav} />,
+    pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} />,
     venta:       <PlaceholderMovil titulo="Carga para venta" nav={nav} />,
@@ -627,5 +627,147 @@ function StockTab({ usuario, onDone }) {
         )
       })}
     </>
+  )
+}
+
+function PesadaMovil({ nav, usuario, corrales, onDone }) {
+  const [form, setForm] = useState({ A: '', B: '', C: '', D: '', menores: '', observaciones: '' })
+  const [corralSel, setCorralSel] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
+  const RANGOS = [
+    { key: 'A', label: 'Rango A', rango: '200-230 kg', color: '#1A3D26', border: '#7BC67A', text: '#7EC87E' },
+    { key: 'B', label: 'Rango B', rango: '231-260 kg', color: '#0F2040', border: '#7EB8F7', text: '#7EB8F7' },
+    { key: 'C', label: 'Rango C', rango: '261-290 kg', color: '#2A1A40', border: '#B09ED4', text: '#B09ED4' },
+    { key: 'D', label: 'Rango D', rango: '291+ kg',    color: '#3D2A00', border: '#F5C97A', text: '#F5C97A' },
+  ]
+
+  const totalIngresado = ['A','B','C','D'].reduce((s,k) => s + (parseInt(form[k])||0), 0)
+  const corral = corralesActivos.find(c => String(c.id) === corralSel)
+
+  async function guardar() {
+    if (!corralSel) { alert('Selecciona un corral'); return }
+    if (totalIngresado === 0) { alert('Ingresa al menos un animal'); return }
+    setGuardando(true)
+
+    const corralId = parseInt(corralSel)
+    const rangoA = parseInt(form.A) || 0
+    const rangoB = parseInt(form.B) || 0
+    const rangoC = parseInt(form.C) || 0
+    const rangoD = parseInt(form.D) || 0
+    const menores = parseInt(form.menores) || 0
+    const total = rangoA + rangoB + rangoC + rangoD + menores
+
+    const { data: pesada, error } = await supabase.from('pesadas').insert({
+      corral_id: corralId, tipo: 'clasificacion',
+      registrado_por: usuario?.id || null,
+      observaciones: form.observaciones || null,
+    }).select().single()
+
+    if (!error && pesada) {
+      const animales = []
+      if (rangoA > 0) animales.push({ pesada_id: pesada.id, rango: 'A', cantidad: rangoA })
+      if (rangoB > 0) animales.push({ pesada_id: pesada.id, rango: 'B', cantidad: rangoB })
+      if (rangoC > 0) animales.push({ pesada_id: pesada.id, rango: 'C', cantidad: rangoC })
+      if (rangoD > 0) animales.push({ pesada_id: pesada.id, rango: 'D', cantidad: rangoD })
+      if (menores > 0) animales.push({ pesada_id: pesada.id, rango: 'menores', cantidad: menores })
+      await supabase.from('pesada_animales').insert(animales)
+
+      const { data: origen } = await supabase.from('corrales').select('animales').eq('id', corralId).single()
+      await supabase.from('corrales').update({ animales: Math.max(0, (origen?.animales || 0) - total) }).eq('id', corralId)
+
+      const destinos = [
+        { numero: '2', cantidad: rangoA },
+        { numero: '4', cantidad: rangoB },
+        { numero: '7', cantidad: rangoC },
+        { numero: '5', cantidad: rangoD },
+      ]
+      for (const d of destinos) {
+        if (d.cantidad > 0) {
+          const { data: dc } = await supabase.from('corrales').select('animales').eq('numero', d.numero).single()
+          await supabase.from('corrales').update({ animales: (dc?.animales || 0) + d.cantidad }).eq('numero', d.numero)
+        }
+      }
+      if (menores > 0) {
+        const { data: ac } = await supabase.from('corrales').select('animales').eq('numero', '13').single()
+        await supabase.from('corrales').update({ animales: (ac?.animales || 0) + menores }).eq('numero', '13')
+      }
+
+      const nuevaProxima = new Date(pesada.creado_en)
+      nuevaProxima.setDate(nuevaProxima.getDate() + 40)
+      await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
+
+      onDone()
+      alert('Pesada registrada correctamente.')
+      nav('home')
+    } else {
+      alert('Error al guardar. Intenta de nuevo.')
+    }
+    setGuardando(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Topbar titulo="Nueva pesada" sub="Clasificacion por rangos" onBack={() => nav('home')} />
+      <Scroll>
+        <div style={{ marginBottom: '.85rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral a pesar</div>
+          <select value={corralSel} onChange={e => setCorralSel(e.target.value)}
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+            <option value="">Selecciona un corral</option>
+            {corralesActivos.map(c => <option key={c.id} value={String(c.id)}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
+          </select>
+          {corral && (
+            <div style={{ background: C.surface2, borderRadius: 6, padding: '8px 12px', marginTop: 6, fontSize: 12, color: C.muted, fontFamily: C.mono }}>
+              Total animales: <strong style={{ color: C.green }}>{corral.animales || 0}</strong>
+            </div>
+          )}
+        </div>
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>Distribucion por rangos</div>
+        {RANGOS.map(r => (
+          <div key={r.key} style={{ background: r.color, border: `1px solid ${r.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.65rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: r.text, textTransform: 'uppercase', marginBottom: 6 }}>
+              {r.label} - {r.rango}
+            </div>
+            <input type="number" inputMode="numeric" placeholder="0" value={form[r.key]}
+              onChange={e => setForm({...form, [r.key]: e.target.value})}
+              style={{ width: '100%', background: 'rgba(0,0,0,.2)', border: `1px solid ${r.border}`, borderRadius: 6, padding: '10px 12px', fontSize: 18, fontFamily: C.mono, fontWeight: 700, color: r.text, boxSizing: 'border-box' }} />
+          </div>
+        ))}
+
+        <div style={{ background: '#3D0A0A', border: `1px solid ${C.red}`, borderRadius: 10, padding: '.85rem', marginBottom: '.65rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.red, textTransform: 'uppercase', marginBottom: 6 }}>
+            Menores de 200 kg - vuelven a acumulacion
+          </div>
+          <input type="number" inputMode="numeric" placeholder="0" value={form.menores}
+            onChange={e => setForm({...form, menores: e.target.value})}
+            style={{ width: '100%', background: 'rgba(0,0,0,.2)', border: `1px solid ${C.red}`, borderRadius: 6, padding: '10px 12px', fontSize: 18, fontFamily: C.mono, fontWeight: 700, color: C.red, boxSizing: 'border-box' }} />
+        </div>
+
+        {totalIngresado > 0 && (
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem', fontSize: 13, fontFamily: C.mono }}>
+            Total clasificado: <strong style={{ color: C.green }}>{totalIngresado} animales</strong>
+          </div>
+        )}
+
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
+          <input type="text" placeholder="observaciones opcionales..." value={form.observaciones}
+            onChange={e => setForm({...form, observaciones: e.target.value})}
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+        </div>
+
+        <button onClick={guardar} disabled={guardando}
+          style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+          {guardando ? 'Guardando...' : 'Registrar pesada'}
+        </button>
+        <button onClick={() => nav('home')}
+          style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+          Cancelar
+        </button>
+      </Scroll>
+    </div>
   )
 }
