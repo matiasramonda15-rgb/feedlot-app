@@ -636,46 +636,7 @@ export default function Alimentacion({ usuario }) {
             </div>
           )}
 
-          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Estado actual</div>
-            {stockDB.length === 0 && <p style={{ fontSize: 13, color: S.hint }}>No hay insumos registrados.</p>}
-            {stockDB.map((s, si) => {
-              const bajo = s.cantidad_kg <= s.minimo_kg
-              const pct = Math.min(100, Math.round(s.cantidad_kg / Math.max(s.minimo_kg * 3, s.cantidad_kg) * 100))
-              const barColor = bajo ? '#E24B4A' : pct < 40 ? '#EF9F27' : '#1E5C2E'
-              const COLORES = { 'Rollo (heno)': '#639922', 'Maiz grano seco': '#E8A020', 'Vitaminas': '#5090E0', 'Urea': '#9060C0', 'Soja (expeller)': '#20A060' }
-              const c = COLORES[s.insumo] || '#808080'
-              return (
-                <div key={s.id} style={{ padding: '.85rem 0', borderBottom: `1px solid ${S.border}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600 }}>
-                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
-                      {s.insumo}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
-                      <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bajo ? S.redLight : pct < 40 ? S.amberLight : S.greenLight, color: bajo ? S.red : pct < 40 ? S.amber : S.green }}>
-                        {bajo ? '⚠ Bajo minimo' : `${Math.floor(s.cantidad_kg / Math.max(s.minimo_kg / 10, 1))} dias`}
-                      </span>
-                      <button onClick={() => setShowFormIngreso(true)}
-                        style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                        + Ingreso
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ height: 6, background: S.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${S.border}`, marginBottom: 3 }}>
-                    <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: barColor }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: S.muted }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>Minimo de alerta:</span>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{s.minimo_kg.toLocaleString('es-AR')} kg</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} />
         </div>
       )}
 
@@ -714,6 +675,130 @@ export default function Alimentacion({ usuario }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function StockABM({ stockDB, onReload, onShowIngreso }) {
+  const [nuevoInsumo, setNuevoInsumo] = useState({ show: false, nombre: '', minimo_kg: '' })
+  const [editMinimo, setEditMinimo] = useState({})
+  const [guardando, setGuardando] = useState(false)
+  const COLORES = { 'Rollo (heno)': '#639922', 'Maiz grano seco': '#E8A020', 'Vitaminas': '#5090E0', 'Urea': '#9060C0', 'Soja (expeller)': '#20A060' }
+
+  async function agregarInsumo() {
+    if (!nuevoInsumo.nombre.trim()) { alert('Ingresa el nombre del insumo'); return }
+    setGuardando(true)
+    await supabase.from('stock_insumos').insert({
+      insumo: nuevoInsumo.nombre.trim(),
+      cantidad_kg: 0,
+      minimo_kg: parseInt(nuevoInsumo.minimo_kg) || 0,
+    })
+    await onReload()
+    setNuevoInsumo({ show: false, nombre: '', minimo_kg: '' })
+    setGuardando(false)
+  }
+
+  async function eliminarInsumo(id, nombre) {
+    if (!confirm(`Eliminar "${nombre}" del stock?`)) return
+    await supabase.from('stock_insumos').delete().eq('id', id)
+    await onReload()
+  }
+
+  async function guardarMinimo(id, valor) {
+    await supabase.from('stock_insumos').update({ minimo_kg: parseInt(valor) || 0 }).eq('id', id)
+    setEditMinimo({ ...editMinimo, [id]: false })
+    await onReload()
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', letterSpacing: '.07em' }}>Estado actual</div>
+        <button onClick={() => setNuevoInsumo({ show: true, nombre: '', minimo_kg: '' })}
+          style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Nuevo insumo
+        </button>
+      </div>
+
+      {nuevoInsumo.show && (
+        <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '.75rem' }}>Nuevo insumo</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Nombre</label>
+              <input type="text" placeholder="ej. Pellet de soja" value={nuevoInsumo.nombre}
+                onChange={e => setNuevoInsumo({ ...nuevoInsumo, nombre: e.target.value })}
+                style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 6, padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Minimo de alerta (kg)</label>
+              <input type="number" placeholder="ej. 500" value={nuevoInsumo.minimo_kg}
+                onChange={e => setNuevoInsumo({ ...nuevoInsumo, minimo_kg: e.target.value })}
+                style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 6, padding: '9px 12px', fontSize: 14, boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button onClick={() => setNuevoInsumo({ show: false, nombre: '', minimo_kg: '' })}
+              style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Cancelar</button>
+            <button onClick={agregarInsumo} disabled={guardando}
+              style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              {guardando ? 'Guardando...' : 'Agregar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stockDB.length === 0 && <p style={{ fontSize: 13, color: '#9E9A94' }}>No hay insumos registrados.</p>}
+      {stockDB.map(s => {
+        const bajo = s.cantidad_kg <= s.minimo_kg
+        const pct = Math.min(100, Math.round(s.cantidad_kg / Math.max(s.minimo_kg * 3, s.cantidad_kg, 1) * 100))
+        const barColor = bajo ? '#E24B4A' : pct < 40 ? '#EF9F27' : '#1E5C2E'
+        const c = COLORES[s.insumo] || '#808080'
+        const editando = editMinimo[s.id]
+
+        return (
+          <div key={s.id} style={{ padding: '.85rem 0', borderBottom: '1px solid #E2DDD6' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600 }}>
+                <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
+                {s.insumo}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
+                <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bajo ? '#FDF0F0' : pct < 40 ? '#FDF0E0' : '#E8F4EB', color: bajo ? '#7A1A1A' : pct < 40 ? '#7A4500' : '#1E5C2E' }}>
+                  {bajo ? '⚠ Bajo minimo' : 'OK'}
+                </span>
+                <button onClick={() => onShowIngreso()}
+                  style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>+ Ingreso</button>
+                <button onClick={() => eliminarInsumo(s.id, s.insumo)}
+                  style={{ padding: '4px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Eliminar</button>
+              </div>
+            </div>
+            <div style={{ height: 6, background: '#F7F5F0', borderRadius: 3, overflow: 'hidden', border: '1px solid #E2DDD6', marginBottom: 4 }}>
+              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: barColor }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#6B6760' }}>
+              <span>Minimo de alerta:</span>
+              {editando ? (
+                <>
+                  <input type="number" defaultValue={s.minimo_kg} id={`min_${s.id}`}
+                    style={{ width: 80, border: '1px solid #E2DDD6', borderRadius: 5, padding: '3px 7px', fontFamily: 'monospace', fontSize: 12, textAlign: 'right' }} />
+                  <button onClick={() => guardarMinimo(s.id, document.getElementById(`min_${s.id}`).value)}
+                    style={{ padding: '3px 8px', fontSize: 11, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>Ok</button>
+                  <button onClick={() => setEditMinimo({ ...editMinimo, [s.id]: false })}
+                    style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>✕</button>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{s.minimo_kg.toLocaleString('es-AR')} kg</span>
+                  <button onClick={() => setEditMinimo({ ...editMinimo, [s.id]: true })}
+                    style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '1px solid #E2DDD6', color: '#9E9A94', borderRadius: 4, cursor: 'pointer' }}>Editar</button>
+                </>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
