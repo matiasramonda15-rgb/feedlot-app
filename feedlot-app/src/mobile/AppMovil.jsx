@@ -784,7 +784,7 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
 
   async function guardar() {
     if (!form.corral_id) { alert('Selecciona un corral'); return }
-    if (!form.cantidad || !form.kg_vivo || !form.precio_kg) { alert('Completa cantidad, kg vivo y precio'); return }
+    if (!form.cantidad || !form.kg_vivo) { alert('Completa cantidad y kg vivo'); return }
     setGuardando(true)
 
     const { error } = await supabase.from('ventas').insert({
@@ -793,8 +793,8 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
       kg_vivo_total: kg_vivo,
       desbaste_pct: 8,
       kg_neto: Math.round(kg_neto * 100) / 100,
-      precio_kg: parseFloat(form.precio_kg),
-      total: Math.round(total),
+      precio_kg: null,
+      total: null,
       comprador: form.comprador || null,
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id,
@@ -829,8 +829,7 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
         {[
           { label: 'Cantidad animales', key: 'cantidad', placeholder: 'ej. 20' },
           { label: 'Kg vivo total (bascula)', key: 'kg_vivo', placeholder: 'ej. 8000' },
-          { label: 'Precio $/kg', key: 'precio_kg', placeholder: 'ej. 2500' },
-        ].map(f => (
+].map(f => (
           <div key={f.key} style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>{f.label}</div>
             <input type="number" inputMode="numeric" placeholder={f.placeholder} value={form[f.key]}
