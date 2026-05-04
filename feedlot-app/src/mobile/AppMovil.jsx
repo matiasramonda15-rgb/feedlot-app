@@ -495,7 +495,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
   const DIAGNOSTICOS = ['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro']
 
   useEffect(() => {
-    setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, desc: '', diag: 'Conjuntivitis', prod: '' })))
+    setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, enfermos: [] })))
   }, [corrales])
 
   async function confirmarAlerta(id) {
@@ -510,18 +510,21 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
     setGuardando(true)
     await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
     for (const st of revState) {
+      const novedades = st.enfermos || []
       await supabase.from('eventos_sanitarios').insert({
         tipo: 'revision', corral_id: st.id,
-        producto: st.ok ? 'Sin novedad' : st.prod || 'Varios',
-        cantidad_animales: st.ok ? st.animales : 1,
-        observaciones: st.ok ? 'Sin novedades' : `${st.desc} - ${st.diag}`,
+        producto: st.ok ? 'Sin novedad' : 'Varios',
+        cantidad_animales: st.ok ? st.animales : novedades.length,
+        observaciones: st.ok ? 'Sin novedades' : novedades.map(e => `${e.desc} - ${e.diag}`).join('; '),
         registrado_por: usuario?.id,
       })
-      if (!st.ok && st.desc) {
-        await supabase.from('animales_enfermeria').insert({
-          corral_origen_id: st.id, descripcion: st.desc, diagnostico: st.diag,
-          tratamiento: st.prod, estado: 'en tratamiento', registrado_por: usuario?.id,
-        })
+      for (const enf of novedades) {
+        if (enf.desc) {
+          await supabase.from('animales_enfermeria').insert({
+            corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
+            tratamiento: enf.prod, estado: 'en tratamiento', registrado_por: usuario?.id,
+          })
+        }
       }
     }
     onDone()
@@ -608,42 +611,63 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
         {pantSan === 'revision' && (
           <>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
-              Marca cada corral. <strong style={{ color: C.green }}>Sin novedades</strong> si esta todo bien. <strong style={{ color: C.amber }}>Hay novedad</strong> si hay algun problema.
+              Recorre cada corral. Sin novedades si esta todo bien. Hay novedad si encontras algun animal con problema — podes agregar varios animales por corral.
             </div>
             {revState.map((c, i) => (
-              <div key={c.id} style={{ background: c.ok === true ? '#1A3D26' : c.ok === false ? '#3D2A00' : C.surface, border: `1px solid ${c.ok === true ? C.green : c.ok === false ? C.amber : C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: c.ok === null ? '.65rem' : 0 }}>
+              <div key={c.id} style={{ border: `1px solid ${c.ok === true ? C.green : c.ok === false ? C.amber : C.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
+                <div style={{ padding: '1rem', background: c.ok === true ? '#1A3D26' : c.ok === false ? '#3D2A00' : C.surface, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>Corral {c.numero}</div>
                     <div style={{ fontSize: 12, color: C.muted }}>{c.rol} - {c.animales} animales</div>
                   </div>
-                  {c.ok === true && <div style={{ fontSize: 12, fontWeight: 600, color: C.green }}>Sin novedades ✓</div>}
-                  {c.ok === false && <div style={{ fontSize: 12, fontWeight: 600, color: C.amber }}>Con novedad</div>}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {c.ok === true && <span style={{ fontSize: 12, fontWeight: 600, color: C.green }}>Sin novedades ✓</span>}
+                    {c.ok === false && <span style={{ fontSize: 12, fontWeight: 600, color: C.amber }}>{c.enfermos.length} con novedad</span>}
+                    {c.ok === null && (
+                      <>
+                        <button onClick={() => { const n = [...revState]; n[i] = {...n[i], ok: true, enfermos: []}; setRevState(n) }}
+                          style={{ padding: '7px 10px', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 7, color: C.green, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Sin novedades ✓</button>
+                        <button onClick={() => { const n = [...revState]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',prod:''}]}; setRevState(n) }}
+                          style={{ padding: '7px 10px', background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 7, color: C.amber, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Hay novedad</button>
+                      </>
+                    )}
+                    {c.ok !== null && (
+                      <button onClick={() => { const n = [...revState]; n[i] = {...n[i], ok: null, enfermos: []}; setRevState(n) }}
+                        style={{ padding: '5px 8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: C.sans }}>Cambiar</button>
+                    )}
+                  </div>
                 </div>
-                {c.ok === null && (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => setRevOk(i)} style={{ flex: 1, padding: '9px', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, color: C.green, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Sin novedades ✓</button>
-                    <button onClick={() => setRevNov(i)} style={{ flex: 1, padding: '9px', background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Hay novedad</button>
-                  </div>
-                )}
                 {c.ok === false && (
-                  <div style={{ marginTop: '.65rem', paddingTop: '.65rem', borderTop: `1px solid ${C.border}` }}>
-                    <input type="text" placeholder="Descripcion del animal" value={c.desc}
-                      onChange={e => { const n = [...revState]; n[i].desc = e.target.value; setRevState(n) }}
-                      style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, boxSizing: 'border-box', marginBottom: 6 }} />
-                    <select value={c.diag} onChange={e => { const n = [...revState]; n[i].diag = e.target.value; setRevState(n) }}
-                      style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, marginBottom: 6 }}>
-                      {DIAGNOSTICOS.map(d => <option key={d}>{d}</option>)}
-                    </select>
-                    <select value={c.prod} onChange={e => { const n = [...revState]; n[i].prod = e.target.value; setRevState(n) }}
-                      style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans }}>
-                      <option value="">— Producto aplicado —</option>
-                      {PRODUCTOS.map(p => <option key={p}>{p}</option>)}
-                    </select>
+                  <div style={{ padding: '1rem', borderTop: `1px solid ${C.border}`, background: C.surface2 }}>
+                    {c.enfermos.map((enf, ei) => (
+                      <div key={ei} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '.75rem', marginBottom: '.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.amber }}>Animal {ei + 1}</span>
+                          <button onClick={() => {
+                            const n = [...revState]; n[i].enfermos.splice(ei, 1)
+                            if (!n[i].enfermos.length) n[i].ok = null
+                            setRevState(n)
+                          }} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 16 }}>✕</button>
+                        </div>
+                        <input type="text" placeholder="Descripcion del animal (ej. novillo negro, oreja cortada)" value={enf.desc}
+                          onChange={e => { const n = [...revState]; n[i].enfermos[ei].desc = e.target.value; setRevState(n) }}
+                          style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, boxSizing: 'border-box', marginBottom: 6 }} />
+                        <select value={enf.diag} onChange={e => { const n = [...revState]; n[i].enfermos[ei].diag = e.target.value; setRevState(n) }}
+                          style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, marginBottom: 6 }}>
+                          {['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro'].map(d => <option key={d}>{d}</option>)}
+                        </select>
+                        <select value={enf.prod} onChange={e => { const n = [...revState]; n[i].enfermos[ei].prod = e.target.value; setRevState(n) }}
+                          style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans }}>
+                          <option value="">— Producto aplicado —</option>
+                          {['Alliance+Feedlot','Ivermectina','Oxitetraciclina','Oxitetraciclina oftalmica','Enrofloxacina','Meloxicam','Vitamina AD3E'].map(p => <option key={p}>{p}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                    <button onClick={() => { const n = [...revState]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',prod:''}); setRevState(n) }}
+                      style={{ width: '100%', padding: '8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: C.sans, marginTop: 4 }}>
+                      + Agregar otro animal
+                    </button>
                   </div>
-                )}
-                {c.ok !== null && (
-                  <button onClick={() => resetRev(i)} style={{ marginTop: 8, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 11, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>Cambiar</button>
                 )}
               </div>
             ))}
@@ -653,7 +677,6 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
             </button>
           </>
         )}
-
         {pantSan === 'evento' && (
           <>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
