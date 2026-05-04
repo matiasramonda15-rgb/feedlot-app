@@ -452,4 +452,4 @@ function calcPesoProm(pesadaAnimales) {
   const totalAnim = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (totalAnim === 0) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
-}
+} 

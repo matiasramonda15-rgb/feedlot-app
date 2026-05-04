@@ -981,4 +981,4 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
       })}
     </div>
   )
-}
+} 
