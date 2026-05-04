@@ -10,12 +10,13 @@ export default function AppMovil({ usuario, onLogout }) {
   const [pantalla, setPantalla] = useState('home')
   const [datos, setDatos] = useState({ corrales: [], proximaPesada: null, alertas: [] })
   const nav = (p) => setPantalla(p)
+  const esEncargado = ['dueno', 'encargado'].includes(usuario?.rol)
 
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
     const [{ data: corrales }, { data: cfg }, { data: alertas }] = await Promise.all([
-      supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('id'),
+      supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('id'),
       supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
     ])
@@ -28,10 +29,10 @@ export default function AppMovil({ usuario, onLogout }) {
 
   const pantallas = {
     home:        <Home usuario={usuario} nav={nav} onLogout={onLogout} datos={datos} />,
-    corrales:    <Corrales nav={nav} corrales={datos.corrales} />,
+    corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     pesada:      <PlaceholderMovil titulo="Pesada" nav={nav} />,
-    alimentacion:<PlaceholderMovil titulo="Alimentacion" nav={nav} />,
+    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} />,
     venta:       <PlaceholderMovil titulo="Carga para venta" nav={nav} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
@@ -81,7 +82,7 @@ function Home({ usuario, nav, onLogout, datos }) {
         <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.65rem' }}>Tareas del dia</div>
         {tareas.map((t, i) => (
           <div key={i} onClick={() => nav(t.pantalla)}
-            style={{ background: C.surface, border: `1px solid ${t.urgente ? C.green : C.border}`, borderRadius: 12, padding: '.9rem', marginBottom: '.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
+            style={{ background: C.surface, border: `1px solid ${t.urgente ? C.amber : C.border}`, borderRadius: 12, padding: '.9rem', marginBottom: '.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 24 }}>{t.icon}</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{t.titulo}</div>
@@ -96,7 +97,7 @@ function Home({ usuario, nav, onLogout, datos }) {
             { icon: '📍', label: 'Corrales', p: 'corrales' },
             { icon: '🐄', label: 'Nuevo ingreso', p: 'ingreso' },
             { icon: '⚖️', label: 'Pesada', p: 'pesada' },
-            { icon: '🔀', label: 'Movimiento', p: 'novedad' },
+            { icon: '🌾', label: 'Alimentacion', p: 'alimentacion' },
             { icon: '💊', label: 'Sanidad', p: 'sanidad' },
             { icon: '💰', label: 'Carga venta', p: 'venta' },
           ].map((a, i) => (
@@ -111,18 +112,132 @@ function Home({ usuario, nav, onLogout, datos }) {
     </div>
   )
 }
-function Corrales({ nav, corrales }) {
-  const colors = { cuarentena: C.amber, acumulacion: C.blue, enfermeria: C.red }
+function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
+  const [seleccionado, setSeleccionado] = useState(null)
+  const [vista, setVista] = useState('lista')
+  const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '' })
+  const [guardando, setGuardando] = useState(false)
+
+  const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
+  const colors = { cuarentena: C.amber, acumulacion: C.blue, enfermeria: C.red, clasificado: '#B09ED4' }
+
+  async function cambiarRol(corralId, nuevoRol) {
+    await supabase.from('corrales').update({ rol: nuevoRol }).eq('id', corralId)
+    onDone()
+    setVista('lista')
+    setSeleccionado(null)
+  }
+
+  async function moverAnimales() {
+    if (!movForm.destino_id || !movForm.cantidad) { alert('Completa destino y cantidad'); return }
+    const cantidad = parseInt(movForm.cantidad)
+    if (cantidad > (seleccionado?.animales || 0)) { alert(`Max: ${seleccionado?.animales} animales`); return }
+    setGuardando(true)
+    const destinoId = parseInt(movForm.destino_id)
+    await supabase.from('movimientos').insert({ tipo: 'traslado', corral_origen_id: seleccionado.id, corral_destino_id: destinoId, cantidad, motivo: movForm.motivo || null, registrado_por: usuario?.id })
+    await supabase.from('corrales').update({ animales: (seleccionado.animales || 0) - cantidad }).eq('id', seleccionado.id)
+    const { data: dest } = await supabase.from('corrales').select('animales').eq('id', destinoId).single()
+    await supabase.from('corrales').update({ animales: (dest?.animales || 0) + cantidad }).eq('id', destinoId)
+    onDone()
+    setMovForm({ destino_id: '', cantidad: '', motivo: '' })
+    setVista('lista')
+    setSeleccionado(null)
+    setGuardando(false)
+    alert(`${cantidad} animales movidos.`)
+  }
+
+  if (vista === 'detalle' && seleccionado) {
+    const pct = Math.round((seleccionado.animales || 0) / (seleccionado.capacidad || 100) * 100)
+    const color = colors[seleccionado.rol] || C.green
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <Topbar titulo={`Corral ${seleccionado.numero}`} sub={seleccionado.rol} onBack={() => { setVista('lista'); setSeleccionado(null) }} />
+        <Scroll>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ color: C.muted, fontSize: 13 }}>Animales</span>
+              <span style={{ fontFamily: C.mono, fontWeight: 700, fontSize: 18, color }}>{seleccionado.animales || 0} / {seleccionado.capacidad || 100}</span>
+            </div>
+            <div style={{ height: 6, background: C.surface2, borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: pct > 90 ? C.red : color, borderRadius: 3 }} />
+            </div>
+          </div>
+
+          {(seleccionado.animales || 0) > 0 && (
+            <button onClick={() => setVista('mover')}
+              style={{ width: '100%', background: C.surface, border: `1px solid ${C.blue}`, borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 600, color: C.blue, cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+              Mover animales a otro corral
+            </button>
+          )}
+
+          {esEncargado && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, textTransform: 'uppercase' }}>Cambiar rol</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {['libre','cuarentena','acumulacion','clasificado','enfermeria','transitorio','deshabilitado'].filter(r => r !== seleccionado.rol).map(r => (
+                  <button key={r} onClick={() => cambiarRol(seleccionado.id, r)}
+                    style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px', fontSize: 12, color: C.text, cursor: 'pointer', fontFamily: C.sans }}>
+                    {r.charAt(0).toUpperCase() + r.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </Scroll>
+      </div>
+    )
+  }
+
+  if (vista === 'mover' && seleccionado) {
+    const destinosDisponibles = corrales.filter(c => c.id !== seleccionado.id && c.rol !== 'deshabilitado')
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <Topbar titulo="Mover animales" sub={`Desde Corral ${seleccionado.numero} - ${seleccionado.animales || 0} disp.`} onBack={() => setVista('detalle')} />
+        <Scroll>
+          <div style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral destino</div>
+            <select value={movForm.destino_id} onChange={e => setMovForm({...movForm, destino_id: e.target.value})}
+              style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+              <option value="">Selecciona destino</option>
+              {destinosDisponibles.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
+            </select>
+          </div>
+          <div style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad a mover (max {seleccionado.animales || 0})</div>
+            <input type="number" inputMode="numeric" placeholder="0" value={movForm.cantidad}
+              onChange={e => setMovForm({...movForm, cantidad: e.target.value})}
+              style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.green, boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Motivo (opcional)</div>
+            <input type="text" placeholder="ej. clasificacion, enfermedad..." value={movForm.motivo}
+              onChange={e => setMovForm({...movForm, motivo: e.target.value})}
+              style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+          </div>
+          <button onClick={moverAnimales} disabled={guardando}
+            style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+            {guardando ? 'Moviendo...' : 'Confirmar movimiento'}
+          </button>
+          <button onClick={() => setVista('detalle')}
+            style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+            Cancelar
+          </button>
+        </Scroll>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Topbar titulo="Corrales" sub="Estado actual" onBack={() => nav('home')} />
+      <Topbar titulo="Corrales" sub={`${corralesActivos.length} activos`} onBack={() => nav('home')} />
       <Scroll>
-        {corrales.length === 0 && <div style={{ textAlign: 'center', padding: '2rem', color: C.muted, fontSize: 13 }}>No hay corrales activos.</div>}
-        {corrales.map(c => {
+        {corralesActivos.length === 0 && <div style={{ textAlign: 'center', padding: '2rem', color: C.muted, fontSize: 13 }}>No hay corrales activos.</div>}
+        {corralesActivos.map(c => {
           const pct = Math.round((c.animales || 0) / (c.capacidad || 100) * 100)
           const color = colors[c.rol] || C.green
           return (
-            <div key={c.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+            <div key={c.id} onClick={() => { setSeleccionado(c); setVista('detalle') }}
+              style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>Corral {c.numero}</div>
@@ -230,6 +345,84 @@ function Ingreso({ nav, usuario, corrales, onDone }) {
     </div>
   )
 }
+function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
+  const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
+  const [kgs, setKgs] = useState({})
+  const [pils, setPils] = useState({})
+  const [guardando, setGuardando] = useState(false)
+
+  useEffect(() => {
+    const inicial = {}
+    corralesAlim.forEach(c => { inicial[c.id] = Math.round((c.animales || 0) * 10) })
+    setKgs(inicial)
+  }, [corrales])
+
+  function setPileta(id, tipo, kgAyer) {
+    const newKgs = {...kgs}
+    newKgs[id] = tipo === 'bajo' ? Math.max(0, kgAyer - 100) : tipo === 'normal' ? kgAyer : kgAyer + 100
+    setKgs(newKgs)
+    setPils({...pils, [id]: tipo})
+  }
+
+  async function confirmar() {
+    setGuardando(true)
+    const registros = corralesAlim.map(c => ({
+      mixer: 'Mixer 1',
+      corral_id: c.id,
+      formula: 'Engorde',
+      kg_total: kgs[c.id] || 0,
+      registrado_por: usuario?.id,
+    }))
+    await supabase.from('raciones_diarias').insert(registros)
+    const total = Object.values(kgs).reduce((a, b) => a + b, 0)
+    alert(`Raciones confirmadas. ${total.toLocaleString('es-AR')} kg totales.`)
+    onDone()
+    nav('home')
+    setGuardando(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Topbar titulo="Alimentacion" sub="Racion diaria" onBack={() => nav('home')} />
+      <Scroll>
+        {corralesAlim.map(c => {
+          const kgAyer = kgs[c.id] || 0
+          const kgHoy = kgs[c.id] || 0
+          const d = kgHoy - kgAyer
+          return (
+            <div key={c.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '.9rem', marginBottom: '.65rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '.5rem' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Corral {c.numero}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{c.rol} - {c.animales || 0} animales</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: C.mono }}>{kgHoy.toLocaleString('es-AR')}</div>
+                  <div style={{ fontSize: 11, fontFamily: C.mono, color: C.muted }}>kg</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 5, marginBottom: '.5rem' }}>
+                {[['bajo', 'Sobro -100', C.green, '#1A3D26'], ['normal', 'Normal', C.blue, '#0F2040'], ['vacio', 'Vacio +100', C.amber, '#3D2A00']].map(([tipo, label, color, bg]) => (
+                  <button key={tipo} onClick={() => setPileta(c.id, tipo, kgAyer)}
+                    style={{ flex: 1, padding: '7px 4px', fontSize: 10, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: C.sans, border: `1px solid ${pils[c.id] === tipo ? color : C.border}`, background: pils[c.id] === tipo ? bg : 'transparent', color: pils[c.id] === tipo ? color : C.muted }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <input type="number" inputMode="numeric" value={kgs[c.id] || 0}
+                onChange={e => setKgs({...kgs, [c.id]: parseInt(e.target.value) || 0})}
+                style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 15, fontFamily: C.mono, fontWeight: 600, color: C.green, textAlign: 'right', boxSizing: 'border-box' }} />
+            </div>
+          )
+        })}
+        <button onClick={confirmar} disabled={guardando}
+          style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+          {guardando ? 'Guardando...' : 'Confirmar raciones'}
+        </button>
+      </Scroll>
+    </div>
+  )
+}
 function SanidadMovil({ nav, alertas, proximaPesada, onDone }) {
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
@@ -248,21 +441,17 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone }) {
         {proximaDate && (
           <div style={{ background: diasPesada <= 7 ? '#3D2A00' : '#1A3D26', border: `1px solid ${diasPesada <= 7 ? C.amber : C.green}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: diasPesada <= 7 ? C.amber : C.green, marginBottom: 3 }}>
-              ⚖️ Proxima pesada fija
+              Proxima pesada fija
             </div>
             <div style={{ fontSize: 12, color: C.muted }}>
               {proximaDate.toLocaleDateString('es-AR')}
-              {diasPesada !== null && <span style={{ marginLeft: 8, fontWeight: 600, color: diasPesada <= 7 ? C.amber : C.green }}>
+              <span style={{ marginLeft: 8, fontWeight: 600, color: diasPesada <= 7 ? C.amber : C.green }}>
                 {diasPesada <= 0 ? '- Realizar hoy' : `- en ${diasPesada} dias`}
-              </span>}
+              </span>
             </div>
           </div>
         )}
-
-        {alertas.length === 0 && !proximaDate && (
-          <div style={{ textAlign: 'center', padding: '2rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>
-        )}
-
+        {alertas.length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
         {alertas.map(a => (
           <div key={a.id} style={{ background: confirmados[a.id] ? '#1A3D26' : '#3D2A00', border: `1px solid ${confirmados[a.id] ? C.green : C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
             {confirmados[a.id] ? (
@@ -293,7 +482,7 @@ function PlaceholderMovil({ titulo, nav }) {
       <Topbar titulo={titulo} onBack={() => nav('home')} />
       <Scroll>
         <div style={{ textAlign: 'center', padding: '3rem 1rem', color: C.muted, fontSize: 13 }}>
-          Modulo en integracion.<br />Disponible en la proxima sesion.
+          Modulo en integracion.<br />Disponible pronto.
         </div>
       </Scroll>
     </div>
