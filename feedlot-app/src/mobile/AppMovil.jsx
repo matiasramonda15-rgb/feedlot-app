@@ -30,7 +30,7 @@ export default function AppMovil({ usuario, onLogout }) {
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} />,
-    venta:       <PlaceholderMovil titulo="Carga para venta" nav={nav} />,
+    venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
   }
   return (
@@ -762,6 +762,126 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
         <button onClick={guardar} disabled={guardando}
           style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
           {guardando ? 'Guardando...' : 'Registrar pesada'}
+        </button>
+        <button onClick={() => nav('home')}
+          style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+          Cancelar
+        </button>
+      </Scroll>
+    </div>
+  )
+}
+
+function VentaMovil({ nav, usuario, corrales, onDone }) {
+  const [form, setForm] = useState({ corral_id: '', cantidad: '', kg_vivo: '', precio_kg: '', comprador: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+
+  const corralesConAnimales = corrales.filter(c => (c.animales || 0) > 0 && c.rol !== 'deshabilitado')
+  const kg_vivo = parseFloat(form.kg_vivo) || 0
+  const desbaste = kg_vivo * 0.08
+  const kg_neto = kg_vivo - desbaste
+  const total = kg_neto * (parseFloat(form.precio_kg) || 0)
+
+  async function guardar() {
+    if (!form.corral_id) { alert('Selecciona un corral'); return }
+    if (!form.cantidad || !form.kg_vivo || !form.precio_kg) { alert('Completa cantidad, kg vivo y precio'); return }
+    setGuardando(true)
+
+    const { error } = await supabase.from('ventas').insert({
+      corral_id: parseInt(form.corral_id),
+      cantidad: parseInt(form.cantidad),
+      kg_vivo_total: kg_vivo,
+      desbaste_pct: 8,
+      kg_neto: Math.round(kg_neto * 100) / 100,
+      precio_kg: parseFloat(form.precio_kg),
+      total: Math.round(total),
+      comprador: form.comprador || null,
+      observaciones: form.observaciones || null,
+      registrado_por: usuario?.id,
+    })
+
+    if (!error) {
+      const { data: corral } = await supabase.from('corrales').select('animales').eq('id', form.corral_id).single()
+      const nuevosAnimales = Math.max(0, (corral?.animales || 0) - parseInt(form.cantidad))
+      await supabase.from('corrales').update({ animales: nuevosAnimales }).eq('id', form.corral_id)
+      onDone()
+      alert('Venta registrada correctamente.')
+      nav('home')
+    } else {
+      alert('Error al guardar. Intenta de nuevo.')
+    }
+    setGuardando(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Topbar titulo="Carga venta" sub="Venta kg vivo - desbaste 8%" onBack={() => nav('home')} />
+      <Scroll>
+        <div style={{ marginBottom: '.85rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+          <select value={form.corral_id} onChange={e => setForm({...form, corral_id: e.target.value})}
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+            <option value="">Selecciona un corral</option>
+            {corralesConAnimales.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
+          </select>
+        </div>
+
+        {[
+          { label: 'Cantidad animales', key: 'cantidad', placeholder: 'ej. 20' },
+          { label: 'Kg vivo total (bascula)', key: 'kg_vivo', placeholder: 'ej. 8000' },
+          { label: 'Precio $/kg', key: 'precio_kg', placeholder: 'ej. 2500' },
+        ].map(f => (
+          <div key={f.key} style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>{f.label}</div>
+            <input type="number" inputMode="numeric" placeholder={f.placeholder} value={form[f.key]}
+              onChange={e => setForm({...form, [f.key]: e.target.value})}
+              style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.green, boxSizing: 'border-box' }} />
+          </div>
+        ))}
+
+        {kg_vivo > 0 && (
+          <div style={{ background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 12, padding: '1rem', marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue, textTransform: 'uppercase', marginBottom: 10 }}>Resumen liquidacion</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: total > 0 ? 12 : 0 }}>
+              {[
+                { label: 'KG vivo', value: kg_vivo.toLocaleString('es-AR') + ' kg' },
+                { label: 'Desbaste 8%', value: Math.round(desbaste).toLocaleString('es-AR') + ' kg' },
+                { label: 'KG neto', value: Math.round(kg_neto).toLocaleString('es-AR') + ' kg' },
+              ].map(s => (
+                <div key={s.label}>
+                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>{s.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, fontFamily: C.mono, color: C.blue }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+            {total > 0 && (
+              <div style={{ paddingTop: 10, borderTop: '1px solid rgba(126,184,247,.2)' }}>
+                <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Total estimado</div>
+                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: C.mono, color: C.green }}>
+                  ${total.toLocaleString('es-AR', {maximumFractionDigits:0})}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ marginBottom: '.85rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Comprador</div>
+          <input type="text" placeholder="Nombre del comprador" value={form.comprador}
+            onChange={e => setForm({...form, comprador: e.target.value})}
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
+          <input type="text" placeholder="observaciones opcionales..." value={form.observaciones}
+            onChange={e => setForm({...form, observaciones: e.target.value})}
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+        </div>
+
+        <button onClick={guardar} disabled={guardando}
+          style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+          {guardando ? 'Guardando...' : 'Registrar venta'}
         </button>
         <button onClick={() => nav('home')}
           style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
