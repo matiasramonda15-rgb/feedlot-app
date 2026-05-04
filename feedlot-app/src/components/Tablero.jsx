@@ -452,6 +452,8 @@ function calcPesoProm(pesadaAnimales) {
   const totalAnim = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (totalAnim === 0) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
+}
+
 export function Card({ children, style = {} }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1.25rem', marginBottom: '1rem', ...style }}>
@@ -473,4 +475,4 @@ export function Badge({ children, type = 'neutral', style = {} }) {
       {children}
     </span>
   )
-} 
+}
