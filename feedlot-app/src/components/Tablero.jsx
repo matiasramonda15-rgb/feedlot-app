@@ -452,4 +452,25 @@ function calcPesoProm(pesadaAnimales) {
   const totalAnim = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (totalAnim === 0) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
-} 
+export function Card({ children, style = {} }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1.25rem', marginBottom: '1rem', ...style }}>
+      {children}
+    </div>
+  )
+}
+
+export function Badge({ children, type = 'neutral', style = {} }) {
+  const styles = {
+    ok:      { background: '#E8F4EB', color: '#1E5C2E' },
+    warn:    { background: '#FDF0E0', color: '#7A4500' },
+    red:     { background: '#FDF0F0', color: '#7A1A1A' },
+    info:    { background: '#E8EFF8', color: '#1A3D6B' },
+    neutral: { background: '#F7F5F0', color: '#6B6760', border: '1px solid #E2DDD6' },
+  }
+  return (
+    <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, ...styles[type], ...style }}>
+      {children}
+    </span>
+  )
+}} 
