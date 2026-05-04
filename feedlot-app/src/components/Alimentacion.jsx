@@ -83,6 +83,8 @@ export default function Alimentacion({ usuario }) {
   const [corrales, setCorrales] = useState([])
   const [stockDB, setStockDB] = useState([])
   const [historial, setHistorial] = useState([])
+  const [ingresosPendientes, setIngresosPendientes] = useState([])
+  const [editandoPrecio, setEditandoPrecio] = useState({})
   const [formulaActiva, setFormulaActiva] = useState('seco')
   const [formulaDieta, setFormulaDieta] = useState('seco')
   const [formulas, setFormulas] = useState(JSON.parse(JSON.stringify(FORMULAS)))
@@ -93,7 +95,6 @@ export default function Alimentacion({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [confirmado, setConfirmado] = useState(false)
 
-  // Estructura de mixers con corrales reales
   const [kgsHoy, setKgsHoy] = useState([[800, 2400], [840, 900], [1160, 1225]])
   const [piletas, setPiletas] = useState([[null, null], [null, null], [null, null]])
 
@@ -106,25 +107,25 @@ export default function Alimentacion({ usuario }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: c }, { data: s }, { data: h }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: h }, { data: ip }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(20),
+      supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
     setHistorial(h || [])
+    setIngresosPendientes(ip || [])
     setLoading(false)
   }
 
-  // Calcular corrales por mixer
   const corralesMixer = [
     corrales.filter(c => c.rol === 'cuarentena' || c.rol === 'acumulacion'),
     corrales.filter(c => c.rol === 'clasificado').slice(0, 2),
     corrales.filter(c => c.rol === 'clasificado').slice(2),
   ]
 
-  // Sincronizar kgsHoy con corrales reales
   useEffect(() => {
     if (corrales.length > 0) {
       const nuevosKgs = corralesMixer.map(grupo => grupo.map(c => Math.round((c.animales || 0) * 10)))
@@ -185,11 +186,40 @@ export default function Alimentacion({ usuario }) {
         cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
         actualizado_en: new Date().toISOString(),
       }).eq('id', item.id)
+      // Registrar en ingresos_stock con o sin precio
+      await supabase.from('ingresos_stock').insert({
+        insumo_id: item.id,
+        insumo_nombre: formIngreso.insumo,
+        cantidad_kg: parseFloat(formIngreso.cantidad),
+        precio_por_kg: formIngreso.precio_kg ? parseFloat(formIngreso.precio_kg) : null,
+        total: formIngreso.precio_kg ? parseFloat(formIngreso.cantidad) * parseFloat(formIngreso.precio_kg) : null,
+        registrado_por: usuario?.nombre || usuario?.email,
+        precio_cargado_por: formIngreso.precio_kg ? (usuario?.nombre || usuario?.email) : null,
+        precio_cargado_en: formIngreso.precio_kg ? new Date().toISOString() : null,
+      })
     }
     await cargarDatos()
     setShowFormIngreso(false)
     setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', precio_kg: '', proveedor: '', remito: '' })
     setGuardando(false)
+  }
+
+  async function guardarPrecioIngreso(ing) {
+    const editando = editandoPrecio[ing.id]
+    if (!editando?.precio) { alert('Ingresa el precio'); return }
+    const precioNum = parseFloat(editando.precio)
+    await supabase.from('ingresos_stock').update({
+      precio_por_kg: precioNum,
+      total: ing.cantidad_kg * precioNum,
+      proveedor: editando.proveedor || null,
+      remito: editando.remito || null,
+      precio_cargado_por: usuario?.nombre || usuario?.email,
+      precio_cargado_en: new Date().toISOString(),
+    }).eq('id', ing.id)
+    const nuevo = { ...editandoPrecio }
+    delete nuevo[ing.id]
+    setEditandoPrecio(nuevo)
+    await cargarDatos()
   }
 
   function updateIng(fKey, eKey, idx, val) {
@@ -221,7 +251,7 @@ export default function Alimentacion({ usuario }) {
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding: '10px 20px', fontSize: 13, fontWeight: tab === t.key ? 600 : 500, cursor: 'pointer', color: tab === t.key ? S.accent : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t.key ? `2px solid ${S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
-            {t.label}
+            {t.label}{t.key === 'stock' && ingresosPendientes.length > 0 ? ` (${ingresosPendientes.length})` : ''}
           </button>
         ))}
       </div>
@@ -264,7 +294,6 @@ export default function Alimentacion({ usuario }) {
 
             return (
               <div key={mx.id} style={{ border: `1px solid ${S.border}`, borderRadius: 12, marginBottom: '1.25rem', overflow: 'hidden' }}>
-                {/* Header mixer */}
                 <div style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${S.border}`, background: `linear-gradient(90deg, ${mx.headerGrad} 0%, ${S.surface} 100%)` }}>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: S.muted, marginBottom: 2 }}>{mx.num}</div>
@@ -290,7 +319,6 @@ export default function Alimentacion({ usuario }) {
                   </div>
                 </div>
 
-                {/* Body - corrales */}
                 <div style={{ padding: '1rem 1.25rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '130px 90px 140px 1fr 100px', gap: 10, padding: '0 0 6px', borderBottom: `1px solid ${S.border}`, marginBottom: 4 }}>
                     {['Corral', 'Ayer kg', 'Pileta hoy', 'Kg hoy', ''].map(h => (
@@ -315,10 +343,10 @@ export default function Alimentacion({ usuario }) {
                         </div>
                         <div style={{ fontFamily: 'monospace', fontWeight: 500, fontSize: 13, color: S.muted }}>{kgAyer.toLocaleString('es-AR')} kg</div>
                         <div style={{ display: 'flex', gap: 3 }}>
-                          {[['bajo', 'Sobro\n-100', S.green, S.greenLight], ['normal', 'Poco\n=', S.accent, S.accentLight], ['vacio', 'Vacio\n+100', S.amber, S.amberLight]].map(([tipo, label, color, bg]) => (
+                          {[['bajo', 'Sobro', '-100', S.green, S.greenLight], ['normal', 'Poco', '=', S.accent, S.accentLight], ['vacio', 'Vacio', '+100', S.amber, S.amberLight]].map(([tipo, label, sub, color, bg]) => (
                             <button key={tipo} onClick={() => setPileta(mi, ci, tipo)}
                               style={{ border: `1px solid ${pSel === tipo ? color : S.border}`, borderRadius: 5, padding: '4px 7px', fontSize: 10, fontWeight: 600, cursor: 'pointer', background: pSel === tipo ? bg : 'transparent', color: pSel === tipo ? color : S.muted, fontFamily: "'IBM Plex Sans', sans-serif", lineHeight: 1.3, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                              {tipo === 'bajo' ? 'Sobro' : tipo === 'normal' ? 'Poco' : 'Vacio'}<br />{tipo === 'bajo' ? '-100' : tipo === 'normal' ? '=' : '+100'}
+                              {label}<br />{sub}
                             </button>
                           ))}
                         </div>
@@ -342,7 +370,6 @@ export default function Alimentacion({ usuario }) {
                   </div>
                 </div>
 
-                {/* Resultado / orden de carga */}
                 <div style={{ padding: '1rem 1.25rem', borderTop: `1px solid ${S.border}`, background: S.bg }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '.5rem' }}>
                     Orden de carga — {mx.nombre}
@@ -446,7 +473,7 @@ export default function Alimentacion({ usuario }) {
 
           {confirmado && (
             <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '.9rem 1rem', fontSize: 13, color: S.green, marginBottom: '1rem' }}>
-              <strong>Jornada confirmada.</strong> {kgsHoy.flat().reduce((a, b) => a + b, 0).toLocaleString('es-AR')} kg totales en 3 mixers. Stock descontado automaticamente.
+              <strong>Jornada confirmada.</strong> {kgsHoy.flat().reduce((a, b) => a + b, 0).toLocaleString('es-AR')} kg totales en 3 mixers.
             </div>
           )}
 
@@ -496,7 +523,7 @@ export default function Alimentacion({ usuario }) {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{e.label}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span id={`totalBadge_${key}`} style={{ fontSize: 12, color: totalOk ? S.green : S.red, fontWeight: 600 }}>
+                    <span style={{ fontSize: 12, color: totalOk ? S.green : S.red, fontWeight: 600 }}>
                       Total: {total.toFixed(1)} / 100 kg {!totalOk && '⚠'}
                     </span>
                     {!modoEdit
@@ -633,6 +660,75 @@ export default function Alimentacion({ usuario }) {
                   {guardando ? 'Guardando...' : 'Registrar'}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ── INGRESOS PENDIENTES DE PRECIO — solo dueño/secretaria ── */}
+          {['dueno', 'secretaria'].includes(usuario?.rol) && ingresosPendientes.length > 0 && (
+            <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '.85rem' }}>
+                ⚠ {ingresosPendientes.length} ingreso{ingresosPendientes.length !== 1 ? 's' : ''} sin precio cargado
+              </div>
+              {ingresosPendientes.map(ing => {
+                const ep = editandoPrecio[ing.id]
+                return (
+                  <div key={ing.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: ep ? 12 : 0 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{ing.insumo_nombre}</div>
+                        <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                          {ing.cantidad_kg?.toLocaleString('es-AR')} kg · registrado por {ing.registrado_por} · {new Date(ing.creado_en).toLocaleDateString('es-AR')}
+                        </div>
+                      </div>
+                      {!ep && (
+                        <button onClick={() => setEditandoPrecio({ ...editandoPrecio, [ing.id]: { precio: '', proveedor: '', remito: '' } })}
+                          style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
+                          Cargar precio
+                        </button>
+                      )}
+                    </div>
+                    {ep && (
+                      <div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio por kg ($) *</label>
+                            <input type="number" placeholder="ej. 130" value={ep.precio}
+                              onChange={e => setEditandoPrecio({ ...editandoPrecio, [ing.id]: { ...ep, precio: e.target.value } })}
+                              style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600 }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Proveedor</label>
+                            <input type="text" placeholder="ej. Agrosol" value={ep.proveedor}
+                              onChange={e => setEditandoPrecio({ ...editandoPrecio, [ing.id]: { ...ep, proveedor: e.target.value } })}
+                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Remito</label>
+                            <input type="text" placeholder="nro de remito" value={ep.remito}
+                              onChange={e => setEditandoPrecio({ ...editandoPrecio, [ing.id]: { ...ep, remito: e.target.value } })}
+                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+                          </div>
+                        </div>
+                        {ep.precio && (
+                          <div style={{ background: S.greenLight, border: `1px solid #97C459`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
+                            Total: <strong>${(ing.cantidad_kg * parseFloat(ep.precio)).toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong> ({ing.cantidad_kg?.toLocaleString('es-AR')} kg × ${parseFloat(ep.precio).toLocaleString('es-AR')})
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={() => guardarPrecioIngreso(ing)}
+                            style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                            Guardar precio
+                          </button>
+                          <button onClick={() => { const n = { ...editandoPrecio }; delete n[ing.id]; setEditandoPrecio(n) }}
+                            style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 

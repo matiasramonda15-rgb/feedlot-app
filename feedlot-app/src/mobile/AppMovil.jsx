@@ -492,7 +492,6 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
 
   const PRODUCTOS = ['Alliance+Feedlot','Ivermectina','Oxitetraciclina','Oxitetraciclina oftálmica','Enrofloxacina','Meloxicam','Vitamina AD3E']
-  const DIAGNOSTICOS = ['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro']
 
   useEffect(() => {
     setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, enfermos: [] })))
@@ -548,10 +547,6 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
     setFormEvento({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
     setGuardando(false)
   }
-
-  function setRevOk(i) { const n = [...revState]; n[i] = {...n[i], ok: true}; setRevState(n) }
-  function setRevNov(i) { const n = [...revState]; n[i] = {...n[i], ok: false}; setRevState(n) }
-  function resetRev(i) { const n = [...revState]; n[i] = {...n[i], ok: null}; setRevState(n) }
 
   const TABS = [
     { key: 'alertas', label: 'Alertas' },
@@ -611,7 +606,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
         {pantSan === 'revision' && (
           <>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
-              Recorre cada corral. Sin novedades si esta todo bien. Hay novedad si encontras algun animal con problema — podes agregar varios animales por corral.
+              Recorre cada corral. Sin novedades si esta todo bien. Hay novedad si encontras algun animal con problema.
             </div>
             {revState.map((c, i) => (
               <div key={c.id} style={{ border: `1px solid ${c.ok === true ? C.green : c.ok === false ? C.amber : C.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
@@ -649,7 +644,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
                             setRevState(n)
                           }} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 16 }}>✕</button>
                         </div>
-                        <input type="text" placeholder="Descripcion del animal (ej. novillo negro, oreja cortada)" value={enf.desc}
+                        <input type="text" placeholder="Descripcion del animal" value={enf.desc}
                           onChange={e => { const n = [...revState]; n[i].enfermos[ei].desc = e.target.value; setRevState(n) }}
                           style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, boxSizing: 'border-box', marginBottom: 6 }} />
                         <select value={enf.diag} onChange={e => { const n = [...revState]; n[i].enfermos[ei].diag = e.target.value; setRevState(n) }}
@@ -659,7 +654,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
                         <select value={enf.prod} onChange={e => { const n = [...revState]; n[i].enfermos[ei].prod = e.target.value; setRevState(n) }}
                           style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans }}>
                           <option value="">— Producto aplicado —</option>
-                          {['Alliance+Feedlot','Ivermectina','Oxitetraciclina','Oxitetraciclina oftalmica','Enrofloxacina','Meloxicam','Vitamina AD3E'].map(p => <option key={p}>{p}</option>)}
+                          {PRODUCTOS.map(p => <option key={p}>{p}</option>)}
                         </select>
                       </div>
                     ))}
@@ -761,6 +756,17 @@ function StockTab({ usuario, onDone }) {
       ? (item.cantidad_kg || 0) + parseFloat(cantidad)
       : Math.max(0, (item.cantidad_kg || 0) - parseFloat(cantidad))
     await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', id)
+
+    // Si es ingreso, registrar en ingresos_stock sin precio para que secretaria/dueño completen después
+    if (tipo === 'agregar') {
+      await supabase.from('ingresos_stock').insert({
+        insumo_id: id,
+        insumo_nombre: item.insumo,
+        cantidad_kg: parseFloat(cantidad),
+        registrado_por: usuario?.nombre || usuario?.email || 'empleado',
+      })
+    }
+
     await cargar()
     setEditando(null)
     setCantidad('')
@@ -1020,7 +1026,7 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
         {[
           { label: 'Cantidad animales', key: 'cantidad', placeholder: 'ej. 20' },
           { label: 'Kg vivo total (bascula)', key: 'kg_vivo', placeholder: 'ej. 8000' },
-].map(f => (
+        ].map(f => (
           <div key={f.key} style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>{f.label}</div>
             <input type="number" inputMode="numeric" placeholder={f.placeholder} value={form[f.key]}
@@ -1032,7 +1038,7 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
         {kg_vivo > 0 && (
           <div style={{ background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 12, padding: '1rem', marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: C.blue, textTransform: 'uppercase', marginBottom: 10 }}>Resumen liquidacion</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: total > 0 ? 12 : 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
               {[
                 { label: 'KG vivo', value: kg_vivo.toLocaleString('es-AR') + ' kg' },
                 { label: 'Desbaste 8%', value: Math.round(desbaste).toLocaleString('es-AR') + ' kg' },
@@ -1044,14 +1050,6 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
                 </div>
               ))}
             </div>
-            {total > 0 && (
-              <div style={{ paddingTop: 10, borderTop: '1px solid rgba(126,184,247,.2)' }}>
-                <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Total estimado</div>
-                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: C.mono, color: C.green }}>
-                  ${total.toLocaleString('es-AR', {maximumFractionDigits:0})}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
