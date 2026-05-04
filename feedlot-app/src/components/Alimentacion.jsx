@@ -83,6 +83,9 @@ export default function Alimentacion({ usuario }) {
   const [corrales, setCorrales] = useState([])
   const [stockDB, setStockDB] = useState([])
   const [historial, setHistorial] = useState([])
+  const [historialArchivo, setHistorialArchivo] = useState([])
+  const [verArchivo, setVerArchivo] = useState(false)
+  const [ingresosStock, setIngresosStock] = useState([])
   const [ingresosPendientes, setIngresosPendientes] = useState([])
   const [editandoPrecio, setEditandoPrecio] = useState({})
   const [formulaActiva, setFormulaActiva] = useState('seco')
@@ -94,7 +97,6 @@ export default function Alimentacion({ usuario }) {
   const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', precio_kg: '', proveedor: '', remito: '' })
   const [guardando, setGuardando] = useState(false)
   const [confirmado, setConfirmado] = useState(false)
-
   const [kgsHoy, setKgsHoy] = useState([[800, 2400], [840, 900], [1160, 1225]])
   const [piletas, setPiletas] = useState([[null, null], [null, null], [null, null]])
 
@@ -107,15 +109,25 @@ export default function Alimentacion({ usuario }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: c }, { data: s }, { data: h }, { data: ip }] = await Promise.all([
+    const hace7dias = new Date()
+    hace7dias.setDate(hace7dias.getDate() - 7)
+    const hace7diasISO = hace7dias.toISOString()
+
+    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: is_ }, { data: ip }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
-      supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(20),
+      supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)')
+        .gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
+      supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)')
+        .lt('creado_en', hace7diasISO).order('creado_en', { ascending: false }).limit(100),
+      supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(50),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
     setHistorial(h || [])
+    setHistorialArchivo(ha || [])
+    setIngresosStock(is_ || [])
     setIngresosPendientes(ip || [])
     setLoading(false)
   }
@@ -177,6 +189,20 @@ export default function Alimentacion({ usuario }) {
     setTimeout(() => setConfirmado(false), 5000)
   }
 
+  async function eliminarRacion(id) {
+    if (!confirm('¿Eliminar esta racion?')) return
+    await supabase.from('raciones_diarias').delete().eq('id', id)
+    await cargarDatos()
+  }
+
+  async function eliminarTodasRaciones() {
+    if (!confirm('¿Eliminar TODAS las raciones de los últimos 7 días? Esta acción no se puede deshacer.')) return
+    const hace7dias = new Date()
+    hace7dias.setDate(hace7dias.getDate() - 7)
+    await supabase.from('raciones_diarias').delete().gte('creado_en', hace7dias.toISOString())
+    await cargarDatos()
+  }
+
   async function guardarIngreso() {
     if (!formIngreso.cantidad) { alert('Ingresa la cantidad'); return }
     setGuardando(true)
@@ -186,7 +212,6 @@ export default function Alimentacion({ usuario }) {
         cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
         actualizado_en: new Date().toISOString(),
       }).eq('id', item.id)
-      // Registrar en ingresos_stock con o sin precio
       await supabase.from('ingresos_stock').insert({
         insumo_id: item.id,
         insumo_nombre: formIngreso.insumo,
@@ -205,14 +230,14 @@ export default function Alimentacion({ usuario }) {
   }
 
   async function guardarPrecioIngreso(ing) {
-    const editando = editandoPrecio[ing.id]
-    if (!editando?.precio) { alert('Ingresa el precio'); return }
-    const precioNum = parseFloat(editando.precio)
+    const ep = editandoPrecio[ing.id]
+    if (!ep?.precio) { alert('Ingresa el precio'); return }
+    const precioNum = parseFloat(ep.precio)
     await supabase.from('ingresos_stock').update({
       precio_por_kg: precioNum,
       total: ing.cantidad_kg * precioNum,
-      proveedor: editando.proveedor || null,
-      remito: editando.remito || null,
+      proveedor: ep.proveedor || null,
+      remito: ep.remito || null,
       precio_cargado_por: usuario?.nombre || usuario?.email,
       precio_cargado_en: new Date().toISOString(),
     }).eq('id', ing.id)
@@ -325,11 +350,7 @@ export default function Alimentacion({ usuario }) {
                       <div key={h} style={{ fontSize: 10, fontWeight: 600, color: S.hint, textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</div>
                     ))}
                   </div>
-
-                  {grupo.length === 0 && (
-                    <div style={{ padding: '1rem 0', color: S.hint, fontSize: 13 }}>No hay corrales asignados a este mixer.</div>
-                  )}
-
+                  {grupo.length === 0 && <div style={{ padding: '1rem 0', color: S.hint, fontSize: 13 }}>No hay corrales asignados a este mixer.</div>}
                   {grupo.map((c, ci) => {
                     const kgAyer = Math.round((c.animales || 0) * 10)
                     const kgHoy = kgsMixer[ci] || 0
@@ -351,8 +372,7 @@ export default function Alimentacion({ usuario }) {
                           ))}
                         </div>
                         <div>
-                          <input type="number" value={kgHoy}
-                            onChange={e => updateKg(mi, ci, e.target.value)}
+                          <input type="number" value={kgHoy} onChange={e => updateKg(mi, ci, e.target.value)}
                             style={{ width: 100, border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 15, fontFamily: 'monospace', fontWeight: 600, textAlign: 'right', color: S.text, background: S.surface }} />
                         </div>
                         <div>
@@ -363,7 +383,6 @@ export default function Alimentacion({ usuario }) {
                       </div>
                     )
                   })}
-
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 2px', marginTop: 4 }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: S.muted }}>Total mixer</span>
                     <span style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: necesitaCargas ? S.red : S.accent }}>{totalMixer.toLocaleString('es-AR')} kg</span>
@@ -374,13 +393,11 @@ export default function Alimentacion({ usuario }) {
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '.5rem' }}>
                     Orden de carga — {mx.nombre}
                   </div>
-
                   {necesitaCargas && (
                     <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '.9rem 1rem', fontSize: 13, color: S.amber, marginBottom: '.75rem', lineHeight: 1.6 }}>
                       <strong>Supera la capacidad del mixer ({cap.toLocaleString('es-AR')} kg).</strong> Necesitas <strong>{numCargas} cargas</strong> de ~{Math.ceil(totalMixer / numCargas).toLocaleString('es-AR')} kg cada una.
                     </div>
                   )}
-
                   {totalMixer > 0 && (() => {
                     if (necesitaCargas) {
                       const kgPorCarga = Math.ceil(totalMixer / numCargas)
@@ -407,18 +424,15 @@ export default function Alimentacion({ usuario }) {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {cg.ings.map((ing, ii) => {
-                                    acum += ing.kgCarga
-                                    return (
-                                      <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
-                                        <td style={{ padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
-                                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: ing.c }} />{ing.n}
-                                        </td>
-                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{ing.kgCarga.toLocaleString('es-AR')}</td>
-                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toLocaleString('es-AR')}</td>
-                                      </tr>
-                                    )
-                                  })}
+                                  {cg.ings.map((ing, ii) => { acum += ing.kgCarga; return (
+                                    <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                      <td style={{ padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: ing.c }} />{ing.n}
+                                      </td>
+                                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{ing.kgCarga.toLocaleString('es-AR')}</td>
+                                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toLocaleString('es-AR')}</td>
+                                    </tr>
+                                  )})}
                                   <tr style={{ background: S.bg, borderTop: `2px solid ${S.borderStrong}` }}>
                                     <td style={{ padding: '7px 10px', fontWeight: 700 }}>Total carga {ci + 1}</td>
                                     <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: ci === 0 ? S.accent : S.green }}>{cg.kg.toLocaleString('es-AR')} kg</td>
@@ -443,18 +457,15 @@ export default function Alimentacion({ usuario }) {
                               </tr>
                             </thead>
                             <tbody>
-                              {ings.map((ing, ii) => {
-                                acum += ing.kgTotal
-                                return (
-                                  <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
-                                    <td style={{ padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
-                                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: ing.c }} />{ing.n}
-                                    </td>
-                                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{ing.kgTotal.toLocaleString('es-AR')}</td>
-                                    <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toLocaleString('es-AR')}</td>
-                                  </tr>
-                                )
-                              })}
+                              {ings.map((ing, ii) => { acum += ing.kgTotal; return (
+                                <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                  <td style={{ padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: ing.c }} />{ing.n}
+                                  </td>
+                                  <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{ing.kgTotal.toLocaleString('es-AR')}</td>
+                                  <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toLocaleString('es-AR')}</td>
+                                </tr>
+                              )})}
                               <tr style={{ background: S.bg, borderTop: `2px solid ${S.borderStrong}` }}>
                                 <td style={{ padding: '7px 10px', fontWeight: 700 }}>Total mixer</td>
                                 <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>{totalMixer.toLocaleString('es-AR')} kg</td>
@@ -476,7 +487,6 @@ export default function Alimentacion({ usuario }) {
               <strong>Jornada confirmada.</strong> {kgsHoy.flat().reduce((a, b) => a + b, 0).toLocaleString('es-AR')} kg totales en 3 mixers.
             </div>
           )}
-
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: '.5rem' }}>
             <button style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
               Imprimir las 3 ordenes
@@ -499,7 +509,7 @@ export default function Alimentacion({ usuario }) {
             </div>
           </div>
           <div style={{ background: S.accentLight, border: '1px solid #85B7EB', borderRadius: 8, padding: '.9rem 1rem', fontSize: 13, color: S.accent, marginBottom: '1.25rem', lineHeight: 1.6 }}>
-            Cada 100 kg de mixer, el sistema multiplica por el total del dia. Si el mixer de recria lleva 3.200 kg, multiplica por 32.
+            Cada 100 kg de mixer, el sistema multiplica por el total del dia.
           </div>
           <div style={{ display: 'flex', border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden', width: 'fit-content', marginBottom: '1.5rem' }}>
             {[['seco', 'Maiz seco'], ['humedo', 'Maiz humedo']].map(([key, label]) => (
@@ -509,7 +519,6 @@ export default function Alimentacion({ usuario }) {
               </button>
             ))}
           </div>
-
           {ETAPA_INFO.map(e => {
             const key = `${formulaDieta}_${e.key}`
             const ings = formulas[formulaDieta][e.key]
@@ -517,15 +526,12 @@ export default function Alimentacion({ usuario }) {
             const totalOk = Math.abs(total - 100) < 0.1
             const modoEdit = editando[key] || false
             let acum = 0
-
             return (
               <div key={key} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{e.label}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ fontSize: 12, color: totalOk ? S.green : S.red, fontWeight: 600 }}>
-                      Total: {total.toFixed(1)} / 100 kg {!totalOk && '⚠'}
-                    </span>
+                    <span style={{ fontSize: 12, color: totalOk ? S.green : S.red, fontWeight: 600 }}>Total: {total.toFixed(1)} / 100 kg {!totalOk && '⚠'}</span>
                     {!modoEdit
                       ? <button onClick={() => setEditando({ ...editando, [key]: true })}
                           style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Editar</button>
@@ -538,7 +544,6 @@ export default function Alimentacion({ usuario }) {
                     }
                   </div>
                 </div>
-
                 <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
@@ -549,36 +554,32 @@ export default function Alimentacion({ usuario }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {ings.map((ing, ii) => {
-                        acum += ing.kg
-                        return (
-                          <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
-                            <td style={{ padding: '9px 12px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <div style={{ width: 9, height: 9, borderRadius: '50%', background: ing.c, flexShrink: 0 }} />
-                                {ing.n}
+                      {ings.map((ing, ii) => { acum += ing.kg; return (
+                        <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
+                          <td style={{ padding: '9px 12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ width: 9, height: 9, borderRadius: '50%', background: ing.c, flexShrink: 0 }} />{ing.n}
+                            </div>
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                            {modoEdit
+                              ? <input type="number" step="0.1" min="0" max="100" value={ing.kg}
+                                  onChange={ev => updateIng(formulaDieta, e.key, ii, ev.target.value)}
+                                  style={{ width: 72, border: `1px solid ${S.border}`, borderRadius: 5, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', background: S.surface }} />
+                              : <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{ing.kg}</span>
+                            }
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                            <div>
+                              <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginBottom: 3 }}>{(ing.kg).toFixed(1)}%</div>
+                              <div style={{ height: 4, background: S.border, borderRadius: 2, overflow: 'hidden', width: 80, marginLeft: 'auto' }}>
+                                <div style={{ width: `${Math.min(100, ing.kg)}%`, height: '100%', borderRadius: 2, background: ing.c }} />
                               </div>
-                            </td>
-                            <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                              {modoEdit
-                                ? <input type="number" step="0.1" min="0" max="100" value={ing.kg}
-                                    onChange={ev => updateIng(formulaDieta, e.key, ii, ev.target.value)}
-                                    style={{ width: 72, border: `1px solid ${S.border}`, borderRadius: 5, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', background: S.surface }} />
-                                : <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{ing.kg}</span>
-                              }
-                            </td>
-                            <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                              <div>
-                                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginBottom: 3 }}>{(ing.kg).toFixed(1)}%</div>
-                                <div style={{ height: 4, background: S.border, borderRadius: 2, overflow: 'hidden', width: 80, marginLeft: 'auto' }}>
-                                  <div style={{ width: `${Math.min(100, ing.kg)}%`, height: '100%', borderRadius: 2, background: ing.c }} />
-                                </div>
-                              </div>
-                            </td>
-                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toFixed(1)}</td>
-                          </tr>
-                        )
-                      })}
+                            </div>
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toFixed(1)}</td>
+                        </tr>
+                      )})}
                       <tr style={{ background: S.bg, borderTop: `2px solid ${S.borderStrong}` }}>
                         <td style={{ padding: '9px 12px', fontWeight: 700 }}>Total</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>{total.toFixed(1)}</td>
@@ -663,7 +664,7 @@ export default function Alimentacion({ usuario }) {
             </div>
           )}
 
-          {/* ── INGRESOS PENDIENTES DE PRECIO — solo dueño/secretaria ── */}
+          {/* ── INGRESOS PENDIENTES DE PRECIO ── */}
           {['dueno', 'secretaria'].includes(usuario?.rol) && ingresosPendientes.length > 0 && (
             <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '.85rem' }}>
@@ -710,7 +711,7 @@ export default function Alimentacion({ usuario }) {
                           </div>
                         </div>
                         {ep.precio && (
-                          <div style={{ background: S.greenLight, border: `1px solid #97C459`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
+                          <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
                             Total: <strong>${(ing.cantidad_kg * parseFloat(ep.precio)).toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong> ({ing.cantidad_kg?.toLocaleString('es-AR')} kg × ${parseFloat(ep.precio).toLocaleString('es-AR')})
                           </div>
                         )}
@@ -732,43 +733,134 @@ export default function Alimentacion({ usuario }) {
             </div>
           )}
 
+          {/* ── HISTORIAL DE INGRESOS DE STOCK ── */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+              Historial de ingresos
+            </div>
+            {ingresosStock.length === 0
+              ? <div style={{ fontSize: 13, color: S.hint }}>No hay ingresos registrados.</div>
+              : (
+                <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: S.bg }}>
+                        {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por'].map((h, i) => (
+                          <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingresosStock.map(ing => (
+                        <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                          <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                          <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            {ing.precio_por_kg
+                              ? `$${ing.precio_por_kg.toLocaleString('es-AR')}`
+                              : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                            {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '-'}
+                          </td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '-'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            }
+          </div>
+
           <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} />
         </div>
       )}
 
-      {/* ── HISTORIAL ── */}
+      {/* ── HISTORIAL DE RACIONES ── */}
       {tab === 'historial' && (
         <div>
-          <div style={{ marginBottom: '1.25rem' }}>
-            <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Historial de raciones</h1>
-            <div style={{ fontSize: 12, color: S.muted }}>Registro diario confirmado</div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+            <div>
+              <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Historial de raciones</h1>
+              <div style={{ fontSize: 12, color: S.muted }}>Ultimos 7 dias · {historial.length} registros</div>
+            </div>
+            {historial.length > 0 && (
+              <button onClick={eliminarTodasRaciones}
+                style={{ padding: '8px 14px', fontSize: 12, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>
+                Eliminar todos
+              </button>
+            )}
           </div>
-          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+
+          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: '1.25rem' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {['Fecha','Corral','Mixer','Formula','Kg total','Por'].map(h => (
+                  {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Por', ''].map(h => (
                     <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {historial.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones registradas.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones en los ultimos 7 dias.</td></tr>
                 )}
                 {historial.map(h => (
                   <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(h.creado_en || h.fecha).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit'})}</td>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(h.creado_en || h.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
                     <td style={{ padding: '9px 12px' }}>{h.corrales?.numero ? `C-${h.corrales.numero}` : '-'}</td>
                     <td style={{ padding: '9px 12px' }}>{h.mixer}</td>
                     <td style={{ padding: '9px 12px' }}>{h.formula}</td>
                     <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{(h.kg_total || 0).toLocaleString('es-AR')}</td>
                     <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{h.usuarios?.nombre || '-'}</td>
+                    <td style={{ padding: '9px 12px' }}>
+                      <button onClick={() => eliminarRacion(h.id)}
+                        style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                        Eliminar
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* ARCHIVO */}
+          <button onClick={() => setVerArchivo(!verArchivo)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: '1rem' }}>
+            {verArchivo ? '▾' : '▸'} Archivo ({historialArchivo.length} registros anteriores a 7 dias)
+          </button>
+          {verArchivo && (
+            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Por'].map(h => (
+                      <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {historialArchivo.length === 0 && (
+                    <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones archivadas.</td></tr>
+                  )}
+                  {historialArchivo.map(h => (
+                    <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(h.creado_en || h.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '9px 12px' }}>{h.corrales?.numero ? `C-${h.corrales.numero}` : '-'}</td>
+                      <td style={{ padding: '9px 12px' }}>{h.mixer}</td>
+                      <td style={{ padding: '9px 12px' }}>{h.formula}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{(h.kg_total || 0).toLocaleString('es-AR')}</td>
+                      <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{h.usuarios?.nombre || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -784,11 +876,7 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
   async function agregarInsumo() {
     if (!nuevoInsumo.nombre.trim()) { alert('Ingresa el nombre del insumo'); return }
     setGuardando(true)
-    await supabase.from('stock_insumos').insert({
-      insumo: nuevoInsumo.nombre.trim(),
-      cantidad_kg: 0,
-      minimo_kg: parseInt(nuevoInsumo.minimo_kg) || 0,
-    })
+    await supabase.from('stock_insumos').insert({ insumo: nuevoInsumo.nombre.trim(), cantidad_kg: 0, minimo_kg: parseInt(nuevoInsumo.minimo_kg) || 0 })
     await onReload()
     setNuevoInsumo({ show: false, nombre: '', minimo_kg: '' })
     setGuardando(false)
@@ -815,7 +903,6 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
           + Nuevo insumo
         </button>
       </div>
-
       {nuevoInsumo.show && (
         <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '.75rem' }}>Nuevo insumo</div>
@@ -843,7 +930,6 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
           </div>
         </div>
       )}
-
       {stockDB.length === 0 && <p style={{ fontSize: 13, color: '#9E9A94' }}>No hay insumos registrados.</p>}
       {stockDB.map(s => {
         const bajo = s.cantidad_kg <= s.minimo_kg
@@ -851,13 +937,11 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
         const barColor = bajo ? '#E24B4A' : pct < 40 ? '#EF9F27' : '#1E5C2E'
         const c = COLORES[s.insumo] || '#808080'
         const editando = editMinimo[s.id]
-
         return (
           <div key={s.id} style={{ padding: '.85rem 0', borderBottom: '1px solid #E2DDD6' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600 }}>
-                <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
-                {s.insumo}
+                <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />{s.insumo}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
