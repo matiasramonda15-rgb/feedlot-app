@@ -1,251 +1,455 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
-export default function Tablero({ usuario }) {
-  const [corrales, setCorrales] = useState([])
-  const [alertas, setAlertas] = useState([])
-  const [movimientos, setMovimientos] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    cargarDatos()
-    // Suscripción en tiempo real para alertas
-    const sub = supabase.channel('alertas')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alertas' }, cargarDatos)
-      .subscribe()
-    return () => supabase.removeChannel(sub)
-  }, [])
-
-  async function cargarDatos() {
-    const [{ data: c }, { data: a }, { data: m }] = await Promise.all([
-      supabase.from('corrales').select('*').order('id'),
-      supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
-      supabase.from('movimientos').select('*').order('fecha', { ascending: false }).limit(5)
-    ])
-    // normalizar campo numero (puede venir como "número" con tilde)
-    const corralesNorm = (c || []).map(x => ({
-      ...x,
-      numero: x.numero || x['número'] || x.id,
-      animales: x.animales || 0,
-    }))
-    setCorrales(corralesNorm)
-    setAlertas(a || [])
-    setMovimientos(m || [])
-    setLoading(false)
-  }
-
-  // Cálculos globales
-  const totalAnimales = corrales.reduce((a, c) => a + (c.animales || 0), 0)
-  const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado').length
-  const esDueno = ['dueno'].includes(usuario?.rol)
-
-  if (loading) return <Loader />
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Tablero</h1>
-          <div style={{ fontSize: 12, color: '#6B6760', fontFamily: "'IBM Plex Mono', monospace" }}>
-            {new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Btn ghost onClick={cargarDatos}>Actualizar</Btn>
-        </div>
-      </div>
-
-      {/* HERO — solo dueños */}
-      {esDueno && <HeroIndicadores corrales={corrales} />}
-
-      {/* MÉTRICAS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: '1.25rem' }}>
-        <Metric label="Total animales" value={totalAnimales} sub={`${corralesActivos} corrales activos`} />
-        <Metric label="Próxima pesada" value="04/05" sub="en 14 días · AC-01" />
-        <Metric label="Alertas activas" value={alertas.length} sub="pendientes de acción" warn={alertas.length > 0} />
-        <Metric label="Corrales libres" value={corrales.filter(c => c.rol === 'libre').length} sub="disponibles" ok />
-      </div>
-
-      {/* DOS COLUMNAS */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-        {/* ALERTAS */}
-        <Card titulo="Alertas del día" badge={alertas.length > 0 ? `${alertas.length} pendientes` : null} badgeWarn>
-          {alertas.length === 0
-            ? <p style={{ fontSize: 13, color: '#9E9A94', padding: '.5rem 0' }}>No hay alertas pendientes.</p>
-            : alertas.slice(0, 5).map(a => <AlertaRow key={a.id} alerta={a} onResolver={() => resolverAlerta(a.id)} />)
-          }
-        </Card>
-
-        {/* ÚLTIMOS MOVIMIENTOS */}
-        <Card titulo="Últimos movimientos">
-          {movimientos.length === 0
-            ? <p style={{ fontSize: 13, color: '#9E9A94', padding: '.5rem 0' }}>Sin movimientos recientes.</p>
-            : movimientos.map(m => <MovRow key={m.id} mov={m} />)
-          }
-        </Card>
-      </div>
-
-      {/* CORRALES */}
-      <Card titulo="Estado de corrales" style={{ marginTop: '1rem' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr>
-                {['Corral','Rol','Animales','Ocupación','Estado'].map(h => (
-                  <th key={h} style={{ background: '#F7F5F0', padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#6B6760', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #E2DDD6' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {corrales.filter(c => c.rol !== 'deshabilitado').map(c => (
-                <CorralRow key={c.id} corral={c} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  )
-
-  async function resolverAlerta(id) {
-    await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString(), resuelta_por: usuario?.id }).eq('id', id)
-    cargarDatos()
-  }
-}
-
-function HeroIndicadores({ corrales }) {
-  const conGDP = corrales.filter(c => c.gdp)
-  const totalAnimGDP = conGDP.reduce((a, c) => a + (c.animales || 0), 0)
-  const gdpGlobal = totalAnimGDP > 0 ? (conGDP.reduce((a, c) => a + c.gdp * (c.animales || 0), 0) / totalAnimGDP).toFixed(2) : '—'
-  const gdpColor = parseFloat(gdpGlobal) >= 1.1 ? '#7EE8A2' : parseFloat(gdpGlobal) >= 0.9 ? '#F5C97A' : '#F09595'
-
-  return (
-    <div style={{ background: '#1A3D6B', borderRadius: 12, padding: '1.25rem 1.5rem', marginBottom: '1.25rem', color: '#fff' }}>
-      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.08em', opacity: .6, marginBottom: '1rem' }}>Indicadores globales</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 1, background: 'rgba(255,255,255,.1)', borderRadius: 8, overflow: 'hidden' }}>
-        {[
-          { label: 'GDP global', value: gdpGlobal + ' kg/d', color: gdpColor, sub: 'prom. ponderado' },
-          { label: 'Conversión MF', value: '8,4:1', sub: 'kg alimento / kg carne' },
-          { label: 'Conversión MS', value: '5,7:1', color: '#7EE8A2', sub: 'materia seca est.' },
-          { label: 'Días para 400 kg', value: '28', sub: 'promedio corrales' },
-        ].map((s, i) => (
-          <div key={i} style={{ background: 'rgba(255,255,255,.06)', padding: '1rem 1.1rem' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', opacity: .55, marginBottom: 5 }}>{s.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace", color: s.color || '#fff' }}>{s.value}</div>
-            <div style={{ fontSize: 11, opacity: .55, marginTop: 3 }}>{s.sub}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function AlertaRow({ alerta, onResolver }) {
-  const colors = { segunda_dosis: '#E24B4A', revision_bisemanal: '#EF9F27', pesada_proxima: '#378ADD', stock_bajo: '#EF9F27' }
-  const color = colors[alerta.tipo] || '#888'
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: '1px solid #E2DDD6' }}>
-      <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 5 }} />
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{alerta.titulo}</div>
-        <div style={{ fontSize: 11, color: '#9E9A94', marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>
-          {alerta.fecha_vence ? `Vence: ${new Date(alerta.fecha_vence).toLocaleDateString('es-AR')}` : ''}
-        </div>
-      </div>
-      <button onClick={onResolver} style={{ border: '1px solid #E2DDD6', background: 'transparent', borderRadius: 5, padding: '3px 9px', fontSize: 11, cursor: 'pointer', color: '#6B6760', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-        Resolver
-      </button>
-    </div>
-  )
-}
-
-function MovRow({ mov }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: '1px solid #E2DDD6' }}>
-      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#639922', flexShrink: 0, marginTop: 5 }} />
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13 }}>{mov.lotes?.codigo || '—'} · {mov.tipo?.replace(/_/g,' ')}</div>
-        <div style={{ fontSize: 11, color: '#9E9A94', marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>
-          {mov.corrales_origen?.numero ? `C-${mov.corrales_origen.numero} → C-${mov.corrales_destino?.numero}` : ''} · {mov.cantidad} anim.
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function CorralRow({ corral }) {
-  const ROL_BADGE = { libre:'#E8F4EB|#1E5C2E', cuarentena:'#FDF0E0|#7A4500', acumulacion:'#E8EFF8|#1A3D6B', clasificado:'#F0EAFB|#3D1A6B', enfermeria:'#FDF0F0|#7A1A1A', transitorio:'#F5F0E8|#7A6520' }
-  const [bg, color] = (ROL_BADGE[corral.rol] || '#F7F5F0|#6B6760').split('|')
-  const pct = corral.capacidad > 0 ? Math.round((corral.animales || 0) / corral.capacidad * 100) : 0
-
-  return (
-    <tr style={{ borderBottom: '1px solid #E2DDD6' }}>
-      <td style={{ padding: '9px 12px', fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace" }}>{corral.numero}</td>
-      <td style={{ padding: '9px 12px' }}>
-        <span style={{ background: bg, color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>{corral.rol}</span>
-      </td>
-      <td style={{ padding: '9px 12px', fontFamily: "'IBM Plex Mono', monospace" }}>{corral.animales || 0}</td>
-      <td style={{ padding: '9px 12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ flex: 1, height: 4, background: '#F7F5F0', borderRadius: 2, overflow: 'hidden', border: '1px solid #E2DDD6' }}>
-            <div style={{ width: `${pct}%`, height: '100%', background: pct > 90 ? '#E24B4A' : '#639922', borderRadius: 2 }} />
-          </div>
-          <span style={{ fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", minWidth: 32 }}>{pct}%</span>
-        </div>
-      </td>
-      <td style={{ padding: '9px 12px', fontSize: 11, color: '#9E9A94' }}>{corral.sub || '—'}</td>
-    </tr>
-  )
-}
-
-// ── COMPONENTES COMPARTIDOS ────────────────────────────
-export function Card({ titulo, badge, badgeWarn, children, style }) {
-  return (
-    <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1.25rem', marginBottom: '1rem', ...style }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', letterSpacing: '.07em' }}>{titulo}</div>
-        {badge && <span style={{ background: badgeWarn ? '#FDF0E0' : '#E8F4EB', color: badgeWarn ? '#7A4500' : '#1E5C2E', borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>{badge}</span>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-export function Metric({ label, value, sub, ok, warn }) {
-  const color = ok ? '#1E5C2E' : warn ? '#7A4500' : '#1A1916'
-  return (
-    <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 8, padding: '1rem' }}>
-      <div style={{ fontSize: 11, color: '#6B6760', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace", color }}>{value}</div>
-      <div style={{ fontSize: 11, color: '#9E9A94', marginTop: 3 }}>{sub}</div>
-    </div>
-  )
-}
-
-export function Btn({ children, onClick, ghost, danger, sm }) {
-  return (
-    <button onClick={onClick} style={{
-      borderRadius: 6, padding: sm ? '5px 10px' : '8px 16px', fontSize: sm ? 12 : 13,
-      fontFamily: "'IBM Plex Sans', sans-serif", cursor: 'pointer', fontWeight: 500, border: '1px solid',
-      background: ghost ? 'transparent' : danger ? '#FDF0F0' : '#1A3D6B',
-      borderColor: ghost ? '#E2DDD6' : danger ? '#F09595' : '#1A3D6B',
-      color: ghost ? '#6B6760' : danger ? '#7A1A1A' : '#fff',
-      transition: 'all .15s',
-    }}>{children}</button>
-  )
-}
-
-export function Badge({ children, ok, warn, red, info, purple }) {
-  const styles = {
-    ok:     '#E8F4EB|#1E5C2E', warn:  '#FDF0E0|#7A4500',
-    red:    '#FDF0F0|#7A1A1A', info:  '#E8EFF8|#1A3D6B',
-    purple: '#F0EAFB|#3D1A6B', default: '#F7F5F0|#6B6760',
-  }
-  const key = ok?'ok':warn?'warn':red?'red':info?'info':purple?'purple':'default'
-  const [bg, color] = styles[key].split('|')
-  return <span style={{ background: bg, color, borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 600, display: 'inline-block' }}>{children}</span>
+const S = {
+  bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
+  text: '#1A1916', muted: '#6B6760', hint: '#9E9A94',
+  accent: '#1A3D6B', accentLight: '#E8EFF8',
+  green: '#1E5C2E', greenLight: '#E8F4EB',
+  amber: '#7A4500', amberLight: '#FDF0E0',
+  red: '#7A1A1A', redLight: '#FDF0F0',
+  purple: '#3D1A6B', purpleLight: '#F0EAFB',
 }
 
 export function Loader() {
-  return <div style={{ padding: '2rem', textAlign: 'center', color: '#9E9A94', fontSize: 13 }}>Cargando...</div>
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4rem', color: S.muted, fontSize: 13 }}>
+      Cargando...
+    </div>
+  )
+}
+
+export function Btn({ children, onClick, variant = 'ghost', size = 'md', disabled }) {
+  const base = { borderRadius: 6, fontFamily: "'IBM Plex Sans', sans-serif", cursor: disabled ? 'not-allowed' : 'pointer', fontWeight: 500, border: '1px solid', transition: 'all .15s', opacity: disabled ? 0.6 : 1 }
+  const variants = {
+    ghost: { background: 'transparent', borderColor: S.border, color: S.muted, padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    primary: { background: S.accent, borderColor: S.accent, color: '#fff', padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    green: { background: S.green, borderColor: S.green, color: '#fff', padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    red: { background: S.redLight, borderColor: '#F09595', color: S.red, padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+  }
+  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant] }}>{children}</button>
+}
+
+const BADGE_STYLES = {
+  ok:      { background: '#E8F4EB', color: '#1E5C2E' },
+  warn:    { background: '#FDF0E0', color: '#7A4500' },
+  red:     { background: '#FDF0F0', color: '#7A1A1A' },
+  info:    { background: '#E8EFF8', color: '#1A3D6B' },
+  purple:  { background: '#F0EAFB', color: '#3D1A6B' },
+  neutral: { background: '#F7F5F0', color: '#6B6760', border: '1px solid #E2DDD6' },
+}
+
+function Badge({ children, type = 'neutral', style = {} }) {
+  return (
+    <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, ...BADGE_STYLES[type], ...style }}>
+      {children}
+    </span>
+  )
+}
+
+const ROL_BADGE = {
+  'cuarentena': 'warn', 'acumulacion': 'info', 'enfermeria': 'red',
+  'clasificado': 'ok', 'libre': 'neutral', 'deshabilitado': 'neutral',
+}
+
+function rolLabel(c) {
+  if (c.rol === 'clasificado' && c.sub) return `Rango ${c.sub}`
+  const labels = { cuarentena: 'Cuarentena', acumulacion: 'Acumulación', enfermeria: 'Enfermería', clasificado: 'Clasificado', libre: 'Libre' }
+  return labels[c.rol] || c.rol
+}
+
+export default function Tablero({ usuario }) {
+  const [datos, setDatos] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { cargar() }, [])
+
+  async function cargar() {
+    const hoy = new Date()
+    const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
+
+    const [
+      { data: corrales },
+      { data: alertas },
+      { data: pesadas },
+      { data: ventas },
+      { data: ingresos },
+      { data: movimientos },
+      { data: mortalidad },
+      { data: cfg },
+      { data: stockBajo },
+    ] = await Promise.all([
+      supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
+      supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
+      supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
+      supabase.from('ventas').select('*').gte('creado_en', hace30.toISOString()).order('creado_en', { ascending: false }),
+      supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
+      supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
+      supabase.from('mortalidad').select('*').order('fecha', { ascending: false }).limit(5),
+      supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
+      supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
+    ])
+
+    // Calcular GDP por corral desde pesadas
+    const gdpPorCorral = {}
+    if (pesadas) {
+      const porCorral = {}
+      pesadas.forEach(p => {
+        const num = p.corrales?.numero
+        if (!num) return
+        if (!porCorral[num]) porCorral[num] = []
+        porCorral[num].push(p)
+      })
+      Object.entries(porCorral).forEach(([num, ps]) => {
+        if (ps.length >= 2) {
+          const sorted = ps.sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en))
+          const primera = sorted[0]
+          const ultima = sorted[sorted.length - 1]
+          const diasDiff = Math.max(1, (new Date(ultima.creado_en) - new Date(primera.creado_en)) / (1000 * 60 * 60 * 24))
+          // Peso promedio de pesada_animales
+          const pesoPromPrimera = calcPesoProm(primera.pesada_animales)
+          const pesoPromUltima = calcPesoProm(ultima.pesada_animales)
+          if (pesoPromPrimera && pesoPromUltima) {
+            gdpPorCorral[num] = {
+              gdp: (pesoPromUltima - pesoPromPrimera) / diasDiff,
+              pesoActual: pesoPromUltima,
+              diasEngorde: Math.round(diasDiff),
+            }
+          }
+        }
+      })
+    }
+
+    // Construir movimientos recientes combinados
+    const movRecientes = []
+    if (ingresos) ingresos.slice(0, 3).forEach(i => movRecientes.push({ tipo: 'ingreso', texto: `Ingreso ${i.codigo} · ${i.cantidad} animales`, sub: `${new Date(i.fecha_ingreso).toLocaleDateString('es-AR')} · ${i.procedencia} · ${Math.round(i.peso_prom_ingreso || 0)} kg prom.`, color: S.green, fecha: i.fecha_ingreso }))
+    if (ventas) ventas.slice(0, 2).forEach(v => movRecientes.push({ tipo: 'venta', texto: `Venta · ${v.cantidad} animales · C-${v.corral_id}`, sub: `${new Date(v.creado_en).toLocaleDateString('es-AR')} · ${v.comprador || 'sin comprador'} · ${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') + '/kg' : 'sin precio'}`, color: S.accent, fecha: v.creado_en }))
+    if (mortalidad) mortalidad.slice(0, 2).forEach(m => movRecientes.push({ tipo: 'mortalidad', texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
+    movRecientes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+
+    setDatos({ corrales: corrales || [], alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: cfg?.valor || null, stockBajo: stockBajo || [] })
+    setLoading(false)
+  }
+
+  if (loading) return <Loader />
+
+  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo } = datos
+
+  const corralesActivos = corrales.filter(c => c.rol !== 'libre')
+  const totalAnimales = corralesActivos.reduce((s, c) => s + (c.animales || 0), 0)
+
+  // GDP global ponderado
+  const corralesConGDP = corralesActivos.filter(c => gdpPorCorral[c.numero])
+  const totalAnimGDP = corralesConGDP.reduce((s, c) => s + (c.animales || 0), 0)
+  const gdpGlobal = totalAnimGDP > 0
+    ? corralesConGDP.reduce((s, c) => s + (gdpPorCorral[c.numero].gdp * (c.animales || 0)), 0) / totalAnimGDP
+    : null
+
+  // Días prom para 400 kg
+  const corralesConPeso = corralesActivos.filter(c => gdpPorCorral[c.numero]?.pesoActual && gdpPorCorral[c.numero]?.gdp > 0)
+  const diasProm = corralesConPeso.length
+    ? Math.round(corralesConPeso.reduce((s, c) => s + Math.max(0, (400 - gdpPorCorral[c.numero].pesoActual) / gdpPorCorral[c.numero].gdp), 0) / corralesConPeso.length)
+    : null
+
+  // Ventas este mes
+  const ventasTotal = ventas.reduce((s, v) => s + (v.total || 0), 0)
+  const ventasAnimales = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
+
+  // Próxima pesada
+  const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
+  const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
+
+  // Alertas
+  const totalAlertas = alertas.length + (diasPesada !== null && diasPesada <= 14 ? 1 : 0) + stockBajo.length
+
+  // Animales listos para vender (≥400 kg estimado)
+  const animalesListos = corralesActivos.filter(c => {
+    const g = gdpPorCorral[c.numero]
+    return g && g.pesoActual >= 400
+  }).reduce((s, c) => s + (c.animales || 0), 0)
+
+  const gdpColor = gdpGlobal ? (gdpGlobal >= 1.1 ? S.green : gdpGlobal >= 0.9 ? S.amber : S.red) : S.hint
+  const gdpCls = gdpGlobal ? (gdpGlobal >= 1.1 ? 'ok' : gdpGlobal >= 0.9 ? 'warn' : 'bad') : ''
+
+  return (
+    <div>
+      {/* TOPBAR */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Tablero</div>
+          <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace' }}>
+            {new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · feedlot activo
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn size="sm">Ver reportes</Btn>
+          <Btn size="sm" variant="primary">+ Registrar novedad</Btn>
+        </div>
+      </div>
+
+      {/* HERO - INDICADORES GLOBALES */}
+      <div style={{ background: S.accent, borderRadius: 12, padding: '1.5rem', marginBottom: '1.25rem', color: '#fff' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.08em', opacity: 0.6, marginBottom: '1rem' }}>
+          Indicadores globales del feedlot · ciclo activo
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 1, background: 'rgba(255,255,255,.1)', borderRadius: 8, overflow: 'hidden' }}>
+          {[
+            {
+              label: 'Animales activos',
+              val: totalAnimales,
+              valStyle: {},
+              sub: `${corralesActivos.length} corrales activos`,
+            },
+            {
+              label: 'GDP global',
+              val: gdpGlobal ? gdpGlobal.toFixed(2) : '—',
+              valSuffix: gdpGlobal ? ' kg/d' : '',
+              valStyle: { color: gdpGlobal ? (gdpGlobal >= 1.1 ? '#7EE8A2' : gdpGlobal >= 0.9 ? '#F5C97A' : '#F09595') : 'rgba(255,255,255,.4)' },
+              sub: totalAnimGDP > 0 ? `prom. ponderado · ${totalAnimGDP} anim.` : 'sin pesadas registradas',
+            },
+            {
+              label: 'Conv. MF global',
+              val: '—',
+              valSuffix: '',
+              valStyle: { color: 'rgba(255,255,255,.4)' },
+              sub: 'kg alimento / kg carne',
+            },
+            {
+              label: 'Conv. MS global',
+              val: '—',
+              valSuffix: '',
+              valStyle: { color: 'rgba(255,255,255,.4)' },
+              sub: 'materia seca estimada',
+            },
+            {
+              label: 'Días prom. para 400 kg',
+              val: diasProm !== null ? diasProm : '—',
+              valStyle: { color: diasProm !== null ? '#7EE8A2' : 'rgba(255,255,255,.4)' },
+              sub: 'al ritmo de GDP actual',
+            },
+          ].map((s, i) => (
+            <div key={i} style={{ background: 'rgba(255,255,255,.06)', padding: '1rem 1.1rem' }}>
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', opacity: 0.55, marginBottom: 5 }}>{s.label}</div>
+              <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, ...s.valStyle }}>
+                {s.val}{s.valSuffix && <span style={{ fontSize: 14, fontWeight: 400 }}>{s.valSuffix}</span>}
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.55, marginTop: 3 }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ALERTAS BANNER */}
+      {(diasPesada !== null && diasPesada <= 14) && (
+        <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '.9rem 1rem', fontSize: 13, color: S.amber, marginBottom: '1.25rem', lineHeight: 1.6 }}>
+          <strong>Próxima pesada en {diasPesada} días</strong> · {proximaDate?.toLocaleDateString('es-AR')}
+          {alertas.length > 0 && ` · ${alertas.length} alerta${alertas.length !== 1 ? 's' : ''} sanitaria${alertas.length !== 1 ? 's' : ''} pendiente${alertas.length !== 1 ? 's' : ''}.`}
+        </div>
+      )}
+
+      {/* MÉTRICAS OPERATIVAS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
+        {[
+          { label: 'Total animales', val: totalAnimales, sub: `${corralesActivos.filter(c=>c.rol!=='libre').length} corrales activos`, color: S.text },
+          { label: 'Próxima pesada', val: proximaDate ? proximaDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—', valSize: 15, sub: diasPesada !== null ? `en ${diasPesada} días` : 'no configurada', color: diasPesada !== null && diasPesada <= 7 ? S.amber : S.text },
+          { label: 'Alertas activas', val: totalAlertas, sub: `${alertas.length} sanidad · ${stockBajo.length} stock`, color: totalAlertas > 0 ? S.amber : S.green },
+          { label: 'Vendidos este mes', val: ventasAnimales, sub: ventasTotal > 0 ? `$${(ventasTotal / 1000000).toFixed(1)}M` : 'sin ventas', color: S.green },
+        ].map((m, i) => (
+          <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+            <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>{m.label}</div>
+            <div style={{ fontSize: m.valSize || 20, fontWeight: 600, fontFamily: 'monospace', lineHeight: 1, color: m.color }}>{m.val}</div>
+            <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{m.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ALERTA ANIMALES LISTOS */}
+      {animalesListos > 0 && (
+        <div style={{ background: S.accentLight, border: '1px solid #85B7EB', borderRadius: 8, padding: '.9rem 1rem', fontSize: 13, color: S.accent, marginBottom: '1.25rem', lineHeight: 1.6 }}>
+          <strong>{animalesListos} animales superaron los 400 kg.</strong> Están listos para vender.
+        </div>
+      )}
+
+      {/* CORRALES + GDP */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+
+        {/* TABLA CORRALES */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Estado de corrales</div>
+            <span style={{ fontSize: 11, color: S.muted }}>hacé clic para ver detalle</span>
+          </div>
+          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: S.bg }}>
+                  {['Corral', 'Rol', 'Anim.', 'Peso', 'GDP', 'Estado'].map(h => (
+                    <th key={h} style={{ padding: '9px 10px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {corralesActivos.filter(c => c.rol !== 'libre').map(c => {
+                  const g = gdpPorCorral[c.numero]
+                  const gdpColor = g ? (g.gdp >= 1.1 ? S.green : g.gdp >= 0.9 ? S.amber : S.red) : S.hint
+                  const diasVenta = g ? Math.max(0, Math.ceil((400 - g.pesoActual) / g.gdp)) : null
+                  let estadoBadge, estadoTipo
+                  if (diasVenta !== null) {
+                    if (diasVenta <= 0) { estadoBadge = 'Listo ★'; estadoTipo = 'ok' }
+                    else if (diasVenta <= 15) { estadoBadge = 'Pronto'; estadoTipo = 'ok' }
+                    else if (diasVenta <= 40) { estadoBadge = 'En curso'; estadoTipo = 'info' }
+                    else { estadoBadge = 'Largo plazo'; estadoTipo = 'neutral' }
+                  } else if (c.rol === 'cuarentena') {
+                    estadoBadge = 'Cuarentena'; estadoTipo = 'warn'
+                  } else {
+                    estadoBadge = c.rol === 'acumulacion' ? 'Acumulando' : '—'; estadoTipo = 'neutral'
+                  }
+                  return (
+                    <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, cursor: 'pointer' }}>
+                      <td style={{ padding: '9px 10px', fontWeight: 600, fontFamily: 'monospace' }}>{c.numero}</td>
+                      <td style={{ padding: '9px 10px' }}><Badge type={ROL_BADGE[c.rol] || 'neutral'} style={{ fontSize: 10 }}>{rolLabel(c)}</Badge></td>
+                      <td style={{ padding: '9px 10px', fontFamily: 'monospace' }}>{c.animales || 0}</td>
+                      <td style={{ padding: '9px 10px', fontFamily: 'monospace', color: S.muted }}>{g ? Math.round(g.pesoActual) + ' kg' : '—'}</td>
+                      <td style={{ padding: '9px 10px', fontFamily: 'monospace', fontWeight: 600, color: gdpColor }}>{g ? g.gdp.toFixed(2) : '—'}</td>
+                      <td style={{ padding: '9px 10px' }}><Badge type={estadoTipo}>{estadoBadge}</Badge></td>
+                    </tr>
+                  )
+                })}
+                {corralesActivos.filter(c => c.rol !== 'libre').length === 0 && (
+                  <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay corrales activos.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* GDP Y CONVERSIÓN POR CORRAL */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>GDP y conversión por corral</div>
+            <span style={{ fontSize: 11, color: S.muted }}>materia seca estimada</span>
+          </div>
+
+          {corralesConGDP.length === 0 ? (
+            <div style={{ padding: '2rem 0', textAlign: 'center', color: S.hint, fontSize: 13 }}>
+              Sin pesadas registradas aún.<br />
+              <span style={{ fontSize: 11 }}>El GDP se calcula automáticamente con las pesadas.</span>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '.5rem' }}>
+                Ganancia diaria de peso (kg/día)
+              </div>
+              {corralesConGDP.map(c => {
+                const g = gdpPorCorral[c.numero]
+                const maxGDP = Math.max(...corralesConGDP.map(x => gdpPorCorral[x.numero].gdp), 1.5)
+                const pct = Math.round(g.gdp / maxGDP * 100)
+                const color = g.gdp >= 1.1 ? S.green : g.gdp >= 0.9 ? S.amber : S.red
+                return (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, color: S.muted, minWidth: 70, textAlign: 'right' }}>C-{c.numero}</div>
+                    <div style={{ flex: 1, height: 6, background: S.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${S.border}` }}>
+                      <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: color }} />
+                    </div>
+                    <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 600, color, minWidth: 50 }}>{g.gdp.toFixed(2)}</div>
+                  </div>
+                )
+              })}
+            </>
+          )}
+
+          <div style={{ height: 1, background: S.border, margin: '.75rem 0' }} />
+          <div style={{ fontSize: 11, color: S.muted, lineHeight: 1.6 }}>
+            <span style={{ display: 'inline-block', width: 10, height: 4, background: S.green, borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }} />GDP ≥1,1 kg/d ·{' '}
+            <span style={{ display: 'inline-block', width: 10, height: 4, background: S.amber, borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }} />0,9–1,1 ·{' '}
+            <span style={{ display: 'inline-block', width: 10, height: 4, background: S.red, borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }} />&lt;0,9 kg/d
+          </div>
+        </div>
+      </div>
+
+      {/* ALERTAS + MOVIMIENTOS */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+
+        {/* ALERTAS */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Alertas del día</div>
+            {totalAlertas > 0 && <Badge type="warn">{totalAlertas} pendientes</Badge>}
+          </div>
+
+          {diasPesada !== null && diasPesada <= 14 && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: `1px solid ${S.border}` }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: S.amber, marginTop: 5, flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 13 }}>
+                <strong>Pesada de clasificación</strong>
+                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginTop: 2 }}>
+                  En {diasPesada} días · {proximaDate?.toLocaleDateString('es-AR')}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {stockBajo.map(s => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: `1px solid ${S.border}` }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: S.amber, marginTop: 5, flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 13 }}>
+                <strong>Stock bajo: {s.insumo}</strong>
+                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginTop: 2 }}>
+                  {s.cantidad_kg?.toLocaleString('es-AR')} kg · mínimo {s.minimo_kg?.toLocaleString('es-AR')} kg
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {alertas.map(a => (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: `1px solid ${S.border}` }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: S.red, marginTop: 5, flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 13 }}>
+                <strong>{a.titulo}</strong>
+                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginTop: 2 }}>
+                  {a.descripcion}{a.fecha_vence ? ` · Vence ${new Date(a.fecha_vence).toLocaleDateString('es-AR')}` : ''}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {totalAlertas === 0 && (
+            <div style={{ padding: '1.5rem 0', textAlign: 'center', color: S.hint, fontSize: 13 }}>
+              ✅ Sin alertas pendientes
+            </div>
+          )}
+        </div>
+
+        {/* ÚLTIMOS MOVIMIENTOS */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+            Últimos movimientos
+          </div>
+
+          {movRecientes.length === 0 && (
+            <div style={{ padding: '1.5rem 0', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin movimientos recientes.</div>
+          )}
+
+          {movRecientes.map((m, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: i < movRecientes.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: m.color, marginTop: 5, flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 13 }}>
+                {m.texto}
+                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginTop: 2 }}>{m.sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function calcPesoProm(pesadaAnimales) {
+  if (!pesadaAnimales || pesadaAnimales.length === 0) return null
+  const conPeso = pesadaAnimales.filter(p => p.peso_promedio)
+  if (conPeso.length === 0) return null
+  const totalAnim = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
+  if (totalAnim === 0) return null
+  return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
 }
