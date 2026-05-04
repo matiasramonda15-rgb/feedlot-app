@@ -473,4 +473,4 @@ export function Badge({ children, type = 'neutral', style = {} }) {
       {children}
     </span>
   )
-}} 
+} 
