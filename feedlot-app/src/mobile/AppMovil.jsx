@@ -474,32 +474,7 @@ function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
           </>
         )}
         {tab === 'stock' && (
-          <>
-            {[
-              { n: 'Rollo (heno)', kg: 45000, min: 5000, c: '#639922' },
-              { n: 'Maiz grano seco', kg: 4200, min: 5000, c: '#E8A020' },
-              { n: 'Vitaminas', kg: 420, min: 200, c: '#5090E0' },
-              { n: 'Urea', kg: 180, min: 100, c: '#9060C0' },
-              { n: 'Soja (expeller)', kg: 3200, min: 500, c: '#20A060' },
-            ].map((s, i) => {
-              const bajo = s.kg <= s.min
-              const color = bajo ? C.amber : C.green
-              return (
-                <div key={i} style={{ padding: '.75rem 0', borderBottom: `1px solid ${C.border}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.c }} />{s.n}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: C.mono, color }}>{bajo ? '⚠ ' : ''}{s.kg.toLocaleString('es-AR')} kg</div>
-                  </div>
-                  <div style={{ height: 4, background: C.surface2, borderRadius: 2, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', borderRadius: 2, background: color, width: `${Math.min(100, Math.round(s.kg / Math.max(s.min * 3, s.kg) * 100))}%` }} />
-                  </div>
-                  {bajo && <div style={{ fontSize: 11, color: C.amber, marginTop: 3 }}>Bajo minimo - reponer</div>}
-                </div>
-              )
-            })}
-          </>
+          <StockTab usuario={usuario} onDone={onDone} />
         )}
       </Scroll>
     </div>
@@ -568,5 +543,89 @@ function PlaceholderMovil({ titulo, nav }) {
         </div>
       </Scroll>
     </div>
+  )
+}
+
+function StockTab({ usuario, onDone }) {
+  const [stock, setStock] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [editando, setEditando] = useState(null)
+  const [cantidad, setCantidad] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const COLORES = { 'Rollo (heno)': '#639922', 'Maiz grano seco': '#E8A020', 'Vitaminas': '#5090E0', 'Urea': '#9060C0', 'Soja (expeller)': '#20A060' }
+
+  useEffect(() => { cargar() }, [])
+
+  async function cargar() {
+    const { data } = await supabase.from('stock_insumos').select('*').order('insumo')
+    setStock(data || [])
+    setLoading(false)
+  }
+
+  async function actualizar(id, tipo) {
+    if (!cantidad || isNaN(parseFloat(cantidad))) { alert('Ingresa una cantidad valida'); return }
+    setGuardando(true)
+    const item = stock.find(s => s.id === id)
+    const nuevaCantidad = tipo === 'agregar'
+      ? (item.cantidad_kg || 0) + parseFloat(cantidad)
+      : Math.max(0, (item.cantidad_kg || 0) - parseFloat(cantidad))
+    await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', id)
+    await cargar()
+    setEditando(null)
+    setCantidad('')
+    setGuardando(false)
+  }
+
+  if (loading) return <div style={{ padding: '1rem', color: C.muted, fontSize: 13 }}>Cargando...</div>
+
+  return (
+    <>
+      {stock.map(s => {
+        const bajo = s.cantidad_kg <= s.minimo_kg
+        const color = bajo ? C.amber : C.green
+        const c = COLORES[s.insumo] || C.green
+        const pct = Math.min(100, Math.round(s.cantidad_kg / Math.max(s.minimo_kg * 3, s.cantidad_kg) * 100))
+        return (
+          <div key={s.id} style={{ padding: '.75rem 0', borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />{s.insumo}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, fontFamily: C.mono, color }}>{bajo ? '⚠ ' : ''}{s.cantidad_kg.toLocaleString('es-AR')} kg</div>
+            </div>
+            <div style={{ height: 4, background: C.surface2, borderRadius: 2, overflow: 'hidden', marginBottom: 5 }}>
+              <div style={{ height: '100%', borderRadius: 2, background: color, width: `${pct}%` }} />
+            </div>
+            {bajo && <div style={{ fontSize: 11, color: C.amber, marginBottom: 5 }}>Bajo minimo ({s.minimo_kg.toLocaleString('es-AR')} kg) - reponer</div>}
+            {editando === s.id ? (
+              <div style={{ marginTop: 6 }}>
+                <input type="number" inputMode="numeric" placeholder="Cantidad en kg" value={cantidad}
+                  onChange={e => setCantidad(e.target.value)}
+                  style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 14, fontFamily: C.mono, color: C.green, boxSizing: 'border-box', marginBottom: 6 }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => actualizar(s.id, 'agregar')} disabled={guardando}
+                    style={{ flex: 1, padding: '8px', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, color: C.green, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
+                    + Agregar
+                  </button>
+                  <button onClick={() => actualizar(s.id, 'descontar')} disabled={guardando}
+                    style={{ flex: 1, padding: '8px', background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
+                    - Descontar
+                  </button>
+                  <button onClick={() => { setEditando(null); setCantidad('') }}
+                    style={{ padding: '8px 12px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: C.sans }}>
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => { setEditando(s.id); setCantidad('') }}
+                style={{ width: '100%', padding: '6px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: C.sans, marginTop: 4 }}>
+                Actualizar stock
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </>
   )
 }
