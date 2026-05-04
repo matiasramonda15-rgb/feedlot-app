@@ -37,7 +37,7 @@ export default function Corrales({ usuario }) {
   const [vistaPanel, setVistaPanel] = useState('detalle')
   const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '' })
   const [guardando, setGuardando] = useState(false)
-  const esDueno = ['dueno'].includes(usuario?.rol)
+  const esDueno = ['dueno', 'encargado'].includes(usuario?.rol)
 
   useEffect(() => { cargarCorrales() }, [])
 
