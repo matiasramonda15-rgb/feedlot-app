@@ -29,7 +29,7 @@ export default function AppMovil({ usuario, onLogout }) {
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
-    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} />,
+    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
   }
@@ -480,10 +480,23 @@ function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
     </div>
   )
 }
-function SanidadMovil({ nav, alertas, proximaPesada, onDone }) {
+function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }) {
+  const [pantSan, setPantSan] = useState('alertas')
+  const [confirmados, setConfirmados] = useState({})
+  const [revState, setRevState] = useState([])
+  const [formEvento, setFormEvento] = useState({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+
+  const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
-  const [confirmados, setConfirmados] = useState({})
+
+  const PRODUCTOS = ['Alliance+Feedlot','Ivermectina','Oxitetraciclina','Oxitetraciclina oftálmica','Enrofloxacina','Meloxicam','Vitamina AD3E']
+  const DIAGNOSTICOS = ['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro']
+
+  useEffect(() => {
+    setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, desc: '', diag: 'Conjuntivitis', prod: '' })))
+  }, [corrales])
 
   async function confirmarAlerta(id) {
     await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('id', id)
@@ -491,48 +504,203 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone }) {
     onDone()
   }
 
+  async function confirmarRevision() {
+    const sin = revState.filter(s => s.ok === null).length
+    if (sin > 0) { alert(`Falta revisar ${sin} corral${sin !== 1 ? 'es' : ''}.`); return }
+    setGuardando(true)
+    await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
+    for (const st of revState) {
+      await supabase.from('eventos_sanitarios').insert({
+        tipo: 'revision', corral_id: st.id,
+        producto: st.ok ? 'Sin novedad' : st.prod || 'Varios',
+        cantidad_animales: st.ok ? st.animales : 1,
+        observaciones: st.ok ? 'Sin novedades' : `${st.desc} - ${st.diag}`,
+        registrado_por: usuario?.id,
+      })
+      if (!st.ok && st.desc) {
+        await supabase.from('animales_enfermeria').insert({
+          corral_origen_id: st.id, descripcion: st.desc, diagnostico: st.diag,
+          tratamiento: st.prod, estado: 'en tratamiento', registrado_por: usuario?.id,
+        })
+      }
+    }
+    onDone()
+    alert('Revision confirmada.')
+    setPantSan('alertas')
+    setGuardando(false)
+  }
+
+  async function registrarEvento() {
+    if (!formEvento.corral_id) { alert('Selecciona un corral'); return }
+    if (!formEvento.cantidad) { alert('Ingresa la cantidad de animales'); return }
+    setGuardando(true)
+    await supabase.from('eventos_sanitarios').insert({
+      tipo: 'tratamiento', corral_id: parseInt(formEvento.corral_id),
+      producto: formEvento.producto, cantidad_animales: parseInt(formEvento.cantidad),
+      observaciones: formEvento.observaciones || null, registrado_por: usuario?.id,
+    })
+    onDone()
+    alert('Evento registrado.')
+    setPantSan('alertas')
+    setFormEvento({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
+    setGuardando(false)
+  }
+
+  function setRevOk(i) { const n = [...revState]; n[i] = {...n[i], ok: true}; setRevState(n) }
+  function setRevNov(i) { const n = [...revState]; n[i] = {...n[i], ok: false}; setRevState(n) }
+  function resetRev(i) { const n = [...revState]; n[i] = {...n[i], ok: null}; setRevState(n) }
+
+  const TABS = [
+    { key: 'alertas', label: 'Alertas' },
+    { key: 'revision', label: 'Revision' },
+    { key: 'evento', label: 'Evento' },
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Topbar titulo="Sanidad" onBack={() => nav('home')} />
-      <Scroll>
-        {proximaDate && (
-          <div style={{ background: diasPesada <= 7 ? '#3D2A00' : '#1A3D26', border: `1px solid ${diasPesada <= 7 ? C.amber : C.green}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: diasPesada <= 7 ? C.amber : C.green, marginBottom: 3 }}>
-              Proxima pesada fija
-            </div>
-            <div style={{ fontSize: 12, color: C.muted }}>
-              {proximaDate.toLocaleDateString('es-AR')}
-              <span style={{ marginLeft: 8, fontWeight: 600, color: diasPesada <= 7 ? C.amber : C.green }}>
-                {diasPesada <= 0 ? '- Realizar hoy' : `- en ${diasPesada} dias`}
-              </span>
-            </div>
-          </div>
-        )}
-        {alertas.length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
-        {alertas.map(a => (
-          <div key={a.id} style={{ background: confirmados[a.id] ? '#1A3D26' : '#3D2A00', border: `1px solid ${confirmados[a.id] ? C.green : C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
-            {confirmados[a.id] ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ fontSize: 20 }}>✅</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: C.green }}>Confirmado</div>
-              </div>
-            ) : (
-              <>
-                <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>{a.titulo}</div>
-                <div style={{ fontSize: 12, color: C.muted, marginBottom: '.65rem' }}>{a.descripcion}</div>
-                {a.fecha_vence && <div style={{ fontSize: 11, color: C.amber, marginBottom: '.65rem' }}>Vence: {new Date(a.fecha_vence).toLocaleDateString('es-AR')}</div>}
-                <button onClick={() => confirmarAlerta(a.id)}
-                  style={{ width: '100%', padding: 10, background: '#2A1A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
-                  Confirmar resolucion
-                </button>
-              </>
-            )}
-          </div>
+      <div style={{ display: 'flex', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setPantSan(t.key)}
+            style={{ flex: 1, padding: '10px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: C.sans, background: pantSan === t.key ? C.green : 'transparent', color: pantSan === t.key ? '#0A1A0A' : C.muted, borderBottom: pantSan === t.key ? `2px solid ${C.green}` : '2px solid transparent' }}>
+            {t.label}
+          </button>
         ))}
+      </div>
+      <Scroll>
+        {pantSan === 'alertas' && (
+          <>
+            {proximaDate && (
+              <div style={{ background: diasPesada <= 7 ? '#3D2A00' : '#1A3D26', border: `1px solid ${diasPesada <= 7 ? C.amber : C.green}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: diasPesada <= 7 ? C.amber : C.green, marginBottom: 3 }}>Proxima pesada fija</div>
+                <div style={{ fontSize: 12, color: C.muted }}>
+                  {proximaDate.toLocaleDateString('es-AR')}
+                  <span style={{ marginLeft: 8, fontWeight: 600, color: diasPesada <= 7 ? C.amber : C.green }}>
+                    {diasPesada <= 0 ? '- Realizar hoy' : `- en ${diasPesada} dias`}
+                  </span>
+                </div>
+              </div>
+            )}
+            {alertas.length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
+            {alertas.map(a => (
+              <div key={a.id} style={{ background: confirmados[a.id] ? '#1A3D26' : '#3D2A00', border: `1px solid ${confirmados[a.id] ? C.green : C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                {confirmados[a.id] ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ fontSize: 20 }}>✅</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.green }}>Confirmado</div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>{a.titulo}</div>
+                    <div style={{ fontSize: 12, color: C.muted, marginBottom: '.65rem' }}>{a.descripcion}</div>
+                    {a.fecha_vence && <div style={{ fontSize: 11, color: C.amber, marginBottom: '.65rem' }}>Vence: {new Date(a.fecha_vence).toLocaleDateString('es-AR')}</div>}
+                    <button onClick={() => confirmarAlerta(a.id)}
+                      style={{ width: '100%', padding: 10, background: '#2A1A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
+                      Confirmar resolucion
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </>
+        )}
+
+        {pantSan === 'revision' && (
+          <>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
+              Marca cada corral. <strong style={{ color: C.green }}>Sin novedades</strong> si esta todo bien. <strong style={{ color: C.amber }}>Hay novedad</strong> si hay algun problema.
+            </div>
+            {revState.map((c, i) => (
+              <div key={c.id} style={{ background: c.ok === true ? '#1A3D26' : c.ok === false ? '#3D2A00' : C.surface, border: `1px solid ${c.ok === true ? C.green : c.ok === false ? C.amber : C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: c.ok === null ? '.65rem' : 0 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Corral {c.numero}</div>
+                    <div style={{ fontSize: 12, color: C.muted }}>{c.rol} - {c.animales} animales</div>
+                  </div>
+                  {c.ok === true && <div style={{ fontSize: 12, fontWeight: 600, color: C.green }}>Sin novedades ✓</div>}
+                  {c.ok === false && <div style={{ fontSize: 12, fontWeight: 600, color: C.amber }}>Con novedad</div>}
+                </div>
+                {c.ok === null && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => setRevOk(i)} style={{ flex: 1, padding: '9px', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, color: C.green, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Sin novedades ✓</button>
+                    <button onClick={() => setRevNov(i)} style={{ flex: 1, padding: '9px', background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Hay novedad</button>
+                  </div>
+                )}
+                {c.ok === false && (
+                  <div style={{ marginTop: '.65rem', paddingTop: '.65rem', borderTop: `1px solid ${C.border}` }}>
+                    <input type="text" placeholder="Descripcion del animal" value={c.desc}
+                      onChange={e => { const n = [...revState]; n[i].desc = e.target.value; setRevState(n) }}
+                      style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, boxSizing: 'border-box', marginBottom: 6 }} />
+                    <select value={c.diag} onChange={e => { const n = [...revState]; n[i].diag = e.target.value; setRevState(n) }}
+                      style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, marginBottom: 6 }}>
+                      {DIAGNOSTICOS.map(d => <option key={d}>{d}</option>)}
+                    </select>
+                    <select value={c.prod} onChange={e => { const n = [...revState]; n[i].prod = e.target.value; setRevState(n) }}
+                      style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans }}>
+                      <option value="">— Producto aplicado —</option>
+                      {PRODUCTOS.map(p => <option key={p}>{p}</option>)}
+                    </select>
+                  </div>
+                )}
+                {c.ok !== null && (
+                  <button onClick={() => resetRev(i)} style={{ marginTop: 8, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 11, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>Cambiar</button>
+                )}
+              </div>
+            ))}
+            <button onClick={confirmarRevision} disabled={guardando}
+              style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+              {guardando ? 'Guardando...' : 'Confirmar revision completa'}
+            </button>
+          </>
+        )}
+
+        {pantSan === 'evento' && (
+          <>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
+              Registra un evento sanitario puntual — vacunacion, tratamiento, etc.
+            </div>
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+              <select value={formEvento.corral_id} onChange={e => setFormEvento({...formEvento, corral_id: e.target.value})}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+                <option value="">Selecciona un corral</option>
+                {corralesActivos.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
+              </select>
+            </div>
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto</div>
+              <select value={formEvento.producto} onChange={e => setFormEvento({...formEvento, producto: e.target.value})}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+                {PRODUCTOS.map(p => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad de animales</div>
+              <input type="number" inputMode="numeric" placeholder="0" value={formEvento.cantidad}
+                onChange={e => setFormEvento({...formEvento, cantidad: e.target.value})}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.green, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
+              <input type="text" placeholder="descripcion, diagnostico, etc." value={formEvento.observaciones}
+                onChange={e => setFormEvento({...formEvento, observaciones: e.target.value})}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+            </div>
+            <button onClick={registrarEvento} disabled={guardando}
+              style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+              {guardando ? 'Guardando...' : 'Registrar evento'}
+            </button>
+            <button onClick={() => setPantSan('alertas')}
+              style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+              Cancelar
+            </button>
+          </>
+        )}
       </Scroll>
     </div>
   )
 }
+
 function PlaceholderMovil({ titulo, nav }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
