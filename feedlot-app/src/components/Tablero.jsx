@@ -39,13 +39,6 @@ const BADGE_STYLES = {
   neutral: { background: '#F7F5F0', color: '#6B6760', border: '1px solid #E2DDD6' },
 }
 
-function Badge({ children, type = 'neutral', style = {} }) {
-  return (
-    <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, ...BADGE_STYLES[type], ...style }}>
-      {children}
-    </span>
-  )
-}
 
 const ROL_BADGE = {
   'cuarentena': 'warn', 'acumulacion': 'info', 'enfermeria': 'red',
@@ -452,7 +445,6 @@ function calcPesoProm(pesadaAnimales) {
   const totalAnim = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (totalAnim === 0) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
-}
 
 export function Card({ children, style = {} }) {
   return (
@@ -463,15 +455,16 @@ export function Card({ children, style = {} }) {
 }
 
 export function Badge({ children, type = 'neutral', style = {} }) {
-  const styles = {
+  const BADGE_STYLES = {
     ok:      { background: '#E8F4EB', color: '#1E5C2E' },
     warn:    { background: '#FDF0E0', color: '#7A4500' },
     red:     { background: '#FDF0F0', color: '#7A1A1A' },
     info:    { background: '#E8EFF8', color: '#1A3D6B' },
+    purple:  { background: '#F0EAFB', color: '#3D1A6B' },
     neutral: { background: '#F7F5F0', color: '#6B6760', border: '1px solid #E2DDD6' },
   }
   return (
-    <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, ...styles[type], ...style }}>
+    <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, ...BADGE_STYLES[type], ...style }}>
       {children}
     </span>
   )
