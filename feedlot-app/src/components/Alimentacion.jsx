@@ -967,7 +967,7 @@ export default function Alimentacion({ usuario }) {
             </div>
           )}
 
-          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} />
+          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} />
         </div>
       )}
 
@@ -1065,7 +1065,38 @@ export default function Alimentacion({ usuario }) {
   )
 }
 
-function StockABM({ stockDB, onReload, onShowIngreso }) {
+function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formulaActiva }) {
+  // Calcular kg/día por insumo desde las raciones de los últimos 7 días
+  const kgDiaPorInsumo = {}
+  if (historial && historial.length > 0 && formulas && formulaActiva) {
+    // Agrupar raciones por fecha para calcular promedio diario
+    const porFecha = {}
+    historial.forEach(r => {
+      const fecha = new Date(r.creado_en).toDateString()
+      if (!porFecha[fecha]) porFecha[fecha] = []
+      porFecha[fecha].push(r)
+    })
+    const diasConDatos = Object.keys(porFecha).length
+    if (diasConDatos > 0) {
+      // Sumar kg totales por mixer
+      const kgPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
+      historial.forEach(r => {
+        const etapa = r.mixer === 'Acostumbramiento' ? 'acostumbramiento' : r.mixer === 'Recria' ? 'recria' : 'terminacion'
+        kgPorEtapa[etapa] += (r.kg_total || 0)
+      })
+      // Para cada etapa calcular kg/día de cada ingrediente
+      Object.entries(kgPorEtapa).forEach(([etapa, kgTotal]) => {
+        if (kgTotal === 0) return
+        const kgDia = kgTotal / diasConDatos
+        const ings = formulas[formulaActiva]?.[etapa] || []
+        ings.forEach(ing => {
+          const kgIngDia = (ing.kg / 100) * kgDia
+          if (!kgDiaPorInsumo[ing.n]) kgDiaPorInsumo[ing.n] = 0
+          kgDiaPorInsumo[ing.n] += kgIngDia
+        })
+      })
+    }
+  }
   const [nuevoInsumo, setNuevoInsumo] = useState({ show: false, nombre: '', minimo_kg: '' })
   const [editMinimo, setEditMinimo] = useState({})
   const [guardando, setGuardando] = useState(false)
@@ -1140,6 +1171,22 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600 }}>
                 <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />{s.insumo}
+                {(() => {
+                  // Buscar kg/día por nombre exacto o parcial
+                  const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
+                    k.toLowerCase() === s.insumo.toLowerCase() ||
+                    s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
+                    k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
+                  )?.[1]
+                  if (!kgDia) return null
+                  const diasRestantes = kgDia > 0 ? Math.floor(s.cantidad_kg / kgDia) : null
+                  const color = diasRestantes !== null && diasRestantes <= 7 ? '#7A4500' : '#6B6760'
+                  return (
+                    <span style={{ fontSize: 11, color, fontFamily: 'monospace' }}>
+                      · ~{Math.round(kgDia).toLocaleString('es-AR')} kg/día
+                    </span>
+                  )
+                })()}
                 {s.precio_referencia && (
                   <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#1E5C2E', background: '#E8F4EB', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
                     ${s.precio_referencia.toLocaleString('es-AR')}/kg
@@ -1148,6 +1195,19 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
+                {(() => {
+                  const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
+                    k.toLowerCase() === s.insumo.toLowerCase() ||
+                    s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
+                    k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
+                  )?.[1]
+                  if (!kgDia || kgDia === 0) return null
+                  const dias = Math.floor(s.cantidad_kg / kgDia)
+                  const bgColor = dias <= 7 ? '#FDF0E0' : dias <= 15 ? '#FDF0E0' : '#E8F4EB'
+                  const txtColor = dias <= 7 ? '#7A4500' : dias <= 15 ? '#7A4500' : '#1E5C2E'
+                  const label = dias <= 7 ? `⚠ Solo ${dias} días` : `${dias} días`
+                  return <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bgColor, color: txtColor }}>{label}</span>
+                })()}
                 <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bajo ? '#FDF0F0' : pct < 40 ? '#FDF0E0' : '#E8F4EB', color: bajo ? '#7A1A1A' : pct < 40 ? '#7A4500' : '#1E5C2E' }}>
                   {bajo ? '⚠ Bajo minimo' : 'OK'}
                 </span>
