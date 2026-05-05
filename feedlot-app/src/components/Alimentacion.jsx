@@ -86,6 +86,8 @@ export default function Alimentacion({ usuario }) {
   const [historialArchivo, setHistorialArchivo] = useState([])
   const [verArchivo, setVerArchivo] = useState(false)
   const [ingresosStock, setIngresosStock] = useState([])
+  const [ingresosStockArchivo, setIngresosStockArchivo] = useState([])
+  const [verArchivoIngresos, setVerArchivoIngresos] = useState(false)
   const [ingresosPendientes, setIngresosPendientes] = useState([])
   const [editandoPrecio, setEditandoPrecio] = useState({})
   const [formulaActiva, setFormulaActiva] = useState('seco')
@@ -120,14 +122,32 @@ export default function Alimentacion({ usuario }) {
         .gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
       supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)')
         .lt('creado_en', hace7diasISO).order('creado_en', { ascending: false }).limit(100),
-      supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(50),
+      supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
     setHistorial(h || [])
     setHistorialArchivo(ha || [])
-    setIngresosStock(is_ || [])
+    // Mostrar los últimos 2 por insumo, el resto va al archivo
+    const todos = is_ || []
+    const porInsumo = {}
+    todos.forEach(i => {
+      const key = i.insumo_nombre || 'sin_nombre'
+      if (!porInsumo[key]) porInsumo[key] = []
+      porInsumo[key].push(i)
+    })
+    const visibles = []
+    const archivados = []
+    Object.values(porInsumo).forEach(arr => {
+      arr.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
+      visibles.push(...arr.slice(0, 2))
+      archivados.push(...arr.slice(2))
+    })
+    visibles.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
+    archivados.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
+    setIngresosStock(visibles)
+    setIngresosStockArchivo(archivados)
     setIngresosPendientes(ip || [])
     setLoading(false)
   }
@@ -294,6 +314,18 @@ export default function Alimentacion({ usuario }) {
   function updateIng(fKey, eKey, idx, val) {
     const newF = JSON.parse(JSON.stringify(formulas))
     newF[fKey][eKey][idx].kg = parseFloat(val) || 0
+    setFormulas(newF)
+  }
+
+
+  function moverIngrediente(fKey, eKey, idx, direccion) {
+    const newF = JSON.parse(JSON.stringify(formulas))
+    const arr = newF[fKey][eKey]
+    const nuevoIdx = idx + direccion
+    if (nuevoIdx < 0 || nuevoIdx >= arr.length) return
+    const temp = arr[idx]
+    arr[idx] = arr[nuevoIdx]
+    arr[nuevoIdx] = temp
     setFormulas(newF)
   }
 
@@ -636,8 +668,8 @@ export default function Alimentacion({ usuario }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: S.bg }}>
-                        {['Ingrediente', 'Kg / 100', '% aprox', 'Acumulado', 'Precio ref.'].map((h, i) => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: i === 0 ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                        {['', 'Ingrediente', 'Kg / 100', '% aprox', 'Acumulado', 'Precio ref.'].map((h, i) => (
+                          <th key={h} style={{ padding: '8px 12px', textAlign: i <= 1 ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -650,6 +682,16 @@ export default function Alimentacion({ usuario }) {
                         )
                         return (
                           <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                              {modoEdit && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <button onClick={() => moverIngrediente(formulaDieta, e.key, ii, -1)} disabled={ii === 0}
+                                    style={{ padding: '1px 5px', fontSize: 10, background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 3, cursor: ii === 0 ? 'not-allowed' : 'pointer', opacity: ii === 0 ? 0.3 : 1 }}>↑</button>
+                                  <button onClick={() => moverIngrediente(formulaDieta, e.key, ii, 1)} disabled={ii === ings.length - 1}
+                                    style={{ padding: '1px 5px', fontSize: 10, background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 3, cursor: ii === ings.length - 1 ? 'not-allowed' : 'pointer', opacity: ii === ings.length - 1 ? 0.3 : 1 }}>↓</button>
+                                </div>
+                              )}
+                            </td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <div style={{ width: 9, height: 9, borderRadius: '50%', background: ing.c, flexShrink: 0 }} />{ing.n}
@@ -685,7 +727,7 @@ export default function Alimentacion({ usuario }) {
                         <td style={{ padding: '9px 12px', fontWeight: 700 }}>Total</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>{total.toFixed(1)}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>100%</td>
-                        <td /><td />
+                        <td /><td /><td />
                       </tr>
                     </tbody>
                   </table>
@@ -884,6 +926,46 @@ export default function Alimentacion({ usuario }) {
               )
             }
           </div>
+
+          {/* Archivo de ingresos */}
+          {ingresosStockArchivo.length > 0 && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <button onClick={() => setVerArchivoIngresos(!verArchivoIngresos)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: '1rem' }}>
+                {verArchivoIngresos ? '▾' : '▸'} Archivo de ingresos ({ingresosStockArchivo.length} registros anteriores)
+              </button>
+              {verArchivoIngresos && (
+                <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: S.bg }}>
+                        {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por'].map((h, i) => (
+                          <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingresosStockArchivo.map(ing => (
+                        <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
+                          <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                          <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            {ing.precio_por_kg ? `$${ing.precio_por_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                            {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '-'}
+                          </td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '-'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} />
         </div>
