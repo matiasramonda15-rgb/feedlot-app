@@ -207,21 +207,35 @@ export default function Alimentacion({ usuario }) {
     if (!formIngreso.cantidad) { alert('Ingresa la cantidad'); return }
     setGuardando(true)
     const item = stockDB.find(s => s.insumo === formIngreso.insumo)
-    if (item) {
-      await supabase.from('stock_insumos').update({
-        cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
-        actualizado_en: new Date().toISOString(),
-      }).eq('id', item.id)
-      await supabase.from('ingresos_stock').insert({
-        insumo_id: item.id,
-        insumo_nombre: formIngreso.insumo,
-        cantidad_kg: parseFloat(formIngreso.cantidad),
-        precio_por_kg: formIngreso.precio_kg ? parseFloat(formIngreso.precio_kg) : null,
-        total: formIngreso.precio_kg ? parseFloat(formIngreso.cantidad) * parseFloat(formIngreso.precio_kg) : null,
-        registrado_por: usuario?.nombre || usuario?.email,
-        precio_cargado_por: formIngreso.precio_kg ? (usuario?.nombre || usuario?.email) : null,
-        precio_cargado_en: formIngreso.precio_kg ? new Date().toISOString() : null,
-      })
+await supabase.from('stock_insumos').update({
+      cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
+      actualizado_en: new Date().toISOString(),
+    }).eq('id', item.id)
+    await supabase.from('ingresos_stock').insert({
+      insumo_id: item.id,
+      insumo_nombre: formIngreso.insumo,
+      cantidad_kg: parseFloat(formIngreso.cantidad),
+      precio_por_kg: formIngreso.precio_kg ? parseFloat(formIngreso.precio_kg) : null,
+      total: formIngreso.precio_kg ? parseFloat(formIngreso.cantidad) * parseFloat(formIngreso.precio_kg) : null,
+      registrado_por: usuario?.nombre || usuario?.email,
+      precio_cargado_por: formIngreso.precio_kg ? (usuario?.nombre || usuario?.email) : null,
+      precio_cargado_en: formIngreso.precio_kg ? new Date().toISOString() : null,
+    })
+    // Si tiene precio, actualizar precio promedio ponderado
+    if (formIngreso.precio_kg) {
+      const { data: todosIngresos } = await supabase
+        .from('ingresos_stock')
+        .select('cantidad_kg, precio_por_kg')
+        .eq('insumo_id', item.id)
+        .not('precio_por_kg', 'is', null)
+      if (todosIngresos && todosIngresos.length > 0) {
+        const totalKg = todosIngresos.reduce((s, i) => s + i.cantidad_kg, 0)
+        const promPonderado = todosIngresos.reduce((s, i) => s + i.precio_por_kg * i.cantidad_kg, 0) / totalKg
+        await supabase.from('stock_insumos').update({
+          precio_referencia: Math.round(promPonderado * 100) / 100,
+          precio_referencia_actualizado_en: new Date().toISOString(),
+        }).eq('id', item.id)
+      }
     }
     await cargarDatos()
     setShowFormIngreso(false)
@@ -229,23 +243,39 @@ export default function Alimentacion({ usuario }) {
     setGuardando(false)
   }
 
-  async function guardarPrecioIngreso(ing) {
-    const ep = editandoPrecio[ing.id]
-    if (!ep?.precio) { alert('Ingresa el precio'); return }
-    const precioNum = parseFloat(ep.precio)
-    await supabase.from('ingresos_stock').update({
-      precio_por_kg: precioNum,
-      total: ing.cantidad_kg * precioNum,
-      proveedor: ep.proveedor || null,
-      remito: ep.remito || null,
-      precio_cargado_por: usuario?.nombre || usuario?.email,
-      precio_cargado_en: new Date().toISOString(),
-    }).eq('id', ing.id)
-    const nuevo = { ...editandoPrecio }
-    delete nuevo[ing.id]
-    setEditandoPrecio(nuevo)
-    await cargarDatos()
+async function guardarPrecioIngreso(ing) {
+  const ep = editandoPrecio[ing.id]
+  if (!ep?.precio) { alert('Ingresa el precio'); return }
+  const precioNum = parseFloat(ep.precio)
+  await supabase.from('ingresos_stock').update({
+    precio_por_kg: precioNum,
+    total: ing.cantidad_kg * precioNum,
+    proveedor: ep.proveedor || null,
+    remito: ep.remito || null,
+    precio_cargado_por: usuario?.nombre || usuario?.email,
+    precio_cargado_en: new Date().toISOString(),
+  }).eq('id', ing.id)
+
+  // Recalcular precio promedio ponderado para este insumo
+  const { data: todosIngresos } = await supabase
+    .from('ingresos_stock')
+    .select('cantidad_kg, precio_por_kg')
+    .eq('insumo_id', ing.insumo_id)
+    .not('precio_por_kg', 'is', null)
+  if (todosIngresos && todosIngresos.length > 0) {
+    const totalKg = todosIngresos.reduce((s, i) => s + i.cantidad_kg, 0)
+    const promPonderado = todosIngresos.reduce((s, i) => s + i.precio_por_kg * i.cantidad_kg, 0) / totalKg
+    await supabase.from('stock_insumos').update({
+      precio_referencia: Math.round(promPonderado * 100) / 100,
+      precio_referencia_actualizado_en: new Date().toISOString(),
+    }).eq('id', ing.insumo_id)
   }
+
+  const nuevo = { ...editandoPrecio }
+  delete nuevo[ing.id]
+  setEditandoPrecio(nuevo)
+  await cargarDatos()
+}
 
   function updateIng(fKey, eKey, idx, val) {
     const newF = JSON.parse(JSON.stringify(formulas))
