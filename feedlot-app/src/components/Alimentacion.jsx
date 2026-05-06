@@ -86,6 +86,8 @@ export default function Alimentacion({ usuario }) {
   const [historialArchivo, setHistorialArchivo] = useState([])
   const [verArchivo, setVerArchivo] = useState(false)
   const [ingresosStock, setIngresosStock] = useState([])
+  const [ingresosStockArchivo, setIngresosStockArchivo] = useState([])
+  const [verArchivoIngresos, setVerArchivoIngresos] = useState(false)
   const [ingresosPendientes, setIngresosPendientes] = useState([])
   const [editandoPrecio, setEditandoPrecio] = useState({})
   const [formulaActiva, setFormulaActiva] = useState('seco')
@@ -120,14 +122,32 @@ export default function Alimentacion({ usuario }) {
         .gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
       supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)')
         .lt('creado_en', hace7diasISO).order('creado_en', { ascending: false }).limit(100),
-      supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(50),
+      supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
     setHistorial(h || [])
     setHistorialArchivo(ha || [])
-    setIngresosStock(is_ || [])
+    // Mostrar los últimos 2 por insumo, el resto va al archivo
+    const todos = is_ || []
+    const porInsumo = {}
+    todos.forEach(i => {
+      const key = i.insumo_nombre || 'sin_nombre'
+      if (!porInsumo[key]) porInsumo[key] = []
+      porInsumo[key].push(i)
+    })
+    const visibles = []
+    const archivados = []
+    Object.values(porInsumo).forEach(arr => {
+      arr.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
+      visibles.push(...arr.slice(0, 2))
+      archivados.push(...arr.slice(2))
+    })
+    visibles.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
+    archivados.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
+    setIngresosStock(visibles)
+    setIngresosStockArchivo(archivados)
     setIngresosPendientes(ip || [])
     setLoading(false)
   }
@@ -168,16 +188,55 @@ export default function Alimentacion({ usuario }) {
     }))
   }
 
+  // Calcula el costo estimado de una ración dado etapa y kg totales
+  function calcCosto(etapa, totalKg) {
+    if (!totalKg || totalKg === 0) return null
+    const ings = formulas[formulaActiva][etapa]
+    let costo = 0
+    let tienePrecio = false
+    ings.forEach(ing => {
+      // Busca el insumo en stockDB por nombre exacto o por coincidencia parcial
+      const stock = stockDB.find(s =>
+        s.insumo.toLowerCase() === ing.n.toLowerCase() ||
+        s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase())
+      )
+      if (stock?.precio_referencia) {
+        costo += (ing.kg / 100) * totalKg * stock.precio_referencia
+        tienePrecio = true
+      }
+    })
+    return tienePrecio ? Math.round(costo) : null
+  }
+
+  async function actualizarPrecioReferencia(insumoId) {
+    const { data: todosIngresos } = await supabase
+      .from('ingresos_stock')
+      .select('cantidad_kg, precio_por_kg')
+      .eq('insumo_id', insumoId)
+      .not('precio_por_kg', 'is', null)
+    if (todosIngresos && todosIngresos.length > 0) {
+      const totalKg = todosIngresos.reduce((s, i) => s + (i.cantidad_kg || 0), 0)
+      const promPonderado = todosIngresos.reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0) / totalKg
+      await supabase.from('stock_insumos').update({
+        precio_referencia: Math.round(promPonderado * 100) / 100,
+        precio_referencia_actualizado_en: new Date().toISOString(),
+      }).eq('id', insumoId)
+    }
+  }
+
   async function confirmarTodo() {
     setGuardando(true)
     const registros = []
     corralesMixer.forEach((grupo, mi) => {
       grupo.forEach((c, ci) => {
+        const kgTotal = kgsHoy[mi]?.[ci] || 0
+        const costoEst = calcCosto(MIXERS_CONFIG[mi].etapa, kgTotal)
         registros.push({
           mixer: MIXERS_CONFIG[mi].nombre,
           corral_id: c.id,
           formula: formulaActiva,
-          kg_total: kgsHoy[mi]?.[ci] || 0,
+          kg_total: kgTotal,
+          costo_estimado: costoEst,
           registrado_por: usuario?.id,
         })
       })
@@ -207,34 +266,23 @@ export default function Alimentacion({ usuario }) {
     if (!formIngreso.cantidad) { alert('Ingresa la cantidad'); return }
     setGuardando(true)
     const item = stockDB.find(s => s.insumo === formIngreso.insumo)
-await supabase.from('stock_insumos').update({
-      cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
-      actualizado_en: new Date().toISOString(),
-    }).eq('id', item.id)
-    await supabase.from('ingresos_stock').insert({
-      insumo_id: item.id,
-      insumo_nombre: formIngreso.insumo,
-      cantidad_kg: parseFloat(formIngreso.cantidad),
-      precio_por_kg: formIngreso.precio_kg ? parseFloat(formIngreso.precio_kg) : null,
-      total: formIngreso.precio_kg ? parseFloat(formIngreso.cantidad) * parseFloat(formIngreso.precio_kg) : null,
-      registrado_por: usuario?.nombre || usuario?.email,
-      precio_cargado_por: formIngreso.precio_kg ? (usuario?.nombre || usuario?.email) : null,
-      precio_cargado_en: formIngreso.precio_kg ? new Date().toISOString() : null,
-    })
-    // Si tiene precio, actualizar precio promedio ponderado
-    if (formIngreso.precio_kg) {
-      const { data: todosIngresos } = await supabase
-        .from('ingresos_stock')
-        .select('cantidad_kg, precio_por_kg')
-        .eq('insumo_id', item.id)
-        .not('precio_por_kg', 'is', null)
-      if (todosIngresos && todosIngresos.length > 0) {
-        const totalKg = todosIngresos.reduce((s, i) => s + i.cantidad_kg, 0)
-        const promPonderado = todosIngresos.reduce((s, i) => s + i.precio_por_kg * i.cantidad_kg, 0) / totalKg
-        await supabase.from('stock_insumos').update({
-          precio_referencia: Math.round(promPonderado * 100) / 100,
-          precio_referencia_actualizado_en: new Date().toISOString(),
-        }).eq('id', item.id)
+    if (item) {
+      await supabase.from('stock_insumos').update({
+        cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
+        actualizado_en: new Date().toISOString(),
+      }).eq('id', item.id)
+      await supabase.from('ingresos_stock').insert({
+        insumo_id: item.id,
+        insumo_nombre: formIngreso.insumo,
+        cantidad_kg: parseFloat(formIngreso.cantidad),
+        precio_por_kg: formIngreso.precio_kg ? parseFloat(formIngreso.precio_kg) : null,
+        total: formIngreso.precio_kg ? parseFloat(formIngreso.cantidad) * parseFloat(formIngreso.precio_kg) : null,
+        registrado_por: usuario?.nombre || usuario?.email,
+        precio_cargado_por: formIngreso.precio_kg ? (usuario?.nombre || usuario?.email) : null,
+        precio_cargado_en: formIngreso.precio_kg ? new Date().toISOString() : null,
+      })
+      if (formIngreso.precio_kg) {
+        await actualizarPrecioReferencia(item.id)
       }
     }
     await cargarDatos()
@@ -243,43 +291,41 @@ await supabase.from('stock_insumos').update({
     setGuardando(false)
   }
 
-async function guardarPrecioIngreso(ing) {
-  const ep = editandoPrecio[ing.id]
-  if (!ep?.precio) { alert('Ingresa el precio'); return }
-  const precioNum = parseFloat(ep.precio)
-  await supabase.from('ingresos_stock').update({
-    precio_por_kg: precioNum,
-    total: ing.cantidad_kg * precioNum,
-    proveedor: ep.proveedor || null,
-    remito: ep.remito || null,
-    precio_cargado_por: usuario?.nombre || usuario?.email,
-    precio_cargado_en: new Date().toISOString(),
-  }).eq('id', ing.id)
-
-  // Recalcular precio promedio ponderado para este insumo
-  const { data: todosIngresos } = await supabase
-    .from('ingresos_stock')
-    .select('cantidad_kg, precio_por_kg')
-    .eq('insumo_id', ing.insumo_id)
-    .not('precio_por_kg', 'is', null)
-  if (todosIngresos && todosIngresos.length > 0) {
-    const totalKg = todosIngresos.reduce((s, i) => s + i.cantidad_kg, 0)
-    const promPonderado = todosIngresos.reduce((s, i) => s + i.precio_por_kg * i.cantidad_kg, 0) / totalKg
-    await supabase.from('stock_insumos').update({
-      precio_referencia: Math.round(promPonderado * 100) / 100,
-      precio_referencia_actualizado_en: new Date().toISOString(),
-    }).eq('id', ing.insumo_id)
+  async function guardarPrecioIngreso(ing) {
+    const ep = editandoPrecio[ing.id]
+    if (!ep?.precio) { alert('Ingresa el precio'); return }
+    const precioNum = parseFloat(ep.precio)
+    await supabase.from('ingresos_stock').update({
+      precio_por_kg: precioNum,
+      total: ing.cantidad_kg * precioNum,
+      proveedor: ep.proveedor || null,
+      remito: ep.remito || null,
+      precio_cargado_por: usuario?.nombre || usuario?.email,
+      precio_cargado_en: new Date().toISOString(),
+    }).eq('id', ing.id)
+    // Recalcular precio promedio ponderado
+    await actualizarPrecioReferencia(ing.insumo_id)
+    const nuevo = { ...editandoPrecio }
+    delete nuevo[ing.id]
+    setEditandoPrecio(nuevo)
+    await cargarDatos()
   }
-
-  const nuevo = { ...editandoPrecio }
-  delete nuevo[ing.id]
-  setEditandoPrecio(nuevo)
-  await cargarDatos()
-}
 
   function updateIng(fKey, eKey, idx, val) {
     const newF = JSON.parse(JSON.stringify(formulas))
     newF[fKey][eKey][idx].kg = parseFloat(val) || 0
+    setFormulas(newF)
+  }
+
+
+  function moverIngrediente(fKey, eKey, idx, direccion) {
+    const newF = JSON.parse(JSON.stringify(formulas))
+    const arr = newF[fKey][eKey]
+    const nuevoIdx = idx + direccion
+    if (nuevoIdx < 0 || nuevoIdx >= arr.length) return
+    const temp = arr[idx]
+    arr[idx] = arr[nuevoIdx]
+    arr[nuevoIdx] = temp
     setFormulas(newF)
   }
 
@@ -299,6 +345,16 @@ async function guardarPrecioIngreso(ing) {
     { key: 'stock', label: 'Stock de insumos' },
     { key: 'historial', label: 'Historial' },
   ]
+
+  // Costo total del día
+  const costoTotalDia = MIXERS_CONFIG.reduce((total, mx, mi) => {
+    const kgsMixer = kgsHoy[mi] || []
+    const totalMixer = kgsMixer.reduce((a, b) => a + b, 0)
+    const costo = calcCosto(mx.etapa, totalMixer)
+    return total + (costo || 0)
+  }, 0)
+
+  const tienePreciosReferencia = stockDB.some(s => s.precio_referencia)
 
   return (
     <div>
@@ -338,6 +394,14 @@ async function guardarPrecioIngreso(ing) {
             Cada mixer se prepara por separado. Ajusta los kg por corral segun la lectura de piletas, y el sistema te dice cuantos kg poner de cada ingrediente.
           </div>
 
+          {/* Resumen de costo del día */}
+          {tienePreciosReferencia && costoTotalDia > 0 && (
+            <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '.9rem 1rem', fontSize: 13, color: S.green, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Costo estimado total del día</span>
+              <strong style={{ fontFamily: 'monospace', fontSize: 16 }}>${costoTotalDia.toLocaleString('es-AR')}</strong>
+            </div>
+          )}
+
           {MIXERS_CONFIG.map((mx, mi) => {
             const grupo = corralesMixer[mi] || []
             const kgsMixer = kgsHoy[mi] || []
@@ -346,21 +410,9 @@ async function guardarPrecioIngreso(ing) {
             const necesitaCargas = totalMixer > cap
             const numCargas = totalMixer > 0 ? Math.ceil(totalMixer / cap) : 1
             const ings = calcIngredientes(mx.etapa, totalMixer)
+            const costoMixer = calcCosto(mx.etapa, totalMixer)
+            const totalAnimalesMixer = grupo.reduce((a, c) => a + (c.animales || 0), 0)
 
-function calcCostoCorral(etapa, totalKg) {
-  if (totalKg === 0) return null
-  const ings = formulas[formulaActiva][etapa]
-  let costo = 0
-  let tienePrecio = false
-  ings.forEach(ing => {
-    const stock = stockDB.find(s => s.insumo === ing.n || s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0]))
-    if (stock?.precio_referencia) {
-      costo += (ing.kg / 100) * totalKg * stock.precio_referencia
-      tienePrecio = true
-    }
-  })
-  return tienePrecio ? Math.round(costo) : null
-}
             return (
               <div key={mx.id} style={{ border: `1px solid ${S.border}`, borderRadius: 12, marginBottom: '1.25rem', overflow: 'hidden' }}>
                 <div style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${S.border}`, background: `linear-gradient(90deg, ${mx.headerGrad} 0%, ${S.surface} 100%)` }}>
@@ -389,8 +441,8 @@ function calcCostoCorral(etapa, totalKg) {
                 </div>
 
                 <div style={{ padding: '1rem 1.25rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '130px 90px 140px 1fr 100px', gap: 10, padding: '0 0 6px', borderBottom: `1px solid ${S.border}`, marginBottom: 4 }}>
-                    {['Corral', 'Ayer kg', 'Pileta hoy', 'Kg hoy', ''].map(h => (
+                  <div style={{ display: 'grid', gridTemplateColumns: '130px 90px 140px 1fr 100px 110px', gap: 10, padding: '0 0 6px', borderBottom: `1px solid ${S.border}`, marginBottom: 4 }}>
+                    {['Corral', 'Ayer kg', 'Pileta hoy', 'Kg hoy', '', 'Costo est.'].map(h => (
                       <div key={h} style={{ fontSize: 10, fontWeight: 600, color: S.hint, textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</div>
                     ))}
                   </div>
@@ -400,8 +452,12 @@ function calcCostoCorral(etapa, totalKg) {
                     const kgHoy = kgsMixer[ci] || 0
                     const diff = kgHoy - kgAyer
                     const pSel = (piletas[mi] || [])[ci]
+                    const costoCorral = calcCosto(mx.etapa, kgHoy)
+                    const costoPorAnimal = costoCorral && (c.animales || 0) > 0
+                      ? Math.round(costoCorral / c.animales)
+                      : null
                     return (
-                      <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '130px 90px 140px 1fr 100px', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${S.border}` }}>
+                      <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '130px 90px 140px 1fr 100px 110px', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${S.border}` }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>Corral {c.numero}</div>
                           <div style={{ fontSize: 11, color: S.muted }}>{c.rol} - {c.animales || 0} anim.</div>
@@ -424,12 +480,31 @@ function calcCostoCorral(etapa, totalKg) {
                             {diff === 0 ? '=' : (diff > 0 ? '+' : '') + diff} kg
                           </span>
                         </div>
+                        <div>
+                          {costoCorral ? (
+                            <div>
+                              <div style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600, color: S.green }}>${costoCorral.toLocaleString('es-AR')}</div>
+                              {costoPorAnimal && <div style={{ fontSize: 10, color: S.muted }}>${costoPorAnimal.toLocaleString('es-AR')}/anim.</div>}
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: 11, color: S.hint }}>—</span>
+                          )}
+                        </div>
                       </div>
                     )
                   })}
+
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0 2px', marginTop: 4 }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: S.muted }}>Total mixer</span>
-                    <span style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: necesitaCargas ? S.red : S.accent }}>{totalMixer.toLocaleString('es-AR')} kg</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: necesitaCargas ? S.red : S.accent }}>{totalMixer.toLocaleString('es-AR')} kg</span>
+                      {costoMixer && (
+                        <div style={{ fontSize: 12, color: S.green, fontFamily: 'monospace', marginTop: 2 }}>
+                          Costo est.: <strong>${costoMixer.toLocaleString('es-AR')}</strong>
+                          {totalAnimalesMixer > 0 && <span style={{ color: S.muted, fontWeight: 400 }}> · ${Math.round(costoMixer / totalAnimalesMixer).toLocaleString('es-AR')}/animal</span>}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -529,6 +604,7 @@ function calcCostoCorral(etapa, totalKg) {
           {confirmado && (
             <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '.9rem 1rem', fontSize: 13, color: S.green, marginBottom: '1rem' }}>
               <strong>Jornada confirmada.</strong> {kgsHoy.flat().reduce((a, b) => a + b, 0).toLocaleString('es-AR')} kg totales en 3 mixers.
+              {costoTotalDia > 0 && <span> · Costo estimado: <strong>${costoTotalDia.toLocaleString('es-AR')}</strong></span>}
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: '.5rem' }}>
@@ -592,43 +668,66 @@ function calcCostoCorral(etapa, totalKg) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: S.bg }}>
-                        {['Ingrediente', 'Kg / 100', '% aprox', 'Acumulado'].map((h, i) => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: i === 0 ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                        {['', 'Ingrediente', 'Kg / 100', '% aprox', 'Acumulado', 'Precio ref.'].map((h, i) => (
+                          <th key={h} style={{ padding: '8px 12px', textAlign: i <= 1 ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {ings.map((ing, ii) => { acum += ing.kg; return (
-                        <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
-                          <td style={{ padding: '9px 12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <div style={{ width: 9, height: 9, borderRadius: '50%', background: ing.c, flexShrink: 0 }} />{ing.n}
-                            </div>
-                          </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                            {modoEdit
-                              ? <input type="number" step="0.1" min="0" max="100" value={ing.kg}
-                                  onChange={ev => updateIng(formulaDieta, e.key, ii, ev.target.value)}
-                                  style={{ width: 72, border: `1px solid ${S.border}`, borderRadius: 5, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', background: S.surface }} />
-                              : <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{ing.kg}</span>
-                            }
-                          </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                            <div>
-                              <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginBottom: 3 }}>{(ing.kg).toFixed(1)}%</div>
-                              <div style={{ height: 4, background: S.border, borderRadius: 2, overflow: 'hidden', width: 80, marginLeft: 'auto' }}>
-                                <div style={{ width: `${Math.min(100, ing.kg)}%`, height: '100%', borderRadius: 2, background: ing.c }} />
+                      {ings.map((ing, ii) => {
+                        acum += ing.kg
+                        const stockItem = stockDB.find(s =>
+                          s.insumo.toLowerCase() === ing.n.toLowerCase() ||
+                          s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase())
+                        )
+                        return (
+                          <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                              {modoEdit && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <button onClick={() => moverIngrediente(formulaDieta, e.key, ii, -1)} disabled={ii === 0}
+                                    style={{ padding: '1px 5px', fontSize: 10, background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 3, cursor: ii === 0 ? 'not-allowed' : 'pointer', opacity: ii === 0 ? 0.3 : 1 }}>↑</button>
+                                  <button onClick={() => moverIngrediente(formulaDieta, e.key, ii, 1)} disabled={ii === ings.length - 1}
+                                    style={{ padding: '1px 5px', fontSize: 10, background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 3, cursor: ii === ings.length - 1 ? 'not-allowed' : 'pointer', opacity: ii === ings.length - 1 ? 0.3 : 1 }}>↓</button>
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: '9px 12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ width: 9, height: 9, borderRadius: '50%', background: ing.c, flexShrink: 0 }} />{ing.n}
                               </div>
-                            </div>
-                          </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toFixed(1)}</td>
-                        </tr>
-                      )})}
+                            </td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                              {modoEdit
+                                ? <input type="number" step="0.1" min="0" max="100" value={ing.kg}
+                                    onChange={ev => updateIng(formulaDieta, e.key, ii, ev.target.value)}
+                                    style={{ width: 72, border: `1px solid ${S.border}`, borderRadius: 5, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', background: S.surface }} />
+                                : <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{ing.kg}</span>
+                              }
+                            </td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                              <div>
+                                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginBottom: 3 }}>{(ing.kg).toFixed(1)}%</div>
+                                <div style={{ height: 4, background: S.border, borderRadius: 2, overflow: 'hidden', width: 80, marginLeft: 'auto' }}>
+                                  <div style={{ width: `${Math.min(100, ing.kg)}%`, height: '100%', borderRadius: 2, background: ing.c }} />
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toFixed(1)}</td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>
+                              {stockItem?.precio_referencia
+                                ? <span style={{ color: S.green, fontWeight: 600 }}>${stockItem.precio_referencia.toLocaleString('es-AR')}/kg</span>
+                                : <span style={{ color: S.hint }}>—</span>
+                              }
+                            </td>
+                          </tr>
+                        )
+                      })}
                       <tr style={{ background: S.bg, borderTop: `2px solid ${S.borderStrong}` }}>
                         <td style={{ padding: '9px 12px', fontWeight: 700 }}>Total</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>{total.toFixed(1)}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>100%</td>
-                        <td />
+                        <td /><td /><td />
                       </tr>
                     </tbody>
                   </table>
@@ -789,7 +888,7 @@ function calcCostoCorral(etapa, totalKg) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: S.bg }}>
-                        {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por'].map((h, i) => (
+                        {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por', ''].map((h, i) => (
                           <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                         ))}
                       </tr>
@@ -810,6 +909,15 @@ function calcCostoCorral(etapa, totalKg) {
                           </td>
                           <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '-'}</td>
                           <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '-'}</td>
+                          <td style={{ padding: '9px 12px' }}>
+                            <button onClick={async () => {
+                              if (!confirm('¿Eliminar este ingreso del historial?')) return
+                              await supabase.from('ingresos_stock').delete().eq('id', ing.id)
+                              await cargarDatos()
+                            }} style={{ padding: '3px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                              Eliminar
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -819,7 +927,47 @@ function calcCostoCorral(etapa, totalKg) {
             }
           </div>
 
-          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} />
+          {/* Archivo de ingresos */}
+          {ingresosStockArchivo.length > 0 && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <button onClick={() => setVerArchivoIngresos(!verArchivoIngresos)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: '1rem' }}>
+                {verArchivoIngresos ? '▾' : '▸'} Archivo de ingresos ({ingresosStockArchivo.length} registros anteriores)
+              </button>
+              {verArchivoIngresos && (
+                <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: S.bg }}>
+                        {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por'].map((h, i) => (
+                          <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingresosStockArchivo.map(ing => (
+                        <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
+                          <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                          <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            {ing.precio_por_kg ? `$${ing.precio_por_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                            {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '-'}
+                          </td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '-'}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} />
         </div>
       )}
 
@@ -843,14 +991,14 @@ function calcCostoCorral(etapa, totalKg) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Por', ''].map(h => (
+                  {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Costo est.', 'Por', ''].map(h => (
                     <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {historial.length === 0 && (
-                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones en los ultimos 7 dias.</td></tr>
+                  <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones en los ultimos 7 dias.</td></tr>
                 )}
                 {historial.map(h => (
                   <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
@@ -859,6 +1007,9 @@ function calcCostoCorral(etapa, totalKg) {
                     <td style={{ padding: '9px 12px' }}>{h.mixer}</td>
                     <td style={{ padding: '9px 12px' }}>{h.formula}</td>
                     <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{(h.kg_total || 0).toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.green, fontWeight: 600 }}>
+                      {h.costo_estimado ? `$${h.costo_estimado.toLocaleString('es-AR')}` : <span style={{ color: S.hint, fontWeight: 400 }}>—</span>}
+                    </td>
                     <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{h.usuarios?.nombre || '-'}</td>
                     <td style={{ padding: '9px 12px' }}>
                       <button onClick={() => eliminarRacion(h.id)}
@@ -882,14 +1033,14 @@ function calcCostoCorral(etapa, totalKg) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr>
-                    {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Por'].map(h => (
+                    {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Costo est.', 'Por'].map(h => (
                       <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {historialArchivo.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones archivadas.</td></tr>
+                    <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones archivadas.</td></tr>
                   )}
                   {historialArchivo.map(h => (
                     <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
@@ -898,6 +1049,9 @@ function calcCostoCorral(etapa, totalKg) {
                       <td style={{ padding: '9px 12px' }}>{h.mixer}</td>
                       <td style={{ padding: '9px 12px' }}>{h.formula}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{(h.kg_total || 0).toLocaleString('es-AR')}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.green, fontWeight: 600 }}>
+                        {h.costo_estimado ? `$${h.costo_estimado.toLocaleString('es-AR')}` : <span style={{ color: S.hint, fontWeight: 400 }}>—</span>}
+                      </td>
                       <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{h.usuarios?.nombre || '-'}</td>
                     </tr>
                   ))}
@@ -911,7 +1065,38 @@ function calcCostoCorral(etapa, totalKg) {
   )
 }
 
-function StockABM({ stockDB, onReload, onShowIngreso }) {
+function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formulaActiva }) {
+  // Calcular kg/día por insumo desde las raciones de los últimos 7 días
+  const kgDiaPorInsumo = {}
+  if (historial && historial.length > 0 && formulas && formulaActiva) {
+    // Agrupar raciones por fecha para calcular promedio diario
+    const porFecha = {}
+    historial.forEach(r => {
+      const fecha = new Date(r.creado_en).toDateString()
+      if (!porFecha[fecha]) porFecha[fecha] = []
+      porFecha[fecha].push(r)
+    })
+    const diasConDatos = Object.keys(porFecha).length
+    if (diasConDatos > 0) {
+      // Sumar kg totales por mixer
+      const kgPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
+      historial.forEach(r => {
+        const etapa = r.mixer === 'Acostumbramiento' ? 'acostumbramiento' : r.mixer === 'Recria' ? 'recria' : 'terminacion'
+        kgPorEtapa[etapa] += (r.kg_total || 0)
+      })
+      // Para cada etapa calcular kg/día de cada ingrediente
+      Object.entries(kgPorEtapa).forEach(([etapa, kgTotal]) => {
+        if (kgTotal === 0) return
+        const kgDia = kgTotal / diasConDatos
+        const ings = formulas[formulaActiva]?.[etapa] || []
+        ings.forEach(ing => {
+          const kgIngDia = (ing.kg / 100) * kgDia
+          if (!kgDiaPorInsumo[ing.n]) kgDiaPorInsumo[ing.n] = 0
+          kgDiaPorInsumo[ing.n] += kgIngDia
+        })
+      })
+    }
+  }
   const [nuevoInsumo, setNuevoInsumo] = useState({ show: false, nombre: '', minimo_kg: '' })
   const [editMinimo, setEditMinimo] = useState({})
   const [guardando, setGuardando] = useState(false)
@@ -986,9 +1171,43 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600 }}>
                 <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />{s.insumo}
+                {(() => {
+                  // Buscar kg/día por nombre exacto o parcial
+                  const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
+                    k.toLowerCase() === s.insumo.toLowerCase() ||
+                    s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
+                    k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
+                  )?.[1]
+                  if (!kgDia) return null
+                  const diasRestantes = kgDia > 0 ? Math.floor(s.cantidad_kg / kgDia) : null
+                  const color = diasRestantes !== null && diasRestantes <= 7 ? '#7A4500' : '#6B6760'
+                  return (
+                    <span style={{ fontSize: 11, color, fontFamily: 'monospace' }}>
+                      · ~{Math.round(kgDia).toLocaleString('es-AR')} kg/día
+                    </span>
+                  )
+                })()}
+                {s.precio_referencia && (
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#1E5C2E', background: '#E8F4EB', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                    ${s.precio_referencia.toLocaleString('es-AR')}/kg
+                  </span>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
+                {(() => {
+                  const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
+                    k.toLowerCase() === s.insumo.toLowerCase() ||
+                    s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
+                    k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
+                  )?.[1]
+                  if (!kgDia || kgDia === 0) return null
+                  const dias = Math.floor(s.cantidad_kg / kgDia)
+                  const bgColor = dias <= 7 ? '#FDF0E0' : dias <= 15 ? '#FDF0E0' : '#E8F4EB'
+                  const txtColor = dias <= 7 ? '#7A4500' : dias <= 15 ? '#7A4500' : '#1E5C2E'
+                  const label = dias <= 7 ? `⚠ Solo ${dias} días` : `${dias} días`
+                  return <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bgColor, color: txtColor }}>{label}</span>
+                })()}
                 <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bajo ? '#FDF0F0' : pct < 40 ? '#FDF0E0' : '#E8F4EB', color: bajo ? '#7A1A1A' : pct < 40 ? '#7A4500' : '#1E5C2E' }}>
                   {bajo ? '⚠ Bajo minimo' : 'OK'}
                 </span>
@@ -1025,4 +1244,4 @@ function StockABM({ stockDB, onReload, onShowIngreso }) {
       })}
     </div>
   )
-}   
+}
