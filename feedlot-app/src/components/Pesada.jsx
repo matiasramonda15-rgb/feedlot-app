@@ -131,8 +131,12 @@ export default function Pesada({ usuario }) {
     if (animalesInsert.length > 0) await supabase.from('pesada_animales').insert(animalesInsert)
 
     // 3. Snapshot ANTES de modificar nada — mapa rangoActual → corral completo
+    // Normalizar sub a solo la letra (A, B, C...)
     const mapaRangoCorral = {}
-    corralesClasificados.forEach(c => { if (c.sub) mapaRangoCorral[c.sub] = { ...c } })
+    corralesClasificados.forEach(c => {
+      const letra = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0)
+      if (letra) mapaRangoCorral[letra] = { ...c, sub: letra }
+    })
 
     // 4. Registrar movimientos para poder revertir
     const movimientos = []
@@ -149,15 +153,16 @@ export default function Pesada({ usuario }) {
       })
     }
 
-    // Corrales existentes suben de rango
+    // Corrales existentes suben de rango — guardamos solo la letra
     corralesClasificados.forEach(c => {
+      const letraAntes = (c.sub || 'A').length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
       movimientos.push({
         pesada_id: pesada.id,
         corral_id: c.id,
         tipo: 'subida_rango',
         animales: c.animales || 0,
-        rango_antes: c.sub,
-        rango_despues: subirRango(c.sub || 'A', 2),
+        rango_antes: letraAntes,
+        rango_despues: subirRango(letraAntes, 2),
       })
     })
 
@@ -181,13 +186,15 @@ export default function Pesada({ usuario }) {
         rango_antes: letraAnterior,
         rango_despues: letraNueva,
       })
+      else console.warn(`No se encontró corral para rango anterior ${letraAnterior} (nuevo ${letraNueva}). Mapa:`, mapaRangoCorral)
     })
 
     if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
 
     // 5. Subir 2 rangos a corrales clasificados
     for (const c of corralesClasificados) {
-      await supabase.from('corrales').update({ sub: subirRango(c.sub || 'A', 2) }).eq('id', c.id)
+      const letraActual = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
+      await supabase.from('corrales').update({ sub: subirRango(letraActual, 2) }).eq('id', c.id)
     }
 
     // 6. Asignar corrales libres para A y B
@@ -195,16 +202,14 @@ export default function Pesada({ usuario }) {
     if (cantB > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB }).eq('id', parseInt(corralLibre2))
 
     // 7. Sumar animales C-G a corrales que ERAN A-E (usando snapshot previo)
-    // Usamos la BD directamente para leer el valor actualizado de animales
+    // Lee siempre fresco desde la BD para evitar valores stale
     for (const [letraNueva, letraAnterior] of Object.entries(mapeoDestino)) {
       const cant = conteoRangos[letraNueva].length
       if (cant === 0) continue
       const corralDest = mapaRangoCorral[letraAnterior]
       if (!corralDest) continue
-      // Leer valor actual de animales desde la BD para evitar stale data
-      const { data: corralActual } = await supabase.from('corrales').select('animales').eq('id', corralDest.id).single()
-      const animalesActuales = corralActual?.animales || 0
-      await supabase.from('corrales').update({ animales: animalesActuales + cant }).eq('id', corralDest.id)
+      const { data: corralFresh } = await supabase.from('corrales').select('animales').eq('id', corralDest.id).single()
+      await supabase.from('corrales').update({ animales: (corralFresh?.animales || 0) + cant }).eq('id', corralDest.id)
     }
 
     // 8. Descontar animales de acumulación
