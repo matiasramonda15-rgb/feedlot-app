@@ -7,7 +7,7 @@ const ITEMS = [
   { id: 'pesada',       label: 'Pesada y clasificación', roles: ['dueno','encargado','empleado'] },
   { id: 'sanidad',      label: 'Sanidad',              roles: ['dueno','secretaria','encargado','empleado'] },
   { id: 'alimentacion', label: 'Alimentación',         roles: ['dueno','encargado','empleado'] },
-  { id: 'ventas',       label: 'Compra / Venta',       roles: ['dueno','secretaria'] },
+  { id: 'ventas',       label: 'Ventas',               roles: ['dueno','secretaria'] },
 ]
 
 const REPORTES = [
@@ -35,7 +35,6 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
         <NavSection label="Reportes" items={reportesFiltrados} modulo={modulo} setModulo={setModulo} />
       )}
 
-      {/* Usuario y logout */}
       <div style={{ marginTop: 'auto', padding: '1rem .75rem', borderTop: '1px solid rgba(255,255,255,.1)' }}>
         <div style={{ padding: '7px 10px', marginBottom: 4 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{usuario?.nombre || 'Usuario'}</div>

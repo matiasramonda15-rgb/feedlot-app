@@ -177,7 +177,6 @@ export default function Ventas({ usuario }) {
 
   const TABS = [
     { key: 'ventas', label: 'Ventas' },
-    { key: 'compras', label: 'Compras' },
     { key: 'nueva-venta', label: '+ Nueva venta' },
   ]
 
@@ -190,9 +189,9 @@ export default function Ventas({ usuario }) {
 
       {/* TABS */}
       <div style={{ display: 'flex', border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: '1.5rem', width: 'fit-content' }}>
-        {TABS.map(t => (
+        {TABS.map((t, i) => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'nueva-venta') { setPaso(1); setVentaConfirmada(null) } }}
-            style={{ padding: '8px 20px', fontSize: 13, cursor: 'pointer', color: tab === t.key ? '#fff' : S.muted, background: tab === t.key ? S.accent : S.surface, borderRight: `1px solid ${S.border}`, fontWeight: 500, border: 'none', borderRight: `1px solid ${S.border}`, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            style={{ padding: '8px 20px', fontSize: 13, cursor: 'pointer', color: tab === t.key ? '#fff' : S.muted, background: tab === t.key ? S.accent : S.surface, borderRight: i < TABS.length - 1 ? `1px solid ${S.border}` : 'none', fontWeight: 500, border: 'none', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             {t.label}
           </button>
         ))}
@@ -656,4 +655,4 @@ export default function Ventas({ usuario }) {
       )}
     </div>
   )
-}  
+}
