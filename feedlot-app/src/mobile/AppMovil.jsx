@@ -72,6 +72,12 @@ function Home({ usuario, nav, onLogout, datos }) {
   alertas.slice(0, 3).forEach(a => {
     tareas.push({ icon: '💉', titulo: a.titulo, sub: a.descripcion, pantalla: 'sanidad', urgente: true })
   })
+  // Revision bisemanal los lunes (1) y jueves (4)
+  const diaSemana = new Date().getDay()
+  if (diaSemana === 1 || diaSemana === 4) {
+    tareas.unshift({ icon: '🔍', titulo: 'Revision bisemanal de corrales', sub: 'Hoy corresponde revisar todos los corrales', pantalla: 'sanidad', urgente: true })
+  }
+
   if (tareas.length === 0) {
     tareas.push({ icon: '✅', titulo: 'Sin tareas urgentes', sub: 'Todo en orden', pantalla: 'sanidad', urgente: false })
   }
