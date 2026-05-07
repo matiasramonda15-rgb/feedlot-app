@@ -257,8 +257,7 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
 
   async function guardar() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completa cantidad y kg bascula.'); return }
-    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || 'Otro') : form.procedencia
-    if (!procFinal) { alert('Ingresa la procedencia.'); setGuardando(false); return }
+    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || 'Otro') : (form.procedencia || null)
     setGuardando(true)
     const codigo = `L-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
     const { error } = await supabase.from('lotes').insert({

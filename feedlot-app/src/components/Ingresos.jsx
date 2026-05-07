@@ -96,9 +96,13 @@ export default function Ingresos({ usuario }) {
 
   async function guardarPrecio(lote) {
     if (!editandoPrecio?.precio_compra) { alert('Ingresa el precio'); return }
+    const procFinal = editandoPrecio.procedencia === 'Otro'
+      ? (editandoPrecio.otraProcedencia?.trim() || null)
+      : (editandoPrecio.procedencia || null)
     await supabase.from('lotes').update({
       precio_compra: parseFloat(editandoPrecio.precio_compra),
       kg_factura: editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null,
+      procedencia: procFinal || lote.procedencia || null,
     }).eq('id', lote.id)
     setEditandoPrecio(null)
     await cargarDatos()
