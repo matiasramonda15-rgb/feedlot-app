@@ -121,7 +121,7 @@ export default function Ingresos({ usuario }) {
 
   if (loading) return <Loader />
 
-  const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra) : []
+  const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra || !l.procedencia) : []
 
   if (vista === 'nuevo') {
     const promEst = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
