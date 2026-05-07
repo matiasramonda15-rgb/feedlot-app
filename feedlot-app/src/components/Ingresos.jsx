@@ -396,4 +396,4 @@ export default function Ingresos({ usuario }) {
       </Card>
     </div>
   )
-} 
+}
