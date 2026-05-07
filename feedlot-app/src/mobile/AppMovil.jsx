@@ -24,7 +24,8 @@ export default function AppMovil({ usuario, onLogout }) {
     ])
     const procedencias = [...new Set((lotes || []).map(x => x.procedencia).filter(Boolean))].sort()
     const compradores = [...new Set((ventas || []).filter(v => v.comprador).map(v => v.comprador))].sort()
-    setDatos({ corrales: corrales || [], proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [] })
+    const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
+    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [] })
   }
 
   const pantallas = {
