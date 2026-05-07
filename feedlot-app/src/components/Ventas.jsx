@@ -70,6 +70,7 @@ export default function Ventas({ usuario }) {
     setCorrales(c || [])
     const comps = [...new Set((v || []).map(x => x.comprador).filter(Boolean))].sort()
     setCompradores(comps)
+    setVentasSinPrecio((v || []).filter(x => !x.precio_kg))
 
     // Calcular GDP y peso actual por corral desde pesadas
     const gdp = {}
@@ -149,9 +150,13 @@ export default function Ventas({ usuario }) {
     const ep = editandoVenta
     if (!ep?.precio_kg) { alert('Ingresa el precio'); return }
     const precioKg = parseFloat(ep.precio_kg)
-    const total = (venta.kg_neto || 0) * precioKg
+    const desbastePct = ep.desbaste ? parseFloat(ep.desbaste) : (venta.desbaste_pct || 8)
+    const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
+    const total = kgNeto * precioKg
     await supabase.from('ventas').update({
       precio_kg: precioKg,
+      desbaste_pct: desbastePct,
+      kg_neto: kgNeto,
       total: Math.round(total),
       comprador: ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null),
       observaciones: ep.observaciones || venta.observaciones || null,
@@ -272,7 +277,7 @@ export default function Ventas({ usuario }) {
                         </div>
                       </div>
                       {!isEdit && (
-                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '' })}
+                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8) })}
                           style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                           Completar datos
                         </button>
@@ -286,6 +291,12 @@ export default function Ventas({ usuario }) {
                             <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
                               onChange={e => setEditandoVenta({ ...editandoVenta, precio_kg: e.target.value })}
                               style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Desbaste %</label>
+                            <input type="number" placeholder="8" value={editandoVenta.desbaste}
+                              onChange={e => setEditandoVenta({ ...editandoVenta, desbaste: e.target.value })}
+                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                           </div>
                           <div>
                             <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comprador</label>
@@ -312,8 +323,14 @@ export default function Ventas({ usuario }) {
                         </div>
                         {editandoVenta.precio_kg && (
                           <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
-                            Total: <strong>${(v.kg_neto * parseFloat(editandoVenta.precio_kg)).toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong>
-                            {' '}({v.kg_neto?.toLocaleString('es-AR')} kg × ${parseFloat(editandoVenta.precio_kg).toLocaleString('es-AR')}/kg)
+                            {(() => {
+                              const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
+                              const kgNeto = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPct / 100)) : (v.kg_neto || 0)
+                              const totalCalc = kgNeto * parseFloat(editandoVenta.precio_kg)
+                              return <>
+                                KG neto: <strong>{kgNeto.toLocaleString('es-AR')} kg</strong> · Total: <strong>${totalCalc.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong>
+                              </>
+                            })()}
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: 8 }}>
