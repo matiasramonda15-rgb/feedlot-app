@@ -124,6 +124,8 @@ export default function Ingresos({ usuario }) {
     const kgBas = parseFloat(form.kg_bascula) || 0
     const kgFac = parseFloat(form.kg_factura) || 0
     const diffKg = kgBas && kgFac ? kgBas - kgFac : null
+    const diffPct = diffKg !== null && kgFac > 0 ? (diffKg / kgFac * 100) : null
+    const alertaDiff = diffPct !== null && Math.abs(diffPct) > 3
     const totalCompra = kgBas && form.precio_compra ? Math.round(kgBas * parseFloat(form.precio_compra)) : null
 
     return (
@@ -164,13 +166,6 @@ export default function Ingresos({ usuario }) {
               <input type="number" placeholder="ej. 85" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})}
                 style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, boxSizing: 'border-box' }} />
             </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Categoria</label>
-              <select style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface }}
-                value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})}>
-                {['Novillos 2-3 anos','Novillos 3-4 anos','Vaquillonas','Terneros'].map(o => <option key={o}>{o}</option>)}
-              </select>
-            </div>
           </div>
         </Card>
 
@@ -202,12 +197,15 @@ export default function Ingresos({ usuario }) {
           {(diffKg !== null || totalCompra || promEst) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               {diffKg !== null && (
-                <div style={{ background: diffKg >= 0 ? S.greenLight : S.redLight, border: `1px solid ${diffKg >= 0 ? '#97C459' : '#F09595'}`, borderRadius: 8, padding: '.75rem 1rem' }}>
+                <div style={{ background: alertaDiff ? S.amberLight : (diffKg >= 0 ? S.greenLight : S.redLight), border: `1px solid ${alertaDiff ? '#EF9F27' : (diffKg >= 0 ? '#97C459' : '#F09595')}`, borderRadius: 8, padding: '.75rem 1rem' }}>
                   <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Diferencia báscula vs factura</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: diffKg >= 0 ? S.green : S.red }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: alertaDiff ? S.amber : (diffKg >= 0 ? S.green : S.red) }}>
                     {diffKg >= 0 ? '+' : ''}{diffKg.toLocaleString('es-AR')} kg
                   </div>
-                  <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>{diffKg >= 0 ? 'a tu favor' : 'a favor del vendedor'}</div>
+                  <div style={{ fontSize: 12, fontFamily: 'monospace', color: alertaDiff ? S.amber : S.muted, marginTop: 2, fontWeight: alertaDiff ? 600 : 400 }}>
+                    {diffPct !== null ? `${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(1)}%` : ''}
+                    {alertaDiff ? ' ⚠ Supera el 3%' : (diffKg >= 0 ? ' · a tu favor' : ' · a favor del vendedor')}
+                  </div>
                 </div>
               )}
               {totalCompra && (

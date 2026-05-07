@@ -42,7 +42,10 @@ export default function Ventas({ usuario }) {
   const [lotes, setLotes] = useState([])
   const [corrales, setCorrales] = useState([])
   const [gdpPorCorral, setGdpPorCorral] = useState({})
+  const [compradores, setCompradores] = useState([])
 
+  const [ventasSinPrecio, setVentasSinPrecio] = useState([])
+  const [editandoVenta, setEditandoVenta] = useState(null)
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
   const [form, setForm] = useState({
@@ -65,6 +68,8 @@ export default function Ventas({ usuario }) {
     setVentas(v || [])
     setLotes(l || [])
     setCorrales(c || [])
+    const comps = [...new Set((v || []).map(x => x.comprador).filter(Boolean))].sort()
+    setCompradores(comps)
 
     // Calcular GDP y peso actual por corral desde pesadas
     const gdp = {}
@@ -140,6 +145,21 @@ export default function Ventas({ usuario }) {
   const totalGastado = lotes.reduce((s, l) => s + ((l.kg_bascula || 0) * (l.precio_compra || 0)), 0)
   const totalAnimComprados = lotes.reduce((s, l) => s + (l.cantidad || 0), 0)
 
+  async function guardarDatosVenta(venta) {
+    const ep = editandoVenta
+    if (!ep?.precio_kg) { alert('Ingresa el precio'); return }
+    const precioKg = parseFloat(ep.precio_kg)
+    const total = (venta.kg_neto || 0) * precioKg
+    await supabase.from('ventas').update({
+      precio_kg: precioKg,
+      total: Math.round(total),
+      comprador: ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null),
+      observaciones: ep.observaciones || venta.observaciones || null,
+    }).eq('id', venta.id)
+    setEditandoVenta(null)
+    await cargar()
+  }
+
   async function confirmarVenta() {
     if (!form.corral_id || !form.cantidad || !form.kg_vivo) { alert('Completá todos los campos requeridos.'); return }
     setGuardando(true)
@@ -151,7 +171,7 @@ export default function Ventas({ usuario }) {
       kg_neto: kgNeto,
       precio_kg: precioKg || null,
       total: totalVenta || null,
-      comprador: form.comprador || null,
+      comprador: form.comprador === 'Otro' ? (form.comprador_otro || null) : (form.comprador || null),
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id,
     })
@@ -232,6 +252,87 @@ export default function Ventas({ usuario }) {
               </div>
             )
           })}
+
+          {/* Banner ventas sin precio */}
+          {ventasSinPrecio.length > 0 && (
+            <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '.85rem' }}>
+                ⚠ {ventasSinPrecio.length} venta{ventasSinPrecio.length !== 1 ? 's' : ''} sin precio cargado
+              </div>
+              {ventasSinPrecio.map(v => {
+                const isEdit = editandoVenta?.id === v.id
+                return (
+                  <div key={v.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: isEdit ? 12 : 0 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>C-{v.corrales?.numero || v.corral_id} · {v.cantidad} animales</div>
+                        <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                          {v.kg_neto?.toLocaleString('es-AR')} kg netos · {new Date(v.creado_en).toLocaleDateString('es-AR')}
+                          {v.comprador && ` · ${v.comprador}`}
+                        </div>
+                      </div>
+                      {!isEdit && (
+                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '' })}
+                          style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
+                          Completar datos
+                        </button>
+                      )}
+                    </div>
+                    {isEdit && (
+                      <div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg *</label>
+                            <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
+                              onChange={e => setEditandoVenta({ ...editandoVenta, precio_kg: e.target.value })}
+                              style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comprador</label>
+                            <select value={editandoVenta.comprador} onChange={e => setEditandoVenta({ ...editandoVenta, comprador: e.target.value, compradorNuevo: '' })}
+                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
+                              <option value="">— Sin comprador —</option>
+                              {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+                              <option value="Otro">+ Nuevo...</option>
+                            </select>
+                          </div>
+                          {editandoVenta.comprador === 'Otro' && (
+                            <div style={{ gridColumn: '1/-1' }}>
+                              <input type="text" placeholder="Nombre del comprador" value={editandoVenta.compradorNuevo || ''}
+                                onChange={e => setEditandoVenta({ ...editandoVenta, compradorNuevo: e.target.value })}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                          )}
+                          <div style={{ gridColumn: '1/-1' }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Observaciones</label>
+                            <input type="text" placeholder="remito, condiciones, etc." value={editandoVenta.observaciones}
+                              onChange={e => setEditandoVenta({ ...editandoVenta, observaciones: e.target.value })}
+                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                          </div>
+                        </div>
+                        {editandoVenta.precio_kg && (
+                          <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
+                            Total: <strong>${(v.kg_neto * parseFloat(editandoVenta.precio_kg)).toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong>
+                            {' '}({v.kg_neto?.toLocaleString('es-AR')} kg × ${parseFloat(editandoVenta.precio_kg).toLocaleString('es-AR')}/kg)
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={() => guardarDatosVenta(v)}
+                            style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                            Guardar
+                          </button>
+                          <button onClick={() => setEditandoVenta(null)}
+                            style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {/* Historial */}
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
@@ -529,9 +630,10 @@ export default function Ventas({ usuario }) {
                     <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Precio y comprador</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                       <Campo label="Comprador">
-                        <select value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value })} style={inputStyle}>
-                          <option value="">— Seleccioná —</option>
-                          {['Frigorífico Rioplatense', 'Frigorífico San Jorge', 'Consig. Los Álamos', 'Otro'].map(o => <option key={o}>{o}</option>)}
+                        <select value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value, comprador_otro: '' })} style={inputStyle}>
+                          <option value="">— Seleccioná o agregá nuevo —</option>
+                          {compradores.map(o => <option key={o} value={o}>{o}</option>)}
+                          <option value="Otro">+ Nuevo comprador...</option>
                         </select>
                       </Campo>
                       {form.comprador === 'Otro' && (

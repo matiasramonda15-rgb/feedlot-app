@@ -15,22 +15,26 @@ export default function AppMovil({ usuario, onLogout }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: corrales }, { data: cfg }, { data: alertas }] = await Promise.all([
-      supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('id'),
+    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }] = await Promise.all([
+      supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
+      supabase.from('lotes').select('procedencia').order('created_at', { ascending: false }),
+      supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
     ])
-    setDatos({ corrales: corrales || [], proximaPesada: cfg?.valor || null, alertas: alertas || [] })
+    const procedencias = [...new Set((lotes || []).map(x => x.procedencia).filter(Boolean))].sort()
+    const compradores = [...new Set((ventas || []).filter(v => v.comprador).map(v => v.comprador))].sort()
+    setDatos({ corrales: corrales || [], proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [] })
   }
 
   const pantallas = {
     home:        <Home usuario={usuario} nav={nav} onLogout={onLogout} datos={datos} />,
     corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
-    ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
+    ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} usuario={usuario} />,
-    venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
+    venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
   }
   return (
@@ -245,15 +249,16 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
     </div>
   )
 }
-function Ingreso({ nav, usuario, corrales, onDone }) {
-  const [form, setForm] = useState({ procedencia: 'Remate ROSGAN', otraProcedencia: '', categoria: 'Novillos 2-3 anos', cantidad: '', kg_bascula: '', observaciones: '', corral_id: '' })
+function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
+  const [form, setForm] = useState({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos', cantidad: '', kg_bascula: '', observaciones: '', corral_id: '' })
   const [guardando, setGuardando] = useState(false)
   const prom = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena' || c.rol === 'libre')
 
   async function guardar() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completa cantidad y kg bascula.'); return }
-    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia || 'Otro') : form.procedencia
+    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || 'Otro') : form.procedencia
+    if (!procFinal) { alert('Ingresa la procedencia.'); setGuardando(false); return }
     setGuardando(true)
     const codigo = `L-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
     const { error } = await supabase.from('lotes').insert({
@@ -282,7 +287,9 @@ function Ingreso({ nav, usuario, corrales, onDone }) {
           <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Procedencia</div>
           <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value, otraProcedencia: ''})}
             style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
-            {['Remate ROSGAN','Remate Canuelas','Campo propio','Invernada Sanchez','Otro'].map(o => <option key={o}>{o}</option>)}
+            <option value="">— Seleccioná —</option>
+            {(procedencias || []).map(o => <option key={o} value={o}>{o}</option>)}
+            <option value="Otro">+ Nueva procedencia...</option>
           </select>
           {form.procedencia === 'Otro' && (
             <input type="text" placeholder="Escribi la procedencia..." value={form.otraProcedencia}
@@ -969,7 +976,7 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
   )
 }
 
-function VentaMovil({ nav, usuario, corrales, onDone }) {
+function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
   const [form, setForm] = useState({ corral_id: '', cantidad: '', kg_vivo: '', precio_kg: '', comprador: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
@@ -992,7 +999,7 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
       kg_neto: Math.round(kg_neto * 100) / 100,
       precio_kg: null,
       total: null,
-      comprador: form.comprador || null,
+      comprador: form.comprador === 'Otro' ? (form.compradorNuevo || null) : (form.comprador || null),
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id,
     })
@@ -1055,9 +1062,17 @@ function VentaMovil({ nav, usuario, corrales, onDone }) {
 
         <div style={{ marginBottom: '.85rem' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Comprador</div>
-          <input type="text" placeholder="Nombre del comprador" value={form.comprador}
-            onChange={e => setForm({...form, comprador: e.target.value})}
-            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+          <select value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value, compradorNuevo: ''})}
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+            <option value="">— Seleccioná o agregá nuevo —</option>
+            {(compradores || []).map(o => <option key={o} value={o}>{o}</option>)}
+            <option value="Otro">+ Nuevo comprador...</option>
+          </select>
+          {form.comprador === 'Otro' && (
+            <input type="text" placeholder="Nombre del comprador" value={form.compradorNuevo || ''}
+              onChange={e => setForm({...form, compradorNuevo: e.target.value})}
+              style={{ width: '100%', background: C.surface, border: `1px solid ${C.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box', marginTop: 6 }} />
+          )}
         </div>
 
         <div style={{ marginBottom: '1rem' }}>
