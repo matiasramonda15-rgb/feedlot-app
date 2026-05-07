@@ -5,10 +5,11 @@ import { Card, Btn, Badge, Loader } from './Tablero'
 export default function Ingresos({ usuario }) {
   const [lotes, setLotes] = useState([])
   const [corrales, setCorrales] = useState([])
+  const [procedencias, setProcedencias] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('lista')
   const [form, setForm] = useState({
-    procedencia: 'Remate ROSGAN', categoria: 'Novillos 2-3 anos',
+    procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos',
     cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: ''
   })
   const [guardando, setGuardando] = useState(false)
@@ -19,15 +20,20 @@ export default function Ingresos({ usuario }) {
   async function cargarDatos() {
     const [{ data: l }, { data: c }] = await Promise.all([
       supabase.from('lotes').select('*, corrales:corral_cuarentena_id(numero)').order('created_at', { ascending: false }),
-      supabase.from('corrales').select('*').eq('rol', 'cuarentena').order('numero'),
+      supabase.from('corrales').select('*').in('rol', ['cuarentena', 'libre']).order('numero'),
     ])
     setLotes(l || [])
     setCorrales(c || [])
+    // Extraer procedencias únicas de lotes existentes
+    const procs = [...new Set((l || []).map(x => x.procedencia).filter(Boolean))].sort()
+    setProcedencias(procs)
     setLoading(false)
   }
 
   async function guardarIngreso() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completa cantidad y kg bascula'); return }
+    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || 'Otro') : form.procedencia
+    if (!procFinal) { alert('Ingresa la procedencia'); return }
     setGuardando(true)
     const codigo = `L-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`
     const peso_prom = parseFloat(form.kg_bascula) / parseInt(form.cantidad)
@@ -35,7 +41,7 @@ export default function Ingresos({ usuario }) {
     const { error } = await supabase.from('lotes').insert({
       codigo,
       fecha_ingreso: new Date().toISOString().split('T')[0],
-      procedencia: form.procedencia,
+      procedencia: procFinal,
       categoria: form.categoria,
       cantidad: parseInt(form.cantidad),
       kg_bascula: parseFloat(form.kg_bascula),
@@ -74,7 +80,7 @@ export default function Ingresos({ usuario }) {
 
       await cargarDatos()
       setVista('lista')
-      setForm({ procedencia: 'Remate ROSGAN', categoria: 'Novillos 2-3 anos', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
+      setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
     }
     setGuardando(false)
   }
@@ -110,9 +116,16 @@ export default function Ingresos({ usuario }) {
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Procedencia</label>
               <select style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2DDD6', borderRadius: 6, fontSize: 14, background: '#fff' }}
-                value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value})}>
-                {['Remate ROSGAN','Remate Canuelas','Campo propio','Invernada Sanchez','Otro'].map(o => <option key={o}>{o}</option>)}
+                value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value, otraProcedencia: ''})}>
+                <option value="">— Seleccioná o agregá nueva —</option>
+                {procedencias.map(p => <option key={p} value={p}>{p}</option>)}
+                <option value="Otro">+ Nueva procedencia...</option>
               </select>
+              {form.procedencia === 'Otro' && (
+                <input type="text" placeholder="Ej: Remate Gral. Villegas" value={form.otraProcedencia}
+                  onChange={e => setForm({...form, otraProcedencia: e.target.value})}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #1A3D6B', borderRadius: 6, fontSize: 14, boxSizing: 'border-box', marginTop: 6 }} />
+              )}
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Categoria</label>
@@ -135,21 +148,25 @@ export default function Ingresos({ usuario }) {
           {promEst && (
             <div style={{ padding: '10px 12px', background: '#F7F5F0', borderRadius: 8, fontSize: 13, marginBottom: '1rem' }}>
               Peso prom. estimado: <strong>{promEst} kg/animal</strong>
-              {promEst < 180 && <span style={{ color: '#7A4500', marginLeft: 8 }}>⚠ Menor a 180 kg - se generara alerta 2da dosis</span>}
+              {promEst < 180 && <span style={{ color: '#7A4500', marginLeft: 8 }}>⚠ Menor a 180 kg — se generará alerta 2da dosis</span>}
             </div>
           )}
         </Card>
 
-        <Card titulo="Pesaje en bascula">
+        <Card titulo="Asignacion de corral">
           <div style={{ background: '#E8EFF8', border: '1px solid #378ADD', borderRadius: 8, padding: '10px 12px', marginBottom: '1rem', fontSize: 12, color: '#1A3D6B' }}>
-            Solo registras los kg de bascula. Los kg de factura y el precio los completan en oficina.
+            Podés asignar un corral libre o uno de cuarentena existente si los animales entran con pocos días de diferencia.
           </div>
           <div>
             <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Corral de cuarentena</label>
             <select style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2DDD6', borderRadius: 6, fontSize: 14, background: '#fff' }}
               value={form.corral_cuarentena_id} onChange={e => setForm({...form, corral_cuarentena_id: e.target.value})}>
-              <option value="">Selecciona un corral</option>
-              {corrales.map(c => <option key={c.id} value={c.id}>Corral {c.numero} (cap. {c.capacidad})</option>)}
+              <option value="">Sin asignar por ahora</option>
+              {corrales.map(c => (
+                <option key={c.id} value={c.id}>
+                  Corral {c.numero} · {c.rol === 'cuarentena' ? 'en cuarentena' : 'libre'} · {c.animales || 0} anim. · cap. {c.capacidad}
+                </option>
+              ))}
             </select>
           </div>
         </Card>
