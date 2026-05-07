@@ -120,7 +120,8 @@ export default function Tablero({ usuario }) {
     if (mortalidad) mortalidad.slice(0, 2).forEach(m => movRecientes.push({ tipo: 'mortalidad', texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
     movRecientes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
 
-    setDatos({ corrales: corrales || [], alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: cfg?.valor || null, stockBajo: stockBajo || [] })
+    const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: cfg?.valor || null, stockBajo: stockBajo || [] })
     setLoading(false)
   }
 
@@ -445,7 +446,6 @@ function calcPesoProm(pesadaAnimales) {
   const totalAnim = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (totalAnim === 0) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
-}
 
 export function Card({ children, style = {} }) {
   return (
@@ -469,4 +469,4 @@ export function Badge({ children, type = 'neutral', style = {} }) {
       {children}
     </span>
   )
-} 
+}
