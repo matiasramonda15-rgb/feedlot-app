@@ -281,27 +281,48 @@ export default function Ingresos({ usuario }) {
           {lotesSinPrecio.map(l => {
             const isEdit = editandoPrecio?.id === l.id
             const kgFacEdit = parseFloat(editandoPrecio?.kg_factura) || 0
+            const kgFacBase = parseFloat(l.kg_factura) || 0
             const diffKg = isEdit && kgFacEdit && l.kg_bascula
               ? l.kg_bascula - kgFacEdit
-              : l.kg_factura ? l.kg_bascula - l.kg_factura : null
+              : kgFacBase ? l.kg_bascula - kgFacBase : null
+            const kgFacUsada = isEdit ? kgFacEdit : kgFacBase
+            const diffPct = diffKg !== null && kgFacUsada > 0 ? (diffKg / kgFacUsada * 100) : null
+            const alertaDiff = diffPct !== null && Math.abs(diffPct) > 3
             return (
               <div key={l.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: isEdit ? 12 : 0 }}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{l.codigo} · {l.procedencia}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{l.codigo} · {l.procedencia || <span style={{ color: S.amber }}>sin procedencia</span>}</div>
                     <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                       {l.cantidad} animales · {l.kg_bascula?.toLocaleString('es-AR')} kg báscula · {new Date(l.fecha_ingreso).toLocaleDateString('es-AR')}
                     </div>
                   </div>
                   {!isEdit && (
-                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: '', kg_factura: l.kg_factura ? String(l.kg_factura) : '' })}
+                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: '', kg_factura: l.kg_factura ? String(l.kg_factura) : '', procedencia: l.procedencia || '', otraProcedencia: '' })}
                       style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
-                      Cargar precio
+                      Completar datos
                     </button>
                   )}
                 </div>
                 {isEdit && (
                   <div>
+                    {!l.procedencia && (
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Procedencia</label>
+                        <select value={editandoPrecio.procedencia || ''}
+                          onChange={e => setEditandoPrecio({ ...editandoPrecio, procedencia: e.target.value, otraProcedencia: '' })}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
+                          <option value="">— Sin procedencia —</option>
+                          {procedencias.map(p => <option key={p} value={p}>{p}</option>)}
+                          <option value="Otro">+ Nueva...</option>
+                        </select>
+                        {editandoPrecio.procedencia === 'Otro' && (
+                          <input type="text" placeholder="Escribí la procedencia" value={editandoPrecio.otraProcedencia || ''}
+                            onChange={e => setEditandoPrecio({ ...editandoPrecio, otraProcedencia: e.target.value })}
+                            style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', marginTop: 6 }} />
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg *</label>
@@ -317,8 +338,9 @@ export default function Ingresos({ usuario }) {
                       </div>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Diferencia</label>
-                        <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.bg, fontFamily: 'monospace', color: diffKg !== null ? (diffKg >= 0 ? S.green : S.red) : S.hint }}>
+                        <div style={{ padding: '8px 10px', border: `1px solid ${alertaDiff ? '#EF9F27' : S.border}`, borderRadius: 6, fontSize: 13, background: alertaDiff ? S.amberLight : S.bg, fontFamily: 'monospace', color: diffKg !== null ? (alertaDiff ? S.amber : diffKg >= 0 ? S.green : S.red) : S.hint, fontWeight: alertaDiff ? 600 : 400 }}>
                           {diffKg !== null ? `${diffKg >= 0 ? '+' : ''}${diffKg.toLocaleString('es-AR')} kg` : '—'}
+                          {diffPct !== null && <span style={{ fontSize: 11, marginLeft: 4 }}>({diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%{alertaDiff ? ' ⚠' : ''})</span>}
                         </div>
                       </div>
                     </div>
