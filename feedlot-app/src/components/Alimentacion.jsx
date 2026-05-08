@@ -103,8 +103,8 @@ export default function Alimentacion({ usuario }) {
   const [piletas, setPiletas] = useState([[null, null], [null, null], [null, null]])
 
   const MIXERS_CONFIG = [
-    { id: 'acost', num: 'Mixer 1', nombre: 'Acostumbramiento', etapa: 'acostumbramiento', headerGrad: '#FDF0E0', corralesRoles: ['cuarentena', 'acumulacion'] },
-    { id: 'recria', num: 'Mixer 2', nombre: 'Recria', etapa: 'recria', headerGrad: '#E8EFF8', corralesRoles: ['clasificado'] },
+    { id: 'acost', num: 'Mixer 1', nombre: 'Acostumbramiento', etapa: 'acostumbramiento', headerGrad: '#FDF0E0', corralesRoles: ['cuarentena'] },
+    { id: 'recria', num: 'Mixer 2', nombre: 'Recria', etapa: 'recria', headerGrad: '#E8EFF8', corralesRoles: ['acumulacion', 'enfermeria', 'clasificado'] },
     { id: 'term', num: 'Mixer 3', nombre: 'Terminacion', etapa: 'terminacion', headerGrad: '#E8F4EB', corralesRoles: ['clasificado'] },
   ]
 
@@ -152,10 +152,12 @@ export default function Alimentacion({ usuario }) {
     setLoading(false)
   }
 
+  const RANGOS_RECRIA = ['A','B','C']
+  const RANGOS_TERM = ['D','E','F','G']
   const corralesMixer = [
-    corrales.filter(c => c.rol === 'cuarentena' || c.rol === 'acumulacion'),
-    corrales.filter(c => c.rol === 'clasificado').slice(0, 2),
-    corrales.filter(c => c.rol === 'clasificado').slice(2),
+    corrales.filter(c => c.rol === 'cuarentena'),
+    corrales.filter(c => c.rol === 'acumulacion' || c.rol === 'enfermeria' || (c.rol === 'clasificado' && RANGOS_RECRIA.includes(c.sub))),
+    corrales.filter(c => c.rol === 'clasificado' && RANGOS_TERM.includes(c.sub)),
   ]
 
   useEffect(() => {
@@ -1244,4 +1246,4 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
       })}
     </div>
   )
-} 
+}

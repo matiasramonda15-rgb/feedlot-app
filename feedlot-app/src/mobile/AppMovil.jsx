@@ -414,7 +414,13 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
 }
 function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
-  const ETAPAS = { cuarentena: 'acostumbramiento', acumulacion: 'acostumbramiento', clasificado: 'recria', enfermeria: 'recria' }
+  const RANGOS_RECRIA = ['A','B','C']
+  function getEtapa(c) {
+    if (c.rol === 'cuarentena') return 'acostumbramiento'
+    if (c.rol === 'acumulacion' || c.rol === 'enfermeria') return 'recria'
+    if (c.rol === 'clasificado') return RANGOS_RECRIA.includes(c.sub) ? 'recria' : 'terminacion'
+    return 'recria'
+  }
   const FRML = {
     acostumbramiento: [{n:'Rollo',kg:38,c:'#639922'},{n:'Maiz seco',kg:39,c:'#E8A020'},{n:'Vitaminas',kg:2,c:'#5090E0'},{n:'Urea',kg:0.5,c:'#9060C0'},{n:'Soja',kg:3,c:'#20A060'},{n:'Agua',kg:17,c:'#60A0E0'}],
     recria:           [{n:'Rollo',kg:26,c:'#639922'},{n:'Maiz seco',kg:55,c:'#E8A020'},{n:'Vitaminas',kg:2,c:'#5090E0'},{n:'Urea',kg:1,c:'#9060C0'},{n:'Agua',kg:17,c:'#60A0E0'}],
@@ -443,15 +449,16 @@ function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
   const total = Object.values(kgs).reduce((a, b) => a + b, 0)
 
   const MIXERS = [
-    { nombre: 'Mixer 1 - Acostumbramiento', etapa: 'acostumbramiento', corralesIds: corralesAlim.filter(c => ETAPAS[c.rol] === 'acostumbramiento').map(c => c.id), cap: 4000 },
-    { nombre: 'Mixer 2 - Recria', etapa: 'recria', corralesIds: corralesAlim.filter(c => ETAPAS[c.rol] === 'recria').map(c => c.id), cap: 4000 },
-    { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corralesIds: corralesAlim.filter(c => ETAPAS[c.rol] === 'terminacion').map(c => c.id), cap: 4000 },
+    { nombre: 'Mixer 1 - Acostumbramiento', etapa: 'acostumbramiento', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento').map(c => c.id), cap: 4000 },
+    { nombre: 'Mixer 2 - Recria', etapa: 'recria', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'recria').map(c => c.id), cap: 4000 },
+    { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'terminacion').map(c => c.id), cap: 4000 },
   ].filter(m => m.corralesIds.length > 0)
 
   async function confirmar() {
     setGuardando(true)
     const registros = corralesAlim.map(c => ({
-      mixer: 'Mixer 1', corral_id: c.id, formula: 'Engorde',
+      mixer: getEtapa(c) === 'acostumbramiento' ? 'Acostumbramiento' : getEtapa(c) === 'recria' ? 'Recria' : 'Terminacion',
+      corral_id: c.id, formula: 'Engorde',
       kg_total: kgs[c.id] || 0, registrado_por: usuario?.id,
     }))
     await supabase.from('raciones_diarias').insert(registros)
