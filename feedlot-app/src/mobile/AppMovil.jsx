@@ -1323,4 +1323,4 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
       </Scroll>
     </div>
   )
-}
+} 

@@ -778,4 +778,4 @@ await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
       )}
     </div>
   )
-}
+} 
