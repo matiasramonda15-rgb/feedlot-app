@@ -964,7 +964,32 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
       if (cant > 0) animalesInsert.push({ pesada_id: pesada.id, rango, cantidad: cant })
     })
     if (menores > 0) animalesInsert.push({ pesada_id: pesada.id, rango: 'menores', cantidad: menores })
-    if (animalesInsert.length > 0) await supabase.from('pesada_animales').insert(animalesInsert)
+    if (animalesInsert.length > 0) await supabase.from('pesada_animales').insert(animalesInsert)// Snapshot rangos actuales
+const mapaRangoCorral = {}
+corralesClasificados.forEach(c => {
+  const letra = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0)
+  if (letra) mapaRangoCorral[letra] = { ...c, sub: letra }
+})
+
+// Registrar movimientos
+const movimientos = []
+if (corralAcum) movimientos.push({ pesada_id: pesada.id, corral_id: corralAcum.id, tipo: 'origen_acum', animales: totalClasif, rango_antes: null, rango_despues: null })
+corralesClasificados.forEach(c => {
+  const letraAntes = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
+  movimientos.push({ pesada_id: pesada.id, corral_id: c.id, tipo: 'subida_rango', animales: c.animales || 0, rango_antes: letraAntes, rango_despues: subirRango(letraAntes, 2) })
+})
+const cantA = parseInt(form.A) || 0
+const cantB = parseInt(form.B) || 0
+if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre1), tipo: 'nuevo_clasificado', animales: cantA, rango_antes: 'libre', rango_despues: 'A' })
+if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre2), tipo: 'nuevo_clasificado', animales: cantB, rango_antes: 'libre', rango_despues: 'B' })
+const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
+Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
+  const cant = parseInt(form[letraNueva]) || 0
+  if (cant === 0) return
+  const corralDest = mapaRangoCorral[letraAnterior]
+  if (corralDest) movimientos.push({ pesada_id: pesada.id, corral_id: corralDest.id, tipo: 'suma_existente', animales: cant, rango_antes: letraAnterior, rango_despues: letraNueva })
+})
+if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
 
     // 3. Snapshot rangos actuales ANTES de modificar
     const mapaRangoCorral = {}
