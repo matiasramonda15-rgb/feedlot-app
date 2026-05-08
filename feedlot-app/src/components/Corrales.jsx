@@ -37,14 +37,25 @@ export default function Corrales({ usuario }) {
   const [vistaPanel, setVistaPanel] = useState('detalle')
   const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '', rolDestino: '', subDestino: '' })
   const [guardando, setGuardando] = useState(false)
+  const [movimientos, setMovimientos] = useState([])
+  const [movArchivo, setMovArchivo] = useState([])
+  const [verArchivoMov, setVerArchivoMov] = useState(false)
   const esDueno = ['dueno', 'encargado'].includes(usuario?.rol)
 
   useEffect(() => { cargarCorrales() }, [])
 
   async function cargarCorrales() {
-    const { data, error } = await supabase.from('corrales').select('*').order('id')
+    const [{ data, error }, { data: movs }] = await Promise.all([
+      supabase.from('corrales').select('*').order('id'),
+      supabase.from('movimientos')
+        .select('*, origen:corral_origen_id(numero), destino:corral_destino_id(numero), usuario:registrado_por(nombre)')
+        .order('fecha', { ascending: false })
+        .limit(100),
+    ])
     if (error) console.error('Error cargando corrales:', error)
     setCorrales((data || []).map(normalizar).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
+    setMovimientos((movs || []).slice(0, 10))
+    setMovArchivo((movs || []).slice(10))
     setLoading(false)
   }
 
@@ -98,6 +109,12 @@ export default function Corrales({ usuario }) {
     setVistaPanel('detalle')
     setGuardando(false)
     alert(`${cantidad} animales movidos.${nuevosOrigen === 0 ? ' El corral origen quedó libre.' : ''}`)
+  }
+
+  async function eliminarMovimiento(id) {
+    if (!confirm('¿Eliminar este movimiento del historial?')) return
+    await supabase.from('movimientos').delete().eq('id', id)
+    await cargarCorrales()
   }
 
   const byNum = Object.fromEntries(corrales.map(c => [c.numero, c]))
@@ -185,6 +202,103 @@ export default function Corrales({ usuario }) {
             )
           }
         </div>
+      </div>
+
+      {/* HISTORIAL DE MOVIMIENTOS */}
+      <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1.25rem', marginTop: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', letterSpacing: '.07em' }}>
+            Historial de movimientos
+          </div>
+          <span style={{ fontSize: 11, color: '#9E9A94' }}>últimos 10 movimientos</span>
+        </div>
+        <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'hidden', marginBottom: '1rem' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#F7F5F0' }}>
+                {['Fecha', 'Tipo', 'Origen', 'Destino', 'Cantidad', 'Motivo', 'Registrado por', ''].map(h => (
+                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#6B6760', fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #E2DDD6', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {movimientos.length === 0 && (
+                <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: '#9E9A94', fontSize: 13 }}>No hay movimientos registrados.</td></tr>
+              )}
+              {movimientos.map(m => (
+                <tr key={m.id} style={{ borderBottom: '1px solid #E2DDD6' }}>
+                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>
+                    {new Date(m.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                    <div style={{ fontSize: 10, color: '#9E9A94' }}>{new Date(m.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: '#E8EFF8', color: '#1A3D6B' }}>
+                      {m.tipo || 'traslado'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>C-{m.origen?.numero || m.corral_origen_id}</td>
+                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>C-{m.destino?.numero || m.corral_destino_id}</td>
+                  <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{m.cantidad}</td>
+                  <td style={{ padding: '9px 12px', color: '#6B6760' }}>{m.motivo || <span style={{ color: '#9E9A94' }}>—</span>}</td>
+                  <td style={{ padding: '9px 12px', fontSize: 12, color: '#6B6760' }}>{m.usuario?.nombre || '—'}</td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <button onClick={() => eliminarMovimiento(m.id)}
+                      style={{ background: '#FDF0F0', border: '1px solid #F09595', borderRadius: 5, color: '#7A1A1A', fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Archivo */}
+        {movArchivo.length > 0 && (
+          <div>
+            <button onClick={() => setVerArchivoMov(!verArchivoMov)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: '1rem' }}>
+              {verArchivoMov ? '▾' : '▸'} Archivo ({movArchivo.length} movimientos anteriores)
+            </button>
+            {verArchivoMov && (
+              <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#F7F5F0' }}>
+                      {['Fecha', 'Tipo', 'Origen', 'Destino', 'Cantidad', 'Motivo', 'Registrado por', ''].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#6B6760', fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #E2DDD6', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movArchivo.map(m => (
+                      <tr key={m.id} style={{ borderBottom: '1px solid #E2DDD6', opacity: 0.75 }}>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>
+                          {new Date(m.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                          <div style={{ fontSize: 10, color: '#9E9A94' }}>{new Date(m.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td style={{ padding: '9px 12px' }}>
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: '#E8EFF8', color: '#1A3D6B' }}>{m.tipo || 'traslado'}</span>
+                        </td>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>C-{m.origen?.numero || m.corral_origen_id}</td>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>C-{m.destino?.numero || m.corral_destino_id}</td>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{m.cantidad}</td>
+                        <td style={{ padding: '9px 12px', color: '#6B6760' }}>{m.motivo || <span style={{ color: '#9E9A94' }}>—</span>}</td>
+                        <td style={{ padding: '9px 12px', fontSize: 12, color: '#6B6760' }}>{m.usuario?.nombre || '—'}</td>
+                        <td style={{ padding: '9px 12px' }}>
+                          <button onClick={() => eliminarMovimiento(m.id)}
+                            style={{ background: '#FDF0F0', border: '1px solid #F09595', borderRadius: 5, color: '#7A1A1A', fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
