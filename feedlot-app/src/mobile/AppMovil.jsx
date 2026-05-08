@@ -185,7 +185,7 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
     const color = colors[seleccionado.rol] || C.green
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <Topbar titulo={`Corral ${seleccionado.numero}`} sub={seleccionado.rol} onBack={() => { setVista('lista'); setSeleccionado(null) }} />
+        <Topbar titulo={`Corral ${seleccionado.numero}`} sub={seleccionado.rol === 'clasificado' && seleccionado.sub ? `Clasificado · Rango ${seleccionado.sub}` : seleccionado.rol} onBack={() => { setVista('lista'); setSeleccionado(null) }} />
         <Scroll>
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -231,7 +231,7 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
             <select value={movForm.destino_id} onChange={e => { setMovForm({...movForm, destino_id: e.target.value}); setRolDestino(''); setSubDestino('') }}
               style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
               <option value="">Selecciona destino</option>
-              {destinosDisponibles.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol === 'libre' ? 'LIBRE' : c.rol} - {c.animales || 0} anim.</option>)}
+              {destinosDisponibles.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol === 'libre' ? 'LIBRE' : c.rol === 'clasificado' && c.sub ? `Rango ${c.sub}` : c.rol} - {c.animales || 0} anim.</option>)}
             </select>
           </div>
 
@@ -301,7 +301,7 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>Corral {c.numero}</div>
-                  <div style={{ fontSize: 12, color: C.muted }}>{c.rol}</div>
+                  <div style={{ fontSize: 12, color: C.muted }}>{c.rol === 'clasificado' && c.sub ? `Clasificado · Rango ${c.sub}` : c.rol}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 20, fontWeight: 700, fontFamily: C.mono, color }}>{c.animales || 0}</div>
