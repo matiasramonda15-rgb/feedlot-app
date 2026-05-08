@@ -14,11 +14,11 @@ const ROL_COLOR = {
 function normalizar(c) {
   return {
     id:        c.id,
-    numero:    c.numero || c['numero'] || String(c.id),
-    capacidad: c.capacidad || c['Capacidad'] || 100,
+    numero:    c.numero || String(c.id),
+    capacidad: c.capacidad || 100,
     rol:       (c.rol || 'libre').toLowerCase(),
-    sub:       c.sub || c['Suplente'] || null,
-    activo:    c.activo ?? c['Activo'] ?? true,
+    sub:       c.sub || null,
+    activo:    c.activo ?? true,
     animales:  c.animales || 0,
   }
 }
@@ -35,7 +35,7 @@ export default function Corrales({ usuario }) {
   const [seleccionado, setSeleccionado] = useState(null)
   const [loading, setLoading] = useState(true)
   const [vistaPanel, setVistaPanel] = useState('detalle')
-  const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '' })
+  const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '', rolDestino: '', subDestino: '' })
   const [guardando, setGuardando] = useState(false)
   const esDueno = ['dueno', 'encargado'].includes(usuario?.rol)
 
@@ -44,15 +44,14 @@ export default function Corrales({ usuario }) {
   async function cargarCorrales() {
     const { data, error } = await supabase.from('corrales').select('*').order('id')
     if (error) console.error('Error cargando corrales:', error)
-    console.log('Datos recibidos:', data)
-    setCorrales((data || []).map(normalizar))
+    setCorrales((data || []).map(normalizar).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setLoading(false)
   }
 
-  async function cambiarRol(corralId, nuevoRol) {
-    await supabase.from('corrales').update({ rol: nuevoRol }).eq('id', corralId)
+  async function cambiarRol(corralId, nuevoRol, sub = null) {
+    await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null }).eq('id', corralId)
     await cargarCorrales()
-    setSeleccionado(prev => prev ? {...prev, rol: nuevoRol} : prev)
+    setSeleccionado(prev => prev ? {...prev, rol: nuevoRol, sub} : prev)
   }
 
   async function moverAnimales() {
@@ -61,8 +60,13 @@ export default function Corrales({ usuario }) {
     if (!movForm.cantidad || parseInt(movForm.cantidad) <= 0) { alert('Ingresa la cantidad'); return }
     const cantidad = parseInt(movForm.cantidad)
     if (cantidad > (sel?.animales || 0)) { alert(`No hay suficientes animales. Disponibles: ${sel?.animales}`); return }
-    setGuardando(true)
 
+    const corralDestino = corrales.find(c => String(c.id) === String(movForm.destino_id))
+    const destinoEsLibre = corralDestino?.rol === 'libre'
+    if (destinoEsLibre && !movForm.rolDestino) { alert('Seleccioná el rol del corral destino'); return }
+    if (destinoEsLibre && movForm.rolDestino === 'clasificado' && !movForm.subDestino) { alert('Seleccioná el rango del corral clasificado'); return }
+
+    setGuardando(true)
     const destinoId = parseInt(movForm.destino_id)
 
     await supabase.from('movimientos').insert({
@@ -74,15 +78,26 @@ export default function Corrales({ usuario }) {
       registrado_por: usuario?.id,
     })
 
-    await supabase.from('corrales').update({ animales: (sel.animales || 0) - cantidad }).eq('id', sel.id)
+    // Actualizar origen — auto-libre si quedó vacío
+    const nuevosOrigen = (sel.animales || 0) - cantidad
+    const updateOrigen = { animales: nuevosOrigen }
+    if (nuevosOrigen === 0) { updateOrigen.rol = 'libre'; updateOrigen.sub = null }
+    await supabase.from('corrales').update(updateOrigen).eq('id', sel.id)
+
+    // Actualizar destino — asignar rol si era libre
     const { data: dest } = await supabase.from('corrales').select('animales').eq('id', destinoId).single()
-    await supabase.from('corrales').update({ animales: (dest?.animales || 0) + cantidad }).eq('id', destinoId)
+    const updateDestino = { animales: (dest?.animales || 0) + cantidad }
+    if (destinoEsLibre) {
+      updateDestino.rol = movForm.rolDestino
+      updateDestino.sub = movForm.rolDestino === 'clasificado' ? movForm.subDestino : null
+    }
+    await supabase.from('corrales').update(updateDestino).eq('id', destinoId)
 
     await cargarCorrales()
-    setMovForm({ destino_id: '', cantidad: '', motivo: '' })
+    setMovForm({ destino_id: '', cantidad: '', motivo: '', rolDestino: '', subDestino: '' })
     setVistaPanel('detalle')
     setGuardando(false)
-    alert(`${cantidad} animales movidos correctamente`)
+    alert(`${cantidad} animales movidos.${nuevosOrigen === 0 ? ' El corral origen quedó libre.' : ''}`)
   }
 
   const byNum = Object.fromEntries(corrales.map(c => [c.numero, c]))
@@ -95,7 +110,7 @@ export default function Corrales({ usuario }) {
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Corrales y tropas</h1>
         <div style={{ fontSize: 12, color: '#6B6760', fontFamily: 'monospace' }}>
-          {corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado').length} activos - {corrales.filter(c => c.rol === 'libre').length} libres
+          {corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado').length} activos · {corrales.filter(c => c.rol === 'libre').length} libres
         </div>
       </div>
 
@@ -179,13 +194,12 @@ function CorralBox({ c, label, sel, onClick }) {
   const rc = ROL_COLOR[c.rol] || ROL_COLOR.libre
   const isSelected = sel?.id === c.id
   const pct = c.capacidad > 0 ? Math.round((c.animales||0) / c.capacidad * 100) : 0
-  const disabled = false
 
   return (
-    <div onClick={() => !disabled && onClick(c)}
+    <div onClick={() => onClick(c)}
       style={{
         flex: 1, borderRadius: 8, border: `2px solid ${isSelected ? '#1A3D6B' : rc.border}`,
-        padding: '.6rem .4rem', textAlign: 'center', cursor: disabled ? 'default' : 'pointer',
+        padding: '.6rem .4rem', textAlign: 'center', cursor: 'pointer',
         background: rc.bg, opacity: c.rol === 'deshabilitado' ? .5 : 1, transition: 'all .15s',
         outline: isSelected ? '3px solid #1A3D6B' : 'none', outlineOffset: 2,
       }}>
@@ -193,7 +207,7 @@ function CorralBox({ c, label, sel, onClick }) {
         {label || c.numero}
       </div>
       <div style={{ fontSize: 9, color: rc.text, opacity: .8, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-        {c.rol === 'clasificado' ? (c.sub?.split('·')[0]?.trim() || 'Clasif.') : c.rol === 'deshabilitado' ? '-' : c.rol}
+        {c.rol === 'clasificado' ? (c.sub ? `Rango ${c.sub}` : 'Clasif.') : c.rol === 'deshabilitado' ? '-' : c.rol}
       </div>
       <div style={{ fontSize: 10, fontFamily: 'monospace', color: rc.text }}>{c.animales||0}/{c.capacidad}</div>
       <div style={{ height: 3, background: 'rgba(0,0,0,.1)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
@@ -207,12 +221,16 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
   const rc = ROL_COLOR[corral.rol] || ROL_COLOR.libre
   const pct = corral.capacidad > 0 ? Math.round((corral.animales||0) / corral.capacidad * 100) : 0
   const [cambiandoRol, setCambiandoRol] = useState(false)
+  const [rolNuevo, setRolNuevo] = useState('')
+  const [subNuevo, setSubNuevo] = useState('')
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <div style={{ fontSize: 16, fontWeight: 600 }}>{corral.numero === 'manga' ? 'Manga' : `Corral ${corral.numero}`}</div>
-        <span style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}`, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>{corral.rol}</span>
+        <span style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}`, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+          {corral.rol === 'clasificado' && corral.sub ? `Rango ${corral.sub}` : corral.rol}
+        </span>
       </div>
 
       <div style={{ marginBottom: '1rem' }}>
@@ -234,28 +252,53 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
 
       {esDueno && (
         <div style={{ marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid #E2DDD6' }}>
-          <div style={{ fontSize: 11, color: '#6B6760', marginBottom: 8 }}>
-            {cambiandoRol ? 'Selecciona el nuevo rol:' : (
-              <button onClick={() => setCambiandoRol(true)}
+          {!cambiandoRol
+            ? <button onClick={() => { setCambiandoRol(true); setRolNuevo(''); setSubNuevo('') }}
                 style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', color: '#6B6760' }}>
                 Cambiar rol del corral
               </button>
-            )}
-          </div>
-          {cambiandoRol && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-              {['libre','cuarentena','acumulacion','clasificado','enfermeria','transitorio','deshabilitado'].filter(r => r !== corral.rol).map(r => (
-                <button key={r} onClick={() => { onCambiarRol(corral.id, r); setCambiandoRol(false) }}
-                  style={{ border: '1px solid #E2DDD6', background: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 11, cursor: 'pointer', color: '#6B6760' }}>
-                  {r.charAt(0).toUpperCase()+r.slice(1)}
-                </button>
-              ))}
-              <button onClick={() => setCambiandoRol(false)}
-                style={{ border: '1px solid #E2DDD6', background: '#F7F5F0', borderRadius: 6, padding: '6px 8px', fontSize: 11, cursor: 'pointer', color: '#9E9A94', gridColumn: '1/-1' }}>
-                Cancelar
-              </button>
-            </div>
-          )}
+            : (
+              <div>
+                <div style={{ fontSize: 11, color: '#6B6760', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase' }}>Nuevo rol</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 8 }}>
+                  {['libre','cuarentena','acumulacion','clasificado','enfermeria','transitorio','deshabilitado'].filter(r => r !== corral.rol).map(r => (
+                    <button key={r} onClick={() => { setRolNuevo(r); if (r !== 'clasificado') setSubNuevo('') }}
+                      style={{ border: `1px solid ${rolNuevo === r ? '#1A3D6B' : '#E2DDD6'}`, background: rolNuevo === r ? '#E8EFF8' : '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 11, cursor: 'pointer', color: rolNuevo === r ? '#1A3D6B' : '#6B6760', fontWeight: rolNuevo === r ? 600 : 400 }}>
+                      {r.charAt(0).toUpperCase()+r.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                {rolNuevo === 'clasificado' && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: '#6B6760', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase' }}>Rango</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                      {['A','B','C','D','E','F','G'].map(r => (
+                        <button key={r} onClick={() => setSubNuevo(r)}
+                          style={{ border: `1px solid ${subNuevo === r ? '#3D1A6B' : '#E2DDD6'}`, background: subNuevo === r ? '#F0EAFB' : '#fff', borderRadius: 6, padding: '6px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: subNuevo === r ? '#3D1A6B' : '#6B6760', fontFamily: 'monospace' }}>
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => {
+                    if (!rolNuevo) { alert('Seleccioná un rol'); return }
+                    if (rolNuevo === 'clasificado' && !subNuevo) { alert('Seleccioná el rango'); return }
+                    onCambiarRol(corral.id, rolNuevo, rolNuevo === 'clasificado' ? subNuevo : null)
+                    setCambiandoRol(false)
+                  }}
+                    style={{ flex: 1, background: '#1A3D6B', border: 'none', borderRadius: 6, padding: '8px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#fff' }}>
+                    Confirmar
+                  </button>
+                  <button onClick={() => setCambiandoRol(false)}
+                    style={{ flex: 1, border: '1px solid #E2DDD6', background: '#F7F5F0', borderRadius: 6, padding: '8px', fontSize: 12, cursor: 'pointer', color: '#9E9A94' }}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )
+          }
         </div>
       )}
     </div>
@@ -264,47 +307,86 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
 
 function PanelMover({ corral, corrales, form, setForm, onGuardar, onCancelar, guardando }) {
   const destinosDisponibles = corrales.filter(c => c.id !== corral.id && c.rol !== 'deshabilitado')
+  const corralDestino = corrales.find(c => String(c.id) === String(form.destino_id))
+  const destinoEsLibre = corralDestino?.rol === 'libre'
+
+  const S = {
+    border: '#E2DDD6', muted: '#6B6760', accent: '#1A3D6B', accentLight: '#E8EFF8',
+    purple: '#3D1A6B', purpleLight: '#F0EAFB', bg: '#F7F5F0', surface: '#fff',
+  }
 
   return (
     <div>
       <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Mover animales</div>
-      <div style={{ fontSize: 12, color: '#6B6760', marginBottom: '1rem' }}>
-        Origen: Corral {corral.numero} - {corral.animales || 0} animales disponibles
+      <div style={{ fontSize: 12, color: S.muted, marginBottom: '1rem' }}>
+        Origen: Corral {corral.numero} · {corral.animales || 0} animales disponibles
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Corral destino</label>
-        <select style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2DDD6', borderRadius: 8, fontSize: 13, background: '#fff' }}
-          value={form.destino_id} onChange={e => setForm({...form, destino_id: e.target.value})}>
+        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Corral destino</label>
+        <select style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 13, background: S.surface }}
+          value={form.destino_id} onChange={e => setForm({...form, destino_id: e.target.value, rolDestino: '', subDestino: ''})}>
           <option value="">Selecciona destino</option>
           {destinosDisponibles.map(c => (
-            <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>
+            <option key={c.id} value={c.id}>
+              Corral {c.numero} · {c.rol === 'libre' ? 'LIBRE' : c.rol === 'clasificado' && c.sub ? `Rango ${c.sub}` : c.rol} · {c.animales || 0} anim.
+            </option>
           ))}
         </select>
       </div>
 
+      {/* Si el destino es libre, pedir rol */}
+      {destinoEsLibre && (
+        <div style={{ background: S.accentLight, border: `1px solid #85B7EB`, borderRadius: 8, padding: '1rem', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: 8 }}>
+            Corral libre — ¿qué rol le asignás?
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: form.rolDestino === 'clasificado' ? 8 : 0 }}>
+            {['cuarentena','acumulacion','clasificado','enfermeria'].map(r => (
+              <button key={r} onClick={() => setForm({...form, rolDestino: r, subDestino: ''})}
+                style={{ border: `1px solid ${form.rolDestino === r ? S.accent : S.border}`, background: form.rolDestino === r ? S.accentLight : S.surface, borderRadius: 6, padding: '7px', fontSize: 12, fontWeight: form.rolDestino === r ? 600 : 400, cursor: 'pointer', color: form.rolDestino === r ? S.accent : S.muted }}>
+                {r.charAt(0).toUpperCase() + r.slice(1)}
+              </button>
+            ))}
+          </div>
+          {form.rolDestino === 'clasificado' && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.purple, textTransform: 'uppercase', marginBottom: 6 }}>Rango</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                {['A','B','C','D','E','F','G'].map(r => (
+                  <button key={r} onClick={() => setForm({...form, subDestino: r})}
+                    style={{ border: `1px solid ${form.subDestino === r ? S.purple : S.border}`, background: form.subDestino === r ? S.purpleLight : S.surface, borderRadius: 6, padding: '7px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: form.subDestino === r ? S.purple : S.muted, fontFamily: 'monospace' }}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Cantidad a mover</label>
+        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Cantidad a mover</label>
         <input type="number" min="1" max={corral.animales || 0} placeholder="0"
           value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})}
-          style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2DDD6', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+          style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
         <div style={{ fontSize: 11, color: '#9E9A94', marginTop: 3 }}>Max: {corral.animales || 0} animales</div>
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Motivo (opcional)</label>
+        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Motivo (opcional)</label>
         <input type="text" placeholder="ej. clasificacion, enfermedad, etc."
           value={form.motivo} onChange={e => setForm({...form, motivo: e.target.value})}
-          style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2DDD6', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+          style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={onCancelar}
-          style={{ flex: 1, background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 8, padding: '9px', fontSize: 13, cursor: 'pointer', color: '#6B6760' }}>
+          style={{ flex: 1, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '9px', fontSize: 13, cursor: 'pointer', color: S.muted }}>
           Cancelar
         </button>
         <button onClick={onGuardar} disabled={guardando}
-          style={{ flex: 1, background: '#1A3D6B', border: 'none', borderRadius: 8, padding: '9px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#fff' }}>
+          style={{ flex: 1, background: S.accent, border: 'none', borderRadius: 8, padding: '9px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#fff' }}>
           {guardando ? 'Moviendo...' : 'Confirmar'}
         </button>
       </div>
