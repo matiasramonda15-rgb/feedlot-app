@@ -1110,7 +1110,7 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
   )
 }
 
-function VentaMovilfunction VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
+function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
   const [form, setForm] = useState({ corral_id: '', cantidad: '', kg_vivo: '', precio_kg: '', comprador: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
