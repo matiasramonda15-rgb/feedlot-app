@@ -115,7 +115,7 @@ export default function Alimentacion({ usuario }) {
     hace7dias.setDate(hace7dias.getDate() - 7)
     const hace7diasISO = hace7dias.toISOString()
 
-    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: is_ }, { data: ip }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: is_ }, { data: ip }, { data: fdb }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)')
@@ -124,11 +124,24 @@ export default function Alimentacion({ usuario }) {
         .lt('creado_en', hace7diasISO).order('creado_en', { ascending: false }).limit(100),
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
+      supabase.from('formulas_mixer').select('*').order('orden'),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
     setHistorial(h || [])
     setHistorialArchivo(ha || [])
+
+    // Construir formulas desde BD
+    if (fdb && fdb.length > 0) {
+      const formulasDB = { seco: { acostumbramiento: [], recria: [], terminacion: [] }, humedo: { acostumbramiento: [], recria: [], terminacion: [] } }
+      fdb.forEach(row => {
+        if (formulasDB[row.dieta]?.[row.etapa]) {
+          formulasDB[row.dieta][row.etapa].push({ n: row.ingrediente, kg: row.kg, c: row.color || '#888888', id: row.id })
+        }
+      })
+      setFormulas(formulasDB)
+    }
+
     // Mostrar los últimos 2 por insumo, el resto va al archivo
     const todos = is_ || []
     const porInsumo = {}
@@ -331,10 +344,22 @@ export default function Alimentacion({ usuario }) {
     setFormulas(newF)
   }
 
-  function guardarDieta(fKey, eKey) {
-    const total = formulas[fKey][eKey].reduce((a, x) => a + x.kg, 0)
+  async function guardarDieta(fKey, eKey) {
+    const ings = formulas[fKey][eKey]
+    const total = ings.reduce((a, x) => a + x.kg, 0)
     if (Math.abs(total - 100) > 0.1) { alert(`La suma debe ser 100 kg. Actualmente: ${total.toFixed(1)} kg`); return }
+
+    // Actualizar cada ingrediente en la BD
+    for (let i = 0; i < ings.length; i++) {
+      const ing = ings[i]
+      if (ing.id) {
+        await supabase.from('formulas_mixer').update({ kg: ing.kg, orden: i + 1 }).eq('id', ing.id)
+      } else {
+        await supabase.from('formulas_mixer').insert({ dieta: fKey, etapa: eKey, ingrediente: ing.n, kg: ing.kg, color: ing.c, orden: i + 1 })
+      }
+    }
     setEditando({ ...editando, [`${fKey}_${eKey}`]: false })
+    await cargarDatos()
   }
 
   if (loading) return <Loader />
@@ -660,7 +685,7 @@ export default function Alimentacion({ usuario }) {
                       : <>
                           <button onClick={() => guardarDieta(formulaDieta, e.key)}
                             style={{ padding: '5px 10px', fontSize: 12, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>Guardar</button>
-                          <button onClick={() => { setEditando({ ...editando, [key]: false }); setFormulas(JSON.parse(JSON.stringify(FORMULAS))) }}
+                          <button onClick={() => { setEditando({ ...editando, [key]: false }); cargarDatos() }}
                             style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Cancelar</button>
                         </>
                     }
