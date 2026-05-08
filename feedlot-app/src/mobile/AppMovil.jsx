@@ -982,6 +982,7 @@ const cantA = parseInt(form.A) || 0
 const cantB = parseInt(form.B) || 0
 if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre1), tipo: 'nuevo_clasificado', animales: cantA, rango_antes: 'libre', rango_despues: 'A' })
 if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre2), tipo: 'nuevo_clasificado', animales: cantB, rango_antes: 'libre', rango_despues: 'B' })
+})
 const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
 Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
   const cant = parseInt(form[letraNueva]) || 0
