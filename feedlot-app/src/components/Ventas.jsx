@@ -186,11 +186,7 @@ const nuevosAnimales = Math.max(0, (corral?.animales || 0) - cantVender)
 const updateCorral = { animales: nuevosAnimales }
 if (nuevosAnimales === 0) { updateCorral.rol = 'libre'; updateCorral.sub = null }
 await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
-     const nuevosAnimales = Math.max(0, (corral?.animales || 0) - cantVender)
-const updateCorral = { animales: nuevosAnimales }
-if (nuevosAnimales === 0) { updateCorral.rol = 'libre'; updateCorral.sub = null }
-await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
-      setVentaConfirmada({ ...form, kgNeto, totalVenta, kgDescuento, desbastePct, corralNumero: corralSel?.numero })
+          setVentaConfirmada({ ...form, kgNeto, totalVenta, kgDescuento, desbastePct, corralNumero: corralSel?.numero })
       await cargar()
     } else {
       alert('Error al guardar la venta.')
