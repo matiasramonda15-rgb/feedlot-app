@@ -123,12 +123,20 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
   const [seleccionado, setSeleccionado] = useState(null)
   const [vista, setVista] = useState('lista')
   const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '' })
+  const [rolDestino, setRolDestino] = useState('')
+  const [subDestino, setSubDestino] = useState('')
   const [guardando, setGuardando] = useState(false)
   const corralesActivos = corrales.filter(c => c.rol !== 'deshabilitado')
   const colors = { cuarentena: C.amber, acumulacion: C.blue, enfermeria: C.red, clasificado: '#B09ED4', libre: C.muted }
 
+  // Corral destino seleccionado
+  const corralDestino = corrales.find(c => String(c.id) === String(movForm.destino_id))
+  const destinoEsLibre = corralDestino?.rol === 'libre'
+  const rolDestinoRequerido = destinoEsLibre && !rolDestino
+
   async function cambiarRol(corralId, nuevoRol) {
-    await supabase.from('corrales').update({ rol: nuevoRol }).eq('id', corralId)
+    if (nuevoRol === 'clasificado') return // se maneja aparte con sub
+    await supabase.from('corrales').update({ rol: nuevoRol, sub: null }).eq('id', corralId)
     onDone(); setVista('lista'); setSeleccionado(null)
   }
 
@@ -136,14 +144,40 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
     if (!movForm.destino_id || !movForm.cantidad) { alert('Completa destino y cantidad'); return }
     const cantidad = parseInt(movForm.cantidad)
     if (cantidad > (seleccionado?.animales || 0)) { alert(`Max: ${seleccionado?.animales} animales`); return }
+    if (destinoEsLibre && !rolDestino) { alert('Seleccioná el rol del corral destino'); return }
+    if (destinoEsLibre && rolDestino === 'clasificado' && !subDestino) { alert('Seleccioná el rango del corral clasificado'); return }
     setGuardando(true)
     const destinoId = parseInt(movForm.destino_id)
-    await supabase.from('movimientos').insert({ tipo: 'traslado', corral_origen_id: seleccionado.id, corral_destino_id: destinoId, cantidad, motivo: movForm.motivo || null, registrado_por: usuario?.id })
-    await supabase.from('corrales').update({ animales: (seleccionado.animales || 0) - cantidad }).eq('id', seleccionado.id)
+
+    await supabase.from('movimientos').insert({
+      tipo: 'traslado', corral_origen_id: seleccionado.id,
+      corral_destino_id: destinoId, cantidad,
+      motivo: movForm.motivo || null, registrado_por: usuario?.id
+    })
+
+    // Actualizar origen
+    const nuevosOrigen = (seleccionado.animales || 0) - cantidad
+    const updateOrigen = { animales: nuevosOrigen }
+    if (nuevosOrigen === 0) updateOrigen.rol = 'libre' // auto-libre si quedó vacío
+    await supabase.from('corrales').update(updateOrigen).eq('id', seleccionado.id)
+
+    // Actualizar destino
     const { data: dest } = await supabase.from('corrales').select('animales').eq('id', destinoId).single()
-    await supabase.from('corrales').update({ animales: (dest?.animales || 0) + cantidad }).eq('id', destinoId)
-    onDone(); setMovForm({ destino_id: '', cantidad: '', motivo: '' }); setVista('lista'); setSeleccionado(null); setGuardando(false)
-    alert(`${cantidad} animales movidos.`)
+    const updateDestino = { animales: (dest?.animales || 0) + cantidad }
+    if (destinoEsLibre) {
+      updateDestino.rol = rolDestino
+      if (rolDestino === 'clasificado') updateDestino.sub = subDestino
+    }
+    await supabase.from('corrales').update(updateDestino).eq('id', destinoId)
+
+    onDone()
+    setMovForm({ destino_id: '', cantidad: '', motivo: '' })
+    setRolDestino('')
+    setSubDestino('')
+    setVista('lista')
+    setSeleccionado(null)
+    setGuardando(false)
+    alert(`${cantidad} animales movidos.${nuevosOrigen === 0 ? ' El corral origen quedó libre.' : ''}`)
   }
 
   if (vista === 'detalle' && seleccionado) {
@@ -194,12 +228,40 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
         <Scroll>
           <div style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral destino</div>
-            <select value={movForm.destino_id} onChange={e => setMovForm({...movForm, destino_id: e.target.value})}
+            <select value={movForm.destino_id} onChange={e => { setMovForm({...movForm, destino_id: e.target.value}); setRolDestino(''); setSubDestino('') }}
               style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
               <option value="">Selecciona destino</option>
-              {destinosDisponibles.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
+              {destinosDisponibles.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol === 'libre' ? 'LIBRE' : c.rol} - {c.animales || 0} anim.</option>)}
             </select>
           </div>
+
+          {/* Si el destino es libre, pedir el rol */}
+          {destinoEsLibre && (
+            <div style={{ background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 10, padding: '1rem', marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.blue, marginBottom: 8 }}>El corral destino está libre — ¿qué rol le asignás?</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: rolDestino === 'clasificado' ? 8 : 0 }}>
+                {['cuarentena','acumulacion','clasificado','enfermeria'].map(r => (
+                  <button key={r} onClick={() => { setRolDestino(r); if (r !== 'clasificado') setSubDestino('') }}
+                    style={{ padding: '9px', background: rolDestino === r ? C.blue : 'transparent', border: `1px solid ${rolDestino === r ? C.blue : C.border}`, borderRadius: 8, fontSize: 12, fontWeight: 600, color: rolDestino === r ? '#0A1A0A' : C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+                    {r.charAt(0).toUpperCase() + r.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {rolDestino === 'clasificado' && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: C.blue, textTransform: 'uppercase', marginBottom: 6 }}>Rango</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                    {['A','B','C','D','E','F','G'].map(r => (
+                      <button key={r} onClick={() => setSubDestino(r)}
+                        style={{ padding: '8px', background: subDestino === r ? C.green : 'transparent', border: `1px solid ${subDestino === r ? C.green : C.border}`, borderRadius: 8, fontSize: 13, fontWeight: 700, color: subDestino === r ? '#0A1A0A' : C.muted, cursor: 'pointer', fontFamily: C.mono }}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad (max {seleccionado.animales || 0})</div>
             <input type="number" inputMode="numeric" placeholder="0" value={movForm.cantidad}
@@ -1141,7 +1203,9 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
     if (!error) {
       const { data: corral } = await supabase.from('corrales').select('animales').eq('id', form.corral_id).single()
       const nuevosAnimales = Math.max(0, (corral?.animales || 0) - parseInt(form.cantidad))
-      await supabase.from('corrales').update({ animales: nuevosAnimales }).eq('id', form.corral_id)
+      const updateCorral = { animales: nuevosAnimales }
+      if (nuevosAnimales === 0) updateCorral.rol = 'libre'
+      await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
       onDone()
       alert('Venta registrada correctamente.')
       nav('home')
