@@ -434,7 +434,7 @@ function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
 
   useEffect(() => {
     const inicial = {}
-    corralesAlim.forEach(c => { inicial[c.id] = Math.round((c.animales || 0) * 10) })
+    corralesAlim.forEach(c => { inicial[c.id] = Math.round(Math.round((c.animales || 0) * 10) / 100) * 100 })
     setKgs(inicial)
   }, [corrales])
 
