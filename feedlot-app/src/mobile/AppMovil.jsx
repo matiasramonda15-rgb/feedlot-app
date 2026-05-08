@@ -124,8 +124,8 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
   const [vista, setVista] = useState('lista')
   const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '' })
   const [guardando, setGuardando] = useState(false)
-  const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
-  const colors = { cuarentena: C.amber, acumulacion: C.blue, enfermeria: C.red, clasificado: '#B09ED4' }
+  const corralesActivos = corrales.filter(c => c.rol !== 'deshabilitado')
+  const colors = { cuarentena: C.amber, acumulacion: C.blue, enfermeria: C.red, clasificado: '#B09ED4', libre: C.muted }
 
   async function cambiarRol(corralId, nuevoRol) {
     await supabase.from('corrales').update({ rol: nuevoRol }).eq('id', corralId)
@@ -227,7 +227,7 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Topbar titulo="Corrales" sub={`${corralesActivos.length} activos`} onBack={() => nav('home')} />
+      <Topbar titulo="Corrales" sub={`${corralesActivos.filter(c=>c.rol!=='libre').length} activos · ${corralesActivos.filter(c=>c.rol==='libre').length} libres`} onBack={() => nav('home')} />
       <Scroll>
         {corralesActivos.length === 0 && <div style={{ textAlign: 'center', padding: '2rem', color: C.muted, fontSize: 13 }}>No hay corrales activos.</div>}
         {corralesActivos.map(c => {
