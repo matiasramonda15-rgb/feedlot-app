@@ -11,9 +11,7 @@ const ITEMS = [
 ]
 
 const REPORTES = [
-  { id: 'rentabilidad', label: 'Rentabilidad',   roles: ['dueno'] },
-  { id: 'gdp',          label: 'GDP y conversión', roles: ['dueno'] },
-  { id: 'costos',       label: 'Costos',          roles: ['dueno'] },
+  { id: 'reportes', label: 'Reportes', roles: ['dueno'] },
 ]
 
 export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
