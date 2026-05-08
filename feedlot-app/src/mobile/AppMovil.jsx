@@ -841,148 +841,276 @@ function StockTab({ usuario, onDone }) {
 }
 
 function PesadaMovil({ nav, usuario, corrales, onDone }) {
-  const [form, setForm] = useState({ A: '', B: '', C: '', D: '', menores: '', observaciones: '' })
-  const [corralSel, setCorralSel] = useState('')
+  const [paso, setPaso] = useState(1)
+  const [form, setForm] = useState({ A: '', B: '', C: '', D: '', E: '', F: '', G: '', menores: '' })
+  const [corralLibre1, setCorralLibre1] = useState('')
+  const [corralLibre2, setCorralLibre2] = useState('')
   const [guardando, setGuardando] = useState(false)
 
-  const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
-  const RANGOS = [
-    { key: 'A', label: 'Rango A', rango: '200-230 kg', color: '#1A3D26', border: '#7BC67A', text: '#7EC87E' },
-    { key: 'B', label: 'Rango B', rango: '231-260 kg', color: '#0F2040', border: '#7EB8F7', text: '#7EB8F7' },
-    { key: 'C', label: 'Rango C', rango: '261-290 kg', color: '#2A1A40', border: '#B09ED4', text: '#B09ED4' },
-    { key: 'D', label: 'Rango D', rango: '291+ kg',    color: '#3D2A00', border: '#F5C97A', text: '#F5C97A' },
+  const ORDEN_RANGOS = ['A','B','C','D','E','F','G']
+
+  function subirRango(letra, n = 2) {
+    const idx = ORDEN_RANGOS.indexOf(letra)
+    if (idx === -1) return letra
+    return ORDEN_RANGOS[Math.min(idx + n, ORDEN_RANGOS.length - 1)]
+  }
+
+  const RANGOS_CONFIG = [
+    { key: 'A', label: 'Rango A', rango: '200–230 kg', color: '#1A3D26', border: '#7BC67A', text: '#7EC87E' },
+    { key: 'B', label: 'Rango B', rango: '231–260 kg', color: '#0F2040', border: '#7EB8F7', text: '#7EB8F7' },
+    { key: 'C', label: 'Rango C', rango: '261–290 kg', color: '#2A1A40', border: '#B09ED4', text: '#B09ED4' },
+    { key: 'D', label: 'Rango D', rango: '291–320 kg', color: '#3D2A00', border: '#F5C97A', text: '#F5C97A' },
+    { key: 'E', label: 'Rango E', rango: '321–350 kg', color: '#3D1500', border: '#F5A55A', text: '#F5A55A' },
+    { key: 'F', label: 'Rango F', rango: '351–380 kg', color: '#3D0A0A', border: '#F09595', text: '#F09595' },
+    { key: 'G', label: 'Rango G', rango: '381+ kg',    color: '#2A2A2A', border: '#A0A0A0', text: '#C0C0C0' },
   ]
 
-  const totalIngresado = ['A','B','C','D'].reduce((s,k) => s + (parseInt(form[k])||0), 0)
-  const corral = corralesActivos.find(c => String(c.id) === corralSel)
+  const corralAcum = corrales.find(c => c.rol === 'acumulacion')
+  const corralesLibres = corrales.filter(c => c.rol === 'libre')
+  const corralesClasificados = corrales.filter(c => c.rol === 'clasificado')
 
-  async function guardar() {
-    if (!corralSel) { alert('Selecciona un corral'); return }
-    if (totalIngresado === 0) { alert('Ingresa al menos un animal'); return }
+  const totalClasif = ORDEN_RANGOS.reduce((s, k) => s + (parseInt(form[k]) || 0), 0)
+  const menores = parseInt(form.menores) || 0
+  const totalPesados = totalClasif + menores
+
+  async function confirmar() {
+    if (!corralLibre1 || !corralLibre2) { alert('Seleccioná dos corrales libres para A y B'); return }
+    if (corralLibre1 === corralLibre2) { alert('Los corrales para A y B deben ser diferentes'); return }
+    if (totalClasif === 0) { alert('Ingresá al menos un animal clasificado'); return }
     setGuardando(true)
 
-    const corralId = parseInt(corralSel)
-    const rangoA = parseInt(form.A) || 0
-    const rangoB = parseInt(form.B) || 0
-    const rangoC = parseInt(form.C) || 0
-    const rangoD = parseInt(form.D) || 0
-    const menores = parseInt(form.menores) || 0
-    const total = rangoA + rangoB + rangoC + rangoD + menores
-
+    // 1. Registrar pesada
     const { data: pesada, error } = await supabase.from('pesadas').insert({
-      corral_id: corralId, tipo: 'clasificacion',
-      registrado_por: usuario?.id || null,
-      observaciones: form.observaciones || null,
+      corral_id: corralAcum?.id || null,
+      tipo: 'clasificacion',
+      registrado_por: usuario?.id,
     }).select().single()
 
-    if (!error && pesada) {
-      const animales = []
-      if (rangoA > 0) animales.push({ pesada_id: pesada.id, rango: 'A', cantidad: rangoA })
-      if (rangoB > 0) animales.push({ pesada_id: pesada.id, rango: 'B', cantidad: rangoB })
-      if (rangoC > 0) animales.push({ pesada_id: pesada.id, rango: 'C', cantidad: rangoC })
-      if (rangoD > 0) animales.push({ pesada_id: pesada.id, rango: 'D', cantidad: rangoD })
-      if (menores > 0) animales.push({ pesada_id: pesada.id, rango: 'menores', cantidad: menores })
-      await supabase.from('pesada_animales').insert(animales)
+    if (error || !pesada) { alert('Error al guardar.'); setGuardando(false); return }
 
-      const { data: origen } = await supabase.from('corrales').select('animales').eq('id', corralId).single()
-      await supabase.from('corrales').update({ animales: Math.max(0, (origen?.animales || 0) - total) }).eq('id', corralId)
+    // 2. Insertar pesada_animales
+    const animalesInsert = []
+    ORDEN_RANGOS.forEach(rango => {
+      const cant = parseInt(form[rango]) || 0
+      if (cant > 0) animalesInsert.push({ pesada_id: pesada.id, rango, cantidad: cant })
+    })
+    if (menores > 0) animalesInsert.push({ pesada_id: pesada.id, rango: 'menores', cantidad: menores })
+    if (animalesInsert.length > 0) await supabase.from('pesada_animales').insert(animalesInsert)
 
-      const destinos = [
-        { numero: '2', cantidad: rangoA },
-        { numero: '4', cantidad: rangoB },
-        { numero: '7', cantidad: rangoC },
-        { numero: '5', cantidad: rangoD },
-      ]
-      for (const d of destinos) {
-        if (d.cantidad > 0) {
-          const { data: dc } = await supabase.from('corrales').select('animales').eq('numero', d.numero).single()
-          await supabase.from('corrales').update({ animales: (dc?.animales || 0) + d.cantidad }).eq('numero', d.numero)
-        }
-      }
-      if (menores > 0) {
-        const { data: ac } = await supabase.from('corrales').select('animales').eq('numero', '13').single()
-        await supabase.from('corrales').update({ animales: (ac?.animales || 0) + menores }).eq('numero', '13')
-      }
+    // 3. Snapshot rangos actuales ANTES de modificar
+    const mapaRangoCorral = {}
+    corralesClasificados.forEach(c => {
+      const letra = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0)
+      if (letra) mapaRangoCorral[letra] = { ...c, sub: letra }
+    })
 
-      const nuevaProxima = new Date(pesada.creado_en)
-      nuevaProxima.setDate(nuevaProxima.getDate() + 40)
-      await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
+    // 4. Registrar movimientos
+    const movimientos = []
+    if (corralAcum) movimientos.push({ pesada_id: pesada.id, corral_id: corralAcum.id, tipo: 'origen_acum', animales: totalClasif, rango_antes: null, rango_despues: null })
+    corralesClasificados.forEach(c => {
+      const letraAntes = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
+      movimientos.push({ pesada_id: pesada.id, corral_id: c.id, tipo: 'subida_rango', animales: c.animales || 0, rango_antes: letraAntes, rango_despues: subirRango(letraAntes, 2) })
+    })
+    const cantA = parseInt(form.A) || 0
+    const cantB = parseInt(form.B) || 0
+    if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre1), tipo: 'nuevo_clasificado', animales: cantA, rango_antes: 'libre', rango_despues: 'A' })
+    if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre2), tipo: 'nuevo_clasificado', animales: cantB, rango_antes: 'libre', rango_despues: 'B' })
+    const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
+    Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
+      const cant = parseInt(form[letraNueva]) || 0
+      if (cant === 0) return
+      const corralDest = mapaRangoCorral[letraAnterior]
+      if (corralDest) movimientos.push({ pesada_id: pesada.id, corral_id: corralDest.id, tipo: 'suma_existente', animales: cant, rango_antes: letraAnterior, rango_despues: letraNueva })
+    })
+    if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
 
-      onDone()
-      alert('Pesada registrada correctamente.')
-      nav('home')
-    } else {
-      alert('Error al guardar. Intenta de nuevo.')
+    // 5. Subir 2 rangos a corrales clasificados
+    for (const c of corralesClasificados) {
+      const letraActual = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
+      await supabase.from('corrales').update({ sub: subirRango(letraActual, 2) }).eq('id', c.id)
     }
+
+    // 6. Asignar corrales libres para A y B
+    if (cantA > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'A', animales: cantA }).eq('id', parseInt(corralLibre1))
+    if (cantB > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB }).eq('id', parseInt(corralLibre2))
+
+    // 7. Sumar C-G a corrales existentes
+    for (const [letraNueva, letraAnterior] of Object.entries(mapeoDestino)) {
+      const cant = parseInt(form[letraNueva]) || 0
+      if (cant === 0) continue
+      const corralDest = mapaRangoCorral[letraAnterior]
+      if (!corralDest) continue
+      const { data: corralFresh } = await supabase.from('corrales').select('animales').eq('id', corralDest.id).single()
+      await supabase.from('corrales').update({ animales: (corralFresh?.animales || 0) + cant }).eq('id', corralDest.id)
+    }
+
+    // 8. Descontar de acumulación
+    if (corralAcum) {
+      const { data: acumActual } = await supabase.from('corrales').select('animales').eq('id', corralAcum.id).single()
+      await supabase.from('corrales').update({ animales: Math.max(0, (acumActual?.animales || 0) - totalClasif) }).eq('id', corralAcum.id)
+    }
+
+    // 9. Actualizar próxima pesada +40 días
+    const nuevaProxima = new Date()
+    nuevaProxima.setDate(nuevaProxima.getDate() + 40)
+    await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
+
+    onDone()
+    alert(`Pesada confirmada. ${totalPesados} animales procesados.`)
+    nav('home')
     setGuardando(false)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Topbar titulo="Nueva pesada" sub="Clasificacion por rangos" onBack={() => nav('home')} />
-      <Scroll>
-        <div style={{ marginBottom: '.85rem' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral a pesar</div>
-          <select value={corralSel} onChange={e => setCorralSel(e.target.value)}
-            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
-            <option value="">Selecciona un corral</option>
-            {corralesActivos.map(c => <option key={c.id} value={String(c.id)}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
-          </select>
-          {corral && (
-            <div style={{ background: C.surface2, borderRadius: 6, padding: '8px 12px', marginTop: 6, fontSize: 12, color: C.muted, fontFamily: C.mono }}>
-              Total animales: <strong style={{ color: C.green }}>{corral.animales || 0}</strong>
-            </div>
-          )}
-        </div>
+      <Topbar titulo="Pesada" sub={`Acumulación · ${corralAcum ? corralAcum.animales + ' animales' : '—'}`} onBack={() => nav('home')} />
 
-        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>Distribucion por rangos</div>
-        {RANGOS.map(r => (
-          <div key={r.key} style={{ background: r.color, border: `1px solid ${r.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.65rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: r.text, textTransform: 'uppercase', marginBottom: 6 }}>
-              {r.label} - {r.rango}
-            </div>
-            <input type="number" inputMode="numeric" placeholder="0" value={form[r.key]}
-              onChange={e => setForm({...form, [r.key]: e.target.value})}
-              style={{ width: '100%', background: 'rgba(0,0,0,.2)', border: `1px solid ${r.border}`, borderRadius: 6, padding: '10px 12px', fontSize: 18, fontFamily: C.mono, fontWeight: 700, color: r.text, boxSizing: 'border-box' }} />
-          </div>
+      {/* Stepper */}
+      <div style={{ display: 'flex', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        {[['1','Rangos'],['2','Corrales']].map(([n, l]) => (
+          <button key={n} onClick={() => { if (n === '2' && totalClasif === 0) return; setPaso(parseInt(n)) }}
+            style={{ flex: 1, padding: '10px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: C.sans, background: paso === parseInt(n) ? C.green : 'transparent', color: paso === parseInt(n) ? '#0A1A0A' : C.muted, borderBottom: paso === parseInt(n) ? `2px solid ${C.green}` : '2px solid transparent' }}>
+            {n}. {l}
+          </button>
         ))}
+      </div>
 
-        <div style={{ background: '#3D0A0A', border: `1px solid ${C.red}`, borderRadius: 10, padding: '.85rem', marginBottom: '.65rem' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.red, textTransform: 'uppercase', marginBottom: 6 }}>
-            Menores de 200 kg - vuelven a acumulacion
-          </div>
-          <input type="number" inputMode="numeric" placeholder="0" value={form.menores}
-            onChange={e => setForm({...form, menores: e.target.value})}
-            style={{ width: '100%', background: 'rgba(0,0,0,.2)', border: `1px solid ${C.red}`, borderRadius: 6, padding: '10px 12px', fontSize: 18, fontFamily: C.mono, fontWeight: 700, color: C.red, boxSizing: 'border-box' }} />
-        </div>
+      <Scroll>
+        {/* PASO 1: RANGOS */}
+        {paso === 1 && (
+          <>
+            <div style={{ background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 10, padding: '.75rem', marginBottom: '.85rem', fontSize: 12, color: C.blue, lineHeight: 1.5 }}>
+              Ingresá cuántos animales cayeron en cada rango. A y B van a corrales nuevos (libres). C en adelante se suman a los corrales existentes.
+            </div>
 
-        {totalIngresado > 0 && (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem', fontSize: 13, fontFamily: C.mono }}>
-            Total clasificado: <strong style={{ color: C.green }}>{totalIngresado} animales</strong>
-          </div>
+            {RANGOS_CONFIG.map(r => (
+              <div key={r.key} style={{ background: r.color, border: `1px solid ${r.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.65rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: r.text, textTransform: 'uppercase' }}>{r.label}</div>
+                    <div style={{ fontSize: 11, color: r.text, opacity: 0.7 }}>{r.rango}</div>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: C.mono, color: r.text }}>{parseInt(form[r.key]) || 0}</div>
+                </div>
+                <input type="number" inputMode="numeric" placeholder="0" value={form[r.key]}
+                  onChange={e => setForm({...form, [r.key]: e.target.value})}
+                  style={{ width: '100%', background: 'rgba(0,0,0,.2)', border: `1px solid ${r.border}`, borderRadius: 6, padding: '10px 12px', fontSize: 18, fontFamily: C.mono, fontWeight: 700, color: r.text, boxSizing: 'border-box' }} />
+              </div>
+            ))}
+
+            <div style={{ background: '#3D0A0A', border: `1px solid ${C.red}`, borderRadius: 10, padding: '.85rem', marginBottom: '.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.red, textTransform: 'uppercase' }}>Menores de 200 kg</div>
+                  <div style={{ fontSize: 11, color: C.red, opacity: 0.7 }}>Vuelven a acumulación</div>
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 700, fontFamily: C.mono, color: C.red }}>{menores}</div>
+              </div>
+              <input type="number" inputMode="numeric" placeholder="0" value={form.menores}
+                onChange={e => setForm({...form, menores: e.target.value})}
+                style={{ width: '100%', background: 'rgba(0,0,0,.2)', border: `1px solid ${C.red}`, borderRadius: 6, padding: '10px 12px', fontSize: 18, fontFamily: C.mono, fontWeight: 700, color: C.red, boxSizing: 'border-box' }} />
+            </div>
+
+            {totalPesados > 0 && (
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem', fontSize: 13, fontFamily: C.mono }}>
+                Total: <strong style={{ color: C.green }}>{totalPesados} animales</strong>
+                {menores > 0 && <span style={{ color: C.red }}> · {menores} vuelven a acum.</span>}
+              </div>
+            )}
+
+            <button onClick={() => { if (totalClasif === 0) { alert('Ingresá al menos un animal clasificado'); return } setPaso(2) }}
+              style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+              Siguiente → Asignar corrales
+            </button>
+            <button onClick={() => nav('home')}
+              style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+              Cancelar
+            </button>
+          </>
         )}
 
-        <div style={{ marginBottom: '1rem' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
-          <input type="text" placeholder="observaciones opcionales..." value={form.observaciones}
-            onChange={e => setForm({...form, observaciones: e.target.value})}
-            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
-        </div>
+        {/* PASO 2: CORRALES */}
+        {paso === 2 && (
+          <>
+            <div style={{ background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 10, padding: '.75rem', marginBottom: '.85rem', fontSize: 12, color: C.green, lineHeight: 1.5 }}>
+              Elegí dos corrales libres para los nuevos rangos A y B. Los corrales existentes suben 2 rangos automáticamente.
+            </div>
 
-        <button onClick={guardar} disabled={guardando}
-          style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
-          {guardando ? 'Guardando...' : 'Registrar pesada'}
-        </button>
-        <button onClick={() => nav('home')}
-          style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
-          Cancelar
-        </button>
+            {/* Resumen de lo que va a pasar */}
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '1rem', marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>Cambios en corrales existentes</div>
+              {corralesClasificados.sort((a, b) => (a.sub || '').localeCompare(b.sub || '')).map(c => {
+                const letraActual = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
+                const letraNueva = subirRango(letraActual, 2)
+                const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
+                const letraQueRecibe = Object.keys(mapeoDestino).find(k => mapeoDestino[k] === letraActual)
+                const nuevosAnimales = letraQueRecibe ? (parseInt(form[letraQueRecibe]) || 0) : 0
+                return (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 6, marginBottom: 6, borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ fontSize: 13 }}>C-{c.numero} · Rango {letraActual} → <strong style={{ color: C.green }}>Rango {letraNueva}</strong></div>
+                    <div style={{ fontSize: 12, fontFamily: C.mono, color: C.muted }}>
+                      {c.animales || 0}{nuevosAnimales > 0 ? <span style={{ color: C.green }}> +{nuevosAnimales}</span> : ''} anim.
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Selección corrales libres */}
+            {corralesLibres.length < 2 && (
+              <div style={{ background: '#3D0A0A', border: `1px solid ${C.red}`, borderRadius: 10, padding: '.75rem', marginBottom: '.85rem', fontSize: 12, color: C.red }}>
+                ⚠ No hay suficientes corrales libres. Se necesitan al menos 2.
+              </div>
+            )}
+
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#7EC87E', textTransform: 'uppercase', marginBottom: 4 }}>
+                Nuevo Rango A — {parseInt(form.A) || 0} animales (200–230 kg)
+              </div>
+              <select value={corralLibre1} onChange={e => setCorralLibre1(e.target.value)}
+                style={{ width: '100%', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.green, fontFamily: C.sans }}>
+                <option value="">— Seleccioná un corral libre —</option>
+                {corralesLibres.filter(c => String(c.id) !== String(corralLibre2)).map(c => (
+                  <option key={c.id} value={c.id}>Corral {c.numero}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.blue, textTransform: 'uppercase', marginBottom: 4 }}>
+                Nuevo Rango B — {parseInt(form.B) || 0} animales (231–260 kg)
+              </div>
+              <select value={corralLibre2} onChange={e => setCorralLibre2(e.target.value)}
+                style={{ width: '100%', background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.blue, fontFamily: C.sans }}>
+                <option value="">— Seleccioná un corral libre —</option>
+                {corralesLibres.filter(c => String(c.id) !== String(corralLibre1)).map(c => (
+                  <option key={c.id} value={c.id}>Corral {c.numero}</option>
+                ))}
+              </select>
+            </div>
+
+            {menores > 0 && (
+              <div style={{ background: '#3D0A0A', border: `1px solid ${C.red}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem', fontSize: 13, color: C.red }}>
+                {menores} animales menores de 200 kg vuelven a {corralAcum ? `C-${corralAcum.numero}` : 'acumulación'}.
+              </div>
+            )}
+
+            <button onClick={confirmar} disabled={guardando || !corralLibre1 || !corralLibre2}
+              style={{ width: '100%', background: corralLibre1 && corralLibre2 ? C.green : '#2A3D2A', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: corralLibre1 && corralLibre2 ? '#0A1A0A' : C.muted, cursor: corralLibre1 && corralLibre2 ? 'pointer' : 'not-allowed', fontFamily: C.sans, marginBottom: 8 }}>
+              {guardando ? 'Guardando...' : '✓ Confirmar pesada'}
+            </button>
+            <button onClick={() => setPaso(1)}
+              style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+              ← Volver a rangos
+            </button>
+          </>
+        )}
       </Scroll>
     </div>
   )
 }
 
-function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
+function VentaMovilfunction VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
   const [form, setForm] = useState({ corral_id: '', cantidad: '', kg_vivo: '', precio_kg: '', comprador: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
