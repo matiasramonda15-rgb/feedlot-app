@@ -69,6 +69,8 @@ export default function Pesada({ usuario }) {
   const [pesadaConfirmada, setPesadaConfirmada] = useState(null)
   const [corralLibre1, setCorralLibre1] = useState('')
   const [corralLibre2, setCorralLibre2] = useState('')
+  const [editandoFecha, setEditandoFecha] = useState(false)
+  const [nuevaFecha, setNuevaFecha] = useState('')
 
   useEffect(() => { cargar() }, [])
 
@@ -283,6 +285,14 @@ export default function Pesada({ usuario }) {
     alert('Pesada eliminada y movimientos revertidos.')
   }
 
+  async function guardarFecha() {
+    if (!nuevaFecha) { alert('Seleccioná una fecha'); return }
+    await supabase.from('configuracion').update({ valor: nuevaFecha }).eq('clave', 'proxima_pesada')
+    setProximaPesada(nuevaFecha)
+    setEditandoFecha(false)
+    await cargar()
+  }
+
   function iniciarNuevaPesada() {
     setPesos(Array(20).fill(''))
     setFilasExtra(0)
@@ -302,8 +312,30 @@ export default function Pesada({ usuario }) {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Pesada y clasificación</div>
-            <div style={{ fontSize: 13, color: S.muted, fontFamily: 'monospace' }}>
-              Próxima pesada fija · {proximaDate ? proximaDate.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'no configurada'}
+            <div style={{ fontSize: 13, color: S.muted, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              {!editandoFecha ? (
+                <>
+                  Próxima pesada · {proximaDate ? proximaDate.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'no configurada'}
+                  <button onClick={() => { setEditandoFecha(true); setNuevaFecha(proximaPesada || '') }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                    Cambiar fecha
+                  </button>
+                </>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>Nueva fecha de pesada:</span>
+                  <input type="date" value={nuevaFecha} onChange={e => setNuevaFecha(e.target.value)}
+                    style={{ border: `1px solid ${S.accent}`, borderRadius: 5, padding: '4px 8px', fontSize: 13, fontFamily: 'monospace' }} />
+                  <button onClick={guardarFecha}
+                    style={{ padding: '4px 10px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                    Guardar
+                  </button>
+                  <button onClick={() => setEditandoFecha(false)}
+                    style={{ padding: '4px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                    Cancelar
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
