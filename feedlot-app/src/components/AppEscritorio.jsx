@@ -8,6 +8,7 @@ import Ventas from './Ventas'
 import Alimentacion from './Alimentacion'
 import Sanidad from './Sanidad'
 import Reportes from './Reportes'
+import Administrativo from './Administrativo'
 
 const MODULOS = {
   tablero:      Tablero,
@@ -18,6 +19,7 @@ const MODULOS = {
   alimentacion: Alimentacion,
   sanidad:      Sanidad,
   reportes:     Reportes,
+  administrativo: Administrativo,
 }
 
 export default function AppEscritorio({ usuario, onLogout }) {

@@ -8,6 +8,7 @@ const ITEMS = [
   { id: 'sanidad',      label: 'Sanidad',              roles: ['dueno','secretaria','encargado','empleado'] },
   { id: 'alimentacion', label: 'Alimentación',         roles: ['dueno','encargado','empleado'] },
   { id: 'ventas',       label: 'Ventas',               roles: ['dueno','secretaria'] },
+  { id: 'administrativo', label: 'Administración',       roles: ['dueno','secretaria'] },
 ]
 
 const REPORTES = [
