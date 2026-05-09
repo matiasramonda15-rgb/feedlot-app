@@ -15,17 +15,18 @@ export default function AppMovil({ usuario, onLogout }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }] = await Promise.all([
+    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('lotes').select('procedencia').order('created_at', { ascending: false }),
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
+      supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
     ])
     const procedencias = [...new Set((lotes || []).map(x => x.procedencia).filter(Boolean))].sort()
     const compradores = [...new Set((ventas || []).filter(v => v.comprador).map(v => v.comprador))].sort()
     const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
-    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [] })
   }
 
   const pantallas = {
@@ -60,7 +61,7 @@ function Scroll({ children }) {
   return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>{children}</div>
 }
 function Home({ usuario, nav, onLogout, datos }) {
-  const { proximaPesada, alertas, corrales } = datos
+  const { proximaPesada, alertas, corrales, stockBajo } = datos
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
   const totalAnimales = corrales.reduce((s, c) => s + (c.animales || 0), 0)
@@ -72,6 +73,19 @@ function Home({ usuario, nav, onLogout, datos }) {
   alertas.slice(0, 3).forEach(a => {
     tareas.push({ icon: '💉', titulo: a.titulo, sub: a.descripcion, pantalla: 'sanidad', urgente: true })
   })
+  // Stock bajo mínimo
+  if (stockBajo && stockBajo.length > 0) {
+    stockBajo.forEach(s => {
+      tareas.push({ icon: '📦', titulo: `Stock bajo: ${s.insumo}`, sub: `${s.cantidad_kg?.toLocaleString('es-AR')} kg · mínimo ${s.minimo_kg?.toLocaleString('es-AR')} kg`, pantalla: 'alimentacion', urgente: true })
+    })
+  }
+
+  // Corrales en cuarentena próximos a vencer (ingresados hace más de 8 días)
+  const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena')
+  corralesCuarentena.forEach(c => {
+    tareas.push({ icon: '🐄', titulo: `Cuarentena C-${c.numero} por vencer`, sub: `${c.animales || 0} animales · verificar pase a acumulación`, pantalla: 'corrales', urgente: true })
+  })
+
   // Revision bisemanal los lunes (1) y jueves (4)
   const diaSemana = new Date().getDay()
   if (diaSemana === 1 || diaSemana === 4) {
