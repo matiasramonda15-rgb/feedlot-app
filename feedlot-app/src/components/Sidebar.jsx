@@ -1,37 +1,51 @@
-import { supabase } from '../supabase'
-
-const ITEMS = [
-  { id: 'tablero',      label: 'Tablero',              roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'corrales',     label: 'Corrales y tropas',    roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'ingresos',     label: 'Ingresos',             roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'pesada',       label: 'Pesada y clasificación', roles: ['dueno','encargado','empleado'] },
-  { id: 'sanidad',      label: 'Sanidad',              roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'alimentacion', label: 'Alimentación',         roles: ['dueno','encargado','empleado'] },
-  { id: 'ventas',       label: 'Ventas',               roles: ['dueno','secretaria'] },
-  { id: 'administrativo', label: 'Administración',       roles: ['dueno','secretaria'] },
+const FEEDLOT = [
+  { id: 'tablero',       label: 'Tablero',               roles: ['dueno','secretaria','encargado','empleado'] },
+  { id: 'corrales',      label: 'Corrales y tropas',     roles: ['dueno','secretaria','encargado','empleado'] },
+  { id: 'ingresos',      label: 'Ingresos',              roles: ['dueno','secretaria','encargado','empleado'] },
+  { id: 'pesada',        label: 'Pesada y clasificación', roles: ['dueno','encargado','empleado'] },
+  { id: 'sanidad',       label: 'Sanidad',               roles: ['dueno','secretaria','encargado','empleado'] },
+  { id: 'alimentacion',  label: 'Alimentación',          roles: ['dueno','encargado','empleado'] },
+  { id: 'ventas',        label: 'Ventas',                roles: ['dueno','secretaria'] },
 ]
 
-const REPORTES = [
-  { id: 'reportes', label: 'Reportes', roles: ['dueno'] },
+const CAMPO = [
+  { id: 'agricultura',   label: 'Agricultura',           roles: ['dueno','secretaria'] },
+  { id: 'servicios',     label: 'Servicios',             roles: ['dueno','secretaria'] },
+  { id: 'maquinaria',    label: 'Maquinaria',            roles: ['dueno','secretaria'] },
+]
+
+const ADMIN = [
+  { id: 'personal',      label: 'Personal',              roles: ['dueno','secretaria'] },
+  { id: 'gastos',        label: 'Gastos generales',      roles: ['dueno','secretaria'] },
+]
+
+const REPORTES_ITEMS = [
+  { id: 'reportes',      label: 'Reportes',              roles: ['dueno'] },
 ]
 
 export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
   const rol = usuario?.rol || 'empleado'
-
-  const itemsFiltrados = ITEMS.filter(i => i.roles.includes(rol))
-  const reportesFiltrados = REPORTES.filter(i => i.roles.includes(rol))
+  const filtrar = items => items.filter(i => i.roles.includes(rol))
 
   return (
     <aside style={{ background: '#1A3D6B', padding: '1.25rem 0', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0, overflowY: 'auto' }}>
       <div style={{ padding: '0 1.25rem 1.25rem', borderBottom: '1px solid rgba(255,255,255,.1)', marginBottom: '1rem' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '.08em', textTransform: 'uppercase' }}>Feedlot</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '.08em', textTransform: 'uppercase' }}>Ramonda Hnos.</div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)', fontFamily: "'IBM Plex Mono', monospace", marginTop: 2 }}>Sistema de gestión</div>
       </div>
 
-      <NavSection label="Principal" items={itemsFiltrados} modulo={modulo} setModulo={setModulo} />
+      <NavSection label="Feedlot" items={filtrar(FEEDLOT)} modulo={modulo} setModulo={setModulo} />
 
-      {reportesFiltrados.length > 0 && (
-        <NavSection label="Reportes" items={reportesFiltrados} modulo={modulo} setModulo={setModulo} />
+      {filtrar(CAMPO).length > 0 && (
+        <NavSection label="Campo" items={filtrar(CAMPO)} modulo={modulo} setModulo={setModulo} />
+      )}
+
+      {filtrar(ADMIN).length > 0 && (
+        <NavSection label="Administración" items={filtrar(ADMIN)} modulo={modulo} setModulo={setModulo} />
+      )}
+
+      {filtrar(REPORTES_ITEMS).length > 0 && (
+        <NavSection label="Reportes" items={filtrar(REPORTES_ITEMS)} modulo={modulo} setModulo={setModulo} />
       )}
 
       <div style={{ marginTop: 'auto', padding: '1rem .75rem', borderTop: '1px solid rgba(255,255,255,.1)' }}>
