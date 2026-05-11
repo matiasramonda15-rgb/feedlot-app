@@ -1204,81 +1204,120 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
 }
 
 function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
-  const [form, setForm] = useState({ corral_id: '', cantidad: '', kg_vivo: '', precio_kg: '', comprador: '', observaciones: '' })
+  const [corralesVenta, setCorralesVenta] = useState([{ corral_id: '', cantidad: '', kg_vivo: '' }])
+  const [comprador, setComprador] = useState('')
+  const [compradorNuevo, setCompradorNuevo] = useState('')
+  const [observaciones, setObservaciones] = useState('')
   const [guardando, setGuardando] = useState(false)
 
   const corralesConAnimales = corrales.filter(c => (c.animales || 0) > 0 && c.rol !== 'deshabilitado')
-  const kg_vivo = parseFloat(form.kg_vivo) || 0
-  const desbaste = kg_vivo * 0.08
-  const kg_neto = kg_vivo - desbaste
-  const total = kg_neto * (parseFloat(form.precio_kg) || 0)
+
+  const totalKgVivo = corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0)
+  const totalCant = corralesVenta.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
+  const desbaste = totalKgVivo * 0.08
+  const kg_neto = totalKgVivo - desbaste
 
   async function guardar() {
-    if (!form.corral_id) { alert('Selecciona un corral'); return }
-    if (!form.cantidad || !form.kg_vivo) { alert('Completa cantidad y kg vivo'); return }
+    const validos = corralesVenta.filter(c => c.corral_id && c.cantidad && c.kg_vivo)
+    if (validos.length === 0) { alert('Completá al menos un corral con cantidad y kg'); return }
     setGuardando(true)
 
-    const { error } = await supabase.from('ventas').insert({
-      corral_id: parseInt(form.corral_id),
-      cantidad: parseInt(form.cantidad),
-      kg_vivo_total: kg_vivo,
-      desbaste_pct: 8,
-      kg_neto: Math.round(kg_neto * 100) / 100,
-      precio_kg: null,
-      total: null,
-      comprador: form.comprador === 'Otro' ? (form.compradorNuevo || null) : (form.comprador || null),
-      observaciones: form.observaciones || null,
-      registrado_por: usuario?.id,
-    })
+    const compradorFinal = comprador === 'Otro' ? (compradorNuevo || null) : (comprador || null)
 
-    if (!error) {
-      const { data: corral } = await supabase.from('corrales').select('animales').eq('id', form.corral_id).single()
-      const nuevosAnimales = Math.max(0, (corral?.animales || 0) - parseInt(form.cantidad))
-      const updateCorral = { animales: nuevosAnimales }
-      if (nuevosAnimales === 0) updateCorral.rol = 'libre'
-      await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
-      onDone()
-      alert('Venta registrada correctamente.')
-      nav('home')
-    } else {
-      alert('Error al guardar. Intenta de nuevo.')
+    for (const cv of validos) {
+      const kgVivoCv = parseFloat(cv.kg_vivo)
+      const kgNetoCv = Math.round(kgVivoCv * 0.92 * 100) / 100
+      const { error } = await supabase.from('ventas').insert({
+        corral_id: parseInt(cv.corral_id),
+        cantidad: parseInt(cv.cantidad),
+        kg_vivo_total: kgVivoCv,
+        desbaste_pct: 8,
+        kg_neto: kgNetoCv,
+        precio_kg: null,
+        total: null,
+        comprador: compradorFinal,
+        observaciones: observaciones || null,
+        registrado_por: usuario?.id,
+      })
+      if (!error) {
+        const { data: corral } = await supabase.from('corrales').select('animales').eq('id', cv.corral_id).single()
+        const nuevosAnimales = Math.max(0, (corral?.animales || 0) - parseInt(cv.cantidad))
+        const updateCorral = { animales: nuevosAnimales }
+        if (nuevosAnimales === 0) updateCorral.rol = 'libre'
+        await supabase.from('corrales').update(updateCorral).eq('id', parseInt(cv.corral_id))
+      }
     }
+    onDone()
+    alert(`${validos.length > 1 ? `${validos.length} ventas registradas` : 'Venta registrada'} correctamente.`)
+    nav('home')
     setGuardando(false)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Topbar titulo="Carga venta" sub="Venta kg vivo - desbaste 8%" onBack={() => nav('home')} />
+      <Topbar titulo="Carga venta" sub="Desbaste 8% · podés agregar varios corrales" onBack={() => nav('home')} />
       <Scroll>
-        <div style={{ marginBottom: '.85rem' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
-          <select value={form.corral_id} onChange={e => setForm({...form, corral_id: e.target.value})}
-            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
-            <option value="">Selecciona un corral</option>
-            {corralesConAnimales.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
-          </select>
-        </div>
 
-        {[
-          { label: 'Cantidad animales', key: 'cantidad', placeholder: 'ej. 20' },
-          { label: 'Kg vivo total (bascula)', key: 'kg_vivo', placeholder: 'ej. 8000' },
-        ].map(f => (
-          <div key={f.key} style={{ marginBottom: '.85rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>{f.label}</div>
-            <input type="number" inputMode="numeric" placeholder={f.placeholder} value={form[f.key]}
-              onChange={e => setForm({...form, [f.key]: e.target.value})}
-              style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.green, boxSizing: 'border-box' }} />
-          </div>
-        ))}
+        {/* Corrales */}
+        {corralesVenta.map((cv, i) => {
+          const kgVivoCv = parseFloat(cv.kg_vivo) || 0
+          const kgNetoCv = Math.round(kgVivoCv * 0.92)
+          return (
+            <div key={i} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.65rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.green }}>Corral {i + 1}</div>
+                {corralesVenta.length > 1 && (
+                  <button onClick={() => setCorralesVenta(corralesVenta.filter((_, j) => j !== i))}
+                    style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, padding: '3px 8px', cursor: 'pointer', fontFamily: C.sans }}>
+                    Quitar
+                  </button>
+                )}
+              </div>
+              <div style={{ marginBottom: '.65rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+                <select value={cv.corral_id} onChange={e => { const n = [...corralesVenta]; n[i].corral_id = e.target.value; setCorralesVenta(n) }}
+                  style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+                  <option value="">Seleccioná un corral</option>
+                  {corralesConAnimales.map(c => <option key={c.id} value={c.id}>C-{c.numero} · {c.rol === 'clasificado' && c.sub ? `Rango ${c.sub}` : c.rol} · {c.animales} anim.</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: kgVivoCv > 0 ? '.65rem' : 0 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad</div>
+                  <input type="number" inputMode="numeric" placeholder="ej. 20" value={cv.cantidad}
+                    onChange={e => { const n = [...corralesVenta]; n[i].cantidad = e.target.value; setCorralesVenta(n) }}
+                    style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.green, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Kg vivo (báscula)</div>
+                  <input type="number" inputMode="numeric" placeholder="ej. 8000" value={cv.kg_vivo}
+                    onChange={e => { const n = [...corralesVenta]; n[i].kg_vivo = e.target.value; setCorralesVenta(n) }}
+                    style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.green, boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              {kgVivoCv > 0 && (
+                <div style={{ fontSize: 12, fontFamily: C.mono, color: C.blue }}>
+                  Neto: <strong>{kgNetoCv.toLocaleString('es-AR')} kg</strong> (desbaste {Math.round(kgVivoCv * 0.08).toLocaleString('es-AR')} kg)
+                </div>
+              )}
+            </div>
+          )
+        })}
 
-        {kg_vivo > 0 && (
+        <button onClick={() => setCorralesVenta([...corralesVenta, { corral_id: '', cantidad: '', kg_vivo: '' }])}
+          style={{ width: '100%', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 13, color: C.muted, cursor: 'pointer', fontFamily: C.sans, marginBottom: '.85rem' }}>
+          + Agregar otro corral
+        </button>
+
+        {/* Resumen total */}
+        {totalKgVivo > 0 && (
           <div style={{ background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 12, padding: '1rem', marginBottom: '.85rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue, textTransform: 'uppercase', marginBottom: 10 }}>Resumen liquidacion</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue, textTransform: 'uppercase', marginBottom: 10 }}>Resumen total</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
               {[
-                { label: 'KG vivo', value: kg_vivo.toLocaleString('es-AR') + ' kg' },
+                { label: 'KG vivo total', value: totalKgVivo.toLocaleString('es-AR') + ' kg' },
                 { label: 'Desbaste 8%', value: Math.round(desbaste).toLocaleString('es-AR') + ' kg' },
-                { label: 'KG neto', value: Math.round(kg_neto).toLocaleString('es-AR') + ' kg' },
+                { label: 'KG neto total', value: Math.round(kg_neto).toLocaleString('es-AR') + ' kg' },
               ].map(s => (
                 <div key={s.label}>
                   <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>{s.label}</div>
@@ -1286,28 +1325,30 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
                 </div>
               ))}
             </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: C.muted }}>{totalCant} animales · {corralesVenta.filter(c => c.corral_id).length} corrales</div>
           </div>
         )}
 
+        {/* Comprador */}
         <div style={{ marginBottom: '.85rem' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Comprador</div>
-          <select value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value, compradorNuevo: ''})}
+          <select value={comprador} onChange={e => { setComprador(e.target.value); setCompradorNuevo('') }}
             style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
             <option value="">— Seleccioná o agregá nuevo —</option>
             {(compradores || []).map(o => <option key={o} value={o}>{o}</option>)}
             <option value="Otro">+ Nuevo comprador...</option>
           </select>
-          {form.comprador === 'Otro' && (
-            <input type="text" placeholder="Nombre del comprador" value={form.compradorNuevo || ''}
-              onChange={e => setForm({...form, compradorNuevo: e.target.value})}
+          {comprador === 'Otro' && (
+            <input type="text" placeholder="Nombre del comprador" value={compradorNuevo}
+              onChange={e => setCompradorNuevo(e.target.value)}
               style={{ width: '100%', background: C.surface, border: `1px solid ${C.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box', marginTop: 6 }} />
           )}
         </div>
 
         <div style={{ marginBottom: '1rem' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
-          <input type="text" placeholder="observaciones opcionales..." value={form.observaciones}
-            onChange={e => setForm({...form, observaciones: e.target.value})}
+          <input type="text" placeholder="observaciones opcionales..." value={observaciones}
+            onChange={e => setObservaciones(e.target.value)}
             style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
         </div>
 
