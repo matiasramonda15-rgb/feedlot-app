@@ -1093,37 +1093,30 @@ export default function Alimentacion({ usuario }) {
 }
 
 function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formulaActiva }) {
-  // Calcular kg/día por insumo desde las raciones de los últimos 7 días
   const kgDiaPorInsumo = {}
   if (historial && historial.length > 0 && formulas && formulaActiva) {
-    // Agrupar raciones por fecha para calcular promedio diario
     const porFecha = {}
-    historial.forEach(r => {
-      const fecha = new Date(r.creado_en).toDateString()
-      if (!porFecha[fecha]) porFecha[fecha] = []
-      porFecha[fecha].push(r)
-    })
-    const diasConDatos = Object.keys(porFecha).length
-    if (diasConDatos > 0) {
-      // Sumar kg totales por mixer
-      const kgPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
-      historial.forEach(r => {
-        const etapa = r.mixer === 'Acostumbramiento' ? 'acostumbramiento' : r.mixer === 'Recria' ? 'recria' : 'terminacion'
-        kgPorEtapa[etapa] += (r.kg_total || 0)
+    historial.forEach(h => {
+      const fecha = new Date(h.creado_en || h.fecha).toDateString()
+      if (!porFecha[fecha]) porFecha[fecha] = {}
+      const etapa = h.mixer?.toLowerCase().replace('mixer 1 - ', '').replace('mixer 2 - ', '').replace('mixer 3 - ', '') || 'recria'
+      const formula = formulas[formulaActiva]?.[etapa] || []
+      formula.forEach(ing => {
+        const kgIng = Math.round(ing.kg * (h.kg_total || 0) / 100)
+        if (!porFecha[fecha][ing.n]) porFecha[fecha][ing.n] = 0
+        porFecha[fecha][ing.n] += kgIng
       })
-      // Para cada etapa calcular kg/día de cada ingrediente
-      Object.entries(kgPorEtapa).forEach(([etapa, kgTotal]) => {
-        if (kgTotal === 0) return
-        const kgDia = kgTotal / diasConDatos
-        const ings = formulas[formulaActiva]?.[etapa] || []
-        ings.forEach(ing => {
-          const kgIngDia = (ing.kg / 100) * kgDia
-          if (!kgDiaPorInsumo[ing.n]) kgDiaPorInsumo[ing.n] = 0
-          kgDiaPorInsumo[ing.n] += kgIngDia
-        })
+    })
+    const fechas = Object.keys(porFecha)
+    if (fechas.length > 0) {
+      const allInsumos = new Set(fechas.flatMap(f => Object.keys(porFecha[f])))
+      allInsumos.forEach(ing => {
+        const total = fechas.reduce((s, f) => s + (porFecha[f][ing] || 0), 0)
+        kgDiaPorInsumo[ing] = total / fechas.length
       })
     }
   }
+
   const [nuevoInsumo, setNuevoInsumo] = useState({ show: false, nombre: '', minimo_kg: '' })
   const [editMinimo, setEditMinimo] = useState({})
   const [editInsumo, setEditInsumo] = useState({})
@@ -1151,12 +1144,6 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
     await onReload()
   }
 
-  async function guardarMinimo(id, valor) {
-    await supabase.from('stock_insumos').update({ minimo_kg: parseInt(valor) || 0 }).eq('id', id)
-    setEditMinimo({ ...editMinimo, [id]: false })
-    await onReload()
-  }
-
   return (
     <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1.25rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
@@ -1166,6 +1153,7 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
           + Nuevo insumo
         </button>
       </div>
+
       {nuevoInsumo.show && (
         <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '.75rem' }}>Nuevo insumo</div>
@@ -1185,132 +1173,111 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={() => setNuevoInsumo({ show: false, nombre: '', minimo_kg: '' })}
-              style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Cancelar</button>
+              style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
             <button onClick={agregarInsumo} disabled={guardando}
-              style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
               {guardando ? 'Guardando...' : 'Agregar'}
             </button>
           </div>
         </div>
       )}
+
       {stockDB.length === 0 && <p style={{ fontSize: 13, color: '#9E9A94' }}>No hay insumos registrados.</p>}
       {stockDB.map(s => {
         const bajo = s.cantidad_kg <= s.minimo_kg
         const pct = Math.min(100, Math.round(s.cantidad_kg / Math.max(s.minimo_kg * 3, s.cantidad_kg, 1) * 100))
         const barColor = bajo ? '#E24B4A' : pct < 40 ? '#EF9F27' : '#1E5C2E'
         const c = COLORES[s.insumo] || '#808080'
-        const editando = editMinimo[s.id]
+        const isEditing = editInsumo[s.id]
+        const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
+          k.toLowerCase() === s.insumo.toLowerCase() ||
+          s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
+          k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
+        )?.[1]
+        const diasRestantes = kgDia > 0 ? Math.floor(s.cantidad_kg / kgDia) : null
         return (
           <div key={s.id} style={{ padding: '.85rem 0', borderBottom: '1px solid #E2DDD6' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600 }}>
-                <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />{s.insumo}
-                {(() => {
-                  // Buscar kg/día por nombre exacto o parcial
-                  const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
-                    k.toLowerCase() === s.insumo.toLowerCase() ||
-                    s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
-                    k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
-                  )?.[1]
-                  if (!kgDia) return null
-                  const diasRestantes = kgDia > 0 ? Math.floor(s.cantidad_kg / kgDia) : null
-                  const color = diasRestantes !== null && diasRestantes <= 7 ? '#7A4500' : '#6B6760'
-                  return (
-                    <span style={{ fontSize: 11, color, fontFamily: 'monospace' }}>
-                      · ~{Math.round(kgDia).toLocaleString('es-AR')} kg/día
-                    </span>
-                  )
-                })()}
+                <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
+                {s.insumo}
+                {kgDia > 0 && <span style={{ fontSize: 11, color: '#6B6760', fontFamily: 'monospace' }}>· ~{Math.round(kgDia).toLocaleString('es-AR')} kg/día</span>}
                 {s.precio_referencia && (
                   <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#1E5C2E', background: '#E8F4EB', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
                     ${s.precio_referencia.toLocaleString('es-AR')}/kg
                   </span>
                 )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {editInsumo[s.id] ? (
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#6B6760', marginBottom: 2 }}>Nombre</div>
-                      <input type="text" defaultValue={s.insumo} id={`nombre_${s.id}`}
-                        style={{ width: 140, border: '1px solid #E2DDD6', borderRadius: 5, padding: '4px 7px', fontSize: 12, boxSizing: 'border-box' }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#6B6760', marginBottom: 2 }}>Stock actual (kg)</div>
-                      <input type="number" defaultValue={s.cantidad_kg} id={`cant_${s.id}`}
-                        style={{ width: 90, border: '1px solid #E2DDD6', borderRadius: 5, padding: '4px 7px', fontFamily: 'monospace', fontSize: 12 }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#6B6760', marginBottom: 2 }}>Mínimo (kg)</div>
-                      <input type="number" defaultValue={s.minimo_kg} id={`minimo_${s.id}`}
-                        style={{ width: 80, border: '1px solid #E2DDD6', borderRadius: 5, padding: '4px 7px', fontFamily: 'monospace', fontSize: 12 }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#6B6760', marginBottom: 2 }}>Precio ref. $/kg</div>
-                      <input type="number" defaultValue={s.precio_referencia || ''} id={`precio_${s.id}`}
-                        style={{ width: 90, border: '1px solid #E2DDD6', borderRadius: 5, padding: '4px 7px', fontFamily: 'monospace', fontSize: 12 }} />
-                    </div>
-                    <div style={{ display: 'flex', gap: 4, paddingTop: 14 }}>
-                      <button onClick={() => guardarInsumo(s.id, {
-                        insumo: document.getElementById(`nombre_${s.id}`).value,
-                        cantidad_kg: parseFloat(document.getElementById(`cant_${s.id}`).value) || 0,
-                        minimo_kg: parseInt(document.getElementById(`minimo_${s.id}`).value) || 0,
-                        precio_referencia: parseFloat(document.getElementById(`precio_${s.id}`).value) || null,
-                      })}
-                        style={{ padding: '4px 10px', fontSize: 11, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>Guardar</button>
-                      <button onClick={() => setEditInsumo({ ...editInsumo, [s.id]: false })}
-                        style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
-                {(() => {
-                  const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
-                    k.toLowerCase() === s.insumo.toLowerCase() ||
-                    s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
-                    k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
-                  )?.[1]
-                  if (!kgDia || kgDia === 0) return null
-                  const dias = Math.floor(s.cantidad_kg / kgDia)
-                  const bgColor = dias <= 7 ? '#FDF0E0' : dias <= 15 ? '#FDF0E0' : '#E8F4EB'
-                  const txtColor = dias <= 7 ? '#7A4500' : dias <= 15 ? '#7A4500' : '#1E5C2E'
-                  const label = dias <= 7 ? `⚠ Solo ${dias} días` : `${dias} días`
-                  return <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bgColor, color: txtColor }}>{label}</span>
-                })()}
-                <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: bajo ? '#FDF0F0' : pct < 40 ? '#FDF0E0' : '#E8F4EB', color: bajo ? '#7A1A1A' : pct < 40 ? '#7A4500' : '#1E5C2E' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
+                {diasRestantes !== null && (
+                  <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600,
+                    background: diasRestantes <= 7 ? '#FDF0E0' : '#E8F4EB',
+                    color: diasRestantes <= 7 ? '#7A4500' : '#1E5C2E' }}>
+                    {diasRestantes <= 7 ? `⚠ Solo ${diasRestantes} días` : `${diasRestantes} días`}
+                  </span>
+                )}
+                <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600,
+                  background: bajo ? '#FDF0F0' : pct < 40 ? '#FDF0E0' : '#E8F4EB',
+                  color: bajo ? '#7A1A1A' : pct < 40 ? '#7A4500' : '#1E5C2E' }}>
                   {bajo ? '⚠ Bajo minimo' : 'OK'}
                 </span>
                 <button onClick={() => onShowIngreso()}
-                  style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>+ Ingreso</button>
-                <button onClick={() => setEditInsumo({ ...editInsumo, [s.id]: true })}
-                  style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Editar</button>
+                  style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>+ Ingreso</button>
+                <button onClick={() => setEditInsumo({ ...editInsumo, [s.id]: !isEditing })}
+                  style={{ padding: '4px 8px', fontSize: 11, background: isEditing ? '#E8EFF8' : 'transparent', border: '1px solid #E2DDD6', color: '#1A3D6B', borderRadius: 5, cursor: 'pointer' }}>
+                  {isEditing ? 'Cancelar' : 'Editar'}
+                </button>
                 <button onClick={() => eliminarInsumo(s.id, s.insumo)}
-                  style={{ padding: '4px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Eliminar</button>
-                  </>
-                )}
+                  style={{ padding: '4px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
               </div>
+            </div>
+
+            {isEditing && (
+              <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 8, padding: '1rem', marginBottom: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Nombre</label>
+                    <input type="text" defaultValue={s.insumo} id={`nombre_${s.id}`}
+                      style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 6, padding: '8px 10px', fontSize: 13, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Stock actual (kg)</label>
+                    <input type="number" defaultValue={s.cantidad_kg} id={`cant_${s.id}`}
+                      style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Mínimo (kg)</label>
+                    <input type="number" defaultValue={s.minimo_kg} id={`minimo_${s.id}`}
+                      style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Precio ref. $/kg</label>
+                    <input type="number" defaultValue={s.precio_referencia || ''} id={`precio_${s.id}`}
+                      style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button onClick={() => setEditInsumo({ ...editInsumo, [s.id]: false })}
+                    style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                  <button onClick={() => guardarInsumo(s.id, {
+                    insumo: document.getElementById(`nombre_${s.id}`).value,
+                    cantidad_kg: parseFloat(document.getElementById(`cant_${s.id}`).value) || 0,
+                    minimo_kg: parseInt(document.getElementById(`minimo_${s.id}`).value) || 0,
+                    precio_referencia: parseFloat(document.getElementById(`precio_${s.id}`).value) || null,
+                  })}
+                    style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div style={{ height: 6, background: '#F7F5F0', borderRadius: 3, overflow: 'hidden', border: '1px solid #E2DDD6', marginBottom: 4 }}>
               <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: barColor }} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#6B6760' }}>
-              <span>Minimo de alerta:</span>
-              {editando ? (
-                <>
-                  <input type="number" defaultValue={s.minimo_kg} id={`min_${s.id}`}
-                    style={{ width: 80, border: '1px solid #E2DDD6', borderRadius: 5, padding: '3px 7px', fontFamily: 'monospace', fontSize: 12, textAlign: 'right' }} />
-                  <button onClick={() => guardarMinimo(s.id, document.getElementById(`min_${s.id}`).value)}
-                    style={{ padding: '3px 8px', fontSize: 11, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>Ok</button>
-                  <button onClick={() => setEditMinimo({ ...editMinimo, [s.id]: false })}
-                    style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                </>
-              ) : (
-                <>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{s.minimo_kg.toLocaleString('es-AR')} kg</span>
-                  <button onClick={() => setEditMinimo({ ...editMinimo, [s.id]: true })}
-                    style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '1px solid #E2DDD6', color: '#9E9A94', borderRadius: 4, cursor: 'pointer' }}>Editar</button>
-                </>
-              )}
+            <div style={{ fontSize: 11, color: '#6B6760' }}>
+              Mínimo de alerta: <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{s.minimo_kg.toLocaleString('es-AR')} kg</span>
             </div>
           </div>
         )
