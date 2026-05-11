@@ -1252,6 +1252,7 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
     setGuardando(true)
 
     const compradorFinal = comprador === 'Otro' ? (compradorNuevo || null) : (comprador || null)
+    const grupoId = validos.length > 1 ? crypto.randomUUID() : null
 
     for (const cv of validos) {
       const kgVivoCv = parseFloat(cv.kg_vivo)
@@ -1267,6 +1268,7 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
         comprador: compradorFinal,
         observaciones: observaciones || null,
         registrado_por: usuario?.id,
+        grupo_venta_id: grupoId,
       })
       if (!error) {
         const { data: corral } = await supabase.from('corrales').select('animales').eq('id', cv.corral_id).single()

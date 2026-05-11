@@ -72,7 +72,17 @@ export default function Ventas({ usuario }) {
     setCorrales(c || [])
     const comps = [...new Set((v || []).map(x => x.comprador).filter(Boolean))].sort()
     setCompradores(comps)
-    setVentasSinPrecio((v || []).filter(x => !x.precio_kg))
+    // Deduplicar por grupo_venta_id - mostrar solo una por grupo
+    const todasSinPrecio = (v || []).filter(x => !x.precio_kg)
+    const gruposVistos = new Set()
+    const sinPrecioDedup = todasSinPrecio.filter(x => {
+      if (x.grupo_venta_id) {
+        if (gruposVistos.has(x.grupo_venta_id)) return false
+        gruposVistos.add(x.grupo_venta_id)
+      }
+      return true
+    })
+    setVentasSinPrecio(sinPrecioDedup)
 
     // Calcular GDP y peso actual por corral desde pesadas
     const gdp = {}
@@ -153,16 +163,34 @@ export default function Ventas({ usuario }) {
     if (!ep?.precio_kg) { alert('Ingresa el precio'); return }
     const precioKg = parseFloat(ep.precio_kg)
     const desbastePct = ep.desbaste ? parseFloat(ep.desbaste) : (venta.desbaste_pct || 8)
-    const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
-    const total = kgNeto * precioKg
-    await supabase.from('ventas').update({
-      precio_kg: precioKg,
-      desbaste_pct: desbastePct,
-      kg_neto: kgNeto,
-      total: Math.round(total),
-      comprador: ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null),
-      observaciones: ep.observaciones || venta.observaciones || null,
-    }).eq('id', venta.id)
+    const compradorFinal = ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null)
+    const obsF = ep.observaciones || venta.observaciones || null
+
+    if (venta.grupo_venta_id) {
+      // Actualizar todas las ventas del grupo con el mismo precio/comprador
+      const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', venta.grupo_venta_id)
+      for (const v of (grupo || [])) {
+        const kgNetoV = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (v.kg_neto || 0)
+        await supabase.from('ventas').update({
+          precio_kg: precioKg,
+          desbaste_pct: desbastePct,
+          kg_neto: kgNetoV,
+          total: Math.round(kgNetoV * precioKg),
+          comprador: compradorFinal,
+          observaciones: obsF,
+        }).eq('id', v.id)
+      }
+    } else {
+      const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
+      await supabase.from('ventas').update({
+        precio_kg: precioKg,
+        desbaste_pct: desbastePct,
+        kg_neto: kgNeto,
+        total: Math.round(kgNeto * precioKg),
+        comprador: compradorFinal,
+        observaciones: obsF,
+      }).eq('id', venta.id)
+    }
     setEditandoVenta(null)
     await cargar()
   }
@@ -272,7 +300,10 @@ export default function Ventas({ usuario }) {
                   <div key={v.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: isEdit ? 12 : 0 }}>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>C-{v.corrales?.numero || v.corral_id} · {v.cantidad} animales</div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                          {v.grupo_venta_id ? 'Venta multi-corral' : `C-${v.corrales?.numero || v.corral_id}`} · {v.cantidad} animales
+                          {v.grupo_venta_id && <span style={{ fontSize: 11, color: S.amber, marginLeft: 6 }}>· Se actualizarán todos los corrales del grupo</span>}
+                        </div>
                         <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                           {v.kg_neto?.toLocaleString('es-AR')} kg netos · {new Date(v.creado_en).toLocaleDateString('es-AR')}
                           {v.comprador && ` · ${v.comprador}`}
