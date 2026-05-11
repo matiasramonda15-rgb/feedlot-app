@@ -28,7 +28,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento']),
-      supabase.from('raciones_diarias').select('corral_id, kg_total').gte('creado_en', ayerStr + 'T00:00:00').lt('creado_en', ayerStr + 'T23:59:59'),
+      supabase.from('raciones_diarias').select('corral_id, kg_total').order('creado_en', { ascending: false }).limit(200),
     ])
     // Construir formulas desde BD
     const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
@@ -46,7 +46,9 @@ export default function AppMovil({ usuario, onLogout }) {
       terminacion: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_terminacion')?.valor || '4200'),
     }
     const kgsAyer = {}
-    ;(racionesAyer || []).forEach(r => { kgsAyer[r.corral_id] = r.kg_total || 0 })
+    ;(racionesAyer || []).forEach(r => {
+      if (!kgsAyer[r.corral_id]) kgsAyer[r.corral_id] = r.kg_total || 0
+    })
     setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer })
   }
 
@@ -536,17 +538,18 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         for (const ing of formula) {
           const kgIng = Math.round(ing.kg * totalKgEtapa / 100)
           if (kgIng === 0) continue
-          const stockItem = stockItems.find(s =>
-            s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()) ||
-            ing.n.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0].toLowerCase())
-          )
-          if (stockItem) {
-            const nuevaCantidad = Math.max(0, stockFresh[stockItem.id] - kgIng)
-            stockFresh[stockItem.id] = nuevaCantidad
-            await supabase.from('stock_insumos').update({
-              cantidad_kg: nuevaCantidad,
-              actualizado_en: new Date().toISOString()
-            }).eq('id', stockItem.id)
+          const stockItem = stockItems.find(s => s.insumo === ing.n) ||
+            stockItems.find(s =>
+              s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()) ||
+              ing.n.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0].toLowerCase())
+            )
+          if (!stockItem) continue // skip si no matchea (ej. Agua)
+          const nuevaCantidad = Math.max(0, stockFresh[stockItem.id] - kgIng)
+          stockFresh[stockItem.id] = nuevaCantidad
+          await supabase.from('stock_insumos').update({
+            cantidad_kg: nuevaCantidad,
+            actualizado_en: new Date().toISOString()
+          }).eq('id', stockItem.id)
           }
         }
       }
