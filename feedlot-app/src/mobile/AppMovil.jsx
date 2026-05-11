@@ -550,7 +550,6 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
             cantidad_kg: nuevaCantidad,
             actualizado_en: new Date().toISOString()
           }).eq('id', stockItem.id)
-          }
         }
       }
     }
