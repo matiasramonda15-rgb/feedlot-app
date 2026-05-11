@@ -513,7 +513,10 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '.5rem' }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>Corral {c.numero}</div>
-                      <div style={{ fontSize: 11, color: C.muted }}>{c.rol} - {c.animales || 0} animales</div>
+                      <div style={{ fontSize: 11, color: C.muted }}>{c.rol === 'clasificado' && c.sub ? `Rango ${c.sub}` : c.rol} · {c.animales || 0} animales</div>
+                      <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: getEtapa(c) === 'acostumbramiento' ? C.amber : getEtapa(c) === 'recria' ? C.blue : C.green }}>
+                        {getEtapa(c) === 'acostumbramiento' ? '🌱 Acostumbramiento' : getEtapa(c) === 'recria' ? '🌾 Recría' : '🏁 Terminación'}
+                      </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 18, fontWeight: 700, fontFamily: C.mono }}>{kgHoy.toLocaleString('es-AR')}</div>
