@@ -62,7 +62,7 @@ export default function Ventas({ usuario }) {
 
   async function cargar() {
     const [{ data: v }, { data: l }, { data: c }, { data: ps }] = await Promise.all([
-      supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
+      supabase.from('ventas').select('*, corrales(numero), grupo_venta_id').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(50),
@@ -406,32 +406,107 @@ export default function Ventas({ usuario }) {
                   {ventas.length === 0 && (
                     <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ventas registradas.</td></tr>
                   )}
-                  {ventas.map(v => (
-                    <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                      <td style={{ padding: '9px 12px' }}>C-{v.corrales?.numero || v.corral_id}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
-                      <td style={{ padding: '9px 12px', fontSize: 12 }}>{v.comprador || '—'}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_vivo_total?.toLocaleString('es-AR')}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.desbaste_pct}%</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(1)}M` : '—'}</td>
-                      <td style={{ padding: '9px 12px' }}>
-                        <button onClick={async () => {
-                          if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
-                          const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
-                          const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
-                          if (corral?.rol === 'libre') updateCorral.rol = 'clasificado'
-                          await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
-                          await supabase.from('ventas').delete().eq('id', v.id)
-                          cargar()
-                        }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                          Eliminar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    // Agrupar por grupo_venta_id
+                    const grupos = {}
+                    const ventasOrden = []
+                    ventas.forEach(v => {
+                      if (v.grupo_venta_id) {
+                        if (!grupos[v.grupo_venta_id]) {
+                          grupos[v.grupo_venta_id] = []
+                          ventasOrden.push({ tipo: 'grupo', id: v.grupo_venta_id })
+                        }
+                        grupos[v.grupo_venta_id].push(v)
+                      } else {
+                        ventasOrden.push({ tipo: 'simple', venta: v })
+                      }
+                    })
+                    // Deduplicar grupos
+                    const vistos = new Set()
+                    const filas = []
+                    ventas.forEach(v => {
+                      if (v.grupo_venta_id) {
+                        if (!vistos.has(v.grupo_venta_id)) {
+                          vistos.add(v.grupo_venta_id)
+                          filas.push({ tipo: 'grupo', grupo: grupos[v.grupo_venta_id] })
+                        }
+                      } else {
+                        filas.push({ tipo: 'simple', venta: v })
+                      }
+                    })
+                    return filas.map((f, fi) => {
+                      if (f.tipo === 'simple') {
+                        const v = f.venta
+                        return (
+                          <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '9px 12px' }}>C-{v.corrales?.numero || v.corral_id}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
+                            <td style={{ padding: '9px 12px', fontSize: 12 }}>{v.comprador || '—'}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_vivo_total?.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.desbaste_pct}%</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(1)}M` : '—'}</td>
+                            <td style={{ padding: '9px 12px' }}>
+                              <button onClick={async () => {
+                                if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
+                                const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
+                                const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
+                                if (corral?.rol === 'libre') updateCorral.rol = 'clasificado'
+                                await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
+                                await supabase.from('ventas').delete().eq('id', v.id)
+                                cargar()
+                              }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      } else {
+                        // Grupo de ventas multi-corral
+                        const g = f.grupo
+                        const totalKgVivo = g.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
+                        const totalKgNeto = g.reduce((s, v) => s + (v.kg_neto || 0), 0)
+                        const totalAnim = g.reduce((s, v) => s + (v.cantidad || 0), 0)
+                        const totalMonto = g.reduce((s, v) => s + (v.total || 0), 0)
+                        const corralesNums = g.map(v => `C-${v.corrales?.numero || v.corral_id}`).join(', ')
+                        const sinPrecio = g.some(v => !v.precio_kg)
+                        const v0 = g[0]
+                        return (
+                          <tr key={v0.grupo_venta_id} style={{ borderBottom: `1px solid ${S.border}`, background: S.accentLight }}>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v0.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '9px 12px', fontSize: 12 }}>
+                              <div style={{ fontWeight: 600 }}>{corralesNums}</div>
+                              <div style={{ fontSize: 10, color: S.accent }}>Venta multi-corral</div>
+                            </td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalAnim}</td>
+                            <td style={{ padding: '9px 12px', fontSize: 12 }}>{v0.comprador || '—'}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgVivo.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.desbaste_pct}%</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${(totalMonto / 1000000).toFixed(1)}M` : '—'}</td>
+                            <td style={{ padding: '9px 12px' }}>
+                              <button onClick={async () => {
+                                if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${g.length} corrales.`)) return
+                                for (const v of g) {
+                                  const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
+                                  const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
+                                  if (corral?.rol === 'libre') updateCorral.rol = 'clasificado'
+                                  await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
+                                  await supabase.from('ventas').delete().eq('id', v.id)
+                                }
+                                cargar()
+                              }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      }
+                    })
+                  })()}
                 </tbody>
               </table>
             </div>
