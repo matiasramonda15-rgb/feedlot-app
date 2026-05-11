@@ -389,8 +389,10 @@ export default function Ventas({ usuario }) {
                       <td style={{ padding: '9px 12px' }}>
                         <button onClick={async () => {
                           if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
-                          const { data: corral } = await supabase.from('corrales').select('animales').eq('id', v.corral_id).single()
-                          await supabase.from('corrales').update({ animales: (corral?.animales || 0) + v.cantidad }).eq('id', v.corral_id)
+                          const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
+                          const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
+                          if (corral?.rol === 'libre') updateCorral.rol = 'clasificado'
+                          await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
                           await supabase.from('ventas').delete().eq('id', v.id)
                           cargar()
                         }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
