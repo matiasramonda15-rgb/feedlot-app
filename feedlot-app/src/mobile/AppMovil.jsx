@@ -28,7 +28,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento']),
-      supabase.from('raciones_diarias').select('corral_id, kg_total').order('creado_en', { ascending: false }).limit(200),
+      supabase.from('raciones_diarias').select('corral_id, kg_total, Mezclador').order('fecha', { ascending: false }).limit(200),
     ])
     // Construir formulas desde BD
     const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
@@ -511,8 +511,8 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   async function confirmar() {
     setGuardando(true)
     const registros = corralesAlim.map(c => ({
-      mixer: getEtapa(c) === 'acostumbramiento' ? 'Acostumbramiento' : getEtapa(c) === 'recria' ? 'Recria' : 'Terminacion',
-      corral_id: c.id, formula: 'Engorde',
+      Mezclador: getEtapa(c) === 'acostumbramiento' ? 'Acostumbramiento' : getEtapa(c) === 'recria' ? 'Recria' : 'Terminacion',
+      corral_id: c.id,
       kg_total: kgs[c.id] || 0, registrado_por: usuario?.id,
     }))
     await supabase.from('raciones_diarias').insert(registros)
