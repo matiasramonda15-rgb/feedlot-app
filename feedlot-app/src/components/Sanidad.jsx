@@ -52,10 +52,19 @@ export default function Sanidad({ usuario }) {
   const [mortalidad, setMortalidad] = useState([])
   const [eventos, setEventos] = useState([])
   const [revisiones, setRevisiones] = useState([])
-  const [productos, setProductos] = useState(PRODUCTOS_DEFAULT)
+  const [productos, setProductos] = useState([])
   const [revState, setRevState] = useState([])
   const [formProd, setFormProd] = useState({ show: false, nombre: '', tipo: 'Vacuna', lab: '', car: '' })
   const esDueno = ['dueno', 'secretaria'].includes(usuario?.rol)
+
+  useEffect(() => {
+    cargarProductos()
+  }, [])
+
+  async function cargarProductos() {
+    const { data } = await supabase.from('productos_sanidad').select('*').eq('activo', true).order('nombre')
+    if (data) setProductos(data.map(p => ({ n: p.nombre, tipo: p.tipo, lab: p.laboratorio, car: p.carencia_dias, id: p.id })))
+  }
 
   useEffect(() => { cargarDatos() }, [])
 
@@ -138,12 +147,14 @@ export default function Sanidad({ usuario }) {
 
   async function guardarProd() {
     if (!formProd.nombre.trim()) { alert('Ingresa el nombre'); return }
-    setProductos([...productos, { n: formProd.nombre.trim(), tipo: formProd.tipo, lab: formProd.lab, car: parseInt(formProd.car) || 0 }])
+    const { data } = await supabase.from('productos_sanidad').insert({ nombre: formProd.nombre.trim(), tipo: formProd.tipo, laboratorio: formProd.lab, carencia_dias: parseInt(formProd.car) || 0, activo: true }).select().single()
+    if (data) setProductos([...productos, { n: data.nombre, tipo: data.tipo, lab: data.laboratorio, car: data.carencia_dias, id: data.id }])
     setFormProd({ show: false, nombre: '', tipo: 'Vacuna', lab: '', car: '' })
   }
 
   async function eliminarProd(i) {
     if (!confirm(`Eliminar "${productos[i].n}"?`)) return
+    if (productos[i].id) await supabase.from('productos_sanidad').update({ activo: false }).eq('id', productos[i].id)
     const p = [...productos]; p.splice(i, 1); setProductos(p)
   }
 
