@@ -524,17 +524,27 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
 
     const { data: stockItems } = await supabase.from('stock_insumos').select('*')
     if (stockItems) {
+      // Recargar stock fresco para evitar valores desactualizados
+      const stockFresh = {}
+      stockItems.forEach(s => { stockFresh[s.id] = s.cantidad_kg || 0 })
+
       for (const etapa of Object.keys(descuentoPorEtapa)) {
         const totalKgEtapa = descuentoPorEtapa[etapa]
         if (totalKgEtapa === 0) continue
-        const formula = FRML[etapa] || []
+        // FRML puede ser { seco: { acostumbramiento: [...] } } o { acostumbramiento: [...] }
+        const formula = (FRML?.seco?.[etapa] || FRML?.[etapa] || [])
         for (const ing of formula) {
           const kgIng = Math.round(ing.kg * totalKgEtapa / 100)
           if (kgIng === 0) continue
-          const stockItem = stockItems.find(s => s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()))
+          const stockItem = stockItems.find(s =>
+            s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()) ||
+            ing.n.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0].toLowerCase())
+          )
           if (stockItem) {
+            const nuevaCantidad = Math.max(0, stockFresh[stockItem.id] - kgIng)
+            stockFresh[stockItem.id] = nuevaCantidad
             await supabase.from('stock_insumos').update({
-              cantidad_kg: Math.max(0, (stockItem.cantidad_kg || 0) - kgIng),
+              cantidad_kg: nuevaCantidad,
               actualizado_en: new Date().toISOString()
             }).eq('id', stockItem.id)
           }
