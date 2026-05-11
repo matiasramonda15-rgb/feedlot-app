@@ -115,15 +115,15 @@ export default function Ventas({ usuario }) {
   }
 
   // Cálculos de la operación
-  const kgBruto = parseFloat(form.kg_vivo) || 0
+  const kgBruto = corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0)
+  const cantVender = corralesVenta.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
   const desbastePct = parseFloat(form.desbaste) || 8
   const kgDescuento = Math.round(kgBruto * desbastePct / 100)
   const kgNeto = Math.round(kgBruto - kgDescuento)
   const precioKg = parseFloat(form.precio_kg) || 0
   const totalVenta = Math.round(kgNeto * precioKg)
-  const cantVender = parseInt(form.cantidad) || 0
 
-  // Corral seleccionado
+  // Corral seleccionado (para compatibilidad)
   const corralSel = corrales.find(c => String(c.id) === String(form.corral_id))
   const gdpCorral = corralSel ? gdpPorCorral[corralSel.numero] : null
   const animalesListos = gdpCorral?.pesoActual >= 400 ? corralSel.animales : 0
