@@ -28,7 +28,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento']),
-      supabase.from('raciones_diarias').select('corral_id, kg_total, Mezclador').order('fecha', { ascending: false }).limit(200),
+      supabase.from('raciones_diarias').select('corral_id, kg_total, fecha').order('fecha', { ascending: false }).limit(500),
     ])
     // Construir formulas desde BD
     const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
@@ -45,10 +45,14 @@ export default function AppMovil({ usuario, onLogout }) {
       recria: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_recria')?.valor || '2500'),
       terminacion: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_terminacion')?.valor || '4200'),
     }
+    // Obtener la fecha más reciente con datos
     const kgsAyer = {}
-    ;(racionesAyer || []).forEach(r => {
-      if (!kgsAyer[r.corral_id]) kgsAyer[r.corral_id] = r.kg_total || 0
-    })
+    if (racionesAyer && racionesAyer.length > 0) {
+      const fechaMasReciente = racionesAyer[0].fecha
+      racionesAyer.filter(r => r.fecha === fechaMasReciente).forEach(r => {
+        kgsAyer[r.corral_id] = r.kg_total || 0
+      })
+    }
     setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer })
   }
 
@@ -510,9 +514,11 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
 
   async function confirmar() {
     setGuardando(true)
+    const hoy = new Date().toISOString().split('T')[0]
     const registros = corralesAlim.map(c => ({
       Mezclador: getEtapa(c) === 'acostumbramiento' ? 'Acostumbramiento' : getEtapa(c) === 'recria' ? 'Recria' : 'Terminacion',
       corral_id: c.id,
+      fecha: hoy,
       kg_total: kgs[c.id] || 0, registrado_por: usuario?.id,
     }))
     await supabase.from('raciones_diarias').insert(registros)
