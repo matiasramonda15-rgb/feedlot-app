@@ -551,15 +551,34 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
               const totalMx = mx.corralesIds.reduce((a, id) => a + (kgs[id] || 0), 0)
               const f = FRML[mx.etapa]
               const factor = totalMx / 100
+              const superaCap = totalMx > mx.cap
+              const nCargas = superaCap ? Math.ceil(totalMx / mx.cap) : 1
+              const kgPorCarga = superaCap ? Math.round(totalMx / nCargas) : totalMx
+              const factorCarga = kgPorCarga / 100
               let acum = 0
               return (
-                <div key={mi} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
+                <div key={mi} style={{ background: C.surface, border: `1px solid ${superaCap ? C.amber : C.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
                   <div style={{ padding: '.75rem 1rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: C.green }}>{mx.nombre}</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: C.mono, color: totalMx > mx.cap ? C.amber : C.green }}>{totalMx.toLocaleString('es-AR')} kg</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: C.mono, color: superaCap ? C.amber : C.green }}>{totalMx.toLocaleString('es-AR')} kg</div>
+                  </div>
+                  {superaCap && (
+                    <div style={{ background: '#3D2A00', padding: '.75rem 1rem', borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.amber }}>
+                        ⚠ Supera la capacidad ({mx.cap.toLocaleString('es-AR')} kg)
+                      </div>
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                        Preparar <strong style={{ color: C.amber }}>{nCargas} cargas iguales</strong> de ~{kgPorCarga.toLocaleString('es-AR')} kg cada una
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ padding: '6px 1rem', background: C.surface2, borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, textTransform: 'uppercase' }}>
+                      {superaCap ? `Ingredientes por carga (~${kgPorCarga.toLocaleString('es-AR')} kg)` : 'Ingredientes'}
+                    </div>
                   </div>
                   {f.map((ing, ii) => {
-                    const kg = Math.round(ing.kg * factor)
+                    const kg = Math.round(ing.kg * (superaCap ? factorCarga : factor))
                     acum += kg
                     return (
                       <div key={ii} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 1rem', borderBottom: `1px solid ${C.border}` }}>
@@ -573,6 +592,13 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
                       </div>
                     )
                   })}
+                  {superaCap && (
+                    <div style={{ padding: '.75rem 1rem', background: '#1A3D26' }}>
+                      <div style={{ fontSize: 12, color: C.green }}>
+                        Total por carga: <strong>{kgPorCarga.toLocaleString('es-AR')} kg</strong> × {nCargas} cargas = <strong>{totalMx.toLocaleString('es-AR')} kg</strong>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
