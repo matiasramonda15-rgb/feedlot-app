@@ -23,10 +23,20 @@ export default function AppMovil({ usuario, onLogout }) {
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
     ])
+    const [{ data: formulasDB }] = await Promise.all([
+      supabase.from('formulas_mixer').select('*').order('orden'),
+    ])
+    // Construir formulas desde BD
+    const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
+    ;(formulasDB || []).forEach(row => {
+      if (row.dieta === 'seco' && formulasObj.seco[row.etapa]) {
+        formulasObj.seco[row.etapa].push({ n: row.ingrediente, kg: row.kg, c: row.color || '#888' })
+      }
+    })
     const procedencias = [...new Set((lotes || []).map(x => x.procedencia).filter(Boolean))].sort()
     const compradores = [...new Set((ventas || []).filter(v => v.comprador).map(v => v.comprador))].sort()
     const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
-    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj })
   }
 
   const pantallas = {
@@ -34,7 +44,7 @@ export default function AppMovil({ usuario, onLogout }) {
     corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
-    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
+    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
@@ -426,7 +436,7 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
     </div>
   )
 }
-function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
+function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const RANGOS_RECRIA = ['A','B','C']
   function getEtapa(c) {
@@ -435,7 +445,7 @@ function AlimentacionMovil({ nav, usuario, corrales, onDone }) {
     if (c.rol === 'clasificado') return RANGOS_RECRIA.includes(c.sub) ? 'recria' : 'terminacion'
     return 'recria'
   }
-  const FRML = {
+  const FRML = (formulas?.seco) || {
     acostumbramiento: [{n:'Rollo',kg:38,c:'#639922'},{n:'Maiz seco',kg:39,c:'#E8A020'},{n:'Vitaminas',kg:2,c:'#5090E0'},{n:'Urea',kg:0.5,c:'#9060C0'},{n:'Soja',kg:3,c:'#20A060'},{n:'Agua',kg:17,c:'#60A0E0'}],
     recria:           [{n:'Rollo',kg:26,c:'#639922'},{n:'Maiz seco',kg:55,c:'#E8A020'},{n:'Vitaminas',kg:2,c:'#5090E0'},{n:'Urea',kg:1,c:'#9060C0'},{n:'Agua',kg:17,c:'#60A0E0'}],
     terminacion:      [{n:'Rollo',kg:13,c:'#639922'},{n:'Maiz seco',kg:68,c:'#E8A020'},{n:'Vitaminas',kg:1,c:'#5090E0'},{n:'Urea',kg:1,c:'#9060C0'},{n:'Agua',kg:17,c:'#60A0E0'}],

@@ -53,6 +53,8 @@ export default function Ventas({ usuario }) {
     corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8',
     precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '',
   })
+  // Multi-corral
+  const [corralesVenta, setCorralesVenta] = useState([{ corral_id: '', cantidad: '', kg_vivo: '' }])
   const [guardando, setGuardando] = useState(false)
   const [ventaConfirmada, setVentaConfirmada] = useState(null)
 
@@ -182,11 +184,8 @@ export default function Ventas({ usuario }) {
     })
     if (!error) {
       const { data: corral } = await supabase.from('corrales').select('animales').eq('id', form.corral_id).single()
-const nuevosAnimales = Math.max(0, (corral?.animales || 0) - cantVender)
-const updateCorral = { animales: nuevosAnimales }
-if (nuevosAnimales === 0) { updateCorral.rol = 'libre'; updateCorral.sub = null }
-await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
-          setVentaConfirmada({ ...form, kgNeto, totalVenta, kgDescuento, desbastePct, corralNumero: corralSel?.numero })
+      await supabase.from('corrales').update({ animales: Math.max(0, (corral?.animales || 0) - cantVender) }).eq('id', form.corral_id)
+      setVentaConfirmada({ ...form, kgNeto, totalVenta, kgDescuento, desbastePct, corralNumero: corralSel?.numero })
       await cargar()
     } else {
       alert('Error al guardar la venta.')
@@ -196,6 +195,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
 
   function resetNuevaVenta() {
     setForm({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8', precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '' })
+    setCorralesVenta([{ corral_id: '', cantidad: '', kg_vivo: '' }])
     setPaso(1)
     setVentaConfirmada(null)
     setTab('ventas')
@@ -536,60 +536,85 @@ await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
                   <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>¿Qué animales vas a vender?</div>
                     <div style={{ background: S.accentLight, border: '1px solid #85B7EB', borderRadius: 8, padding: '.85rem 1rem', fontSize: 13, color: S.accent, marginBottom: '1rem', lineHeight: 1.6 }}>
-                      Seleccioná el corral. El sistema muestra los animales que superaron los 400 kg según la última pesada.
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                      <Campo label="Fecha de venta">
-                        <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} style={inputStyle} />
-                      </Campo>
-                      <Campo label="Corral de origen">
-                        <select value={form.corral_id} onChange={e => setForm({ ...form, corral_id: e.target.value })} style={inputStyle}>
-                          <option value="">— Seleccioná —</option>
-                          {corrales.filter(c => (c.animales || 0) > 0).map(c => {
-                            const g = gdpPorCorral[c.numero]
-                            const listo = g && g.pesoActual >= 400
-                            return (
-                              <option key={c.id} value={c.id}>
-                                Corral {c.numero} · {c.rol} · {c.animales} animales{g ? ` · ${Math.round(g.pesoActual)} kg prom.` : ''}{listo ? ' ★ listos' : ''}
-                              </option>
-                            )
-                          })}
-                        </select>
-                      </Campo>
+                      Podés seleccionar uno o más corrales para venderle a un mismo comprador.
                     </div>
 
-                    {corralSel && (
-                      <div>
-                        <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem 1.25rem', marginBottom: '1rem' }}>
-                          {[
-                            ['Animales en corral', corralSel.animales],
-                            ['Peso promedio actual', gdpCorral ? Math.round(gdpCorral.pesoActual) + ' kg' : '— (sin pesadas)'],
-                            ['Animales ≥ 400 kg', animalesListos > 0 ? <span style={{ color: S.green, fontWeight: 600 }}>{animalesListos} animales</span> : <span style={{ color: S.muted }}>0 animales — no llegaron a 400 kg</span>],
-                            ['Última pesada', gdpCorral ? new Date(gdpCorral.ultimaPesada).toLocaleDateString('es-AR') : '—'],
-                            ['GDP del corral', gdpCorral?.gdp ? `${gdpCorral.gdp.toFixed(2)} kg/día` : '—'],
-                            diasParaVenta !== null && ['Días estimados para 400 kg', `${diasParaVenta} días`],
-                          ].filter(Boolean).map(([label, val], i, arr) => (
-                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '6px 0', borderBottom: i < arr.length - 1 ? `1px solid ${S.border}` : 'none', fontSize: 13 }}>
-                              <span style={{ color: S.muted }}>{label}</span>
-                              <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{val}</span>
+                    <Campo label="Fecha de venta" style={{ marginBottom: '1rem' }}>
+                      <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} style={{ ...inputStyle, maxWidth: 220 }} />
+                    </Campo>
+
+                    {/* Corrales */}
+                    {corralesVenta.map((cv, i) => {
+                      const cSel = corrales.find(c => String(c.id) === String(cv.corral_id))
+                      const g = cSel ? gdpPorCorral[cSel.numero] : null
+                      return (
+                        <div key={i} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: S.muted }}>Corral {i + 1}</div>
+                            {corralesVenta.length > 1 && (
+                              <button onClick={() => setCorralesVenta(corralesVenta.filter((_, j) => j !== i))}
+                                style={{ background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>Quitar</button>
+                            )}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Corral</label>
+                              <select value={cv.corral_id} onChange={e => { const n = [...corralesVenta]; n[i].corral_id = e.target.value; setCorralesVenta(n) }} style={inputStyle}>
+                                <option value="">— Seleccioná —</option>
+                                {corrales.filter(c => (c.animales || 0) > 0).map(c => {
+                                  const g = gdpPorCorral[c.numero]
+                                  const listo = g && g.pesoActual >= 400
+                                  return <option key={c.id} value={c.id}>C-{c.numero} · {c.animales} anim.{g ? ` · ${Math.round(g.pesoActual)}kg` : ''}{listo ? ' ★' : ''}</option>
+                                })}
+                              </select>
                             </div>
-                          ))}
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Animales a vender</label>
+                              <input type="number" value={cv.cantidad} placeholder={cSel ? `Máx. ${cSel.animales}` : 'ej. 48'}
+                                onChange={e => { const n = [...corralesVenta]; n[i].cantidad = e.target.value; setCorralesVenta(n) }} style={inputStyle} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Kg báscula</label>
+                              <input type="number" value={cv.kg_vivo} placeholder="ej. 19800"
+                                onChange={e => { const n = [...corralesVenta]; n[i].kg_vivo = e.target.value; setCorralesVenta(n) }} style={inputStyle} />
+                            </div>
+                          </div>
+                          {cSel && g && (
+                            <div style={{ fontSize: 12, color: S.muted, marginTop: 8 }}>
+                              Peso prom.: <strong>{Math.round(g.pesoActual)} kg</strong>
+                              {g.gdp ? ` · GDP: ${g.gdp.toFixed(2)} kg/día` : ''}
+                              {g.pesoActual >= 400 ? <span style={{ color: S.green, marginLeft: 6 }}>★ Listos para venta</span> : ''}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                          <Campo label="Animales a vender" hint={animalesListos > 0 ? `Máx. ${animalesListos} que superaron 400 kg` : `Máx. ${corralSel.animales} animales`}>
-                            <input type="number" value={form.cantidad} onChange={e => setForm({ ...form, cantidad: e.target.value })}
-                              min="1" max={corralSel.animales} placeholder="ej. 48" style={inputStyle} />
-                          </Campo>
-                          <Campo label="Categoría">
-                            <input type="text" value={`${corralSel.categoria || corralSel.rol}${corralSel.sub ? ' · Rango ' + corralSel.sub : ''}`} readOnly style={inputReadonly} />
-                          </Campo>
+                      )
+                    })}
+
+                    <button onClick={() => setCorralesVenta([...corralesVenta, { corral_id: '', cantidad: '', kg_vivo: '' }])}
+                      style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', marginTop: 4, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                      + Agregar otro corral
+                    </button>
+
+                    {/* Resumen */}
+                    {corralesVenta.some(c => c.cantidad && c.kg_vivo) && (
+                      <div style={{ background: S.accentLight, border: '1px solid #85B7EB', borderRadius: 8, padding: '1rem', marginTop: '1rem' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: 8 }}>Resumen de la operación</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 13 }}>
+                          <div><div style={{ color: S.muted, fontSize: 11 }}>Total animales</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>{corralesVenta.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)}</div></div>
+                          <div><div style={{ color: S.muted, fontSize: 11 }}>Kg brutos totales</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>{corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0).toLocaleString('es-AR')} kg</div></div>
+                          <div><div style={{ color: S.muted, fontSize: 11 }}>Corrales incluidos</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>{corralesVenta.filter(c => c.corral_id).length}</div></div>
                         </div>
                       </div>
                     )}
                   </div>
+
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button onClick={() => setTab('ventas')} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Cancelar</button>
-                    <button onClick={() => { if (!form.corral_id || !form.cantidad) { alert('Seleccioná un corral e ingresá la cantidad.'); return } setPaso(2) }}
+                    <button onClick={() => {
+                      const validos = corralesVenta.filter(c => c.corral_id && c.cantidad)
+                      if (validos.length === 0) { alert('Agregá al menos un corral con cantidad.'); return }
+                      setPaso(2)
+                    }}
                       style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                       Continuar →
                     </button>
@@ -598,50 +623,54 @@ await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
               )}
 
               {/* PASO 2 */}
-              {paso === 2 && (
-                <div>
-                  <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Pesaje en báscula y desbaste</div>
-                    <div style={{ background: S.accentLight, border: '1px solid #85B7EB', borderRadius: 8, padding: '.85rem 1rem', fontSize: 13, color: S.accent, marginBottom: '1rem', lineHeight: 1.6 }}>
-                      Ingresá los kg totales medidos hoy en báscula y el % de desbaste acordado con el comprador.
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                      <Campo label="Kg totales en báscula">
-                        <input type="number" value={form.kg_vivo} onChange={e => setForm({ ...form, kg_vivo: e.target.value })} placeholder="ej. 19.800" style={inputStyle} />
-                      </Campo>
-                      <Campo label="% Desbaste" hint="8% por defecto · modificable">
-                        <input type="number" value={form.desbaste} onChange={e => setForm({ ...form, desbaste: e.target.value })} step="0.5" min="0" max="20" style={inputStyle} />
-                      </Campo>
-                      <Campo label="Kg netos">
-                        <input type="text" value={kgBruto > 0 ? kgNeto.toLocaleString('es-AR') + ' kg' : ''} readOnly placeholder="— kg" style={inputReadonly} />
-                      </Campo>
-                    </div>
-
-                    {kgBruto > 0 && (
-                      <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem 1.25rem' }}>
-                        {[
-                          ['Kg brutos báscula', kgBruto.toLocaleString('es-AR') + ' kg'],
-                          ['Desbaste', `−${kgDescuento.toLocaleString('es-AR')} kg (${desbastePct}%)`],
-                          ['Kg netos a facturar', kgNeto.toLocaleString('es-AR') + ' kg'],
-                          ['Prom. neto por animal', cantVender > 0 ? Math.round(kgNeto / cantVender) + ' kg/animal' : '—'],
-                        ].map(([label, val], i, arr) => (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < arr.length - 1 ? `1px solid ${S.border}` : 'none', fontSize: 13 }}>
-                            <span style={{ color: S.muted }}>{label}</span>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 600, color: i === 2 ? S.accent : S.text }}>{val}</span>
-                          </div>
-                        ))}
+              {paso === 2 && (() => {
+                const totalKgBruto = corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0)
+                const totalCant = corralesVenta.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
+                const desbPct = parseFloat(form.desbaste) || 8
+                const totalKgNeto = Math.round(totalKgBruto * (1 - desbPct / 100))
+                const totalKgDesc = Math.round(totalKgBruto - totalKgNeto)
+                return (
+                  <div>
+                    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Desbaste</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                        <Campo label="% Desbaste" hint="8% por defecto · modificable">
+                          <input type="number" value={form.desbaste} onChange={e => setForm({ ...form, desbaste: e.target.value })} step="0.5" min="0" max="20" style={inputStyle} />
+                        </Campo>
+                        <Campo label="Kg brutos totales">
+                          <input type="text" value={totalKgBruto > 0 ? totalKgBruto.toLocaleString('es-AR') + ' kg' : ''} readOnly style={inputReadonly} />
+                        </Campo>
+                        <Campo label="Kg netos totales">
+                          <input type="text" value={totalKgNeto > 0 ? totalKgNeto.toLocaleString('es-AR') + ' kg' : ''} readOnly style={inputReadonly} />
+                        </Campo>
                       </div>
-                    )}
+                      {totalKgBruto > 0 && (
+                        <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem 1.25rem' }}>
+                          {[
+                            ['Kg brutos báscula', totalKgBruto.toLocaleString('es-AR') + ' kg'],
+                            ['Desbaste', `−${totalKgDesc.toLocaleString('es-AR')} kg (${desbPct}%)`],
+                            ['Kg netos a facturar', totalKgNeto.toLocaleString('es-AR') + ' kg'],
+                            ['Animales totales', totalCant],
+                            ['Prom. neto por animal', totalCant > 0 ? Math.round(totalKgNeto / totalCant) + ' kg/animal' : '—'],
+                          ].map(([label, val], i, arr) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < arr.length - 1 ? `1px solid ${S.border}` : 'none', fontSize: 13 }}>
+                              <span style={{ color: S.muted }}>{label}</span>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: i === 2 ? S.accent : S.text }}>{val}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button onClick={() => setPaso(1)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>← Atrás</button>
+                      <button onClick={() => setPaso(3)}
+                        style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                        Continuar →
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button onClick={() => setPaso(1)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>← Atrás</button>
-                    <button onClick={() => { if (!form.kg_vivo) { alert('Ingresá los kg en báscula.'); return } setPaso(3) }}
-                      style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                      Continuar →
-                    </button>
-                  </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* PASO 3 */}
               {paso === 3 && (
@@ -777,4 +806,4 @@ await supabase.from('corrales').update(updateCorral).eq('id', form.corral_id)
       )}
     </div>
   )
-} 
+}
