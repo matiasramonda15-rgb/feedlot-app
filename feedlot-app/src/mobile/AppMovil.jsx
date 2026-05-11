@@ -23,8 +23,12 @@ export default function AppMovil({ usuario, onLogout }) {
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
     ])
-    const [{ data: formulasDB }] = await Promise.all([
+    const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
+    const ayerStr = ayer.toISOString().split('T')[0]
+    const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
+      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento']),
+      supabase.from('raciones_diarias').select('corral_id, kg_total').gte('creado_en', ayerStr + 'T00:00:00').lt('creado_en', ayerStr + 'T23:59:59'),
     ])
     // Construir formulas desde BD
     const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
@@ -36,7 +40,14 @@ export default function AppMovil({ usuario, onLogout }) {
     const procedencias = [...new Set((lotes || []).map(x => x.procedencia).filter(Boolean))].sort()
     const compradores = [...new Set((ventas || []).filter(v => v.comprador).map(v => v.comprador))].sort()
     const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
-    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj })
+    const capMixer = {
+      acostumbramiento: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_acostumbramiento')?.valor || '2000'),
+      recria: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_recria')?.valor || '2500'),
+      terminacion: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_terminacion')?.valor || '4200'),
+    }
+    const kgsAyer = {}
+    ;(racionesAyer || []).forEach(r => { kgsAyer[r.corral_id] = r.kg_total || 0 })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer })
   }
 
   const pantallas = {
@@ -44,7 +55,7 @@ export default function AppMovil({ usuario, onLogout }) {
     corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
-    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} onDone={cargarDatos} />,
+    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
@@ -443,7 +454,7 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
     </div>
   )
 }
-function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
+function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, onDone }) {
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const RANGOS_RECRIA = ['A','B','C']
   function getEtapa(c) {
@@ -465,7 +476,14 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
 
   useEffect(() => {
     const inicial = {}
-    corralesAlim.forEach(c => { inicial[c.id] = Math.round(Math.round((c.animales || 0) * 10) / 100) * 100 })
+    corralesAlim.forEach(c => {
+      // Si hay datos de ayer, usarlos; sino calcular por defecto
+      if (kgsAyer && kgsAyer[c.id]) {
+        inicial[c.id] = kgsAyer[c.id]
+      } else {
+        inicial[c.id] = Math.round(Math.round((c.animales || 0) * 10) / 100) * 100
+      }
+    })
     setKgs(inicial)
   }, [corrales])
 
@@ -479,10 +497,13 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
 
   const total = Object.values(kgs).reduce((a, b) => a + b, 0)
 
+  const capAcost = capMixer?.acostumbramiento || 2000
+  const capRecria = capMixer?.recria || 2500
+  const capTerm = capMixer?.terminacion || 4200
   const MIXERS = [
-    { nombre: 'Mixer 1 - Acostumbramiento', etapa: 'acostumbramiento', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento').map(c => c.id), cap: 4000 },
-    { nombre: 'Mixer 2 - Recria', etapa: 'recria', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'recria').map(c => c.id), cap: 4000 },
-    { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'terminacion').map(c => c.id), cap: 4000 },
+    { nombre: 'Mixer 1 - Acostumbramiento', etapa: 'acostumbramiento', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento').map(c => c.id), cap: capAcost },
+    { nombre: 'Mixer 2 - Recria', etapa: 'recria', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'recria').map(c => c.id), cap: capRecria },
+    { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'terminacion').map(c => c.id), cap: capTerm },
   ].filter(m => m.corralesIds.length > 0)
 
   async function confirmar() {
@@ -493,6 +514,34 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
       kg_total: kgs[c.id] || 0, registrado_por: usuario?.id,
     }))
     await supabase.from('raciones_diarias').insert(registros)
+
+    // Descontar del stock por etapa
+    const descuentoPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
+    corralesAlim.forEach(c => {
+      const etapa = getEtapa(c)
+      descuentoPorEtapa[etapa] = (descuentoPorEtapa[etapa] || 0) + (kgs[c.id] || 0)
+    })
+
+    const { data: stockItems } = await supabase.from('stock_insumos').select('*')
+    if (stockItems) {
+      for (const etapa of Object.keys(descuentoPorEtapa)) {
+        const totalKgEtapa = descuentoPorEtapa[etapa]
+        if (totalKgEtapa === 0) continue
+        const formula = FRML[etapa] || []
+        for (const ing of formula) {
+          const kgIng = Math.round(ing.kg * totalKgEtapa / 100)
+          if (kgIng === 0) continue
+          const stockItem = stockItems.find(s => s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()))
+          if (stockItem) {
+            await supabase.from('stock_insumos').update({
+              cantidad_kg: Math.max(0, (stockItem.cantidad_kg || 0) - kgIng),
+              actualizado_en: new Date().toISOString()
+            }).eq('id', stockItem.id)
+          }
+        }
+      }
+    }
+
     onDone()
     alert(`Raciones confirmadas. ${total.toLocaleString('es-AR')} kg totales.`)
     nav('home')
@@ -524,6 +573,11 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, onDone }) {
                       <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: getEtapa(c) === 'acostumbramiento' ? C.amber : getEtapa(c) === 'recria' ? C.blue : C.green }}>
                         {getEtapa(c) === 'acostumbramiento' ? '🌱 Acostumbramiento' : getEtapa(c) === 'recria' ? '🌾 Recría' : '🏁 Terminación'}
                       </div>
+                      {kgsAyer && kgsAyer[c.id] > 0 && (
+                        <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+                          Ayer: {kgsAyer[c.id].toLocaleString('es-AR')} kg
+                        </div>
+                      )}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 18, fontWeight: 700, fontFamily: C.mono }}>{kgHoy.toLocaleString('es-AR')}</div>
