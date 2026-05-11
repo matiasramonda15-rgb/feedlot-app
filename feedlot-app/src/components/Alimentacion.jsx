@@ -1263,6 +1263,7 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                     </div>
                   </div>
                 ) : (
+                  <>
                   <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
                 {(() => {
                   const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
@@ -1286,9 +1287,9 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                   style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Editar</button>
                 <button onClick={() => eliminarInsumo(s.id, s.insumo)}
                   style={{ padding: '4px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Eliminar</button>
+                  </>
                 )}
               </div>
-            </div>
             <div style={{ height: 6, background: '#F7F5F0', borderRadius: 3, overflow: 'hidden', border: '1px solid #E2DDD6', marginBottom: 4 }}>
               <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: barColor }} />
             </div>
