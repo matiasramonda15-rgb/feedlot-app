@@ -158,9 +158,8 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
   const destinoEsLibre = corralDestino?.rol === 'libre'
   const rolDestinoRequerido = destinoEsLibre && !rolDestino
 
-  async function cambiarRol(corralId, nuevoRol) {
-    if (nuevoRol === 'clasificado') return // se maneja aparte con sub
-    await supabase.from('corrales').update({ rol: nuevoRol, sub: null }).eq('id', corralId)
+  async function cambiarRol(corralId, nuevoRol, sub = null) {
+    await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null }).eq('id', corralId)
     onDone(); setVista('lista'); setSeleccionado(null)
   }
 
@@ -231,7 +230,15 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
               <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, textTransform: 'uppercase' }}>Cambiar rol</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                 {['libre','cuarentena','acumulacion','clasificado','enfermeria','transitorio','deshabilitado'].filter(r => r !== seleccionado.rol).map(r => (
-                  <button key={r} onClick={() => cambiarRol(seleccionado.id, r)}
+                  <button key={r} onClick={() => {
+                    if (r === 'clasificado') {
+                      const rango = prompt('Ingresá el rango (A, B, C, D, E, F o G):')
+                      if (!rango || !['A','B','C','D','E','F','G'].includes(rango.toUpperCase())) { alert('Rango inválido'); return }
+                      cambiarRol(seleccionado.id, 'clasificado', rango.toUpperCase())
+                    } else {
+                      cambiarRol(seleccionado.id, r)
+                    }
+                  }}
                     style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px', fontSize: 12, color: C.text, cursor: 'pointer', fontFamily: C.sans }}>
                     {r.charAt(0).toUpperCase() + r.slice(1)}
                   </button>
