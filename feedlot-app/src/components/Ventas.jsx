@@ -168,7 +168,6 @@ export default function Ventas({ usuario }) {
   }
 
   async function confirmarVenta() {
-    if (!form.corral_id || !form.cantidad || !form.kg_vivo) { alert('Completá todos los campos requeridos.'); return }
     setGuardando(true)
     const { error } = await supabase.from('ventas').insert({
       corral_id: parseInt(form.corral_id),
