@@ -28,7 +28,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento']),
-      supabase.from('raciones_diarias').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
     ])
     // Construir formulas desde BD
     const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
@@ -45,18 +45,11 @@ export default function AppMovil({ usuario, onLogout }) {
       recria: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_recria')?.valor || '2500'),
       terminacion: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_terminacion')?.valor || '4200'),
     }
-    // Obtener la fecha más reciente con datos
+    // Usar el kg_total mas reciente por corral
     const kgsAyer = {}
-    if (racionesAyer && racionesAyer.length > 0) {
-      // Usar creado_en para agrupar por dia
-      const fechaMasReciente = racionesAyer[0].creado_en?.split('T')[0] || racionesAyer[0].fecha
-      racionesAyer.filter(r => {
-        const fechaR = r.creado_en?.split('T')[0] || r.fecha
-        return fechaR === fechaMasReciente
-      }).forEach(r => {
-        kgsAyer[r.corral_id] = r.kg_total || 0
-      })
-    }
+    ;(racionesAyer || []).forEach(r => {
+      if (!kgsAyer[r.corral_id]) kgsAyer[r.corral_id] = r.kg_total || 0
+    })
     setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer })
   }
 
@@ -530,8 +523,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         formula: 'Engorde',
       }
     })
-    const { error: errRaciones } = await supabase.from('raciones_diarias').insert(registros)
-if (errRaciones) console.error('Error raciones:', JSON.stringify(errRaciones))
+    await supabase.from('raciones_app').insert(registros)
 
     // Descontar del stock por etapa
     const descuentoPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
@@ -719,7 +711,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
 
   useEffect(() => {
     setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, enfermos: [] })))
-  }, [corrales, kgsAyer])
+  }, [corrales])
 
   async function confirmarAlerta(id) {
     await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('id', id)
