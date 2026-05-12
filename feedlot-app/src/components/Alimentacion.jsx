@@ -272,7 +272,7 @@ export default function Alimentacion({ usuario }) {
 
   async function eliminarRacion(id) {
     if (!confirm('¿Eliminar esta racion?')) return
-    await supabase.from('raciones_diarias').delete().eq('id', id)
+    await supabase.from('raciones_app').delete().eq('id', id)
     await cargarDatos()
   }
 
@@ -280,7 +280,7 @@ export default function Alimentacion({ usuario }) {
     if (!confirm('¿Eliminar TODAS las raciones de los últimos 7 días? Esta acción no se puede deshacer.')) return
     const hace7dias = new Date()
     hace7dias.setDate(hace7dias.getDate() - 7)
-    await supabase.from('raciones_diarias').delete().gte('creado_en', hace7dias.toISOString())
+    await supabase.from('raciones_app').delete().gte('creado_en', hace7dias.toISOString())
     await cargarDatos()
   }
 
