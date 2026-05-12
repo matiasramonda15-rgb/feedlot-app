@@ -484,7 +484,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       if (kgsAyer && kgsAyer[c.id]) {
         inicial[c.id] = kgsAyer[c.id]
       } else {
-        inicial[c.id] = Math.round(Math.round((c.animales || 0) * 10) / 100) * 100
+        inicial[c.id] = kgsAyer && kgsAyer[c.id] !== undefined ? kgsAyer[c.id] : Math.round(Math.round((c.animales || 0) * 10) / 100) * 100
       }
     })
     setKgs(inicial)
@@ -517,7 +517,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       return {
         corral_id: c.id,
         fecha: hoy,
-        kg_total: kgs[c.id] || 0,
+        kg_total: kgs[c.id] !== undefined ? kgs[c.id] : 0,
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
       }
     })
