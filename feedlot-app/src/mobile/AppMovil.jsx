@@ -517,7 +517,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       return {
         corral_id: c.id,
         fecha: hoy,
-        kg_total: kgs[c.id] !== undefined ? kgs[c.id] : 0,
+        kg_total: Number(kgs[c.id] ?? 0),
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
       }
     })
