@@ -115,21 +115,28 @@ export default function Alimentacion({ usuario }) {
     hace7dias.setDate(hace7dias.getDate() - 7)
     const hace7diasISO = hace7dias.toISOString()
 
-    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: is_ }, { data: ip }, { data: fdb }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: is_ }, { data: ip }, { data: fdb }, { data: cfgCap }, { data: rapp }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
-      supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)')
-        .gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
-      supabase.from('raciones_diarias').select('*, corrales(numero), usuarios:registrado_por(nombre)')
-        .lt('creado_en', hace7diasISO).order('creado_en', { ascending: false }).limit(100),
+      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
+      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100).range(200, 299),
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
       supabase.from('formulas_mixer').select('*').order('orden'),
+      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion']),
+      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
-    setHistorial(h || [])
-    setHistorialArchivo(ha || [])
+    setHistorial(rapp || [])
+    setHistorialArchivo([])
+    // Cargar capacidades desde BD
+    if (cfgCap && cfgCap.length > 0) {
+      const capAcost = parseInt(cfgCap.find(c => c.clave === 'capacidad_mixer_acostumbramiento')?.valor || '2000')
+      const capRecria = parseInt(cfgCap.find(c => c.clave === 'capacidad_mixer_recria')?.valor || '2500')
+      const capTerm = parseInt(cfgCap.find(c => c.clave === 'capacidad_mixer_terminacion')?.valor || '4200')
+      setCaps([capAcost, capRecria, capTerm])
+    }
 
     // Construir formulas desde BD
     if (fdb && fdb.length > 0) {
@@ -454,7 +461,11 @@ export default function Alimentacion({ usuario }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.muted }}>
                       Cap. mixer:
                       <input type="number" value={cap} min="500" step="100"
-                        onChange={e => { const n = [...caps]; n[mi] = parseInt(e.target.value) || 4000; setCaps(n) }}
+                        onChange={async e => {
+                          const n = [...caps]; n[mi] = parseInt(e.target.value) || 4000; setCaps(n)
+                          const claves = ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion']
+                          await supabase.from('configuracion').update({ valor: String(n[mi]) }).eq('clave', claves[mi])
+                        }}
                         style={{ width: 80, border: `1px solid ${S.border}`, borderRadius: 5, padding: '4px 8px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, textAlign: 'right', background: S.surface }} />
                       kg
                     </div>
