@@ -523,7 +523,10 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         formula: 'Engorde',
       }
     })
-    await supabase.from('raciones_app').insert(registros)
+    for (const reg of registros) {
+      if (!reg.corral_id || !reg.kg_total) continue
+      await supabase.from('raciones_app').insert(reg)
+    }
 
     // Descontar del stock por etapa
     const descuentoPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
