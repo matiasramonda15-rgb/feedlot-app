@@ -23,6 +23,10 @@ const REPORTES_ITEMS = [
   { id: 'reportes',      label: 'Reportes',              roles: ['dueno'] },
 ]
 
+const COMERCIAL_ITEMS = [
+  { id: 'comercial',     label: 'Comercial',             roles: ['dueno', 'secretaria'] },
+]
+
 export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
   const rol = usuario?.rol || 'empleado'
   const filtrar = items => items.filter(i => i.roles.includes(rol))
@@ -46,6 +50,10 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
 
       {filtrar(REPORTES_ITEMS).length > 0 && (
         <NavSection label="Reportes" items={filtrar(REPORTES_ITEMS)} modulo={modulo} setModulo={setModulo} />
+      )}
+
+      {filtrar(COMERCIAL_ITEMS).length > 0 && (
+        <NavSection label="Comercial" items={filtrar(COMERCIAL_ITEMS)} modulo={modulo} setModulo={setModulo} />
       )}
 
       <div style={{ marginTop: 'auto', padding: '1rem .75rem', borderTop: '1px solid rgba(255,255,255,.1)' }}>

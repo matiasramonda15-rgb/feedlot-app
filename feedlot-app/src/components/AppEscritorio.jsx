@@ -13,6 +13,7 @@ import Servicios from './Servicios'
 import Maquinaria from './Maquinaria'
 import Personal from './Personal'
 import Gastos from './Gastos'
+import Comercial from './Comercial'
 
 const MODULOS = {
   tablero:      Tablero,
@@ -28,6 +29,7 @@ const MODULOS = {
   maquinaria:   Maquinaria,
   personal:     Personal,
   gastos:       Gastos,
+  comercial:    Comercial,
 }
 
 export default function AppEscritorio({ usuario, onLogout }) {
