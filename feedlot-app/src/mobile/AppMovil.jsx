@@ -522,7 +522,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       }
     })
     for (const reg of registros) {
-     if (!reg.corral_id || reg.kg_total === undefined || reg.kg_total === null) continue
+    if (!reg.corral_id) continue
       await supabase.from('raciones_app').insert(reg)
     }
 
@@ -614,7 +614,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                     ))}
                   </div>
                   <input type="number" inputMode="numeric" value={kgHoy}
-                    onChange={e => setKgs({...kgs, [c.id]: parseInt(e.target.value) || 0})}
+                    onChange={e => setKgs({...kgs, [c.id]: e.target.value === '' ? 0 : parseInt(e.target.value) || 0})}
                     style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 15, fontFamily: C.mono, fontWeight: 600, color: C.green, textAlign: 'right', boxSizing: 'border-box' }} />
                 </div>
               )
