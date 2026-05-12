@@ -28,7 +28,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento']),
-      supabase.from('raciones_diarias').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
     ])
     // Construir formulas desde BD
     const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
@@ -530,7 +530,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         formula: 'Engorde',
       }
     })
-    await supabase.from('raciones_diarias').insert(registros)
+    await supabase.from('raciones_app').insert(registros)
 
     // Descontar del stock por etapa
     const descuentoPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
