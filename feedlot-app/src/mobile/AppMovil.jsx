@@ -518,9 +518,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         corral_id: c.id,
         fecha: hoy,
         kg_total: kgs[c.id] || 0,
-        registrado_por: usuario?.id,
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
-        formula: 'Engorde',
       }
     })
     for (const reg of registros) {
