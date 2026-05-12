@@ -522,7 +522,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       }
     })
     for (const reg of registros) {
-     if (!reg.corral_id) continue
+     if (!reg.corral_id || reg.kg_total === undefined || reg.kg_total === null) continue
       await supabase.from('raciones_app').insert(reg)
     }
 
