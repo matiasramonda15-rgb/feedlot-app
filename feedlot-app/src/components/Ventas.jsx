@@ -1020,8 +1020,11 @@ export default function Ventas({ usuario }) {
                       </td>
                       <td style={{ padding: '7px 10px' }}>
                         <select value={v.estado_comercial || 'pendiente'} onChange={async e => {
-                          await supabase.from('ventas').update({ estado_comercial: e.target.value }).eq('id', v.id)
-                          if (v.grupo_venta_id) await supabase.from('ventas').update({ estado_comercial: e.target.value }).eq('grupo_venta_id', v.grupo_venta_id)
+                          const nuevoEstado = e.target.value
+                          await supabase.from('ventas').update({ estado_comercial: nuevoEstado }).eq('id', v.id)
+                          if (v.grupo_venta_id) await supabase.from('ventas').update({ estado_comercial: nuevoEstado }).eq('grupo_venta_id', v.grupo_venta_id)
+                          // Si vuelve a pendiente, limpiar forma_cobro
+                          if (nuevoEstado === 'pendiente') await supabase.from('ventas').update({ forma_cobro: null, fecha_cobro: null }).eq('id', v.id)
                           await cargar()
                         }} style={{ padding: '3px 6px', fontSize: 11, fontWeight: 600, border: '1px solid ' + ec.color, borderRadius: 5, background: ec.bg, color: ec.color, cursor: 'pointer' }}>
                           <option value="pendiente">Pendiente</option>
@@ -1037,25 +1040,28 @@ export default function Ventas({ usuario }) {
                         <input type="checkbox" checked={v.retencion_enviada || false} title="Retencion enviada" onChange={async e => { await supabase.from('ventas').update({ retencion_enviada: e.target.checked }).eq('id', v.id); await cargar() }} />
                       </td>
                       <td style={{ padding: '7px 10px' }}>
-                        {!v.forma_cobro ? (
-                          <select defaultValue="" onChange={async e => {
-                            if (!e.target.value) return
-                            const forma = e.target.value
-                            const fecha = new Date().toISOString().split('T')[0]
-                            await supabase.from('ventas').update({ forma_cobro: forma, fecha_cobro: fecha, estado_comercial: 'cobrado' }).eq('id', v.id)
+                        <select value={v.forma_cobro || ''} onChange={async e => {
+                          const forma = e.target.value
+                          if (!forma) {
+                            await supabase.from('ventas').update({ forma_cobro: null, fecha_cobro: null }).eq('id', v.id)
+                            await cargar()
+                            return
+                          }
+                          const fecha = new Date().toISOString().split('T')[0]
+                          await supabase.from('ventas').update({ forma_cobro: forma, fecha_cobro: fecha, estado_comercial: 'cobrado' }).eq('id', v.id)
+                          if (!v.forma_cobro) {
+                            // Solo registrar en caja la primera vez
                             if (v.monto_facturado > 0) await supabase.from('caja_oficial').insert({ fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto: v.monto_facturado, forma_pago: forma })
                             if (v.monto_negro > 0) await supabase.from('caja_paralela').insert({ fecha, tipo: 'ingreso', descripcion: 'Venta hacienda C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto: v.monto_negro })
-                            await cargar()
-                          }} style={{ padding: '3px 6px', fontSize: 11, border: '1px solid #E2DDD6', borderRadius: 5, background: '#fff', cursor: 'pointer' }}>
-                            <option value="">Registrar cobro...</option>
-                            <option value="transferencia">Transferencia</option>
-                            <option value="cheque">Cheque</option>
-                            <option value="e-cheq">E-Cheq</option>
-                            <option value="efectivo">Efectivo</option>
-                          </select>
-                        ) : (
-                          <span style={{ fontSize: 11, color: '#1E5C2E', fontWeight: 600 }}>Cobrado - {v.forma_cobro}</span>
-                        )}
+                          }
+                          await cargar()
+                        }} style={{ padding: '3px 6px', fontSize: 11, border: '1px solid #E2DDD6', borderRadius: 5, background: '#fff', cursor: 'pointer' }}>
+                          <option value="">— Forma de cobro —</option>
+                          <option value="transferencia">Transferencia</option>
+                          <option value="cheque">Cheque</option>
+                          <option value="e-cheq">E-Cheq</option>
+                          <option value="efectivo">Efectivo</option>
+                        </select>
                       </td>
                     </tr>
                   )
