@@ -1014,52 +1014,73 @@ export default function Alimentacion({ usuario }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Historial de raciones</h1>
-              <div style={{ fontSize: 12, color: S.muted }}>Ultimos 7 dias · {historial.length} registros</div>
+              <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Historial de raciones</div>
+              <div style={{ fontSize: 12, color: S.muted }}>{historial.length} registros · cargados desde la app móvil</div>
             </div>
             {historial.length > 0 && (
               <button onClick={eliminarTodasRaciones}
                 style={{ padding: '8px 14px', fontSize: 12, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>
-                Eliminar todos
+                Eliminar últimos 7 días
               </button>
             )}
           </div>
 
-          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: '1.25rem' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr>
-                  {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Costo est.', 'Por', ''].map(h => (
-                    <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {historial.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones en los ultimos 7 dias.</td></tr>
-                )}
-                {historial.map(h => (
-                  <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(h.creado_en || h.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
-                    <td style={{ padding: '9px 12px' }}>{h.corrales?.numero ? `C-${h.corrales.numero}` : '-'}</td>
-                    <td style={{ padding: '9px 12px' }}>{h.mixer}</td>
-                    <td style={{ padding: '9px 12px' }}>{h.formula}</td>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{(h.kg_total || 0).toLocaleString('es-AR')}</td>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.green, fontWeight: 600 }}>
-                      {h.costo_estimado ? `$${h.costo_estimado.toLocaleString('es-AR')}` : <span style={{ color: S.hint, fontWeight: 400 }}>—</span>}
-                    </td>
-                    <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{h.usuarios?.nombre || '-'}</td>
-                    <td style={{ padding: '9px 12px' }}>
-                      <button onClick={() => eliminarRacion(h.id)}
-                        style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Agrupar por fecha */}
+          {(() => {
+            const porFecha = {}
+            historial.forEach(h => {
+              const fecha = h.fecha || h.creado_en?.split('T')[0]
+              if (!porFecha[fecha]) porFecha[fecha] = []
+              porFecha[fecha].push(h)
+            })
+            return Object.entries(porFecha).sort((a, b) => b[0].localeCompare(a[0])).map(([fecha, items]) => {
+              const totalKg = items.reduce((s, h) => s + (h.kg_total || 0), 0)
+              return (
+                <div key={fecha} style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: S.accent }}>
+                      {new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                    </div>
+                    <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
+                      Total: {totalKg.toLocaleString('es-AR')} kg
+                    </div>
+                  </div>
+                  <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: S.bg }}>
+                          {['Corral', 'Etapa', 'Kg cargados', ''].map(h => (
+                            <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => (
+                          <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
+                            <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <button onClick={() => eliminarRacion(h.id)}
+                                style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })
+          })()}
+
+          {historial.length === 0 && (
+            <div style={{ padding: '3rem', textAlign: 'center', color: S.hint, background: S.surface, borderRadius: 10, border: `1px solid ${S.border}` }}>
+              No hay raciones registradas. Se cargan desde la app móvil.
+            </div>
+          )}
 
           {/* ARCHIVO */}
           <button onClick={() => setVerArchivo(!verArchivo)}

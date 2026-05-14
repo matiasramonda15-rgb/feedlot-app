@@ -484,7 +484,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       if (kgsAyer && kgsAyer[c.id]) {
         inicial[c.id] = kgsAyer[c.id]
       } else {
-        inicial[c.id] = kgsAyer && kgsAyer[c.id] !== undefined ? kgsAyer[c.id] : Math.round(Math.round((c.animales || 0) * 10) / 100) * 100
+        inicial[c.id] = Math.round(Math.round((c.animales || 0) * 10) / 100) * 100
       }
     })
     setKgs(inicial)
@@ -512,19 +512,56 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   async function confirmar() {
     setGuardando(true)
     const hoy = new Date().toISOString().split('T')[0]
+
+    // Verificar si ya hay raciones confirmadas hoy
+    const { data: yaConfirmadas } = await supabase.from('raciones_app').select('id').eq('fecha', hoy).limit(1)
+    if (yaConfirmadas && yaConfirmadas.length > 0) {
+      setGuardando(false)
+      const confirmar = window.confirm('Ya se confirmaron raciones hoy. ¿Querés reemplazarlas con los valores actuales?')
+      if (!confirmar) return
+      setGuardando(true)
+      // Eliminar raciones de hoy y recomponer stock
+      const { data: racionesHoy } = await supabase.from('raciones_app').select('corral_id, kg_total, mezclador').eq('fecha', hoy)
+      // Recomponer stock — sumar lo que se había descontado
+      const { data: stockItems } = await supabase.from('stock_insumos').select('*')
+      if (stockItems && racionesHoy) {
+        const stockFreshRecomp = {}
+        stockItems.forEach(s => { stockFreshRecomp[s.id] = s.cantidad_kg || 0 })
+        const descPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
+        racionesHoy.forEach(r => {
+          const etapa = r.mezclador === 'Acostumbramiento' ? 'acostumbramiento' : r.mezclador === 'Recria' ? 'recria' : 'terminacion'
+          descPorEtapa[etapa] = (descPorEtapa[etapa] || 0) + (r.kg_total || 0)
+        })
+        for (const etapa of Object.keys(descPorEtapa)) {
+          const totalKg = descPorEtapa[etapa]
+          if (totalKg === 0) continue
+          const formula = (FRML?.seco?.[etapa] || FRML?.[etapa] || [])
+          for (const ing of formula) {
+            const kgIng = Math.round(ing.kg * totalKg / 100)
+            if (kgIng === 0) continue
+            const stockItem = stockItems.find(s => s.insumo === ing.n) || stockItems.find(s => s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()) || ing.n.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0].toLowerCase()))
+            if (stockItem) {
+              stockFreshRecomp[stockItem.id] = (stockFreshRecomp[stockItem.id] || 0) + kgIng
+              await supabase.from('stock_insumos').update({ cantidad_kg: stockFreshRecomp[stockItem.id] }).eq('id', stockItem.id)
+            }
+          }
+        }
+      }
+      // Eliminar raciones de hoy
+      await supabase.from('raciones_app').delete().eq('fecha', hoy)
+    }
     const registros = corralesAlim.map(c => {
       const etapa = getEtapa(c)
       return {
         corral_id: c.id,
         fecha: hoy,
-        kg_total: Number(kgs[c.id] ?? 0),
+        kg_total: kgs[c.id] || 0,
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
       }
     })
     for (const reg of registros) {
-    if (!reg.corral_id) continue
-      const regFinal = { ...reg, kg_total: reg.kg_total === 0 ? 0.0001 : reg.kg_total }
-await supabase.from('raciones_app').insert(regFinal)
+      if (!reg.corral_id || !reg.kg_total) continue
+      await supabase.from('raciones_app').insert(reg)
     }
 
     // Descontar del stock por etapa
@@ -615,7 +652,7 @@ await supabase.from('raciones_app').insert(regFinal)
                     ))}
                   </div>
                   <input type="number" inputMode="numeric" value={kgHoy}
-                    onChange={e => setKgs({...kgs, [c.id]: e.target.value === '' ? 0 : parseInt(e.target.value) || 0})}
+                    onChange={e => setKgs({...kgs, [c.id]: parseInt(e.target.value) || 0})}
                     style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 15, fontFamily: C.mono, fontWeight: 600, color: C.green, textAlign: 'right', boxSizing: 'border-box' }} />
                 </div>
               )
