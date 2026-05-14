@@ -812,7 +812,7 @@ export default function Ventas({ usuario }) {
                         </Campo>
                       </div>
 
-                      {montoTotal > 0 && (
+                      {parseFloat(form.precio_kg) > 0 && (
                         <>
                           <div style={{ height: 1, background: S.border, margin: '1rem 0' }} />
                           <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Distribución de la operación</div>
