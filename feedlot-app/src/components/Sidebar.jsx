@@ -73,7 +73,7 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
       {/* Logo */}
       <div style={{ padding: '1.25rem 1rem 1rem', borderBottom: `1px solid ${S.border}` }}>
         <img
-          src="/LOGO_SA.png"
+          src="/icon-192.png"
           alt="Ramonda Hnos. S.A."
           style={{ width: '100%', maxWidth: 160, display: 'block', margin: '0 auto' }}
         />
