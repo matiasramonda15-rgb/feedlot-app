@@ -48,6 +48,7 @@ export default function Ventas({ usuario }) {
   const [editandoVenta, setEditandoVenta] = useState(null)
   const [pagosVenta, setPagosVenta] = useState({})
   const [registrandoPago, setRegistrandoPago] = useState(null)
+  const [filtroCuentas, setFiltroCuentas] = useState('')
   const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', observaciones: '' })
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
@@ -1239,6 +1240,11 @@ export default function Ventas({ usuario }) {
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Cuentas por comprador</div>
           <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Resumen de operaciones y saldos por contacto</div>
 
+          <div style={{ marginBottom: '1.25rem', maxWidth: 320 }}>
+            <input type="text" placeholder="Buscar comprador..." value={filtroCuentas} onChange={e => setFiltroCuentas(e.target.value)}
+              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+          </div>
+
           {(() => {
             // Agrupar ventas por comprador
             const porComprador = {}
@@ -1255,7 +1261,7 @@ export default function Ventas({ usuario }) {
               porComprador[comp].totalPagado += pagosCv.reduce((s, p) => s + (p.monto || 0), 0)
             })
 
-            return Object.entries(porComprador).sort((a, b) => b[1].totalVendido - a[1].totalVendido).map(([comp, data]) => {
+            return Object.entries(porComprador).filter(([comp]) => !filtroCuentas || comp.toLowerCase().includes(filtroCuentas.toLowerCase())).sort((a, b) => b[1].totalVendido - a[1].totalVendido).map(([comp, data]) => {
               const saldo = data.totalVendido - data.totalPagado
               const pctCobrado = data.totalVendido > 0 ? Math.round(data.totalPagado / data.totalVendido * 100) : 0
               return (
