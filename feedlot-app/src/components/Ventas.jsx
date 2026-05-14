@@ -46,6 +46,9 @@ export default function Ventas({ usuario }) {
 
   const [ventasSinPrecio, setVentasSinPrecio] = useState([])
   const [editandoVenta, setEditandoVenta] = useState(null)
+  const [pagosVenta, setPagosVenta] = useState({})
+  const [registrandoPago, setRegistrandoPago] = useState(null)
+  const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', observaciones: '' })
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
   const [form, setForm] = useState({
@@ -84,6 +87,14 @@ export default function Ventas({ usuario }) {
       return true
     })
     setVentasSinPrecio(sinPrecioDedup)
+    // Cargar pagos de ventas
+    const { data: pagos } = await supabase.from('pagos_ventas').select('*').order('fecha', { ascending: false })
+    const pagosPorVenta = {}
+    ;(pagos || []).forEach(p => {
+      if (!pagosPorVenta[p.venta_id]) pagosPorVenta[p.venta_id] = []
+      pagosPorVenta[p.venta_id].push(p)
+    })
+    setPagosVenta(pagosPorVenta)
 
     // Calcular GDP y peso actual por corral desde pesadas
     const gdp = {}
@@ -1039,29 +1050,120 @@ export default function Ventas({ usuario }) {
                       <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                         <input type="checkbox" checked={v.retencion_enviada || false} title="Retencion enviada" onChange={async e => { await supabase.from('ventas').update({ retencion_enviada: e.target.checked }).eq('id', v.id); await cargar() }} />
                       </td>
-                      <td style={{ padding: '7px 10px' }}>
-                        <select value={v.forma_cobro || ''} onChange={async e => {
-                          const forma = e.target.value
-                          if (!forma) {
-                            await supabase.from('ventas').update({ forma_cobro: null, fecha_cobro: null }).eq('id', v.id)
-                            await cargar()
-                            return
-                          }
-                          const fecha = new Date().toISOString().split('T')[0]
-                          await supabase.from('ventas').update({ forma_cobro: forma, fecha_cobro: fecha, estado_comercial: 'cobrado' }).eq('id', v.id)
-                          if (!v.forma_cobro) {
-                            // Solo registrar en caja la primera vez
-                            if (v.monto_facturado > 0) await supabase.from('caja_oficial').insert({ fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto: v.monto_facturado, forma_pago: forma })
-                            if (v.monto_negro > 0) await supabase.from('caja_paralela').insert({ fecha, tipo: 'ingreso', descripcion: 'Venta hacienda C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto: v.monto_negro })
-                          }
-                          await cargar()
-                        }} style={{ padding: '3px 6px', fontSize: 11, border: '1px solid #E2DDD6', borderRadius: 5, background: '#fff', cursor: 'pointer' }}>
-                          <option value="">— Forma de cobro —</option>
-                          <option value="transferencia">Transferencia</option>
-                          <option value="cheque">Cheque</option>
-                          <option value="e-cheq">E-Cheq</option>
-                          <option value="efectivo">Efectivo</option>
-                        </select>
+                      <td style={{ padding: '7px 10px', minWidth: 200 }}>
+                        {(() => {
+                          const pagosList = pagosVenta[v.id] || []
+                          const totalPagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
+                          const totalVenta = (v.monto_facturado || 0) + (v.monto_negro || 0) || v.total || 0
+                          const saldo = totalVenta - totalPagado
+                          const isReg = registrandoPago === v.id
+                          return (
+                            <div>
+                              {pagosList.map(p => (
+                                <div key={p.id} style={{ fontSize: 10, color: '#1E5C2E', marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                                  <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
+                                  <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }}
+                                    style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 10 }}>✕</button>
+                                </div>
+                              ))}
+                              {totalPagado > 0 && (
+                                <div style={{ fontSize: 10, fontWeight: 700, color: saldo <= 0 ? '#1E5C2E' : '#7A4500', marginBottom: 4 }}>
+                                  {saldo <= 0 ? '✓ Cobrado completo' : `Saldo: $${saldo.toLocaleString('es-AR')}`}
+                                </div>
+                              )}
+                              {!isReg ? (
+                                <button onClick={() => { setRegistrandoPago(v.id); setFormPago({ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', observaciones: '' }) }}
+                                  style={{ fontSize: 10, padding: '3px 8px', background: '#E8EFF8', border: '1px solid #1A3D6B', color: '#1A3D6B', borderRadius: 4, cursor: 'pointer', width: '100%' }}>
+                                  + Registrar pago
+                                </button>
+                              ) : (
+                                <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 6, padding: '8px', marginTop: 4 }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
+                                    <div>
+                                      <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Monto $</div>
+                                      <input type="number" value={formPago.monto} onChange={e => setFormPago({...formPago, monto: e.target.value})}
+                                        style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 12, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Forma</div>
+                                      <select value={formPago.forma_pago} onChange={e => setFormPago({...formPago, forma_pago: e.target.value})}
+                                        style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11 }}>
+                                        <option value="transferencia">Transferencia</option>
+                                        <option value="cheque">Cheque</option>
+                                        <option value="e-cheq">E-Cheq</option>
+                                        <option value="efectivo">Efectivo</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Fecha</div>
+                                      <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})}
+                                        style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
+                                    </div>
+                                    {['cheque','e-cheq'].includes(formPago.forma_pago) && (
+                                      <>
+                                        <div>
+                                          <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>N° cheque</div>
+                                          <input type="text" value={formPago.numero_cheque} onChange={e => setFormPago({...formPago, numero_cheque: e.target.value})}
+                                            style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
+                                        </div>
+                                        <div>
+                                          <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Banco</div>
+                                          <input type="text" value={formPago.banco} onChange={e => setFormPago({...formPago, banco: e.target.value})}
+                                            style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
+                                        </div>
+                                        <div style={{ gridColumn: '1/-1' }}>
+                                          <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Vencimiento cheque</div>
+                                          <input type="date" value={formPago.fecha_vencimiento_cheque} onChange={e => setFormPago({...formPago, fecha_vencimiento_cheque: e.target.value})}
+                                            style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    <button onClick={async () => {
+                                      if (!formPago.monto) return
+                                      const monto = parseFloat(formPago.monto)
+                                      await supabase.from('pagos_ventas').insert({
+                                        venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null,
+                                        fecha: formPago.fecha, monto,
+                                        forma_pago: formPago.forma_pago,
+                                        numero_cheque: formPago.numero_cheque || null,
+                                        banco: formPago.banco || null,
+                                        fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null,
+                                      })
+                                      // Registrar en caja
+                                      const esNegro = v.monto_negro > 0 && formPago.forma_pago === 'efectivo'
+                                      if (esNegro) {
+                                        await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto })
+                                      } else {
+                                        await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto, forma_pago: formPago.forma_pago })
+                                      }
+                                      // Si es cheque, registrar en tabla cheques
+                                      if (['cheque','e-cheq'].includes(formPago.forma_pago) && formPago.fecha_vencimiento_cheque) {
+                                        await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: v.comprador || null, estado: 'en_cartera' })
+                                      }
+                                      // Actualizar estado si está completo
+                                      const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)
+                                      const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0) + monto
+                                      const totalVentaLocal = (v.monto_facturado || 0) + (v.monto_negro || 0) || v.total || 0
+                                      if (totalPag >= totalVentaLocal * 0.99) {
+                                        await supabase.from('ventas').update({ estado_comercial: 'cobrado', forma_cobro: formPago.forma_pago }).eq('id', v.id)
+                                      }
+                                      setRegistrandoPago(null)
+                                      await cargar()
+                                    }} style={{ flex: 1, padding: '4px', fontSize: 11, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 4, cursor: 'pointer' }}>
+                                      Guardar
+                                    </button>
+                                    <button onClick={() => setRegistrandoPago(null)}
+                                      style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 4, cursor: 'pointer' }}>
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </td>
                     </tr>
                   )
