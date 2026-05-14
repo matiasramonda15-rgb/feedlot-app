@@ -41,8 +41,7 @@ const MENU = [
     items: [
       { id: 'personal',     label: 'Personal',            roles: ['dueno', 'secretaria'] },
       { id: 'gastos',       label: 'Gastos generales',    roles: ['dueno', 'secretaria'] },
-      { id: 'activos',      label: 'Activos',             roles: ['dueno', 'secretaria'] },
-      { id: 'socios',       label: 'Socios',              roles: ['dueno'] },
+      { id: 'activos',      label: 'Activos y socios',    roles: ['dueno', 'secretaria'] },
     ]
   },
   {
@@ -73,7 +72,7 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
       {/* Logo */}
       <div style={{ padding: '1.25rem 1rem 1rem', borderBottom: `1px solid ${S.border}`, textAlign: 'center' }}>
         <img
-          src="/icon-192.png"
+          src="/LOGO_SA.png"
           alt="Ramonda Hnos. S.A."
           onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block' }}
           style={{ width: '100%', maxWidth: 160, display: 'block', margin: '0 auto' }}

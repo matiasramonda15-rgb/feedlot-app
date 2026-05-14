@@ -13,6 +13,7 @@ import Servicios from './Servicios'
 import Personal from './Personal'
 import Gastos from './Gastos'
 import Comercial from './Comercial'
+import Activos from './Activos'
 
 function Placeholder({ titulo, descripcion }) {
   return (
@@ -37,8 +38,8 @@ const MODULOS = {
   personal:     Personal,
   gastos:       Gastos,
   comercial:    Comercial,
-  activos:      () => <Placeholder titulo="Activos" descripcion="Registro de tractores, maquinaria y equipos. Próximamente." />,
-  socios:       () => <Placeholder titulo="Socios" descripcion="Retiros y participación de socios. Próximamente." />,
+  activos:      Activos,
+  socios:       Activos,
 }
 
 export default function AppEscritorio({ usuario, onLogout }) {
