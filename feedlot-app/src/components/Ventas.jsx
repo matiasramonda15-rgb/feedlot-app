@@ -1021,6 +1021,91 @@ export default function Ventas({ usuario }) {
           )}
         </div>
       )}
+
+      {/* GESTIÓN COMERCIAL */}
+      {tab === 'gestion' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Gestión comercial</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Seguimiento de cobros, facturas, retenciones y cheques</div>
+          {ventas.filter(v => v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)).length > 0 && (
+            <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>Vencimientos proximos - 7 dias</div>
+              {ventas.filter(v => v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)).map(v => (
+                <div key={v.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>C-{v.corrales?.numero} - {v.comprador || 'Sin comprador'} - vence {new Date(v.fecha_vencimiento_cobro + 'T12:00:00').toLocaleDateString('es-AR')}</div>
+              ))}
+            </div>
+          )}
+          <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
+              <thead><tr style={{ background: '#F7F5F0' }}>
+                {['Fecha','Corral','Comprador','Total','Facturado','Negro','IVA','Vence','Estado','Factura','Retencion','Cobro'].map(h => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600, color: '#6B6760', fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #E2DDD6', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {ventas.length === 0 && <tr><td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: '#9E9A94' }}>No hay ventas.</td></tr>}
+                {ventas.map(v => {
+                  const ec = { pendiente: { bg: '#FDF0E0', color: '#7A4500' }, precio_cargado: { bg: '#E8EFF8', color: '#1A3D6B' }, facturado: { bg: '#F0EAFB', color: '#3D1A6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' } }[v.estado_comercial] || { bg: '#F7F5F0', color: '#6B6760' }
+                  const venceProx = v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)
+                  return (
+                    <tr key={v.id} style={{ borderBottom: '1px solid #E2DDD6', background: venceProx ? '#FFF5F5' : 'transparent' }}>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '7px 10px', fontWeight: 600 }}>C-{v.corrales?.numero}</td>
+                      <td style={{ padding: '7px 10px' }}>{v.comprador || '—'}</td>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{v.total ? '$' + (v.total/1000000).toFixed(2) + 'M' : '—'}</td>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{v.monto_facturado ? '$' + (v.monto_facturado/1000000).toFixed(2) + 'M' : '—'}</td>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{v.monto_negro > 0 ? '$' + (v.monto_negro/1000000).toFixed(2) + 'M' : '—'}</td>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{v.iva_monto ? '$' + v.iva_monto.toLocaleString('es-AR') : '—'}</td>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11, fontWeight: venceProx ? 700 : 400, color: venceProx ? '#7A1A1A' : '#1A1916' }}>
+                        {v.fecha_vencimiento_cobro ? new Date(v.fecha_vencimiento_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                      </td>
+                      <td style={{ padding: '7px 10px' }}>
+                        <select value={v.estado_comercial || 'pendiente'} onChange={async e => {
+                          await supabase.from('ventas').update({ estado_comercial: e.target.value }).eq('id', v.id)
+                          if (v.grupo_venta_id) await supabase.from('ventas').update({ estado_comercial: e.target.value }).eq('grupo_venta_id', v.grupo_venta_id)
+                          await cargar()
+                        }} style={{ padding: '3px 6px', fontSize: 11, fontWeight: 600, border: '1px solid ' + ec.color, borderRadius: 5, background: ec.bg, color: ec.color, cursor: 'pointer' }}>
+                          <option value="pendiente">Pendiente</option>
+                          <option value="precio_cargado">Precio cargado</option>
+                          <option value="facturado">Facturado</option>
+                          <option value="cobrado">Cobrado</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        <input type="checkbox" checked={v.factura_enviada || false} title="Factura enviada" onChange={async e => { await supabase.from('ventas').update({ factura_enviada: e.target.checked }).eq('id', v.id); await cargar() }} />
+                      </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        <input type="checkbox" checked={v.retencion_enviada || false} title="Retencion enviada" onChange={async e => { await supabase.from('ventas').update({ retencion_enviada: e.target.checked }).eq('id', v.id); await cargar() }} />
+                      </td>
+                      <td style={{ padding: '7px 10px' }}>
+                        {!v.forma_cobro ? (
+                          <select defaultValue="" onChange={async e => {
+                            if (!e.target.value) return
+                            const forma = e.target.value
+                            const fecha = new Date().toISOString().split('T')[0]
+                            await supabase.from('ventas').update({ forma_cobro: forma, fecha_cobro: fecha, estado_comercial: 'cobrado' }).eq('id', v.id)
+                            if (v.monto_facturado > 0) await supabase.from('caja_oficial').insert({ fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto: v.monto_facturado, forma_pago: forma })
+                            if (v.monto_negro > 0) await supabase.from('caja_paralela').insert({ fecha, tipo: 'ingreso', descripcion: 'Venta hacienda C-' + v.corrales?.numero + ' ' + (v.comprador || ''), monto: v.monto_negro })
+                            await cargar()
+                          }} style={{ padding: '3px 6px', fontSize: 11, border: '1px solid #E2DDD6', borderRadius: 5, background: '#fff', cursor: 'pointer' }}>
+                            <option value="">Registrar cobro...</option>
+                            <option value="transferencia">Transferencia</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="e-cheq">E-Cheq</option>
+                            <option value="efectivo">Efectivo</option>
+                          </select>
+                        ) : (
+                          <span style={{ fontSize: 11, color: '#1E5C2E', fontWeight: 600 }}>Cobrado - {v.forma_cobro}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
