@@ -164,33 +164,37 @@ export default function Ventas({ usuario }) {
     if (!ep?.precio_kg) { alert('Ingresa el precio'); return }
     const precioKg = parseFloat(ep.precio_kg)
     const desbastePct = ep.desbaste ? parseFloat(ep.desbaste) : (venta.desbaste_pct || 8)
+    const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
+    const montoTotal = Math.round(kgNeto * precioKg)
+    const montoFacturado = ep.monto_facturado ? parseFloat(ep.monto_facturado) : montoTotal
+    const montoNegro = Math.max(0, montoTotal - montoFacturado)
+    const ivaPct = parseFloat(ep.iva_pct || 10.5)
+    const ivaMonto = Math.round(montoFacturado * ivaPct / 100)
+    const plazo = parseInt(ep.plazo_dias || 0)
+    const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
     const compradorFinal = ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null)
-    const obsF = ep.observaciones || venta.observaciones || null
+
+    const updateData = {
+      precio_kg: precioKg, desbaste_pct: desbastePct, kg_neto: kgNeto,
+      total: montoTotal, monto_facturado: montoFacturado, monto_negro: montoNegro,
+      iva_pct: ivaPct, iva_monto: ivaMonto,
+      plazo_dias: plazo || null, fecha_vencimiento_cobro: fechaVto,
+      estado_comercial: 'precio_cargado',
+      comprador: compradorFinal,
+      observaciones: ep.observaciones || venta.observaciones || null,
+    }
 
     if (venta.grupo_venta_id) {
-      // Actualizar todas las ventas del grupo con el mismo precio/comprador
       const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', venta.grupo_venta_id)
       for (const v of (grupo || [])) {
         const kgNetoV = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (v.kg_neto || 0)
-        await supabase.from('ventas').update({
-          precio_kg: precioKg,
-          desbaste_pct: desbastePct,
-          kg_neto: kgNetoV,
-          total: Math.round(kgNetoV * precioKg),
-          comprador: compradorFinal,
-          observaciones: obsF,
-        }).eq('id', v.id)
+        const montoTotalV = Math.round(kgNetoV * precioKg)
+        const montoFactV = ep.monto_facturado ? Math.round(parseFloat(ep.monto_facturado) * kgNetoV / kgNeto) : montoTotalV
+        const montoNegroV = Math.max(0, montoTotalV - montoFactV)
+        await supabase.from('ventas').update({ ...updateData, kg_neto: kgNetoV, total: montoTotalV, monto_facturado: montoFactV, monto_negro: montoNegroV, iva_monto: Math.round(montoFactV * ivaPct / 100) }).eq('id', v.id)
       }
     } else {
-      const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
-      await supabase.from('ventas').update({
-        precio_kg: precioKg,
-        desbaste_pct: desbastePct,
-        kg_neto: kgNeto,
-        total: Math.round(kgNeto * precioKg),
-        comprador: compradorFinal,
-        observaciones: obsF,
-      }).eq('id', venta.id)
+      await supabase.from('ventas').update(updateData).eq('id', venta.id)
     }
     setEditandoVenta(null)
     await cargar()
@@ -320,7 +324,7 @@ export default function Ventas({ usuario }) {
                     </div>
                     {isEdit && (
                       <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                           <div>
                             <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg *</label>
                             <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
@@ -334,6 +338,12 @@ export default function Ventas({ usuario }) {
                               style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                           </div>
                           <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Plazo (días)</label>
+                            <input type="number" placeholder="0 = contado" value={editandoVenta.plazo_dias || ''}
+                              onChange={e => setEditandoVenta({ ...editandoVenta, plazo_dias: e.target.value })}
+                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                          </div>
+                          <div>
                             <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comprador</label>
                             <select value={editandoVenta.comprador} onChange={e => setEditandoVenta({ ...editandoVenta, comprador: e.target.value, compradorNuevo: '' })}
                               style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
@@ -343,7 +353,7 @@ export default function Ventas({ usuario }) {
                             </select>
                           </div>
                           {editandoVenta.comprador === 'Otro' && (
-                            <div style={{ gridColumn: '1/-1' }}>
+                            <div style={{ gridColumn: '2/-1' }}>
                               <input type="text" placeholder="Nombre del comprador" value={editandoVenta.compradorNuevo || ''}
                                 onChange={e => setEditandoVenta({ ...editandoVenta, compradorNuevo: e.target.value })}
                                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
@@ -356,18 +366,58 @@ export default function Ventas({ usuario }) {
                               style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                           </div>
                         </div>
-                        {editandoVenta.precio_kg && (
-                          <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
-                            {(() => {
-                              const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
-                              const kgNeto = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPct / 100)) : (v.kg_neto || 0)
-                              const totalCalc = kgNeto * parseFloat(editandoVenta.precio_kg)
-                              return <>
-                                KG neto: <strong>{kgNeto.toLocaleString('es-AR')} kg</strong> · Total: <strong>${totalCalc.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong>
-                              </>
-                            })()}
-                          </div>
-                        )}
+
+                        {editandoVenta.precio_kg && (() => {
+                          const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
+                          const kgNetoCalc = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPct / 100)) : (v.kg_neto || 0)
+                          const montoTotalCalc = Math.round(kgNetoCalc * parseFloat(editandoVenta.precio_kg))
+                          const montoFactCalc = editandoVenta.monto_facturado ? parseFloat(editandoVenta.monto_facturado) : montoTotalCalc
+                          const montoNegroCalc = Math.max(0, montoTotalCalc - montoFactCalc)
+                          const ivaPct = parseFloat(editandoVenta.iva_pct || 10.5)
+                          const ivaMCalc = Math.round(montoFactCalc * ivaPct / 100)
+                          return (
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 8, fontSize: 13, color: S.green }}>
+                                KG neto: <strong>{kgNetoCalc.toLocaleString('es-AR')} kg</strong> · Total: <strong>${montoTotalCalc.toLocaleString('es-AR')}</strong>
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto facturado $</label>
+                                  <input type="number" placeholder={montoTotalCalc} value={editandoVenta.monto_facturado || ''}
+                                    onChange={e => setEditandoVenta({ ...editandoVenta, monto_facturado: e.target.value })}
+                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>% IVA</label>
+                                  <select value={editandoVenta.iva_pct || '10.5'} onChange={e => setEditandoVenta({ ...editandoVenta, iva_pct: e.target.value })}
+                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
+                                    <option value="0">Sin IVA</option>
+                                    <option value="10.5">10.5%</option>
+                                    <option value="21">21%</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>IVA $</label>
+                                  <input type="text" value={`$${ivaMCalc.toLocaleString('es-AR')}`} readOnly
+                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                </div>
+                              </div>
+                              {montoNegroCalc > 0 && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                                  <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px' }}>
+                                    <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Parte facturada</div>
+                                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${montoFactCalc.toLocaleString('es-AR')}</div>
+                                  </div>
+                                  <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, padding: '8px 12px' }}>
+                                    <div style={{ fontSize: 10, color: '#3D1A6B', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Parte en negro</div>
+                                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#3D1A6B' }}>${montoNegroCalc.toLocaleString('es-AR')}</div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button onClick={() => guardarDatosVenta(v)}
                             style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
