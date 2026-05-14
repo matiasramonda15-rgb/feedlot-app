@@ -1,14 +1,14 @@
 import { useState } from 'react'
 
 const S = {
-  bg: '#1A2F1A',
-  bgHover: '#243824',
-  bgActive: '#2E4A2E',
-  border: '#2A3F2A',
-  text: '#E8F0E8',
-  muted: '#7A9A7A',
-  accent: '#7DC95E',
-  section: '#4A7A4A',
+  bg: '#0F2744',
+  bgHover: '#1A3A5C',
+  bgActive: '#1E4470',
+  border: '#1A3A5C',
+  text: '#E8F0F8',
+  muted: '#7A9AB8',
+  accent: '#5BB8F5',
+  section: '#4A80B0',
 }
 
 const MENU = [
@@ -71,13 +71,18 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
       position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
     }}>
       {/* Logo */}
-      <div style={{ padding: '1.25rem 1rem 1rem', borderBottom: `1px solid ${S.border}` }}>
+      <div style={{ padding: '1.25rem 1rem 1rem', borderBottom: `1px solid ${S.border}`, textAlign: 'center' }}>
         <img
           src="/icon-192.png"
           alt="Ramonda Hnos. S.A."
+          onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block' }}
           style={{ width: '100%', maxWidth: 160, display: 'block', margin: '0 auto' }}
         />
-        <div style={{ fontSize: 10, color: S.muted, textAlign: 'center', marginTop: 6, letterSpacing: '.05em' }}>
+        <div style={{ display: 'none', color: S.text }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>RAMONDA</div>
+          <div style={{ fontSize: 11, color: S.muted }}>HNOS S.A.</div>
+        </div>
+        <div style={{ fontSize: 10, color: S.muted, marginTop: 6, letterSpacing: '.05em' }}>
           Sistema de gestión
         </div>
       </div>
@@ -89,13 +94,15 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
           if (itemsFiltrados.length === 0) return null
           return (
             <div key={grupo.section} style={{ marginBottom: '1.25rem' }}>
+              {/* Sección — letra más grande y destacada */}
               <div style={{
-                fontSize: 9, fontWeight: 700, color: S.section,
-                textTransform: 'uppercase', letterSpacing: '.12em',
-                padding: '0 1rem', marginBottom: '.4rem'
+                fontSize: 11, fontWeight: 700, color: S.section,
+                textTransform: 'uppercase', letterSpacing: '.1em',
+                padding: '0 1rem', marginBottom: '.5rem',
               }}>
                 {grupo.section}
               </div>
+              {/* Items — letra un poco más chica */}
               {itemsFiltrados.map(item => {
                 const activo = modulo === item.id
                 return (
@@ -104,15 +111,14 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
                     onClick={() => setModulo(item.id)}
                     style={{
                       width: '100%', textAlign: 'left',
-                      padding: '7px 1rem 7px 1.25rem',
-                      fontSize: 13, fontWeight: activo ? 600 : 400,
+                      padding: '7px 1rem 7px 1.5rem',
+                      fontSize: 12.5, fontWeight: activo ? 600 : 400,
                       color: activo ? S.accent : S.text,
                       background: activo ? S.bgActive : 'transparent',
                       border: 'none',
                       borderLeft: activo ? `3px solid ${S.accent}` : '3px solid transparent',
                       cursor: 'pointer',
                       fontFamily: "'IBM Plex Sans', sans-serif",
-                      transition: 'all .15s',
                       display: 'block',
                     }}
                     onMouseEnter={e => { if (!activo) e.currentTarget.style.background = S.bgHover }}
