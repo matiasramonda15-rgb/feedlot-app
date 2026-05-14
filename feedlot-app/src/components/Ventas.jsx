@@ -307,6 +307,7 @@ export default function Ventas({ usuario }) {
   const TABS = [
     { key: 'ventas', label: 'Ventas' },
     { key: 'gestion', label: 'Gestión comercial' },
+    { key: 'cuentas', label: 'Cuentas por comprador' },
     { key: 'nueva-venta', label: '+ Nueva venta' },
   ]
 
@@ -1229,6 +1230,108 @@ export default function Ventas({ usuario }) {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* ── CUENTAS POR COMPRADOR ── */}
+      {tab === 'cuentas' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Cuentas por comprador</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Resumen de operaciones y saldos por contacto</div>
+
+          {(() => {
+            // Agrupar ventas por comprador
+            const porComprador = {}
+            ventas.forEach(v => {
+              const comp = v.comprador || 'Sin comprador'
+              if (!porComprador[comp]) porComprador[comp] = { ventas: [], totalVendido: 0, totalFacturado: 0, totalNegro: 0, totalPagado: 0, totalKgNeto: 0 }
+              porComprador[comp].ventas.push(v)
+              porComprador[comp].totalVendido += v.total || 0
+              porComprador[comp].totalFacturado += v.monto_facturado || 0
+              porComprador[comp].totalNegro += v.monto_negro || 0
+              porComprador[comp].totalKgNeto += v.kg_neto || 0
+              // Pagos registrados
+              const pagosCv = pagosVenta[v.id] || []
+              porComprador[comp].totalPagado += pagosCv.reduce((s, p) => s + (p.monto || 0), 0)
+            })
+
+            return Object.entries(porComprador).sort((a, b) => b[1].totalVendido - a[1].totalVendido).map(([comp, data]) => {
+              const saldo = data.totalVendido - data.totalPagado
+              const pctCobrado = data.totalVendido > 0 ? Math.round(data.totalPagado / data.totalVendido * 100) : 0
+              return (
+                <div key={comp} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                  {/* Header comprador */}
+                  <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{comp}</div>
+                      <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{data.ventas.length} operaciones · {data.totalKgNeto.toLocaleString('es-AR')} kg netos</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 11, color: S.muted, marginBottom: 2 }}>Saldo pendiente</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: saldo > 0 ? S.red : S.green }}>
+                        {saldo > 0 ? `-$${saldo.toLocaleString('es-AR')}` : '✓ Al día'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Métricas */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderBottom: `1px solid ${S.border}` }}>
+                    {[
+                      { label: 'Total operado', val: `$${(data.totalVendido/1000000).toFixed(2)}M`, color: S.text },
+                      { label: 'Facturado', val: `$${(data.totalFacturado/1000000).toFixed(2)}M`, color: S.accent },
+                      { label: 'En negro', val: data.totalNegro > 0 ? `$${(data.totalNegro/1000000).toFixed(2)}M` : '—', color: '#3D1A6B' },
+                      { label: 'Cobrado', val: `$${(data.totalPagado/1000000).toFixed(2)}M · ${pctCobrado}%`, color: pctCobrado >= 100 ? S.green : S.amber },
+                    ].map((m, i) => (
+                      <div key={i} style={{ padding: '.85rem 1rem', borderRight: i < 3 ? `1px solid ${S.border}` : 'none' }}>
+                        <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Barra de progreso cobro */}
+                  <div style={{ padding: '8px 1.25rem', borderBottom: `1px solid ${S.border}` }}>
+                    <div style={{ height: 6, background: S.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${S.border}` }}>
+                      <div style={{ width: `${Math.min(pctCobrado, 100)}%`, height: '100%', background: pctCobrado >= 100 ? S.green : S.amber, borderRadius: 3 }} />
+                    </div>
+                  </div>
+
+                  {/* Detalle de ventas */}
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead><tr style={{ background: S.bg }}>
+                      {['Fecha','Corral','Kg neto','Total','Facturado','Negro','Estado','Cobrado'].map(h => (
+                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {data.ventas.map(v => {
+                        const pagosCv = pagosVenta[v.id] || []
+                        const pagadoCv = pagosCv.reduce((s, p) => s + (p.monto || 0), 0)
+                        const ec = { pendiente: { bg: S.amberLight, color: S.amber }, precio_cargado: { bg: S.accentLight, color: S.accent }, facturado: { bg: '#F0EAFB', color: '#3D1A6B' }, cobrado: { bg: S.greenLight, color: S.green } }[v.estado_comercial] || { bg: S.bg, color: S.muted }
+                        return (
+                          <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '7px 12px', fontWeight: 600 }}>C-{v.corrales?.numero}</td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')} kg</td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{v.total ? `$${(v.total/1000000).toFixed(2)}M` : '—'}</td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: S.accent }}>{v.monto_facturado ? `$${(v.monto_facturado/1000000).toFixed(2)}M` : '—'}</td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#3D1A6B' }}>{v.monto_negro > 0 ? `$${(v.monto_negro/1000000).toFixed(2)}M` : '—'}</td>
+                            <td style={{ padding: '7px 12px' }}>
+                              <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: ec.bg, color: ec.color }}>{v.estado_comercial || 'pendiente'}</span>
+                            </td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: pagadoCv > 0 ? S.green : S.hint }}>
+                              {pagadoCv > 0 ? `$${pagadoCv.toLocaleString('es-AR')}` : '—'}
+                              {pagosCv.length > 0 && <span style={{ fontSize: 10, color: S.muted, marginLeft: 4 }}>({pagosCv.map(p => p.forma_pago).join(', ')})</span>}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })
+          })()}
         </div>
       )}
     </div>
