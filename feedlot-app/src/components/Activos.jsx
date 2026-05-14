@@ -23,7 +23,13 @@ function Card({ children, style = {} }) {
 
 const TIPOS = ['tractor', 'maquinaria', 'herramienta', 'vehiculo', 'infraestructura', 'otro']
 const ESTADOS = { activo: { bg: '#E8F4EB', color: '#1E5C2E' }, en_reparacion: { bg: '#FDF0E0', color: '#7A4500' }, dado_de_baja: { bg: '#FDF0F0', color: '#7A1A1A' } }
-const SOCIOS_DEFAULT = ['Socio 1', 'Socio 2', 'Socio 3', 'Socio 4']
+const SOCIOS = [
+  { nombre: 'Oscar',   pct: 75.17 },
+  { nombre: 'Matias',  pct: 23.46 },
+  { nombre: 'Martin',  pct: 0.77  },
+  { nombre: 'Cecilia', pct: 0.60  },
+]
+const SOCIOS_DEFAULT = SOCIOS.map(s => s.nombre)
 const FORMAS_PAGO = ['transferencia', 'cheque', 'efectivo', 'depósito']
 
 export default function Activos({ usuario }) {
@@ -247,13 +253,19 @@ export default function Activos({ usuario }) {
 
           {/* Resumen por socio */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
-            {Object.entries(porSocio).map(([socio, total]) => (
-              <div key={socio} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: S.muted, marginBottom: 6 }}>{socio}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.red }}>-${total.toLocaleString('es-AR')}</div>
-                <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{retirosFiltrados.filter(r => r.socio === socio).length} retiros</div>
-              </div>
-            ))}
+            {SOCIOS.map(s => {
+              const total = porSocio[s.nombre] || 0
+              return (
+                <div key={s.nombre} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{s.nombre}</div>
+                    <div style={{ fontSize: 11, color: S.accent, fontWeight: 600 }}>{s.pct}%</div>
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.red }}>-${total.toLocaleString('es-AR')}</div>
+                  <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{retirosFiltrados.filter(r => r.socio === s.nombre).length} retiros</div>
+                </div>
+              )
+            })}
             <div style={{ background: S.accentLight, border: `1px solid #85B7EB`, borderRadius: 8, padding: '1rem' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: S.accent, marginBottom: 6 }}>Total retirado</div>
               <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.red }}>-${totalRetiros.toLocaleString('es-AR')}</div>
