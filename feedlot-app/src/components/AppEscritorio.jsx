@@ -10,10 +10,18 @@ import Sanidad from './Sanidad'
 import Reportes from './Reportes'
 import Agricultura from './Agricultura'
 import Servicios from './Servicios'
-import Maquinaria from './Maquinaria'
 import Personal from './Personal'
 import Gastos from './Gastos'
 import Comercial from './Comercial'
+
+function Placeholder({ titulo, descripcion }) {
+  return (
+    <div style={{ padding: '3rem', textAlign: 'center' }}>
+      <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>{titulo}</div>
+      <div style={{ fontSize: 14, color: '#6B6760' }}>{descripcion}</div>
+    </div>
+  )
+}
 
 const MODULOS = {
   tablero:      Tablero,
@@ -26,17 +34,18 @@ const MODULOS = {
   reportes:     Reportes,
   agricultura:  Agricultura,
   servicios:    Servicios,
-  maquinaria:   Maquinaria,
   personal:     Personal,
   gastos:       Gastos,
   comercial:    Comercial,
+  activos:      () => <Placeholder titulo="Activos" descripcion="Registro de tractores, maquinaria y equipos. Próximamente." />,
+  socios:       () => <Placeholder titulo="Socios" descripcion="Retiros y participación de socios. Próximamente." />,
 }
 
 export default function AppEscritorio({ usuario, onLogout }) {
   const [modulo, setModulo] = useState('tablero')
   const Componente = MODULOS[modulo] || Tablero
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', minHeight: '100vh', fontFamily: "'IBM Plex Sans', sans-serif", background: '#F7F5F0' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: '100vh', fontFamily: "'IBM Plex Sans', sans-serif", background: '#F7F5F0' }}>
       <Sidebar modulo={modulo} setModulo={setModulo} usuario={usuario} onLogout={onLogout} />
       <main style={{ padding: '1.75rem', overflowX: 'hidden' }}>
         <Componente usuario={usuario} />

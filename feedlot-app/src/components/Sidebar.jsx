@@ -1,91 +1,151 @@
-const FEEDLOT = [
-  { id: 'tablero',       label: 'Tablero',               roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'corrales',      label: 'Corrales y tropas',     roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'ingresos',      label: 'Ingresos',              roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'pesada',        label: 'Pesada y clasificación', roles: ['dueno','encargado','empleado'] },
-  { id: 'sanidad',       label: 'Sanidad',               roles: ['dueno','secretaria','encargado','empleado'] },
-  { id: 'alimentacion',  label: 'Alimentación',          roles: ['dueno','encargado','empleado'] },
-  { id: 'ventas',        label: 'Ventas',                roles: ['dueno','secretaria'] },
-]
+import { useState } from 'react'
 
-const CAMPO = [
-  { id: 'agricultura',   label: 'Agricultura',           roles: ['dueno','secretaria'] },
-  { id: 'servicios',     label: 'Servicios',             roles: ['dueno','secretaria'] },
-  { id: 'maquinaria',    label: 'Maquinaria',            roles: ['dueno','secretaria'] },
-]
+const S = {
+  bg: '#1A2F1A',
+  bgHover: '#243824',
+  bgActive: '#2E4A2E',
+  border: '#2A3F2A',
+  text: '#E8F0E8',
+  muted: '#7A9A7A',
+  accent: '#7DC95E',
+  section: '#4A7A4A',
+}
 
-const ADMIN = [
-  { id: 'personal',      label: 'Personal',              roles: ['dueno','secretaria'] },
-  { id: 'gastos',        label: 'Gastos generales',      roles: ['dueno','secretaria'] },
-]
-
-const REPORTES_ITEMS = [
-  { id: 'reportes',      label: 'Reportes',              roles: ['dueno'] },
-]
-
-const COMERCIAL_ITEMS = [
-  { id: 'comercial',     label: 'Comercial',             roles: ['dueno', 'secretaria'] },
+const MENU = [
+  {
+    section: 'FEEDLOT',
+    items: [
+      { id: 'tablero',      label: 'Tablero',             roles: ['dueno', 'secretaria', 'encargado'] },
+      { id: 'corrales',     label: 'Corrales y tropas',   roles: ['dueno', 'secretaria', 'encargado'] },
+      { id: 'ingresos',     label: 'Ingresos',            roles: ['dueno', 'secretaria'] },
+      { id: 'pesada',       label: 'Pesada',              roles: ['dueno', 'secretaria', 'encargado'] },
+      { id: 'sanidad',      label: 'Sanidad',             roles: ['dueno', 'secretaria', 'encargado'] },
+      { id: 'alimentacion', label: 'Alimentación',        roles: ['dueno', 'secretaria', 'encargado'] },
+      { id: 'ventas',       label: 'Ventas',              roles: ['dueno', 'secretaria'] },
+    ]
+  },
+  {
+    section: 'AGRICULTURA',
+    items: [
+      { id: 'agricultura',  label: 'Agricultura',         roles: ['dueno', 'secretaria'] },
+    ]
+  },
+  {
+    section: 'SERVICIOS',
+    items: [
+      { id: 'servicios',    label: 'Servicios',           roles: ['dueno', 'secretaria'] },
+    ]
+  },
+  {
+    section: 'ADMINISTRACIÓN',
+    items: [
+      { id: 'personal',     label: 'Personal',            roles: ['dueno', 'secretaria'] },
+      { id: 'gastos',       label: 'Gastos generales',    roles: ['dueno', 'secretaria'] },
+      { id: 'activos',      label: 'Activos',             roles: ['dueno', 'secretaria'] },
+      { id: 'socios',       label: 'Socios',              roles: ['dueno'] },
+    ]
+  },
+  {
+    section: 'COMERCIAL',
+    items: [
+      { id: 'comercial',    label: 'Caja y cheques',      roles: ['dueno', 'secretaria'] },
+    ]
+  },
+  {
+    section: 'REPORTES',
+    items: [
+      { id: 'reportes',     label: 'Reportes',            roles: ['dueno'] },
+    ]
+  },
 ]
 
 export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
   const rol = usuario?.rol || 'empleado'
-  const filtrar = items => items.filter(i => i.roles.includes(rol))
 
   return (
-    <aside style={{ background: '#1A3D6B', padding: '1.25rem 0', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0, overflowY: 'auto' }}>
-      <div style={{ padding: '0 1.25rem 1.25rem', borderBottom: '1px solid rgba(255,255,255,.1)', marginBottom: '1rem' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '.08em', textTransform: 'uppercase' }}>Ramonda Hnos.</div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,.4)', fontFamily: "'IBM Plex Mono', monospace", marginTop: 2 }}>Sistema de gestión</div>
+    <div style={{
+      width: 220, minHeight: '100vh', background: S.bg,
+      display: 'flex', flexDirection: 'column',
+      borderRight: `1px solid ${S.border}`,
+      fontFamily: "'IBM Plex Sans', sans-serif",
+      position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
+    }}>
+      {/* Logo */}
+      <div style={{ padding: '1.25rem 1rem 1rem', borderBottom: `1px solid ${S.border}` }}>
+        <img
+          src="/LOGO_SA.png"
+          alt="Ramonda Hnos. S.A."
+          style={{ width: '100%', maxWidth: 160, display: 'block', margin: '0 auto' }}
+        />
+        <div style={{ fontSize: 10, color: S.muted, textAlign: 'center', marginTop: 6, letterSpacing: '.05em' }}>
+          Sistema de gestión
+        </div>
       </div>
 
-      <NavSection label="Feedlot" items={filtrar(FEEDLOT)} modulo={modulo} setModulo={setModulo} />
+      {/* Menú */}
+      <nav style={{ flex: 1, padding: '1rem 0' }}>
+        {MENU.map(grupo => {
+          const itemsFiltrados = grupo.items.filter(item => item.roles.includes(rol))
+          if (itemsFiltrados.length === 0) return null
+          return (
+            <div key={grupo.section} style={{ marginBottom: '1.25rem' }}>
+              <div style={{
+                fontSize: 9, fontWeight: 700, color: S.section,
+                textTransform: 'uppercase', letterSpacing: '.12em',
+                padding: '0 1rem', marginBottom: '.4rem'
+              }}>
+                {grupo.section}
+              </div>
+              {itemsFiltrados.map(item => {
+                const activo = modulo === item.id
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setModulo(item.id)}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      padding: '7px 1rem 7px 1.25rem',
+                      fontSize: 13, fontWeight: activo ? 600 : 400,
+                      color: activo ? S.accent : S.text,
+                      background: activo ? S.bgActive : 'transparent',
+                      border: 'none',
+                      borderLeft: activo ? `3px solid ${S.accent}` : '3px solid transparent',
+                      cursor: 'pointer',
+                      fontFamily: "'IBM Plex Sans', sans-serif",
+                      transition: 'all .15s',
+                      display: 'block',
+                    }}
+                    onMouseEnter={e => { if (!activo) e.currentTarget.style.background = S.bgHover }}
+                    onMouseLeave={e => { if (!activo) e.currentTarget.style.background = 'transparent' }}
+                  >
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })}
+      </nav>
 
-      {filtrar(CAMPO).length > 0 && (
-        <NavSection label="Campo" items={filtrar(CAMPO)} modulo={modulo} setModulo={setModulo} />
-      )}
-
-      {filtrar(ADMIN).length > 0 && (
-        <NavSection label="Administración" items={filtrar(ADMIN)} modulo={modulo} setModulo={setModulo} />
-      )}
-
-      {filtrar(REPORTES_ITEMS).length > 0 && (
-        <NavSection label="Reportes" items={filtrar(REPORTES_ITEMS)} modulo={modulo} setModulo={setModulo} />
-      )}
-
-      {filtrar(COMERCIAL_ITEMS).length > 0 && (
-        <NavSection label="Comercial" items={filtrar(COMERCIAL_ITEMS)} modulo={modulo} setModulo={setModulo} />
-      )}
-
-      <div style={{ marginTop: 'auto', padding: '1rem .75rem', borderTop: '1px solid rgba(255,255,255,.1)' }}>
-        <div style={{ padding: '7px 10px', marginBottom: 4 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{usuario?.nombre || 'Usuario'}</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.06em', marginTop: 1 }}>{usuario?.rol}</div>
+      {/* Usuario y logout */}
+      <div style={{ padding: '1rem', borderTop: `1px solid ${S.border}` }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: S.text, marginBottom: 2 }}>
+          {usuario?.nombre || usuario?.email?.split('@')[0]}
         </div>
-        <button onClick={onLogout} style={{ width: '100%', background: 'transparent', border: '1px solid rgba(255,255,255,.15)', borderRadius: 6, padding: '7px 10px', fontSize: 12, color: 'rgba(255,255,255,.6)', cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", textAlign: 'left' }}>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 10, textTransform: 'capitalize' }}>
+          {rol}
+        </div>
+        <button
+          onClick={onLogout}
+          style={{
+            width: '100%', padding: '6px', fontSize: 12,
+            background: 'transparent', border: `1px solid ${S.border}`,
+            color: S.muted, borderRadius: 6, cursor: 'pointer',
+            fontFamily: "'IBM Plex Sans', sans-serif",
+          }}>
           Cerrar sesión
         </button>
       </div>
-    </aside>
-  )
-}
-
-function NavSection({ label, items, modulo, setModulo }) {
-  return (
-    <div style={{ padding: '0 .75rem', marginBottom: '1.25rem' }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,.3)', letterSpacing: '.1em', textTransform: 'uppercase', padding: '0 .5rem', marginBottom: '.4rem' }}>{label}</div>
-      {items.map(item => (
-        <div key={item.id} onClick={() => setModulo(item.id)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 6, cursor: 'pointer',
-            color: modulo === item.id ? '#fff' : 'rgba(255,255,255,.6)',
-            background: modulo === item.id ? 'rgba(255,255,255,.15)' : 'transparent',
-            fontWeight: modulo === item.id ? 500 : 400,
-            fontSize: 12, marginBottom: 2, transition: 'all .15s',
-          }}>
-          <div style={{ width: 5, height: 5, borderRadius: '50%', background: modulo === item.id ? '#7EB8F7' : 'rgba(255,255,255,.3)', flexShrink: 0 }} />
-          {item.label}
-        </div>
-      ))}
     </div>
   )
 }
