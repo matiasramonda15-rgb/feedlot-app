@@ -49,6 +49,8 @@ export default function Ventas({ usuario }) {
   const [pagosVenta, setPagosVenta] = useState({})
   const [registrandoPago, setRegistrandoPago] = useState(null)
   const [filtroCuentas, setFiltroCuentas] = useState('')
+  const [editandoComercial, setEditandoComercial] = useState(null)
+  const [formComercial, setFormComercial] = useState({})
   const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', observaciones: '' })
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
@@ -571,7 +573,11 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(1)}M` : '—'}</td>
-                            <td style={{ padding: '9px 12px' }}>
+                            <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
+                              <button onClick={() => { setEditandoComercial(v.id); setFormComercial({ precio_kg: v.precio_kg || '', monto_facturado: v.monto_facturado || '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comprador: v.comprador || '', observaciones: v.observaciones || '' }) }}
+                                style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                                Editar
+                              </button>
                               <button onClick={async () => {
                                 if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
                                 const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
@@ -580,11 +586,90 @@ export default function Ventas({ usuario }) {
                                 await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
                                 await supabase.from('ventas').delete().eq('id', v.id)
                                 cargar()
-                              }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                              }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
                                 Eliminar
                               </button>
                             </td>
                           </tr>
+                          {editandoComercial === v.id && (
+                            <tr style={{ background: S.accentLight }}>
+                              <td colSpan={10} style={{ padding: '1rem 1.25rem' }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Editar datos comerciales</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comprador</div>
+                                    <select value={formComercial.comprador} onChange={e => setFormComercial({...formComercial, comprador: e.target.value})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                                      <option value="">— Sin comprador —</option>
+                                      {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio $/kg</div>
+                                    <input type="number" value={formComercial.precio_kg} onChange={e => setFormComercial({...formComercial, precio_kg: e.target.value})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto facturado $</div>
+                                    <input type="number" value={formComercial.monto_facturado} onChange={e => setFormComercial({...formComercial, monto_facturado: e.target.value})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>% IVA</div>
+                                    <select value={formComercial.iva_pct} onChange={e => setFormComercial({...formComercial, iva_pct: e.target.value})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                                      <option value="0">Sin IVA</option>
+                                      <option value="10.5">10.5%</option>
+                                      <option value="21">21%</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Plazo (días)</div>
+                                    <input type="number" value={formComercial.plazo_dias} onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                  </div>
+                                  <div style={{ gridColumn: '2/-1' }}>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
+                                    <input type="text" value={formComercial.observaciones} onChange={e => setFormComercial({...formComercial, observaciones: e.target.value})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button onClick={async () => {
+                                    const precio = parseFloat(formComercial.precio_kg) || 0
+                                    const kgNeto = v.kg_neto || 0
+                                    const montoTotal = precio ? Math.round(kgNeto * precio) : (v.total || null)
+                                    const montoFact = formComercial.monto_facturado ? parseFloat(formComercial.monto_facturado) : montoTotal
+                                    const montoNegro = montoTotal && montoFact ? Math.max(0, montoTotal - montoFact) : 0
+                                    const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
+                                    const plazo = parseInt(formComercial.plazo_dias || 0)
+                                    const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
+                                    await supabase.from('ventas').update({
+                                      precio_kg: precio || null,
+                                      total: montoTotal,
+                                      monto_facturado: montoFact,
+                                      monto_negro: montoNegro,
+                                      iva_pct: ivaPct,
+                                      iva_monto: montoFact ? Math.round(montoFact * ivaPct / 100) : null,
+                                      plazo_dias: plazo || null,
+                                      fecha_vencimiento_cobro: fechaVto,
+                                      estado_comercial: precio ? 'precio_cargado' : 'pendiente',
+                                      comprador: formComercial.comprador || null,
+                                      observaciones: formComercial.observaciones || null,
+                                    }).eq('id', v.id)
+                                    setEditandoComercial(null)
+                                    await cargar()
+                                  }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                                    Guardar
+                                  </button>
+                                  <button onClick={() => setEditandoComercial(null)}
+                                    style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
                         )
                       } else {
                         // Grupo de ventas multi-corral
