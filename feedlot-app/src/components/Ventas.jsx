@@ -28,6 +28,98 @@ function Campo({ label, children, hint }) {
       <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</label>
       {children}
       {hint && <span style={{ fontSize: 10, color: S.hint }}>{hint}</span>}
+
+
+      {/* ── GESTIÓN COMERCIAL (Paula) ── */}
+      {tab === 'gestion' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Gestión comercial</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>
+            Seguimiento de cobros · facturas · retenciones · cheques
+          </div>
+
+          {ventas.filter(v => v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)).length > 0 && (
+            <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>Vencimientos proximos — 7 dias</div>
+              {ventas.filter(v => v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)).map(v => (
+                <div key={v.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
+                  C-{v.corrales?.numero} · {v.comprador || 'Sin comprador'} · vence {new Date(v.fecha_vencimiento_cobro + 'T12:00:00').toLocaleDateString('es-AR')}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
+              <thead><tr style={{ background: '#F7F5F0' }}>
+                {['Fecha','Corral','Comprador','Total','Facturado','Negro','IVA','Vence','Estado','Factura','Retencion','Cobro'].map(h => (
+                  <th key={h} style={{ padding: '9px 10px', textAlign: 'left', fontWeight: 600, color: '#6B6760', fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #E2DDD6', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {ventas.length === 0 && <tr><td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: '#9E9A94' }}>No hay ventas.</td></tr>}
+                {ventas.map(v => {
+                  const ec = { pendiente: { bg: '#FDF0E0', color: '#7A4500' }, precio_cargado: { bg: '#E8EFF8', color: '#1A3D6B' }, facturado: { bg: '#F0EAFB', color: '#3D1A6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' } }[v.estado_comercial] || { bg: '#F7F5F0', color: '#6B6760' }
+                  const venceProximo = v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)
+                  return (
+                    <tr key={v.id} style={{ borderBottom: '1px solid #E2DDD6', background: venceProximo ? '#FFF5F5' : 'transparent' }}>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 600 }}>C-{v.corrales?.numero}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 12 }}>{v.comprador || '—'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{v.total ? '$' + (v.total/1000000).toFixed(2) + 'M' : '—'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{v.monto_facturado ? '$' + (v.monto_facturado/1000000).toFixed(2) + 'M' : '—'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{v.monto_negro > 0 ? '$' + (v.monto_negro/1000000).toFixed(2) + 'M' : '—'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11 }}>{v.iva_monto ? '$' + v.iva_monto.toLocaleString('es-AR') : '—'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11, fontWeight: venceProximo ? 700 : 400, color: venceProximo ? '#7A1A1A' : '#1A1916' }}>
+                        {v.fecha_vencimiento_cobro ? new Date(v.fecha_vencimiento_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <select value={v.estado_comercial || 'pendiente'} onChange={async e => {
+                          await supabase.from('ventas').update({ estado_comercial: e.target.value }).eq('id', v.id)
+                          if (v.grupo_venta_id) await supabase.from('ventas').update({ estado_comercial: e.target.value }).eq('grupo_venta_id', v.grupo_venta_id)
+                          await cargar()
+                        }} style={{ padding: '3px 6px', fontSize: 11, fontWeight: 600, border: '1px solid ' + ec.color, borderRadius: 5, background: ec.bg, color: ec.color, cursor: 'pointer' }}>
+                          <option value="pendiente">Pendiente</option>
+                          <option value="precio_cargado">Precio cargado</option>
+                          <option value="facturado">Facturado</option>
+                          <option value="cobrado">Cobrado</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        <input type="checkbox" checked={v.factura_enviada || false} title="Factura enviada" onChange={async e => { await supabase.from('ventas').update({ factura_enviada: e.target.checked }).eq('id', v.id); await cargar() }} />
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        <input type="checkbox" checked={v.retencion_enviada || false} title="Retencion enviada" onChange={async e => { await supabase.from('ventas').update({ retencion_enviada: e.target.checked }).eq('id', v.id); await cargar() }} />
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {!v.forma_cobro ? (
+                          <select defaultValue="" onChange={async e => {
+                            if (!e.target.value) return
+                            const forma = e.target.value
+                            const fecha = new Date().toISOString().split('T')[0]
+                            await supabase.from('ventas').update({ forma_cobro: forma, fecha_cobro: fecha, estado_comercial: 'cobrado' }).eq('id', v.id)
+                            if (v.monto_facturado > 0) await supabase.from('caja_oficial').insert({ fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta C-' + (v.corrales?.numero) + ' ' + (v.comprador || ''), monto: v.monto_facturado, forma_pago: forma })
+                            if (v.monto_negro > 0) await supabase.from('caja_paralela').insert({ fecha, tipo: 'ingreso', descripcion: 'Venta hacienda C-' + (v.corrales?.numero) + ' ' + (v.comprador || ''), monto: v.monto_negro })
+                            await cargar()
+                          }} style={{ padding: '3px 6px', fontSize: 11, border: '1px solid #E2DDD6', borderRadius: 5, background: '#fff', cursor: 'pointer' }}>
+                            <option value="">Registrar cobro...</option>
+                            <option value="transferencia">Transferencia</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="e-cheq">E-Cheq</option>
+                            <option value="efectivo">Efectivo</option>
+                          </select>
+                        ) : (
+                          <span style={{ fontSize: 11, color: '#1E5C2E', fontWeight: 600 }}>Cobrado - {v.forma_cobro}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -52,6 +144,7 @@ export default function Ventas({ usuario }) {
     fecha: new Date().toISOString().split('T')[0],
     corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8',
     precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '',
+    monto_facturado: '', iva_pct: '10.5', plazo_dias: '',
   })
   // Multi-corral
   const [corralesVenta, setCorralesVenta] = useState([{ corral_id: '', cantidad: '', kg_vivo: '' }])
@@ -221,7 +314,7 @@ export default function Ventas({ usuario }) {
   }
 
   function resetNuevaVenta() {
-    setForm({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8', precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '' })
+    setForm({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8', precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '', monto_facturado: '', iva_pct: '10.5', plazo_dias: '' })
     setCorralesVenta([{ corral_id: '', cantidad: '', kg_vivo: '' }])
     setPaso(1)
     setVentaConfirmada(null)
@@ -232,6 +325,7 @@ export default function Ventas({ usuario }) {
 
   const TABS = [
     { key: 'ventas', label: 'Ventas' },
+    { key: 'gestion', label: 'Gestión comercial' },
     { key: 'nueva-venta', label: '+ Nueva venta' },
   ]
 
@@ -780,74 +874,90 @@ export default function Ventas({ usuario }) {
               })()}
 
               {/* PASO 3 */}
-              {paso === 3 && (
-                <div>
-                  <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Precio y comprador</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                      <Campo label="Comprador">
-                        <select value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value, comprador_otro: '' })} style={inputStyle}>
-                          <option value="">— Seleccioná o agregá nuevo —</option>
-                          {compradores.map(o => <option key={o} value={o}>{o}</option>)}
-                          <option value="Otro">+ Nuevo comprador...</option>
-                        </select>
-                      </Campo>
-                      {form.comprador === 'Otro' && (
-                        <Campo label="Nombre del comprador">
-                          <input type="text" value={form.comprador_otro || ''} onChange={e => setForm({ ...form, comprador_otro: e.target.value })} placeholder="Nombre del frigorífico o consignatario" style={inputStyle} />
+              {paso === 3 && (() => {
+                const montoTotal = parseFloat(form.precio_kg || 0) * kgNeto
+                const montoFacturado = parseFloat(form.monto_facturado || montoTotal || 0)
+                const montoNegro = montoTotal > 0 ? Math.max(0, montoTotal - montoFacturado) : 0
+                const ivaMonto = montoFacturado * ((parseFloat(form.iva_pct || 10.5)) / 100)
+                return (
+                  <div>
+                    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Precio y condiciones comerciales</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                        <Campo label="Comprador">
+                          <select value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value, comprador_otro: '' })} style={inputStyle}>
+                            <option value="">— Seleccioná —</option>
+                            {compradores.map(o => <option key={o} value={o}>{o}</option>)}
+                            <option value="Otro">+ Nuevo...</option>
+                          </select>
                         </Campo>
-                      )}
-                      <Campo label="Precio $/kg vivo neto">
-                        <input type="number" value={form.precio_kg} onChange={e => setForm({ ...form, precio_kg: e.target.value })} placeholder="ej. 3.100" style={inputStyle} />
-                      </Campo>
-                      <Campo label="N° remito / liquidación">
-                        <input type="text" value={form.remito} onChange={e => setForm({ ...form, remito: e.target.value })} placeholder="ej. 0001-00005678" style={inputStyle} />
-                      </Campo>
-                      <Campo label="Forma de pago">
-                        <select value={form.forma_pago} onChange={e => setForm({ ...form, forma_pago: e.target.value })} style={inputStyle}>
-                          {['Contado', 'A 7 días', 'A 15 días', 'A 30 días'].map(o => <option key={o}>{o}</option>)}
-                        </select>
-                      </Campo>
-                      <Campo label="Observaciones">
-                        <input type="text" value={form.observaciones} onChange={e => setForm({ ...form, observaciones: e.target.value })} placeholder="condición de animales, acuerdos, etc." style={inputStyle} />
-                      </Campo>
-                    </div>
+                        {form.comprador === 'Otro' && (
+                          <Campo label="Nombre del comprador">
+                            <input type="text" value={form.comprador_otro || ''} onChange={e => setForm({ ...form, comprador_otro: e.target.value })} style={inputStyle} />
+                          </Campo>
+                        )}
+                        <Campo label="Precio $/kg neto">
+                          <input type="number" value={form.precio_kg} onChange={e => setForm({ ...form, precio_kg: e.target.value })} placeholder="ej. 3100" style={inputStyle} />
+                        </Campo>
+                        <Campo label="Plazo (días)">
+                          <input type="number" value={form.plazo_dias || ''} onChange={e => setForm({ ...form, plazo_dias: e.target.value })} placeholder="0 = contado" style={inputStyle} />
+                        </Campo>
+                      </div>
 
-                    {kgNeto > 0 && precioKg > 0 && (
-                      <div>
-                        <div style={{ height: 1, background: S.border, margin: '1rem 0' }} />
-                        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '.75rem' }}>Resultado de la operación</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                          <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem 1.25rem' }}>
-                            {[
-                              ['Kg netos', kgNeto.toLocaleString('es-AR') + ' kg'],
-                              ['Precio $/kg', '$' + precioKg.toLocaleString('es-AR')],
-                              ['Total venta', '$' + totalVenta.toLocaleString('es-AR')],
-                            ].map(([l, v], i, arr) => (
-                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < arr.length - 1 ? `1px solid ${S.border}` : 'none', fontSize: 13, fontWeight: i === arr.length - 1 ? 700 : 400 }}>
-                                <span style={{ color: S.muted }}>{l}</span>
-                                <span style={{ fontFamily: 'monospace', color: i === arr.length - 1 ? S.green : S.text }}>{v}</span>
-                              </div>
-                            ))}
+                      {montoTotal > 0 && (
+                        <>
+                          <div style={{ height: 1, background: S.border, margin: '1rem 0' }} />
+                          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Distribución de la operación</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                            <Campo label="Monto total de la operación $">
+                              <input type="text" value={`$${Math.round(montoTotal).toLocaleString('es-AR')}`} readOnly style={{ ...inputStyle, background: S.bg, fontWeight: 600, fontFamily: 'monospace' }} />
+                            </Campo>
+                            <Campo label="Monto facturado $" hint="Dejá vacío para facturar el total">
+                              <input type="number" value={form.monto_facturado || ''} onChange={e => setForm({ ...form, monto_facturado: e.target.value })} placeholder={Math.round(montoTotal).toString()} style={inputStyle} />
+                            </Campo>
+                            <Campo label="% IVA">
+                              <select value={form.iva_pct || '10.5'} onChange={e => setForm({ ...form, iva_pct: e.target.value })} style={inputStyle}>
+                                <option value="0">Sin IVA</option>
+                                <option value="10.5">10.5%</option>
+                                <option value="21">21%</option>
+                              </select>
+                            </Campo>
+                            <Campo label="IVA $ (calculado)">
+                              <input type="text" value={montoFacturado > 0 ? `$${Math.round(ivaMonto).toLocaleString('es-AR')}` : '—'} readOnly style={{ ...inputStyle, background: S.bg, fontFamily: 'monospace' }} />
+                            </Campo>
                           </div>
-                          <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem 1.25rem' }}>
-                            <div style={{ fontSize: 12, color: S.muted, lineHeight: 1.6 }}>
-                              El margen bruto se calcula en el módulo de <strong>Rentabilidad</strong>, una vez completados los costos de alimentación y sanidad.
+
+                          {/* Resumen facturado vs negro */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '1rem' }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.green, textTransform: 'uppercase', marginBottom: 6 }}>Parte facturada</div>
+                              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${Math.round(montoFacturado).toLocaleString('es-AR')}</div>
+                              {parseFloat(form.iva_pct) > 0 && <div style={{ fontSize: 12, color: S.green, marginTop: 3 }}>+ IVA ${Math.round(ivaMonto).toLocaleString('es-AR')}</div>}
+                            </div>
+                            <div style={{ background: montoNegro > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${montoNegro > 0 ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem' }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: montoNegro > 0 ? '#3D1A6B' : S.hint, textTransform: 'uppercase', marginBottom: 6 }}>Parte en negro</div>
+                              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: montoNegro > 0 ? '#3D1A6B' : S.hint }}>${Math.round(montoNegro).toLocaleString('es-AR')}</div>
+                              {montoNegro === 0 && <div style={{ fontSize: 12, color: S.hint, marginTop: 3 }}>Operación 100% facturada</div>}
                             </div>
                           </div>
-                        </div>
+                        </>
+                      )}
+
+                      <div style={{ marginTop: '1rem' }}>
+                        <Campo label="Observaciones">
+                          <input type="text" value={form.observaciones} onChange={e => setForm({ ...form, observaciones: e.target.value })} placeholder="condición de animales, acuerdos, etc." style={inputStyle} />
+                        </Campo>
                       </div>
-                    )}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button onClick={() => setPaso(2)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>← Atrás</button>
+                      <button onClick={() => setPaso(4)} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                        Ver resumen →
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button onClick={() => setPaso(2)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>← Atrás</button>
-                    <button onClick={() => setPaso(4)}
-                      style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                      Ver resumen →
-                    </button>
-                  </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* PASO 4 - RESUMEN */}
               {paso === 4 && (
