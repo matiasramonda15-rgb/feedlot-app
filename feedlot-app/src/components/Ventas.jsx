@@ -783,8 +783,9 @@ export default function Ventas({ usuario }) {
 
               {/* PASO 3 */}
               {paso === 3 && (() => {
-                const montoTotal = parseFloat(form.precio_kg || 0) * kgNeto
-                const montoFacturado = parseFloat(form.monto_facturado || montoTotal || 0)
+                const kgNetoP3 = Math.round(corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0) * (1 - (parseFloat(form.desbaste) || 8) / 100))
+                const montoTotal = parseFloat(form.precio_kg || 0) * kgNetoP3
+                const montoFacturado = form.monto_facturado ? parseFloat(form.monto_facturado) : montoTotal
                 const montoNegro = montoTotal > 0 ? Math.max(0, montoTotal - montoFacturado) : 0
                 const ivaMonto = montoFacturado * ((parseFloat(form.iva_pct || 10.5)) / 100)
                 return (
@@ -812,13 +813,13 @@ export default function Ventas({ usuario }) {
                         </Campo>
                       </div>
 
-                      {parseFloat(form.precio_kg) > 0 && (
+                      {parseFloat(form.precio_kg) > 0 && kgNetoP3 > 0 && (
                         <>
                           <div style={{ height: 1, background: S.border, margin: '1rem 0' }} />
                           <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Distribución de la operación</div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                             <Campo label="Monto total de la operación $">
-                              <input type="text" value={`$${Math.round(montoTotal).toLocaleString('es-AR')}`} readOnly style={{ ...inputStyle, background: S.bg, fontWeight: 600, fontFamily: 'monospace' }} />
+                              <input type="text" value={kgNetoP3 > 0 && parseFloat(form.precio_kg) > 0 ? `$${Math.round(montoTotal).toLocaleString('es-AR')}` : '—'} readOnly style={{ ...inputStyle, background: S.bg, fontWeight: 600, fontFamily: 'monospace' }} />
                             </Campo>
                             <Campo label="Monto facturado $" hint="Dejá vacío para facturar el total">
                               <input type="number" value={form.monto_facturado || ''} onChange={e => setForm({ ...form, monto_facturado: e.target.value })} placeholder={Math.round(montoTotal).toString()} style={inputStyle} />
