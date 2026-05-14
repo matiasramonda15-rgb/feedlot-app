@@ -32,6 +32,9 @@ function Campo({ label, children, hint }) {
   )
 }
 
+const inputStyle = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
+const inputReadonly = { ...inputStyle, background: S.bg, color: S.muted, cursor: 'default' }
+
 export default function Ventas({ usuario }) {
   const [tab, setTab] = useState('ventas')
   const [loading, setLoading] = useState(true)
