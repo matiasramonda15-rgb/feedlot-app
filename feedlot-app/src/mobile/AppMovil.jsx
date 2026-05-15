@@ -17,7 +17,7 @@ export default function AppMovil({ usuario, onLogout }) {
   async function cargarDatos() {
     const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
-      supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
+      supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('lotes').select('procedencia').order('created_at', { ascending: false }),
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
@@ -50,7 +50,15 @@ export default function AppMovil({ usuario, onLogout }) {
     ;(racionesAyer || []).forEach(r => {
       if (!kgsAyer[r.corral_id]) kgsAyer[r.corral_id] = r.kg_total || 0
     })
-    setDatos({ corrales: corralesOrdenados, proximaPesada: cfg?.valor || null, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer })
+    // Calcular próxima pesada: última pesada + 40 días
+    const ultimaPesadaFecha = cfg?.fecha || cfg?.creado_en?.split('T')[0]
+    let proximaPesadaCalc = null
+    if (ultimaPesadaFecha) {
+      const d = new Date(ultimaPesadaFecha + 'T12:00:00')
+      d.setDate(d.getDate() + 40)
+      proximaPesadaCalc = d.toISOString().split('T')[0]
+    }
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer })
   }
 
   const pantallas = {
