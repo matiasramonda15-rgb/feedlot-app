@@ -111,8 +111,28 @@ export default function Corrales({ usuario }) {
     alert(`${cantidad} animales movidos.${nuevosOrigen === 0 ? ' El corral origen quedó libre.' : ''}`)
   }
 
-  async function eliminarMovimiento(id) {
-    if (!confirm('¿Eliminar este movimiento del historial?')) return
+  async function eliminarMovimiento(id, mov) {
+    if (!confirm('¿Eliminar este movimiento? Se revertirán los animales a sus corrales originales.')) return
+
+    // Revertir: devolver animales al origen y sacar del destino
+    const { data: origen } = await supabase.from('corrales').select('animales, rol').eq('id', mov.corral_origen_id).single()
+    const { data: destino } = await supabase.from('corrales').select('animales, rol').eq('id', mov.corral_destino_id).single()
+
+    if (origen) {
+      const nuevosOrigen = (origen.animales || 0) + mov.cantidad
+      const updateOrigen = { animales: nuevosOrigen }
+      // Si el origen estaba libre (porque quedó vacío al mover), volver a acumulacion o el rol que tenía
+      if (origen.rol === 'libre') updateOrigen.rol = 'acumulacion'
+      await supabase.from('corrales').update(updateOrigen).eq('id', mov.corral_origen_id)
+    }
+
+    if (destino) {
+      const nuevosDestino = Math.max(0, (destino.animales || 0) - mov.cantidad)
+      const updateDestino = { animales: nuevosDestino }
+      if (nuevosDestino === 0) { updateDestino.rol = 'libre'; updateDestino.sub = null }
+      await supabase.from('corrales').update(updateDestino).eq('id', mov.corral_destino_id)
+    }
+
     await supabase.from('movimientos').delete().eq('id', id)
     await cargarCorrales()
   }
@@ -242,7 +262,7 @@ export default function Corrales({ usuario }) {
                   <td style={{ padding: '9px 12px', color: '#6B6760' }}>{m.motivo || <span style={{ color: '#9E9A94' }}>—</span>}</td>
                   <td style={{ padding: '9px 12px', fontSize: 12, color: '#6B6760' }}>{m.usuario?.nombre || '—'}</td>
                   <td style={{ padding: '9px 12px' }}>
-                    <button onClick={() => eliminarMovimiento(m.id)}
+                    <button onClick={() => eliminarMovimiento(m.id, m)}
                       style={{ background: '#FDF0F0', border: '1px solid #F09595', borderRadius: 5, color: '#7A1A1A', fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>
                       Eliminar
                     </button>
