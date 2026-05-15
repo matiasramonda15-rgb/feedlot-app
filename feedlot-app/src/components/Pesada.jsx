@@ -63,6 +63,7 @@ export default function Pesada({ usuario }) {
   const [corrales, setCorrales] = useState([])
   const [pesadasHist, setPesadasHist] = useState([])
   const [proximaPesada, setProximaPesada] = useState(null)
+  const [fechaPesada, setFechaPesada] = useState(new Date().toISOString().split('T')[0])
   const [pesos, setPesos] = useState(Array(20).fill(''))
   const [filasExtra, setFilasExtra] = useState(0)
   const [guardando, setGuardando] = useState(false)
@@ -115,6 +116,7 @@ export default function Pesada({ usuario }) {
       corral_id: corralAcum?.id || null,
       tipo: 'clasificacion',
       registrado_por: usuario?.id,
+      fecha: fechaPesada,
     }).select().single()
     if (error || !pesada) { alert('Error al guardar la pesada.'); setGuardando(false); return }
 
@@ -673,6 +675,18 @@ export default function Pesada({ usuario }) {
         <div>
           <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '.85rem 1rem', fontSize: 13, color: S.green, marginBottom: '1rem', lineHeight: 1.6 }}>
             Elegí dos corrales libres para los nuevos rangos A y B. Los corrales existentes subirán 2 rangos automáticamente.
+          </div>
+
+          {/* Fecha de pesada */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '1rem' }}>Fecha de la pesada</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <input type="date" value={fechaPesada} onChange={e => setFechaPesada(e.target.value)}
+                style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, fontFamily: "'IBM Plex Sans', sans-serif" }} />
+              <div style={{ fontSize: 12, color: S.muted }}>
+                Podés atrasar la fecha si la pesada correspondía a un día anterior.
+              </div>
+            </div>
           </div>
 
           {/* Subida de rangos */}
