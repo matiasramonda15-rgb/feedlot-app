@@ -1088,6 +1088,7 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
   const [corralLibre1, setCorralLibre1] = useState('')
   const [corralLibre2, setCorralLibre2] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [fechaPesada, setFechaPesada] = useState(new Date().toISOString().split('T')[0])
 
   const ORDEN_RANGOS = ['A','B','C','D','E','F','G']
 
@@ -1126,6 +1127,7 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
       corral_id: corralAcum?.id || null,
       tipo: 'clasificacion',
       registrado_por: usuario?.id,
+      fecha: fechaPesada,
     }).select().single()
 
     if (error || !pesada) { alert('Error al guardar.'); setGuardando(false); return }
@@ -1221,8 +1223,15 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
         {/* PASO 1: RANGOS */}
         {paso === 1 && (
           <>
-            <div style={{ background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 10, padding: '.75rem', marginBottom: '.85rem', fontSize: 12, color: C.blue, lineHeight: 1.5 }}>
+            <div style={{ background: '#0F2040', border: `1px solid ${C.blue}`, borderRadius: 10, padding: '.75rem', marginBottom: '.65rem', fontSize: 12, color: C.blue, lineHeight: 1.5 }}>
               Ingresá cuántos animales cayeron en cada rango. A y B van a corrales nuevos (libres). C en adelante se suman a los corrales existentes.
+            </div>
+
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.65rem' }}>
+              <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', marginBottom: 6 }}>Fecha de la pesada</div>
+              <input type="date" value={fechaPesada} onChange={e => setFechaPesada(e.target.value)}
+                style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Podés atrasar la fecha si la pesada correspondía a un día anterior.</div>
             </div>
 
             {RANGOS_CONFIG.map(r => (
