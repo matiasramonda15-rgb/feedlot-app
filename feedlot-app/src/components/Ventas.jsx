@@ -802,6 +802,7 @@ export default function Ventas({ usuario }) {
                           )}
                           </React.Fragment>
                         )
+                      }
                     })
                   })()}
                 </tbody>
