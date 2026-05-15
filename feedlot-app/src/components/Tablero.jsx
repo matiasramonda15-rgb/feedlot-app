@@ -75,6 +75,7 @@ export default function Tablero({ usuario }) {
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
+      supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('ventas').select('*').gte('creado_en', hace30.toISOString()).order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
       supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
@@ -121,7 +122,15 @@ export default function Tablero({ usuario }) {
     movRecientes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
 
     const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: cfg?.valor || null, stockBajo: stockBajo || [] })
+    // Calcular próxima pesada: última pesada + 40 días
+    const ultimaFecha = ultimaPesadaDB?.fecha || ultimaPesadaDB?.creado_en?.split('T')[0]
+    let proximaPesadaCalc = cfg?.valor || null
+    if (ultimaFecha) {
+      const d = new Date(ultimaFecha + 'T12:00:00')
+      d.setDate(d.getDate() + 40)
+      proximaPesadaCalc = d.toISOString().split('T')[0]
+    }
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo: stockBajo || [] })
     setLoading(false)
   }
 
