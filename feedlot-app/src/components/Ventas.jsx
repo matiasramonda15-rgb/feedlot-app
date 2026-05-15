@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './Tablero'
@@ -563,7 +564,8 @@ export default function Ventas({ usuario }) {
                       if (f.tipo === 'simple') {
                         const v = f.venta
                         return (
-                          <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                          <React.Fragment key={v.id}>
+                          <tr style={{ borderBottom: `1px solid ${S.border}` }}>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                             <td style={{ padding: '9px 12px' }}>C-{v.corrales?.numero || v.corral_id}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
@@ -670,6 +672,7 @@ export default function Ventas({ usuario }) {
                               </td>
                             </tr>
                           )}
+                        </React.Fragment>
                         )
                       } else {
                         // Grupo de ventas multi-corral
