@@ -801,6 +801,7 @@ export default function Ventas({ usuario }) {
                             </tr>
                           )}
                           </React.Fragment>
+                        )
                     })
                   })()}
                 </tbody>
