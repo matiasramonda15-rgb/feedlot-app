@@ -641,7 +641,7 @@ export default function Ventas({ usuario }) {
                                     const precio = parseFloat(formComercial.precio_kg) || 0
                                     const kgNeto = v.kg_neto || 0
                                     const montoTotal = precio ? Math.round(kgNeto * precio) : (v.total || null)
-                                    const montoFact = formComercial.monto_facturado ? parseFloat(formComercial.monto_facturado) : montoTotal
+                                    const montoFact = formComercial.monto_facturado !== '' && formComercial.monto_facturado !== undefined ? parseFloat(formComercial.monto_facturado) : montoTotal
                                     const montoNegro = montoTotal && montoFact ? Math.max(0, montoTotal - montoFact) : 0
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
