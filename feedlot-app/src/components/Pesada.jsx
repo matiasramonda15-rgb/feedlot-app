@@ -79,11 +79,18 @@ export default function Pesada({ usuario }) {
     const [{ data: c }, { data: p }, { data: cfg }] = await Promise.all([
       supabase.from('corrales').select('*').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
-      supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
+      supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
     ])
     setCorrales(c || [])
     setPesadasHist(p || [])
-    setProximaPesada(cfg?.valor || null)
+    const ultimaFecha = cfg?.fecha || cfg?.creado_en?.split('T')[0]
+    if (ultimaFecha) {
+      const d = new Date(ultimaFecha + 'T12:00:00')
+      d.setDate(d.getDate() + 40)
+      setProximaPesada(d.toISOString().split('T')[0])
+    } else {
+      setProximaPesada(null)
+    }
     setLoading(false)
   }
 
