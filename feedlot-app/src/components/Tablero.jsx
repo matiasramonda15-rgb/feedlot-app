@@ -75,6 +75,8 @@ export default function Tablero({ usuario }) {
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
+      supabase.from('lotes').select('cantidad, kg_bascula, desbaste_pct').limit(200),
+      supabase.from('raciones_app').select('kg_total').limit(500),
       supabase.from('ventas').select('*').gte('creado_en', hace30.toISOString()).order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
       supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
@@ -130,13 +132,13 @@ export default function Tablero({ usuario }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo: stockBajo || [] })
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo: stockBajo || [], lotes: lotesDB || [], raciones: racionesDB || [] })
     setLoading(false)
   }
 
   if (loading) return <Loader />
 
-  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo } = datos
+  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotes = [], raciones = [] } = datos
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre')
   const totalAnimales = corralesActivos.reduce((s, c) => s + (c.animales || 0), 0)
@@ -153,6 +155,18 @@ export default function Tablero({ usuario }) {
   const diasProm = corralesConPeso.length
     ? Math.round(corralesConPeso.reduce((s, c) => s + Math.max(0, (400 - gdpPorCorral[c.numero].pesoActual) / gdpPorCorral[c.numero].gdp), 0) / corralesConPeso.length)
     : null
+
+  // Aumento de peso promedio (kg entrada vs kg salida)
+  const lotesConKg = lotes.filter(l => l.kg_bascula && l.cantidad)
+  const kgPromedioEntrada = lotesConKg.length > 0 ? lotesConKg.reduce((s, l) => s + (l.kg_bascula / l.cantidad), 0) / lotesConKg.length : null
+  const ventasConKg = ventas.filter(v => v.kg_neto && v.cantidad)
+  const kgPromedioSalida = ventasConKg.length > 0 ? ventasConKg.reduce((s, v) => s + (v.kg_neto / v.cantidad), 0) / ventasConKg.length : null
+  const aumentoPromedio = kgPromedioEntrada && kgPromedioSalida ? Math.round(kgPromedioSalida - kgPromedioEntrada) : null
+
+  // Conversión alimentaria (kg alimento / kg carne producida)
+  const totalAlimentoConsumir = raciones.reduce((s, r) => s + (r.kg_total || 0), 0)
+  const totalCarneProducida = ventasConKg.reduce((s, v) => s + (v.kg_neto || 0), 0) - lotes.reduce((s, l) => s + (l.kg_bascula ? l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) : 0), 0)
+  const conversionMF = totalAlimentoConsumir > 0 && totalCarneProducida > 0 ? (totalAlimentoConsumir / totalCarneProducida).toFixed(1) : null
 
   // Ventas este mes
   const ventasTotal = ventas.reduce((s, v) => s + (v.total || 0), 0)
@@ -211,18 +225,18 @@ export default function Tablero({ usuario }) {
               sub: totalAnimGDP > 0 ? `prom. ponderado · ${totalAnimGDP} anim.` : 'sin pesadas registradas',
             },
             {
-              label: 'Conv. MF global',
-              val: '—',
-              valSuffix: '',
-              valStyle: { color: 'rgba(255,255,255,.4)' },
-              sub: 'kg alimento / kg carne',
+              label: 'Conversión MF',
+              val: conversionMF || '—',
+              valSuffix: conversionMF ? ':1' : '',
+              valStyle: { color: conversionMF ? (parseFloat(conversionMF) <= 7 ? '#7EE8A2' : parseFloat(conversionMF) <= 9 ? '#F5C97A' : '#F09595') : 'rgba(255,255,255,.4)' },
+              sub: conversionMF ? 'kg alimento / kg carne' : 'sin datos suficientes',
             },
             {
-              label: 'Conv. MS global',
-              val: '—',
-              valSuffix: '',
-              valStyle: { color: 'rgba(255,255,255,.4)' },
-              sub: 'materia seca estimada',
+              label: 'Aumento promedio',
+              val: aumentoPromedio !== null ? `+${aumentoPromedio}` : '—',
+              valSuffix: aumentoPromedio !== null ? ' kg' : '',
+              valStyle: { color: aumentoPromedio !== null ? '#7EE8A2' : 'rgba(255,255,255,.4)' },
+              sub: aumentoPromedio !== null ? 'entrada vs salida' : 'sin ventas registradas',
             },
             {
               label: 'Días prom. para 400 kg',
