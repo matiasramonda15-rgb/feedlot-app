@@ -185,10 +185,10 @@ export default function Ventas({ usuario }) {
     const desbastePct = ep.desbaste ? parseFloat(ep.desbaste) : (venta.desbaste_pct || 8)
     const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
     const montoTotal = Math.round(kgNeto * precioKg)
-    const montoFacturado = ep.monto_facturado ? parseFloat(ep.monto_facturado) : montoTotal
+    const montoFacturado = ep.monto_facturado !== '' && ep.monto_facturado !== null && ep.monto_facturado !== undefined ? parseFloat(ep.monto_facturado) : montoTotal
     const montoNegro = Math.max(0, montoTotal - montoFacturado)
     const ivaPct = parseFloat(ep.iva_pct || 10.5)
-    const ivaMonto = Math.round(montoFacturado * ivaPct / 100)
+    const ivaMonto = montoFacturado > 0 ? Math.round(montoFacturado * ivaPct / 100) : 0
     const plazo = parseInt(ep.plazo_dias || 0)
     const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
     const compradorFinal = ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null)
@@ -213,9 +213,9 @@ export default function Ventas({ usuario }) {
       for (const v of (grupo || [])) {
         const kgNetoV = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (v.kg_neto || 0)
         const montoTotalV = Math.round(kgNetoV * precioKg)
-        const montoFactV = ep.monto_facturado ? Math.round(parseFloat(ep.monto_facturado) * kgNetoV / kgNeto) : montoTotalV
+        const montoFactV = ep.monto_facturado !== '' && ep.monto_facturado !== null && ep.monto_facturado !== undefined ? Math.round(parseFloat(ep.monto_facturado) * kgNetoV / kgNeto) : montoTotalV
         const montoNegroV = Math.max(0, montoTotalV - montoFactV)
-        await supabase.from('ventas').update({ ...updateData, kg_neto: kgNetoV, total: montoTotalV, monto_facturado: montoFactV, monto_negro: montoNegroV, iva_monto: Math.round(montoFactV * ivaPct / 100) }).eq('id', v.id)
+        await supabase.from('ventas').update({ ...updateData, kg_neto: kgNetoV, total: montoTotalV, monto_facturado: montoFactV, monto_negro: montoNegroV, iva_monto: montoFactV > 0 ? Math.round(montoFactV * ivaPct / 100) : 0 }).eq('id', v.id)
       }
     } else {
       await supabase.from('ventas').update(updateData).eq('id', venta.id)
@@ -390,7 +390,7 @@ export default function Ventas({ usuario }) {
                         </div>
                       </div>
                       {!isEdit && (
-                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8) })}
+                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '' })}
                           style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                           Completar datos
                         </button>
