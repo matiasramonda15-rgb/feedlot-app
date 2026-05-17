@@ -71,18 +71,20 @@ export default function Tablero({ usuario }) {
       { data: mortalidad },
       { data: cfg },
       { data: stockBajo },
+      { data: lotesDB },
+      { data: racionesDB },
     ] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
-      supabase.from('lotes').select('cantidad, kg_bascula, desbaste_pct').limit(200),
-      supabase.from('raciones_app').select('kg_total').limit(500),
       supabase.from('ventas').select('*').gte('creado_en', hace30.toISOString()).order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
       supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }).limit(5),
       supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single(),
       supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
+      supabase.from('lotes').select('cantidad, kg_bascula, desbaste_pct').limit(200),
+      supabase.from('raciones_app').select('kg_total').limit(500),
     ])
 
     // Calcular GDP por corral desde pesadas
