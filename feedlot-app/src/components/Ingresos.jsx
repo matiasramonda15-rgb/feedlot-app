@@ -262,14 +262,44 @@ export default function Ingresos({ usuario }) {
     )
   }
 
+  // Métricas
+  const anio = new Date().getFullYear()
+  const mes = new Date().getMonth()
+  const lotesAnio = lotes.filter(l => new Date(l.created_at).getFullYear() === anio)
+  const lotesMes = lotes.filter(l => { const d = new Date(l.created_at); return d.getFullYear() === anio && d.getMonth() === mes })
+  const totalAnimAnio = lotesAnio.reduce((s, l) => s + (l.cantidad || 0), 0)
+  const totalAnimMes = lotesMes.reduce((s, l) => s + (l.cantidad || 0), 0)
+  const lotesConPrecio = lotes.filter(l => l.precio_compra)
+  const precioPromedio = lotesConPrecio.length > 0 ? Math.round(lotesConPrecio.reduce((s, l) => s + l.precio_compra, 0) / lotesConPrecio.length) : null
+  const lotesConKg = lotes.filter(l => l.kg_bascula && l.cantidad)
+  const kgPromedio = lotesConKg.length > 0 ? Math.round(lotesConKg.reduce((s, l) => s + (l.kg_bascula / l.cantidad), 0) / lotesConKg.length) : null
+  const totalGastadoAnio = lotesAnio.filter(l => l.precio_compra && l.kg_bascula).reduce((s, l) => s + Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra), 0)
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1rem' }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Ingresos</h1>
           <div style={{ fontSize: 12, color: S.muted }}>Registro de compras · feedlot</div>
         </div>
         <Btn onClick={() => setVista('nuevo')}>+ Nuevo ingreso</Btn>
+      </div>
+
+      {/* Métricas */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+        {[
+          { label: `Comprados ${anio}`, val: totalAnimAnio.toLocaleString('es-AR'), sub: 'animales' },
+          { label: 'Comprados este mes', val: totalAnimMes.toLocaleString('es-AR'), sub: 'animales', color: S.accent },
+          { label: 'Precio promedio', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg neto', color: S.green },
+          { label: 'Kg promedio', val: kgPromedio ? `${kgPromedio} kg` : '—', sub: 'por animal' },
+          { label: `Gastado ${anio}`, val: totalGastadoAnio > 0 ? `$${(totalGastadoAnio/1000000).toFixed(1)}M` : '—', sub: 'en compras', color: S.red },
+        ].map((m, i) => (
+          <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+            <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: m.color || S.text }}>{m.val}</div>
+            <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{m.sub}</div>
+          </div>
+        ))}
       </div>
 
       {/* Pendientes de precio */}
