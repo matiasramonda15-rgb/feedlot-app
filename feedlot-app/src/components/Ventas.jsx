@@ -445,7 +445,7 @@ export default function Ventas({ usuario }) {
                           const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
                           const kgNetoCalc = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPct / 100)) : (v.kg_neto || 0)
                           const montoTotalCalc = Math.round(kgNetoCalc * parseFloat(editandoVenta.precio_kg))
-                          const montoFactCalc = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined ? parseFloat(editandoVenta.monto_facturado) : montoTotalCalc
+                          const montoFactCalc = editandoVenta.monto_facturado ? parseFloat(editandoVenta.monto_facturado) : montoTotalCalc
                           const montoNegroCalc = Math.max(0, montoTotalCalc - montoFactCalc)
                           const ivaPct = parseFloat(editandoVenta.iva_pct || 10.5)
                           const ivaMCalc = Math.round(montoFactCalc * ivaPct / 100)
@@ -457,7 +457,7 @@ export default function Ventas({ usuario }) {
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                                 <div>
                                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto facturado $</label>
-                                  <input type="number" placeholder={montoTotalCalc} value={editandoVenta.monto_facturado ?? ''}
+                                  <input type="number" placeholder={montoTotalCalc} value={editandoVenta.monto_facturado || ''}
                                     onChange={e => setEditandoVenta({ ...editandoVenta, monto_facturado: e.target.value })}
                                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                                 </div>
