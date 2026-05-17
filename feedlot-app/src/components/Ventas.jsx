@@ -642,7 +642,8 @@ export default function Ventas({ usuario }) {
                                     const kgNeto = v.kg_neto || 0
                                     const montoTotal = precio ? Math.round(kgNeto * precio) : (v.total || null)
                                     const montoFactRaw = formComercial.monto_facturado
-                                    const montoFact = montoFactRaw !== '' && montoFactRaw !== undefined && montoFactRaw !== null ? parseFloat(montoFactRaw) : montoTotal
+                                    const tieneFacturadoSimple = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
+                                    const montoFact = tieneFacturadoSimple ? parseFloat(montoFactRaw) : montoTotal
                                     const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
@@ -771,17 +772,21 @@ export default function Ventas({ usuario }) {
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
                                     const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
-                                    const montoFactTotal = parseFloat(formComercial.monto_facturado) || 0
+                                    const montoFactRaw = formComercial.monto_facturado
+                                    const tieneFacturado = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
+                                    const montoFactTotal = tieneFacturado ? parseFloat(montoFactRaw) : null
                                     const totalKgNetoG = g.reduce((s, v) => s + (v.kg_neto || 0), 0)
-                                    for (const v of g) {
+                                    // Cargar todas las ventas del grupo desde BD para asegurar que actualiza todos
+                                    const { data: grupoCompleto } = await supabase.from('ventas').select('*').eq('grupo_venta_id', v0.grupo_venta_id)
+                                    for (const v of (grupoCompleto || [])) {
                                       const kgNeto = v.kg_neto || 0
                                       const montoTotal = precio ? Math.round(kgNeto * precio) : (v.total || null)
-                                      const montoFact = montoFactTotal && totalKgNetoG ? Math.round(montoFactTotal * kgNeto / totalKgNetoG) : montoTotal
-                                      const montoNegro = montoTotal && montoFact ? Math.max(0, montoTotal - montoFact) : 0
+                                      const montoFact = tieneFacturado && totalKgNetoG > 0 ? Math.round(montoFactTotal * kgNeto / totalKgNetoG) : montoTotal
+                                      const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
                                       await supabase.from('ventas').update({
                                         precio_kg: precio || null, total: montoTotal,
                                         monto_facturado: montoFact, monto_negro: montoNegro,
-                                        iva_pct: ivaPct, iva_monto: montoFact ? Math.round(montoFact * ivaPct / 100) : null,
+                                        iva_pct: ivaPct, iva_monto: montoFact > 0 ? Math.round(montoFact * ivaPct / 100) : 0,
                                         plazo_dias: plazo || null, fecha_vencimiento_cobro: fechaVto,
                                         estado_comercial: precio ? 'precio_cargado' : 'pendiente',
                                         comprador: formComercial.comprador || null,
