@@ -1491,7 +1491,6 @@ export default function Ventas({ usuario }) {
                           <option value="cobrado">Cobrado</option>
                         </select>
                       </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
               </tbody>
             </table>
           </div>
