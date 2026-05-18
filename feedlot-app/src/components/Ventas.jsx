@@ -648,7 +648,8 @@ const fechaVto = plazo > 0 ? new Date(fechaVenta.getTime() + plazo * 86400000).t
                                     const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
-                                    const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
+                                    const fechaBaseGrupo = new Date(v0.creado_en)
+                                    const fechaVto = plazo > 0 ? new Date(fechaBaseGrupo.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
                                     await supabase.from('ventas').update({
                                       precio_kg: precio || null,
                                       total: montoTotal,
