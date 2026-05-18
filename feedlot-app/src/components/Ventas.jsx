@@ -1485,7 +1485,7 @@ export default function Ventas({ usuario }) {
                   {/* Detalle de ventas agrupando multi-corral */}
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead><tr style={{ background: S.bg }}>
-                      {['Fecha','Corral/es','Kg neto','Total','Facturado','Negro','Estado','Cobrado'].map(h => (
+                      {['Fecha','Corral/es','Animales','Kg neto','Total','Facturado','Negro','Estado','Cobrado'].map(h => (
                         <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                       ))}
                     </tr></thead>
@@ -1516,6 +1516,7 @@ export default function Ventas({ usuario }) {
                                 {corralesStr}
                                 {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
                               </td>
+                              <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{grupo.reduce((s, vv) => s + (vv.cantidad || 0), 0)} cab.</td>
                               <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')} kg</td>
                               <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{totalVenta ? `$${(totalVenta/1000000).toFixed(2)}M` : '—'}</td>
                               <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: S.accent }}>{totalFact ? `$${(totalFact/1000000).toFixed(2)}M` : '—'}</td>
