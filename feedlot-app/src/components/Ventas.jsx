@@ -190,7 +190,8 @@ export default function Ventas({ usuario }) {
     const ivaPct = parseFloat(ep.iva_pct || 10.5)
     const ivaMonto = montoFacturado > 0 ? Math.round(montoFacturado * ivaPct / 100) : 0
     const plazo = parseInt(ep.plazo_dias || 0)
-    const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
+    const fechaVenta = new Date(v.creado_en)
+const fechaVto = plazo > 0 ? new Date(fechaVenta.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
     const compradorFinal = ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null)
 
     // Si es comprador nuevo, guardarlo como contacto
@@ -773,7 +774,7 @@ export default function Ventas({ usuario }) {
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
                                     const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
                                     const montoFactRaw = formComercial.monto_facturado
-                                    const tieneFacturado = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
+                                    const tieneFacturado = montoFconst fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : nullactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
                                     const montoFactTotal = tieneFacturado ? parseFloat(montoFactRaw) : null
                                     // Cargar todas las ventas del grupo desde BD para asegurar que actualiza todos
                                     const { data: grupoCompleto } = await supabase.from('ventas').select('*').eq('grupo_venta_id', v0.grupo_venta_id)
