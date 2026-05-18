@@ -1522,4 +1522,4 @@ export default function Ventas({ usuario }) {
       )}
     </div>
   )
-}
+}  
