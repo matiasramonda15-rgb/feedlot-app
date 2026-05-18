@@ -774,7 +774,7 @@ const fechaVto = plazo > 0 ? new Date(fechaVenta.getTime() + plazo * 86400000).t
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
                                     const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
                                     const montoFactRaw = formComercial.monto_facturado
-                                    const tieneFacturado = montoFconst fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : nullactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
+                                    const tieneFacturado = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
                                     const montoFactTotal = tieneFacturado ? parseFloat(montoFactRaw) : null
                                     // Cargar todas las ventas del grupo desde BD para asegurar que actualiza todos
                                     const { data: grupoCompleto } = await supabase.from('ventas').select('*').eq('grupo_venta_id', v0.grupo_venta_id)
