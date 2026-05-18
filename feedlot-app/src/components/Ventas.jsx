@@ -190,8 +190,8 @@ export default function Ventas({ usuario }) {
     const ivaPct = parseFloat(ep.iva_pct || 10.5)
     const ivaMonto = montoFacturado > 0 ? Math.round(montoFacturado * ivaPct / 100) : 0
     const plazo = parseInt(ep.plazo_dias || 0)
-    const fechaVenta = new Date(v.creado_en)
-const fechaVto = plazo > 0 ? new Date(fechaVenta.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
+    const fechaBase = new Date(venta.creado_en)
+    const fechaVto = plazo > 0 ? new Date(fechaBase.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
     const compradorFinal = ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null)
 
     // Si es comprador nuevo, guardarlo como contacto
