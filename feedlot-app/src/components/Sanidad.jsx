@@ -55,6 +55,40 @@ export default function Sanidad({ usuario }) {
   const [productos, setProductos] = useState([])
   const [revState, setRevState] = useState([])
   const [formProd, setFormProd] = useState({ show: false, nombre: '', tipo: 'Vacuna', lab: '', car: '', precio: '', unidad: 'dosis' })
+  const [showFormMort, setShowFormMort] = useState(false)
+  const [formMort, setFormMort] = useState({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
+  const [guardandoMort, setGuardandoMort] = useState(false)
+
+  async function guardarMortalidad() {
+    if (!formMort.corral_id) { alert('Seleccioná un corral'); return }
+    setGuardandoMort(true)
+    const cant = parseInt(formMort.cantidad) || 1
+    await supabase.from('mortalidad').insert({
+      fecha: formMort.fecha, corral_id: parseInt(formMort.corral_id),
+      cantidad: cant, causa: formMort.causa || null, registrado_por: usuario?.id,
+    })
+    // Descontar del corral
+    const { data: corral } = await supabase.from('corrales').select('animales').eq('id', formMort.corral_id).single()
+    const nuevos = Math.max(0, (corral?.animales || 0) - cant)
+    const update = { animales: nuevos }
+    if (nuevos === 0) { update.rol = 'libre'; update.sub = null }
+    await supabase.from('corrales').update(update).eq('id', parseInt(formMort.corral_id))
+    await cargarDatos()
+    setShowFormMort(false)
+    setFormMort({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
+    setGuardandoMort(false)
+  }
+
+  async function eliminarMortalidad(m) {
+    if (!confirm('¿Eliminar este registro? Se devuelve el animal al corral.')) return
+    await supabase.from('mortalidad').delete().eq('id', m.id)
+    // Devolver al corral
+    const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', m.corral_id).single()
+    const update = { animales: (corral?.animales || 0) + m.cantidad }
+    if (corral?.rol === 'libre') update.rol = 'clasificado'
+    await supabase.from('corrales').update(update).eq('id', m.corral_id)
+    await cargarDatos()
+  }
   const [editProd, setEditProd] = useState({})
   const esDueno = ['dueno', 'secretaria'].includes(usuario?.rol)
 
@@ -197,7 +231,7 @@ export default function Sanidad({ usuario }) {
     return dias <= 0 ? 'Hoy' : dias === 1 ? 'Manana' : `en ${dias} dias`
   })()
 
-  const TABS = ['alertas', 'ingreso', 'revision', 'historial', 'productos']
+  const TABS = ['alertas', 'ingreso', 'revision', 'historial', 'mortalidad', 'productos']
   const TAB_LABELS = ['Alertas', 'Protocolo ingreso', 'Revision bisemanal', 'Historial', 'Productos']
 
   return (
@@ -217,7 +251,7 @@ export default function Sanidad({ usuario }) {
       <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.5rem' }}>
         {TABS.map((t, i) => (
           <button key={t} onClick={() => setTab(t)}
-            style={{ padding: '10px 20px', fontSize: 13, fontWeight: tab === t ? 600 : 500, cursor: 'pointer', color: tab === t ? S.accent : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t ? `2px solid ${S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif", position: 'relative' }}>
+            style={{ padding: '10px 20px', fontSize: 13, fontWeight: tab === t ? 600 : 500, cursor: 'pointer', color: tab === t ? (t === 'mortalidad' ? S.red : S.accent) : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t ? `2px solid ${t === 'mortalidad' ? S.red : S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif", position: 'relative' }}>
             {TAB_LABELS[i]}
             {t === 'alertas' && alertas.length > 0 && (
               <span style={{ marginLeft: 6, background: '#E24B4A', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 600, padding: '1px 6px' }}>{alertas.length}</span>
@@ -498,6 +532,107 @@ export default function Sanidad({ usuario }) {
       )}
 
       {/* TAB PRODUCTOS */}
+      {tab === 'mortalidad' && (
+        <div>
+          {/* Métricas */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+            {(() => {
+              const anio = new Date().getFullYear()
+              const mes = new Date().getMonth()
+              const mortAnio = mortalidad.filter(m => new Date(m.creado_en).getFullYear() === anio)
+              const mortMes = mortalidad.filter(m => { const d = new Date(m.creado_en); return d.getFullYear() === anio && d.getMonth() === mes })
+              const totalAnio = mortAnio.reduce((s, m) => s + (m.cantidad || 0), 0)
+              const totalMes = mortMes.reduce((s, m) => s + (m.cantidad || 0), 0)
+              const totalAnimales = corrales.reduce((s, c) => s + (c.animales || 0), 0)
+              const pctMort = totalAnimales > 0 ? ((totalAnio / (totalAnimales + totalAnio)) * 100).toFixed(2) : '0.00'
+              const porCausa = {}
+              mortAnio.forEach(m => { if (m.causa) porCausa[m.causa] = (porCausa[m.causa] || 0) + (m.cantidad || 0) })
+              const causaPrincipal = Object.entries(porCausa).sort((a, b) => b[1] - a[1])[0]
+              return [
+                { label: `Muertes ${anio}`, val: totalAnio, color: S.red },
+                { label: 'Muertes este mes', val: totalMes, color: S.red },
+                { label: 'Tasa de mortalidad', val: `${pctMort}%`, color: parseFloat(pctMort) > 2 ? S.red : S.green },
+                { label: 'Causa principal', val: causaPrincipal?.[0] || '—', color: S.muted },
+              ].map((m, i) => (
+                <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+                  <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
+                </div>
+              ))
+            })()}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Historial de mortalidad</div>
+            <button onClick={() => setShowFormMort(!showFormMort)}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.red, border: `1px solid ${S.red}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              + Registrar muerte
+            </button>
+          </div>
+
+          {showFormMort && (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Fecha</div>
+                  <input type="date" value={formMort.fecha} onChange={e => setFormMort({...formMort, fecha: e.target.value})}
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+                  <select value={formMort.corral_id} onChange={e => setFormMort({...formMort, corral_id: e.target.value})}
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface }}>
+                    <option value="">— Seleccioná —</option>
+                    {corrales.filter(c => c.animales > 0).map(c => <option key={c.id} value={c.id}>C-{c.numero} · {c.animales} anim.</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad</div>
+                  <input type="number" value={formMort.cantidad} onChange={e => setFormMort({...formMort, cantidad: e.target.value})} min="1"
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Causa</div>
+                  <select value={formMort.causa} onChange={e => setFormMort({...formMort, causa: e.target.value})}
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface }}>
+                    <option value="">— Sin especificar —</option>
+                    {['Neumonía', 'Enterotoxemia', 'Accidente', 'Timpanismo', 'Diarrea', 'Causa desconocida', 'Otro'].map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowFormMort(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={guardarMortalidad} disabled={guardandoMort} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.red, border: `1px solid ${S.red}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardandoMort ? 'Guardando...' : 'Registrar'}</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr style={{ background: S.bg }}>
+                {['Fecha', 'Corral', 'Cantidad', 'Causa', ''].map(h => (
+                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {mortalidad.length === 0 && <tr><td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay registros de mortalidad.</td></tr>}
+                {mortalidad.map(m => (
+                  <tr key={m.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                    <td style={{ padding: '9px 12px', fontWeight: 600 }}>C-{m.corrales?.numero || '—'}</td>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.red, fontWeight: 600 }}>{m.cantidad}</td>
+                    <td style={{ padding: '9px 12px', color: S.muted }}>{m.causa || '—'}</td>
+                    <td style={{ padding: '9px 12px' }}>
+                      <button onClick={() => eliminarMortalidad(m)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {tab === 'productos' && (
         <div>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
