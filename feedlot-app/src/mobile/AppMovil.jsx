@@ -815,6 +815,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
     { key: 'alertas', label: 'Alertas' },
     { key: 'revision', label: 'Revision' },
     { key: 'evento', label: 'Evento' },
+    { key: 'mortalidad', label: '💀 Muerte' },
   ]
 
   return (
@@ -977,8 +978,77 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
             </button>
           </>
         )}
+
+        {pantSan === 'mortalidad' && (
+          <MortalidadMovil corrales={corrales} usuario={usuario} onDone={onDone} nav={nav} />
+        )}
       </Scroll>
     </div>
+  )
+}
+
+function MortalidadMovil({ corrales, usuario, onDone, nav }) {
+  const [form, setForm] = useState({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
+  const [guardando, setGuardando] = useState(false)
+  const CAUSAS = ['Neumonia', 'Enterotoxemia', 'Accidente', 'Timpanismo', 'Diarrea', 'Causa desconocida', 'Otro']
+  const corralesConAnim = corrales.filter(c => (c.animales || 0) > 0 && c.rol !== 'deshabilitado')
+
+  async function guardar() {
+    if (!form.corral_id) { alert('Selecciona un corral'); return }
+    setGuardando(true)
+    const cant = parseInt(form.cantidad) || 1
+    await supabase.from('mortalidad').insert({ fecha: form.fecha, corral_id: parseInt(form.corral_id), cantidad: cant, causa: form.causa || null, registrado_por: usuario?.id })
+    const { data: corral } = await supabase.from('corrales').select('animales').eq('id', form.corral_id).single()
+    const nuevos = Math.max(0, (corral?.animales || 0) - cant)
+    const update = { animales: nuevos }
+    if (nuevos === 0) { update.rol = 'libre'; update.sub = null }
+    await supabase.from('corrales').update(update).eq('id', parseInt(form.corral_id))
+    onDone()
+    alert('Muerte registrada.')
+    nav('home')
+    setGuardando(false)
+  }
+
+  return (
+    <>
+      <div style={{ background: '#3D1A1A', border: '1px solid #F09595', borderRadius: 12, padding: '1rem', marginBottom: '.85rem', fontSize: 12, color: '#F09595', lineHeight: 1.6 }}>
+        Registra la muerte de un animal. Se descuenta del corral automaticamente.
+      </div>
+      <div style={{ marginBottom: '.85rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Fecha</div>
+        <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})}
+          style={{ width: '100%', background: C.surface, border: '1px solid ' + C.border, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+      </div>
+      <div style={{ marginBottom: '.85rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+        <select value={form.corral_id} onChange={e => setForm({...form, corral_id: e.target.value})}
+          style={{ width: '100%', background: C.surface, border: '1px solid ' + C.border, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+          <option value="">Selecciona un corral</option>
+          {corralesConAnim.map(c => <option key={c.id} value={c.id}>C-{c.numero} - {c.animales} anim.</option>)}
+        </select>
+      </div>
+      <div style={{ marginBottom: '.85rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad</div>
+        <input type="number" inputMode="numeric" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} min="1"
+          style={{ width: '100%', background: C.surface, border: '1px solid ' + C.border, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: '#F09595', boxSizing: 'border-box' }} />
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Causa</div>
+        <select value={form.causa} onChange={e => setForm({...form, causa: e.target.value})}
+          style={{ width: '100%', background: C.surface, border: '1px solid ' + C.border, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+          <option value="">Sin especificar</option>
+          {CAUSAS.map(c => <option key={c}>{c}</option>)}
+        </select>
+      </div>
+      <button onClick={guardar} disabled={guardando}
+        style={{ width: '100%', background: '#7A1A1A', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+        {guardando ? 'Registrando...' : 'Registrar muerte'}
+      </button>
+      <button onClick={() => nav('home')}
+        style={{ width: '100%', background: 'transparent', border: '1px solid ' + C.border, borderRadius: 10, padding: 12, fontSize: 14, color: C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+        Cancelar
+      </button>
+    </>
   )
 }
 
