@@ -232,7 +232,7 @@ export default function Sanidad({ usuario }) {
   })()
 
   const TABS = ['alertas', 'ingreso', 'revision', 'historial', 'mortalidad', 'productos']
-  const TAB_LABELS = ['Alertas', 'Protocolo ingreso', 'Revision bisemanal', 'Historial', 'Productos']
+  const TAB_LABELS = ['Alertas', 'Protocolo ingreso', 'Revision bisemanal', 'Historial', '💀 Mortalidad', 'Productos']
 
   return (
     <div>
