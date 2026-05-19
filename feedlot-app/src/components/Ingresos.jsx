@@ -23,6 +23,9 @@ export default function Ingresos({ usuario }) {
   const [formPagoCompra, setFormPagoCompra] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '' })
   const [editandoFactura, setEditandoFactura] = useState(null)
   const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', forma_pago: 'contado', plazo_dias: '', fecha_vencimiento_pago: '', observaciones_pago: '' })
+  const [editandoLote, setEditandoLote] = useState(null)
+  const [vencimientosLote, setVencimientosLote] = useState({})
+  const [formVencimientos, setFormVencimientos] = useState([])
   const [editandoPrecio, setEditandoPrecio] = useState(null)
   const [form, setForm] = useState({
     procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos',
@@ -50,7 +53,50 @@ export default function Ingresos({ usuario }) {
     setCorrales(c || [])
     const procs = [...new Set((l || []).map(x => x.procedencia).filter(Boolean))].sort()
     setProcedencias(procs)
+    const { data: venc } = await supabase.from('vencimientos_compra').select('*').order('fecha_vencimiento')
+    const vencPorLote = {}
+    ;(venc || []).forEach(v => {
+      if (!vencPorLote[v.lote_id]) vencPorLote[v.lote_id] = []
+      vencPorLote[v.lote_id].push(v)
+    })
+    setVencimientosLote(vencPorLote)
     setLoading(false)
+  }
+
+  async function editarLote(lote) {
+    setEditandoLote(lote)
+    setForm({
+      procedencia: lote.procedencia || '',
+      otraProcedencia: '',
+      categoria: lote.categoria || 'Novillos 2-3 anos',
+      cantidad: String(lote.cantidad || ''),
+      kg_bascula: String(lote.kg_bascula || ''),
+      kg_factura: String(lote.kg_factura || ''),
+      precio_compra: String(lote.precio_compra || ''),
+      observaciones: lote.observaciones || '',
+      corral_cuarentena_id: String(lote.corral_cuarentena_id || ''),
+    })
+    setVista('editar')
+  }
+
+  async function guardarEdicion() {
+    if (!form.cantidad || !form.kg_bascula) { alert('Completa cantidad y kg'); return }
+    setGuardando(true)
+    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || 'Otro') : form.procedencia
+    await supabase.from('lotes').update({
+      procedencia: procFinal,
+      categoria: form.categoria,
+      cantidad: parseInt(form.cantidad),
+      kg_bascula: parseFloat(form.kg_bascula),
+      kg_factura: form.kg_factura ? parseFloat(form.kg_factura) : null,
+      precio_compra: form.precio_compra ? parseFloat(form.precio_compra) : null,
+      observaciones: form.observaciones || null,
+      peso_prom_ingreso: form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null,
+    }).eq('id', editandoLote.id)
+    setGuardando(false)
+    setEditandoLote(null)
+    setVista('lista')
+    await cargarDatos()
   }
 
   async function guardarIngreso() {
@@ -135,6 +181,88 @@ export default function Ingresos({ usuario }) {
   if (loading) return <Loader />
 
   const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra || !l.procedencia) : []
+
+  if (vista === 'editar' && editandoLote) {
+    const promEst = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
+    const kgBas = parseFloat(form.kg_bascula) || 0
+    const kgFac = parseFloat(form.kg_factura) || 0
+    const diffKg = kgBas && kgFac ? kgBas - kgFac : null
+    const diffPct = diffKg !== null && kgFac > 0 ? (diffKg / kgFac * 100) : null
+    const alertaDiff = diffPct !== null && Math.abs(diffPct) > 3
+    const totalCompra = kgBas && form.precio_compra ? Math.round(kgBas * parseFloat(form.precio_compra)) : null
+
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
+          <Btn ghost sm onClick={() => { setVista('lista'); setEditandoLote(null) }}>Volver</Btn>
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 600 }}>Editar ingreso · {editandoLote.codigo}</h1>
+            <div style={{ fontSize: 12, color: S.muted }}>Corregir datos del lote</div>
+          </div>
+        </div>
+
+        <Card titulo="Datos del lote">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Procedencia</label>
+              <select style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface }}
+                value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value, otraProcedencia: ''})}>
+                <option value="">— Seleccioná —</option>
+                {procedencias.map(p => <option key={p} value={p}>{p}</option>)}
+                <option value="Otro">+ Nueva procedencia...</option>
+              </select>
+              {form.procedencia === 'Otro' && (
+                <input type="text" placeholder="Ej: Remate Gral. Villegas" value={form.otraProcedencia}
+                  onChange={e => setForm({...form, otraProcedencia: e.target.value})}
+                  style={{ marginTop: 8, width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+              )}
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Categoría</label>
+              <select style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface }}
+                value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})}>
+                {['Novillos 2-3 anos','Novillos 3-4 anos','Novillitos','Terneros','Vaquillonas','Vacas','Toros'].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Cantidad</label>
+              <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Kg báscula</label>
+              <input type="number" value={form.kg_bascula} onChange={e => setForm({...form, kg_bascula: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Kg factura</label>
+              <input type="number" value={form.kg_factura} onChange={e => setForm({...form, kg_factura: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Precio $/kg neto</label>
+              <input type="number" value={form.precio_compra} onChange={e => setForm({...form, precio_compra: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div style={{ gridColumn: '1/-1' }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Observaciones</label>
+              <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          {totalCompra && (
+            <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '1rem', marginBottom: '1rem', fontSize: 13, color: S.green }}>
+              Total compra: <strong>${totalCompra.toLocaleString('es-AR')}</strong> · Peso promedio: <strong>{promEst} kg</strong>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn onClick={guardarEdicion} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar cambios'}</Btn>
+            <Btn ghost onClick={() => { setVista('lista'); setEditandoLote(null) }}>Cancelar</Btn>
+          </div>
+        </Card>
+      </div>
+    )
+  }
 
   if (vista === 'nuevo') {
     const promEst = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
@@ -320,6 +448,7 @@ export default function Ingresos({ usuario }) {
         {[
           { key: 'lista', label: 'Ingresos' },
           { key: 'gestion', label: 'Gestión comercial' },
+          { key: 'cuentas', label: 'Cuentas por proveedor' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding: '10px 20px', fontSize: 13, fontWeight: tab === t.key ? 600 : 500, cursor: 'pointer', color: tab === t.key ? S.accent : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t.key ? `2px solid ${S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -463,9 +592,14 @@ export default function Ingresos({ usuario }) {
                       {total ? `$${(total / 1000000).toFixed(1)}M` : '—'}
                     </td>
                     <td style={{ padding: '9px 12px' }}>
-                      <button onClick={() => eliminarLote(l.id)} style={{ background: S.redLight, border: `1px solid #F09595`, borderRadius: 6, color: S.red, fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>
-                        Borrar
-                      </button>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => editarLote(l)} style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 6, color: S.accent, fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>
+                          Editar
+                        </button>
+                        <button onClick={() => eliminarLote(l.id)} style={{ background: S.redLight, border: `1px solid #F09595`, borderRadius: 6, color: S.red, fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>
+                          Borrar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -548,7 +682,8 @@ export default function Ingresos({ usuario }) {
                     {isEdit && (
                       <tr style={{ background: S.accentLight }}>
                         <td colSpan={10} style={{ padding: '1rem' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '.75rem' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Datos comerciales de la compra</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
                             <div>
                               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° Factura</div>
                               <input type="text" value={formFactura.numero_factura} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})}
@@ -560,40 +695,60 @@ export default function Ingresos({ usuario }) {
                                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                             </div>
                             <div>
-                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Forma de pago</div>
-                              <select value={formFactura.forma_pago} onChange={e => setFormFactura({...formFactura, forma_pago: e.target.value})}
-                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
-                                <option value="contado">Contado</option>
-                                <option value="30 dias">30 días</option>
-                                <option value="60 dias">60 días</option>
-                                <option value="otro">Otro</option>
-                              </select>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Plazo (días)</div>
-                              <input type="number" value={formFactura.plazo_dias} onChange={e => setFormFactura({...formFactura, plazo_dias: e.target.value, fecha_vencimiento_pago: ''})}
-                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>O fecha vencimiento</div>
-                              <input type="date" value={formFactura.fecha_vencimiento_pago} onChange={e => setFormFactura({...formFactura, fecha_vencimiento_pago: e.target.value, plazo_dias: ''})}
-                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
-                            </div>
-                            <div style={{ gridColumn: '2/-1' }}>
                               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
                               <input type="text" value={formFactura.observaciones_pago} onChange={e => setFormFactura({...formFactura, observaciones_pago: e.target.value})}
                                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                             </div>
                           </div>
-                          <button onClick={async () => {
-                            const plazo = parseInt(formFactura.plazo_dias || 0)
-                            const fechaVto = formFactura.fecha_vencimiento_pago || (plazo > 0 ? new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
-                            await supabase.from('lotes').update({ numero_factura: formFactura.numero_factura || null, fecha_factura: formFactura.fecha_factura || null, forma_pago: formFactura.forma_pago, plazo_dias: plazo || null, fecha_vencimiento_pago: fechaVto, observaciones_pago: formFactura.observaciones_pago || null }).eq('id', l.id)
-                            setEditandoFactura(null)
-                            await cargarDatos()
-                          }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                            Guardar
+
+                          {/* Vencimientos múltiples */}
+                          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Vencimientos de pago</div>
+                          {(vencimientosLote[l.id] || []).map(v => (
+                            <div key={v.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, fontSize: 12 }}>
+                              <span style={{ fontFamily: 'monospace', color: S.accent }}>{new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')}</span>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>-${v.monto.toLocaleString('es-AR')}</span>
+                              <span style={{ fontSize: 11, color: v.estado === 'pagado' ? S.green : S.amber }}>{v.estado}</span>
+                              <button onClick={async () => { await supabase.from('vencimientos_compra').delete().eq('id', v.id); await cargarDatos() }}
+                                style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 11 }}>✕</button>
+                            </div>
+                          ))}
+                          {formVencimientos.map((fv, idx) => (
+                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 6 }}>
+                              <div>
+                                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Fecha vencimiento</div>
+                                <input type="date" value={fv.fecha} onChange={e => { const nv = [...formVencimientos]; nv[idx].fecha = e.target.value; setFormVencimientos(nv) }}
+                                  style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 10px', fontSize: 12, background: S.surface, boxSizing: 'border-box' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Monto $</div>
+                                <input type="number" value={fv.monto} onChange={e => { const nv = [...formVencimientos]; nv[idx].monto = e.target.value; setFormVencimientos(nv) }}
+                                  style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 10px', fontSize: 12, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                              </div>
+                              <button onClick={() => setFormVencimientos(formVencimientos.filter((_, i) => i !== idx))}
+                                style={{ alignSelf: 'flex-end', padding: '6px 10px', background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 5, cursor: 'pointer', fontSize: 12 }}>✕</button>
+                            </div>
+                          ))}
+                          <button onClick={() => setFormVencimientos([...formVencimientos, { fecha: '', monto: '' }])}
+                            style={{ padding: '6px 12px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginBottom: '1rem' }}>
+                            + Agregar vencimiento
                           </button>
+
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={async () => {
+                              await supabase.from('lotes').update({ numero_factura: formFactura.numero_factura || null, fecha_factura: formFactura.fecha_factura || null, observaciones_pago: formFactura.observaciones_pago || null }).eq('id', l.id)
+                              for (const fv of formVencimientos) {
+                                if (fv.fecha && fv.monto) {
+                                  await supabase.from('vencimientos_compra').insert({ lote_id: l.id, fecha_vencimiento: fv.fecha, monto: parseFloat(fv.monto), estado: 'pendiente' })
+                                }
+                              }
+                              setFormVencimientos([])
+                              setEditandoFactura(null)
+                              await cargarDatos()
+                            }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                              Guardar
+                            </button>
+                            <button onClick={() => { setEditandoFactura(null); setFormVencimientos([]) }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -684,6 +839,100 @@ export default function Ingresos({ usuario }) {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {tab === 'cuentas' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Cuentas por proveedor</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Resumen de compras y pagos por procedencia</div>
+
+          {(() => {
+            const porProveedor = {}
+            lotes.forEach(l => {
+              const prov = l.procedencia || 'Sin procedencia'
+              if (!porProveedor[prov]) porProveedor[prov] = { lotes: [], totalComprado: 0, totalPagado: 0, totalAnimales: 0 }
+              porProveedor[prov].lotes.push(l)
+              const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
+              porProveedor[prov].totalComprado += total
+              porProveedor[prov].totalAnimales += l.cantidad || 0
+              const pagosList = pagosCompras[l.id] || []
+              porProveedor[prov].totalPagado += pagosList.reduce((s, p) => s + (p.monto || 0), 0)
+            })
+
+            return Object.entries(porProveedor).sort((a, b) => b[1].totalComprado - a[1].totalComprado).map(([prov, data]) => {
+              const saldo = data.totalComprado - data.totalPagado
+              const pctPagado = data.totalComprado > 0 ? Math.round(data.totalPagado / data.totalComprado * 100) : 0
+              return (
+                <div key={prov} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                  <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{prov}</div>
+                      <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{data.lotes.length} compras · {data.totalAnimales.toLocaleString('es-AR')} animales</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 11, color: S.muted, marginBottom: 2 }}>Saldo pendiente</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: saldo > 0 ? S.red : S.green }}>
+                        {saldo > 0 ? `-$${saldo.toLocaleString('es-AR')}` : '✓ Pagado'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, borderBottom: `1px solid ${S.border}` }}>
+                    {[
+                      { label: 'Total comprado', val: `$${(data.totalComprado/1000000).toFixed(2)}M`, color: S.red },
+                      { label: 'Total pagado', val: `$${(data.totalPagado/1000000).toFixed(2)}M · ${pctPagado}%`, color: pctPagado >= 100 ? S.green : S.amber },
+                      { label: 'Saldo', val: saldo > 0 ? `-$${(saldo/1000000).toFixed(2)}M` : 'Sin deuda', color: saldo > 0 ? S.red : S.green },
+                    ].map((m, i) => (
+                      <div key={i} style={{ padding: '.85rem 1rem', borderRight: i < 2 ? `1px solid ${S.border}` : 'none' }}>
+                        <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ height: 6, background: S.bg }}>
+                    <div style={{ width: `${Math.min(pctPagado, 100)}%`, height: '100%', background: pctPagado >= 100 ? S.green : S.amber }} />
+                  </div>
+
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead><tr style={{ background: S.bg }}>
+                      {['Fecha','Lote','Animales','Total','Factura','Vencimientos','Pagado'].map(h => (
+                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {data.lotes.map(l => {
+                        const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : null
+                        const pagosList = pagosCompras[l.id] || []
+                        const pagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
+                        const venc = vencimientosLote[l.id] || []
+                        return (
+                          <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '7px 12px', fontWeight: 600 }}>{l.codigo}</td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{l.cantidad}</td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: S.red }}>{total ? `-$${(total/1000000).toFixed(2)}M` : '—'}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 11, color: S.muted }}>{l.numero_factura || '—'}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 11 }}>
+                              {venc.length === 0 ? '—' : venc.map(v => (
+                                <div key={v.id} style={{ color: v.estado === 'pagado' ? S.green : new Date(v.fecha_vencimiento) < new Date() ? S.red : S.text }}>
+                                  {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} · ${v.monto.toLocaleString('es-AR')}
+                                </div>
+                              ))}
+                            </td>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: pagado > 0 ? S.green : S.hint }}>
+                              {pagado > 0 ? `$${pagado.toLocaleString('es-AR')}` : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })
+          })()}
         </div>
       )}
     </div>
