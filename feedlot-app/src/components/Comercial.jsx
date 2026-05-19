@@ -566,7 +566,7 @@ export default function Comercial({ usuario }) {
 
             return Object.entries(porContacto)
               .filter(([nombre]) => !filtroCuenta || nombre.toLowerCase().includes(filtroCuenta.toLowerCase()))
-              .filter(([_, data]) => data.ventas.length > 0 && data.lotes.length > 0) // Solo mostrar los que tienen los dos lados
+              .filter(([_, data]) => data.ventas.length > 0 || data.lotes.length > 0) // Solo mostrar los que tienen los dos lados
               .sort((a, b) => a[0].localeCompare(b[0]))
               .map(([nombre, data]) => {
                 // Calcular totales ventas
