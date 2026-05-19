@@ -836,7 +836,7 @@ export default function Ingresos({ usuario }) {
                               const { data: pagoCompraInsert } = await supabase.from('pagos_compras').insert({ lote_id: l.id, fecha: formPagoCompra.fecha, monto, forma_pago: formPagoCompra.forma_pago, numero_cheque: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, fecha_vencimiento_cheque: formPagoCompra.fecha_vencimiento_cheque || null }).select().single()
                               const esNegro = formPagoCompra.es_negro || false
                               if (esNegro) {
-                                await supabase.from('caja_paralela').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', descripcion: `Compra hacienda ${l.codigo} · ${l.procedencia || ''}`, monto })
+                                await supabase.from('caja_paralela').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', descripcion: `Compra hacienda ${l.codigo} · ${l.procedencia || ''}`, monto, pago_compra_id: pagoCompraInsert?.id || null })digo} · ${l.procedencia || ''}`, monto })
                               } else {
                                 await supabase.from('caja_oficial').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Compra ${l.codigo} · ${l.procedencia || ''}`, monto, forma_pago: formPagoCompra.forma_pago, pago_compra_id: pagoCompraInsert?.id || null })
                               }
