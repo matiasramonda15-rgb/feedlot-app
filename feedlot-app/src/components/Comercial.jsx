@@ -36,6 +36,9 @@ export default function Comercial({ usuario }) {
   const [cajaOficial, setCajaOficial] = useState([])
   const [cajaParalela, setCajaParalela] = useState([])
   const [cheques, setCheques] = useState([])
+  const [ventasCta, setVentasCta] = useState([])
+  const [lotesCta, setLotesCta] = useState([])
+  const [filtroCuenta, setFiltroCuenta] = useState('')
   const [contactos, setContactos] = useState([])
   const [guardando, setGuardando] = useState(false)
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
@@ -56,6 +59,8 @@ export default function Comercial({ usuario }) {
       supabase.from('caja_oficial').select('*, contactos(nombre)').order('fecha', { ascending: false }),
       supabase.from('caja_paralela').select('*').order('fecha', { ascending: false }),
       supabase.from('cheques').select('*').order('fecha_vencimiento', { ascending: true }),
+      supabase.from('ventas').select('*, corrales(numero), pagos_ventas(monto)').order('creado_en', { ascending: false }),
+      supabase.from('lotes').select('*, pagos_compras(monto)').order('created_at', { ascending: false }),
       supabase.from('contactos').select('*').eq('activo', true).order('nombre'),
     ])
     setCajaOficial(co || [])
@@ -155,6 +160,7 @@ export default function Comercial({ usuario }) {
     { key: 'caja_paralela', label: 'Caja paralela' },
     { key: 'cheques', label: `Cheques${chVence7.length > 0 ? ` ⚠${chVence7.length}` : ''}` },
     { key: 'contactos', label: 'Contactos' },
+    { key: 'cuenta_corriente', label: 'Cuenta corriente' },
   ]
 
   const FiltrosPeriodo = () => (
@@ -519,6 +525,166 @@ export default function Comercial({ usuario }) {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── CUENTA CORRIENTE ── */}
+      {tab === 'cuenta_corriente' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Cuenta corriente por contacto</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Ventas (cobrar) y compras (pagar) por el mismo contacto</div>
+
+          <div style={{ marginBottom: '1.25rem', maxWidth: 320 }}>
+            <input type="text" placeholder="Buscar contacto..." value={filtroCuenta} onChange={e => setFiltroCuenta(e.target.value)}
+              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+          </div>
+
+          {(() => {
+            // Agrupar por contacto
+            const porContacto = {}
+
+            // Ventas (cobrar)
+            const ventasVistas = new Set()
+            ventasCta.forEach(v => {
+              const nombre = v.comprador
+              if (!nombre) return
+              if (v.grupo_venta_id) {
+                if (ventasVistas.has(v.grupo_venta_id)) return
+                ventasVistas.add(v.grupo_venta_id)
+              }
+              if (!porContacto[nombre]) porContacto[nombre] = { ventas: [], lotes: [] }
+              porContacto[nombre].ventas.push(v)
+            })
+
+            // Compras (pagar)
+            lotesCta.forEach(l => {
+              const nombre = l.procedencia
+              if (!nombre) return
+              if (!porContacto[nombre]) porContacto[nombre] = { ventas: [], lotes: [] }
+              porContacto[nombre].lotes.push(l)
+            })
+
+            return Object.entries(porContacto)
+              .filter(([nombre]) => !filtroCuenta || nombre.toLowerCase().includes(filtroCuenta.toLowerCase()))
+              .filter(([_, data]) => data.ventas.length > 0 && data.lotes.length > 0) // Solo mostrar los que tienen los dos lados
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([nombre, data]) => {
+                // Calcular totales ventas
+                const totalVentas = data.ventas.reduce((s, v) => s + (v.total || 0), 0)
+                const cobradoVentas = data.ventas.reduce((s, v) => s + (v.pagos_ventas?.reduce((ss, p) => ss + (p.monto || 0), 0) || 0), 0)
+                const pendienteVentas = totalVentas - cobradoVentas
+
+                // Calcular totales compras
+                const totalCompras = data.lotes.reduce((s, l) => s + (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0), 0)
+                const pagadoCompras = data.lotes.reduce((s, l) => s + (l.pagos_compras?.reduce((ss, p) => ss + (p.monto || 0), 0) || 0), 0)
+                const pendienteCompras = totalCompras - pagadoCompras
+
+                // Saldo neto: positivo = te deben, negativo = les debés
+                const saldoNeto = pendienteVentas - pendienteCompras
+
+                return (
+                  <div key={nombre} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                    {/* Header */}
+                    <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{nombre}</div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 11, color: S.muted, marginBottom: 2 }}>Saldo neto</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: saldoNeto >= 0 ? S.green : S.red }}>
+                          {saldoNeto >= 0 ? `+$${saldoNeto.toLocaleString('es-AR')}` : `-$${Math.abs(saldoNeto).toLocaleString('es-AR')}`}
+                        </div>
+                        <div style={{ fontSize: 11, color: S.muted }}>{saldoNeto >= 0 ? 'te deben' : 'les debés'}</div>
+                      </div>
+                    </div>
+
+                    {/* Métricas */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+                      {/* Ventas */}
+                      <div style={{ padding: '1rem', borderRight: `1px solid ${S.border}`, borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: S.green, textTransform: 'uppercase', marginBottom: 8 }}>Ventas (te cobran)</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                          {[
+                            { label: 'Total', val: `$${(totalVentas/1000000).toFixed(2)}M` },
+                            { label: 'Cobrado', val: `$${(cobradoVentas/1000000).toFixed(2)}M`, color: S.green },
+                            { label: 'Pendiente', val: `$${(pendienteVentas/1000000).toFixed(2)}M`, color: pendienteVentas > 0 ? S.amber : S.green },
+                          ].map((m, i) => (
+                            <div key={i}>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{m.label}</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: m.color || S.text }}>{m.val}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Compras */}
+                      <div style={{ padding: '1rem', borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: S.red, textTransform: 'uppercase', marginBottom: 8 }}>Compras (les pagás)</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                          {[
+                            { label: 'Total', val: `$${(totalCompras/1000000).toFixed(2)}M` },
+                            { label: 'Pagado', val: `$${(pagadoCompras/1000000).toFixed(2)}M`, color: S.green },
+                            { label: 'Pendiente', val: `$${(pendienteCompras/1000000).toFixed(2)}M`, color: pendienteCompras > 0 ? S.red : S.green },
+                          ].map((m, i) => (
+                            <div key={i}>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{m.label}</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: m.color || S.text }}>{m.val}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detalle ventas */}
+                    {data.ventas.length > 0 && (
+                      <div style={{ padding: '0 1.25rem 1rem' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', margin: '1rem 0 6px' }}>Detalle ventas</div>
+                        {data.ventas.map(v => {
+                          const pagadoV = v.pagos_ventas?.reduce((s, p) => s + (p.monto || 0), 0) || 0
+                          return (
+                            <div key={v.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${S.border}` }}>
+                              <span style={{ color: S.muted }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })} · C-{v.corrales?.numero}</span>
+                              <div style={{ display: 'flex', gap: 16 }}>
+                                <span style={{ fontFamily: 'monospace', color: S.green }}>Total: ${(v.total/1000000).toFixed(2)}M</span>
+                                <span style={{ fontFamily: 'monospace', color: pagadoV >= v.total ? S.green : S.amber }}>Cobrado: ${(pagadoV/1000000).toFixed(2)}M</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* Detalle compras */}
+                    {data.lotes.length > 0 && (
+                      <div style={{ padding: '0 1.25rem 1rem' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', margin: '1rem 0 6px' }}>Detalle compras</div>
+                        {data.lotes.map(l => {
+                          const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
+                          const pagado = l.pagos_compras?.reduce((s, p) => s + (p.monto || 0), 0) || 0
+                          return (
+                            <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${S.border}` }}>
+                              <span style={{ color: S.muted }}>{new Date(l.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })} · {l.codigo}</span>
+                              <div style={{ display: 'flex', gap: 16 }}>
+                                <span style={{ fontFamily: 'monospace', color: S.red }}>Total: -${(total/1000000).toFixed(2)}M</span>
+                                <span style={{ fontFamily: 'monospace', color: pagado >= total ? S.green : S.amber }}>Pagado: ${(pagado/1000000).toFixed(2)}M</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+          })()}
+
+          {Object.keys((() => {
+            const p = {}
+            ventasCta.forEach(v => { if (v.comprador) p[v.comprador] = true })
+            lotesCta.forEach(l => { if (l.procedencia) p[l.procedencia] = true })
+            return p
+          })()).filter(n => !filtroCuenta || n.toLowerCase().includes(filtroCuenta.toLowerCase())).length === 0 && (
+            <div style={{ padding: '3rem', textAlign: 'center', color: S.hint, background: S.surface, borderRadius: 10, border: `1px solid ${S.border}` }}>
+              No hay contactos con transacciones en ambos lados.
+            </div>
+          )}
         </div>
       )}
     </div>
