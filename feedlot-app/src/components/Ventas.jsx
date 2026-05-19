@@ -578,7 +578,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(1)}M` : '—'}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
-                              <button onClick={() => { setEditandoComercial(v.id); setFormComercial({ precio_kg: v.precio_kg || '', monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comprador: v.comprador || '', observaciones: v.observaciones || '' }) }}
+                              <button onClick={() => { setEditandoComercial(v.id); setFormComercial({ precio_kg: v.precio_kg || '', monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', fecha_vencimiento: v.fecha_vencimiento_cobro || '', comprador: v.comprador || '', observaciones: v.observaciones || '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 Editar
                               </button>
@@ -629,8 +629,13 @@ export default function Ventas({ usuario }) {
                                   </div>
                                   <div>
                                     <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Plazo (días)</div>
-                                    <input type="number" value={formComercial.plazo_dias} onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value})}
+                                    <input type="number" value={formComercial.plazo_dias} onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value, fecha_vencimiento: ''})}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>O fecha vencimiento</div>
+                                    <input type="date" value={formComercial.fecha_vencimiento || ''} onChange={e => setFormComercial({...formComercial, fecha_vencimiento: e.target.value, plazo_dias: ''})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                                   </div>
                                   <div style={{ gridColumn: '2/-1' }}>
                                     <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
@@ -649,8 +654,7 @@ export default function Ventas({ usuario }) {
                                     const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
-                                    const fechaBaseGrupo = new Date(v0.creado_en)
-                                    const fechaVto = plazo > 0 ? new Date(fechaBaseGrupo.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
+                                    const fechaVto = formComercial.fecha_vencimiento || (plazo > 0 ? new Date(new Date(v.creado_en).getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
                                     await supabase.from('ventas').update({
                                       precio_kg: precio || null,
                                       total: montoTotal,
@@ -760,8 +764,13 @@ export default function Ventas({ usuario }) {
                                   </div>
                                   <div>
                                     <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Plazo (días)</div>
-                                    <input type="number" value={formComercial.plazo_dias} onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value})}
+                                    <input type="number" value={formComercial.plazo_dias} onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value, fecha_vencimiento: ''})}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>O fecha vencimiento</div>
+                                    <input type="date" value={formComercial.fecha_vencimiento || ''} onChange={e => setFormComercial({...formComercial, fecha_vencimiento: e.target.value, plazo_dias: ''})}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                                   </div>
                                   <div style={{ gridColumn: '2/-1' }}>
                                     <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
@@ -774,11 +783,10 @@ export default function Ventas({ usuario }) {
                                     const precio = parseFloat(formComercial.precio_kg) || 0
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
                                     const plazo = parseInt(formComercial.plazo_dias || 0)
-                                    const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
+                                    const fechaVto = formComercial.fecha_vencimiento || (plazo > 0 ? new Date(new Date(v0.creado_en).getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
                                     const montoFactRaw = formComercial.monto_facturado
                                     const tieneFacturado = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
                                     const montoFactTotal = tieneFacturado ? parseFloat(montoFactRaw) : null
-                                    // Cargar todas las ventas del grupo desde BD para asegurar que actualiza todos
                                     const { data: grupoCompleto } = await supabase.from('ventas').select('*').eq('grupo_venta_id', v0.grupo_venta_id)
                                     const totalKgNetoG = (grupoCompleto || []).reduce((s, v) => s + (v.kg_neto || 0), 0)
                                     for (const v of (grupoCompleto || [])) {
