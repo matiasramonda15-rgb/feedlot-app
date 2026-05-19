@@ -757,7 +757,14 @@ export default function Ingresos({ usuario }) {
                             <button onClick={async () => {
                               const montoFact = formFactura.monto_facturado !== '' && formFactura.monto_facturado !== null ? parseFloat(formFactura.monto_facturado) : null
                               const montoNegro = formFactura.monto_negro !== '' && formFactura.monto_negro !== null ? parseFloat(formFactura.monto_negro) : 0
-                              await supabase.from('lotes').update({ numero_factura: formFactura.numero_factura || null, fecha_factura: formFactura.fecha_factura || null, observaciones_pago: formFactura.observaciones_pago || null, monto_facturado: montoFact, monto_negro: montoNegro }).eq('id', l.id)
+                              await supabase.from('lotes').update({ 
+                                numero_factura: formFactura.numero_factura || null, 
+                                fecha_factura: formFactura.fecha_factura || null,
+                                forma_pago: formFactura.forma_pago || null,
+                                observaciones_pago: formFactura.observaciones_pago || null, 
+                                monto_facturado: montoFact, 
+                                monto_negro: montoNegro 
+                              }).eq('id', l.id)
                               for (const fv of formVencimientos) {
                                 if (fv.fecha && fv.monto) {
                                   await supabase.from('vencimientos_compra').insert({ lote_id: l.id, fecha_vencimiento: fv.fecha, monto: parseFloat(fv.monto), estado: 'pendiente' })
@@ -798,6 +805,12 @@ export default function Ingresos({ usuario }) {
                               <input type="date" value={formPagoCompra.fecha} onChange={e => setFormPagoCompra({...formPagoCompra, fecha: e.target.value})}
                                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                             </div>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', fontWeight: 600, cursor: 'pointer', padding: '7px 0' }}>
+                                <input type="checkbox" checked={formPagoCompra.es_negro || false} onChange={e => setFormPagoCompra({...formPagoCompra, es_negro: e.target.checked})} />
+                                Pago en negro
+                              </label>
+                            </div>
                             {['cheque','e-cheq'].includes(formPagoCompra.forma_pago) && (<>
                               <div>
                                 <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° cheque</div>
@@ -821,7 +834,7 @@ export default function Ingresos({ usuario }) {
                               if (!formPagoCompra.monto) return
                               const monto = parseFloat(formPagoCompra.monto)
                               const { data: pagoCompraInsert } = await supabase.from('pagos_compras').insert({ lote_id: l.id, fecha: formPagoCompra.fecha, monto, forma_pago: formPagoCompra.forma_pago, numero_cheque: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, fecha_vencimiento_cheque: formPagoCompra.fecha_vencimiento_cheque || null }).select().single()
-                              const esNegro = l.monto_negro > 0 && formPagoCompra.forma_pago === 'efectivo'
+                              const esNegro = formPagoCompra.es_negro || false
                               if (esNegro) {
                                 await supabase.from('caja_paralela').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', descripcion: `Compra hacienda ${l.codigo} · ${l.procedencia || ''}`, monto })
                               } else {
