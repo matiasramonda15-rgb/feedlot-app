@@ -643,8 +643,8 @@ export default function Ingresos({ usuario }) {
                             <button onClick={async () => {
                               if (!formPagoCompra.monto) return
                               const monto = parseFloat(formPagoCompra.monto)
-                              await supabase.from('pagos_compras').insert({ lote_id: l.id, fecha: formPagoCompra.fecha, monto, forma_pago: formPagoCompra.forma_pago, numero_cheque: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, fecha_vencimiento_cheque: formPagoCompra.fecha_vencimiento_cheque || null })
-                              await supabase.from('caja_oficial').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Compra ${l.codigo} · ${l.procedencia || ''}`, monto, forma_pago: formPagoCompra.forma_pago })
+                              const { data: pagoCompraInsert } = await supabase.from('pagos_compras').insert({ lote_id: l.id, fecha: formPagoCompra.fecha, monto, forma_pago: formPagoCompra.forma_pago, numero_cheque: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, fecha_vencimiento_cheque: formPagoCompra.fecha_vencimiento_cheque || null }).select().single()
+                              await supabase.from('caja_oficial').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Compra ${l.codigo} · ${l.procedencia || ''}`, monto, forma_pago: formPagoCompra.forma_pago, pago_compra_id: pagoCompraInsert?.id || null })
                               if (['cheque','e-cheq'].includes(formPagoCompra.forma_pago) && formPagoCompra.fecha_vencimiento_cheque) {
                                 await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, monto, fecha_emision: formPagoCompra.fecha, fecha_vencimiento: formPagoCompra.fecha_vencimiento_cheque, beneficiario: l.procedencia || null, estado: 'emitido' })
                               }
