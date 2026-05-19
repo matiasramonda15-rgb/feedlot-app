@@ -977,4 +977,4 @@ export default function Ingresos({ usuario }) {
       )}
     </div>
   )
-}
+} 
