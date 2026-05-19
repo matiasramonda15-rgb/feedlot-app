@@ -22,7 +22,7 @@ export default function Ingresos({ usuario }) {
   const [registrandoPagoCompra, setRegistrandoPagoCompra] = useState(null)
   const [formPagoCompra, setFormPagoCompra] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '' })
   const [editandoFactura, setEditandoFactura] = useState(null)
-  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', forma_pago: 'contado', plazo_dias: '', fecha_vencimiento_pago: '', observaciones_pago: '' })
+  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', forma_pago: 'contado', plazo_dias: '', fecha_vencimiento_pago: '', observaciones_pago: '', monto_facturado: '', monto_negro: '' })
   const [editandoLote, setEditandoLote] = useState(null)
   const [vencimientosLote, setVencimientosLote] = useState({})
   const [formVencimientos, setFormVencimientos] = useState([])
@@ -661,7 +661,10 @@ export default function Ingresos({ usuario }) {
                       <td style={{ padding: '8px 12px', fontWeight: 600 }}>{l.codigo}</td>
                       <td style={{ padding: '8px 12px' }}>{l.procedencia || '—'}</td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>{total ? `-$${(total/1000000).toFixed(2)}M` : '—'}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 11, color: S.muted }}>{l.numero_factura || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 11, color: S.muted }}>
+                        {l.numero_factura || '—'}
+                        {l.monto_negro > 0 && <div style={{ fontSize: 10, color: '#3D1A6B', fontWeight: 600 }}>Negro: ${l.monto_negro.toLocaleString('es-AR')}</div>}
+                      </td>
                       <td style={{ padding: '8px 12px', fontSize: 11 }}>{l.forma_pago || '—'}{l.plazo_dias ? ` ${l.plazo_dias}d` : ''}</td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>
                         {(() => {
@@ -685,7 +688,7 @@ export default function Ingresos({ usuario }) {
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { setEditandoFactura(isEdit ? null : l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', forma_pago: l.forma_pago || 'contado', plazo_dias: l.plazo_dias || '', fecha_vencimiento_pago: l.fecha_vencimiento_pago || '', observaciones_pago: l.observaciones_pago || '' }) }}
+                          <button onClick={() => { setEditandoFactura(isEdit ? null : l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', forma_pago: l.forma_pago || 'contado', plazo_dias: l.plazo_dias || '', fecha_vencimiento_pago: l.fecha_vencimiento_pago || '', observaciones_pago: l.observaciones_pago || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', monto_negro: l.monto_negro !== null && l.monto_negro !== undefined ? String(l.monto_negro) : '' }) }}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer' }}>
                             {isEdit ? 'Cerrar' : 'Factura'}
                           </button>
@@ -752,7 +755,9 @@ export default function Ingresos({ usuario }) {
 
                           <div style={{ display: 'flex', gap: 8 }}>
                             <button onClick={async () => {
-                              await supabase.from('lotes').update({ numero_factura: formFactura.numero_factura || null, fecha_factura: formFactura.fecha_factura || null, observaciones_pago: formFactura.observaciones_pago || null }).eq('id', l.id)
+                              const montoFact = formFactura.monto_facturado !== '' && formFactura.monto_facturado !== null ? parseFloat(formFactura.monto_facturado) : null
+                              const montoNegro = formFactura.monto_negro !== '' && formFactura.monto_negro !== null ? parseFloat(formFactura.monto_negro) : 0
+                              await supabase.from('lotes').update({ numero_factura: formFactura.numero_factura || null, fecha_factura: formFactura.fecha_factura || null, observaciones_pago: formFactura.observaciones_pago || null, monto_facturado: montoFact, monto_negro: montoNegro }).eq('id', l.id)
                               for (const fv of formVencimientos) {
                                 if (fv.fecha && fv.monto) {
                                   await supabase.from('vencimientos_compra').insert({ lote_id: l.id, fecha_vencimiento: fv.fecha, monto: parseFloat(fv.monto), estado: 'pendiente' })
@@ -816,7 +821,12 @@ export default function Ingresos({ usuario }) {
                               if (!formPagoCompra.monto) return
                               const monto = parseFloat(formPagoCompra.monto)
                               const { data: pagoCompraInsert } = await supabase.from('pagos_compras').insert({ lote_id: l.id, fecha: formPagoCompra.fecha, monto, forma_pago: formPagoCompra.forma_pago, numero_cheque: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, fecha_vencimiento_cheque: formPagoCompra.fecha_vencimiento_cheque || null }).select().single()
-                              await supabase.from('caja_oficial').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Compra ${l.codigo} · ${l.procedencia || ''}`, monto, forma_pago: formPagoCompra.forma_pago, pago_compra_id: pagoCompraInsert?.id || null })
+                              const esNegro = l.monto_negro > 0 && formPagoCompra.forma_pago === 'efectivo'
+                              if (esNegro) {
+                                await supabase.from('caja_paralela').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', descripcion: `Compra hacienda ${l.codigo} · ${l.procedencia || ''}`, monto })
+                              } else {
+                                await supabase.from('caja_oficial').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Compra ${l.codigo} · ${l.procedencia || ''}`, monto, forma_pago: formPagoCompra.forma_pago, pago_compra_id: pagoCompraInsert?.id || null })
+                              }
                               if (['cheque','e-cheq'].includes(formPagoCompra.forma_pago) && formPagoCompra.fecha_vencimiento_cheque) {
                                 await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, monto, fecha_emision: formPagoCompra.fecha, fecha_vencimiento: formPagoCompra.fecha_vencimiento_cheque, beneficiario: l.procedencia || null, estado: 'emitido' })
                               }
