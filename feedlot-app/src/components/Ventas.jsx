@@ -52,6 +52,7 @@ export default function Ventas({ usuario }) {
   const [filtroCuentas, setFiltroCuentas] = useState('')
   const [editandoComercial, setEditandoComercial] = useState(null)
   const [formComercial, setFormComercial] = useState({})
+  const [formPagoVto, setFormPagoVto] = useState('')
   const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', observaciones: '' })
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
@@ -705,7 +706,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${(totalMonto / 1000000).toFixed(1)}M` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => { setEditandoComercial(v0.grupo_venta_id); setFormComercial({ precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_facturado: (() => { const tot = g.reduce((s, vv) => s + (vv.monto_facturado || 0), 0); return tot !== null && tot !== undefined ? String(tot) : '' })(), monto_negro: g.reduce((s, vv) => s + (vv.monto_negro || 0), 0) || '', iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comprador: v0.comprador || '', observaciones: v0.observaciones || '' }) }}
+                              <button onClick={() => { setEditandoComercial(v0.grupo_venta_id); setFormComercial({ precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', fecha_vencimiento: v0.fecha_vencimiento_cobro || '', monto_facturado: (() => { const tot = g.reduce((s, vv) => s + (vv.monto_facturado || 0), 0); return tot !== null && tot !== undefined ? String(tot) : '' })(), monto_negro: g.reduce((s, vv) => s + (vv.monto_negro || 0), 0) || '', iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comprador: v0.comprador || '', observaciones: v0.observaciones || '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 Editar
                               </button>
@@ -1382,10 +1383,11 @@ export default function Ventas({ usuario }) {
                                   <button onClick={async () => {
                                     if (!formPago.monto) return
                                     const monto = parseFloat(formPago.monto)
-                                    await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null })
+                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null }).select().single()
+                                    const pagoId = pagoInsertado?.id || null
                                     const esNegro = totalNegro > 0 && formPago.forma_pago === 'efectivo'
-                                    if (esNegro) await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto })
-                                    else await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: formPago.forma_pago })
+                                    if (esNegro) await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
+                                    else await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: formPago.forma_pago, pago_venta_id: pagoId })
                                     if (['cheque','e-cheq'].includes(formPago.forma_pago) && formPago.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: v.comprador || null, estado: 'en_cartera' })
                                     const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)
                                     const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0) + monto
