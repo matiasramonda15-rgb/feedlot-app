@@ -616,16 +616,25 @@ export default function Ingresos({ usuario }) {
       {tab === 'gestion' && (
         <div>
           {/* Alertas vencimiento */}
-          {lotes.filter(l => l.fecha_vencimiento_pago && l.estado_pago !== 'pagado' && new Date(l.fecha_vencimiento_pago) <= new Date(Date.now() + 7 * 86400000)).length > 0 && (
-            <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ Pagos por vencer — próximos 7 días</div>
-              {lotes.filter(l => l.fecha_vencimiento_pago && l.estado_pago !== 'pagado' && new Date(l.fecha_vencimiento_pago) <= new Date(Date.now() + 7 * 86400000)).map(l => (
-                <div key={l.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
-                  {l.codigo} · {l.procedencia || 'Sin procedencia'} · ${l.precio_compra ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra).toLocaleString('es-AR') : '—'} · vence {new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR')}
-                </div>
-              ))}
-            </div>
-          )}
+          {(() => {
+            const hoy = new Date()
+            const en7dias = new Date(Date.now() + 7 * 86400000)
+            const vencProximos = Object.entries(vencimientosLote).flatMap(([loteId, venc]) => 
+              venc.filter(v => v.estado !== 'pagado' && new Date(v.fecha_vencimiento) <= en7dias)
+                  .map(v => ({ ...v, lote: lotes.find(l => l.id === parseInt(loteId)) }))
+            ).filter(v => v.lote)
+            if (vencProximos.length === 0) return null
+            return (
+              <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ Pagos por vencer — próximos 7 días</div>
+                {vencProximos.map(v => (
+                  <div key={v.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
+                    {v.lote.codigo} · {v.lote.procedencia || 'Sin procedencia'} · ${v.monto.toLocaleString('es-AR')} · vence {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')}
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
 
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
@@ -653,9 +662,17 @@ export default function Ingresos({ usuario }) {
                       <td style={{ padding: '8px 12px' }}>{l.procedencia || '—'}</td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>{total ? `-$${(total/1000000).toFixed(2)}M` : '—'}</td>
                       <td style={{ padding: '8px 12px', fontSize: 11, color: S.muted }}>{l.numero_factura || '—'}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 11 }}>{l.forma_pago || 'contado'}{l.plazo_dias ? ` ${l.plazo_dias}d` : ''}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, fontWeight: venceProx ? 700 : 400, color: venceProx ? S.red : S.text }}>
-                        {l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                      <td style={{ padding: '8px 12px', fontSize: 11 }}>{l.forma_pago || '—'}{l.plazo_dias ? ` ${l.plazo_dias}d` : ''}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>
+                        {(() => {
+                          const venc = vencimientosLote[l.id] || []
+                          if (venc.length === 0) return l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'
+                          return venc.map(v => (
+                            <div key={v.id} style={{ color: v.estado === 'pagado' ? S.green : new Date(v.fecha_vencimiento) < new Date() ? S.red : S.text, marginBottom: 2 }}>
+                              {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} · ${v.monto.toLocaleString('es-AR')}
+                            </div>
+                          ))
+                        })()}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: estadoColor.bg, color: estadoColor.color }}>
