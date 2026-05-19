@@ -175,7 +175,7 @@ export default function Ingresos({ usuario }) {
       const nuevosAnim = Math.max(0, (corral?.animales || 0) - lote.cantidad)
 const updateCorral = { animales: nuevosAnim }
 if (nuevosAnim === 0) { updateCorral.rol = 'libre'; updateCorral.sub = null }
-await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuarentena_id)_cuarentena_id)
+await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuarentena_id)
     }
     await supabase.from('lotes').delete().eq('id', id)
     await cargarDatos()
