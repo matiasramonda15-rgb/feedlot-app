@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Card, Btn, Badge, Loader } from './Tablero'
 
@@ -17,6 +17,12 @@ export default function Ingresos({ usuario }) {
   const [procedencias, setProcedencias] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('lista')
+  const [tab, setTab] = useState('lista')
+  const [pagosCompras, setPagosCompras] = useState({})
+  const [registrandoPagoCompra, setRegistrandoPagoCompra] = useState(null)
+  const [formPagoCompra, setFormPagoCompra] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '' })
+  const [editandoFactura, setEditandoFactura] = useState(null)
+  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', forma_pago: 'contado', plazo_dias: '', fecha_vencimiento_pago: '', observaciones_pago: '' })
   const [editandoPrecio, setEditandoPrecio] = useState(null)
   const [form, setForm] = useState({
     procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos',
@@ -34,6 +40,13 @@ export default function Ingresos({ usuario }) {
       supabase.from('corrales').select('*').in('rol', ['cuarentena', 'libre']).order('numero'),
     ])
     setLotes(l || [])
+    const { data: pagos } = await supabase.from('pagos_compras').select('*').order('fecha', { ascending: false })
+    const pagosPorLote = {}
+    ;(pagos || []).forEach(p => {
+      if (!pagosPorLote[p.lote_id]) pagosPorLote[p.lote_id] = []
+      pagosPorLote[p.lote_id].push(p)
+    })
+    setPagosCompras(pagosPorLote)
     setCorrales(c || [])
     const procs = [...new Set((l || []).map(x => x.procedencia).filter(Boolean))].sort()
     setProcedencias(procs)
@@ -302,6 +315,24 @@ export default function Ingresos({ usuario }) {
         ))}
       </div>
 
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.25rem' }}>
+        {[
+          { key: 'lista', label: 'Ingresos' },
+          { key: 'gestion', label: 'Gestión comercial' },
+        ].map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            style={{ padding: '10px 20px', fontSize: 13, fontWeight: tab === t.key ? 600 : 500, cursor: 'pointer', color: tab === t.key ? S.accent : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t.key ? `2px solid ${S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            {t.label}
+          </button>
+        ))}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+          <Btn onClick={() => setVista('nuevo')}>+ Nuevo ingreso</Btn>
+        </div>
+      </div>
+
+      {tab === 'lista' && (<>
+
       {/* Pendientes de precio */}
       {lotesSinPrecio.length > 0 && (
         <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
@@ -446,6 +477,215 @@ export default function Ingresos({ usuario }) {
           </table>
         </div>
       </Card>
+      </>)}
+
+      {tab === 'gestion' && (
+        <div>
+          {/* Alertas vencimiento */}
+          {lotes.filter(l => l.fecha_vencimiento_pago && l.estado_pago !== 'pagado' && new Date(l.fecha_vencimiento_pago) <= new Date(Date.now() + 7 * 86400000)).length > 0 && (
+            <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ Pagos por vencer — próximos 7 días</div>
+              {lotes.filter(l => l.fecha_vencimiento_pago && l.estado_pago !== 'pagado' && new Date(l.fecha_vencimiento_pago) <= new Date(Date.now() + 7 * 86400000)).map(l => (
+                <div key={l.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
+                  {l.codigo} · {l.procedencia || 'Sin procedencia'} · ${l.precio_compra ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra).toLocaleString('es-AR') : '—'} · vence {new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR')}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
+              <thead><tr style={{ background: S.bg }}>
+                {['Fecha','Lote','Proveedor','Total compra','Factura','Forma pago','Vencimiento','Estado','Pagado','Acciones'].map(h => (
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {lotes.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ingresos registrados.</td></tr>}
+                {lotes.map(l => {
+                  const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : null
+                  const pagosList = pagosCompras[l.id] || []
+                  const totalPagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
+                  const saldo = total ? total - totalPagado : null
+                  const venceProx = l.fecha_vencimiento_pago && l.estado_pago !== 'pagado' && new Date(l.fecha_vencimiento_pago) <= new Date(Date.now() + 7 * 86400000)
+                  const isEdit = editandoFactura === l.id
+                  const isReg = registrandoPagoCompra === l.id
+                  const estadoColor = { pendiente: { bg: S.amberLight, color: S.amber }, pagado: { bg: S.greenLight, color: S.green }, vencido: { bg: S.redLight, color: S.red } }[l.estado_pago || 'pendiente'] || { bg: S.bg, color: S.muted }
+                  return (
+                    <React.Fragment key={l.id}>
+                    <tr style={{ borderBottom: `1px solid ${S.border}`, background: venceProx ? '#FFF5F5' : 'transparent' }}>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>{l.codigo}</td>
+                      <td style={{ padding: '8px 12px' }}>{l.procedencia || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>{total ? `-$${(total/1000000).toFixed(2)}M` : '—'}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 11, color: S.muted }}>{l.numero_factura || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 11 }}>{l.forma_pago || 'contado'}{l.plazo_dias ? ` ${l.plazo_dias}d` : ''}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, fontWeight: venceProx ? 700 : 400, color: venceProx ? S.red : S.text }}>
+                        {l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: estadoColor.bg, color: estadoColor.color }}>
+                          {l.estado_pago || 'pendiente'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: totalPagado > 0 ? S.green : S.hint }}>
+                        {totalPagado > 0 ? `$${totalPagado.toLocaleString('es-AR')}` : '—'}
+                        {saldo !== null && saldo > 0 && <div style={{ fontSize: 10, color: S.red }}>Saldo: ${saldo.toLocaleString('es-AR')}</div>}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => { setEditandoFactura(isEdit ? null : l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', forma_pago: l.forma_pago || 'contado', plazo_dias: l.plazo_dias || '', fecha_vencimiento_pago: l.fecha_vencimiento_pago || '', observaciones_pago: l.observaciones_pago || '' }) }}
+                            style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer' }}>
+                            {isEdit ? 'Cerrar' : 'Factura'}
+                          </button>
+                          <button onClick={() => { setRegistrandoPagoCompra(isReg ? null : l.id); setFormPagoCompra({ monto: saldo && saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '' }) }}
+                            style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 4, cursor: 'pointer' }}>
+                            + Pago
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isEdit && (
+                      <tr style={{ background: S.accentLight }}>
+                        <td colSpan={10} style={{ padding: '1rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '.75rem' }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° Factura</div>
+                              <input type="text" value={formFactura.numero_factura} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Fecha factura</div>
+                              <input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Forma de pago</div>
+                              <select value={formFactura.forma_pago} onChange={e => setFormFactura({...formFactura, forma_pago: e.target.value})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                                <option value="contado">Contado</option>
+                                <option value="30 dias">30 días</option>
+                                <option value="60 dias">60 días</option>
+                                <option value="otro">Otro</option>
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Plazo (días)</div>
+                              <input type="number" value={formFactura.plazo_dias} onChange={e => setFormFactura({...formFactura, plazo_dias: e.target.value, fecha_vencimiento_pago: ''})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>O fecha vencimiento</div>
+                              <input type="date" value={formFactura.fecha_vencimiento_pago} onChange={e => setFormFactura({...formFactura, fecha_vencimiento_pago: e.target.value, plazo_dias: ''})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                            <div style={{ gridColumn: '2/-1' }}>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
+                              <input type="text" value={formFactura.observaciones_pago} onChange={e => setFormFactura({...formFactura, observaciones_pago: e.target.value})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                          </div>
+                          <button onClick={async () => {
+                            const plazo = parseInt(formFactura.plazo_dias || 0)
+                            const fechaVto = formFactura.fecha_vencimiento_pago || (plazo > 0 ? new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
+                            await supabase.from('lotes').update({ numero_factura: formFactura.numero_factura || null, fecha_factura: formFactura.fecha_factura || null, forma_pago: formFactura.forma_pago, plazo_dias: plazo || null, fecha_vencimiento_pago: fechaVto, observaciones_pago: formFactura.observaciones_pago || null }).eq('id', l.id)
+                            setEditandoFactura(null)
+                            await cargarDatos()
+                          }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                            Guardar
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                    {isReg && (
+                      <tr style={{ background: S.greenLight }}>
+                        <td colSpan={10} style={{ padding: '1rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '.75rem' }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto $</div>
+                              <input type="number" value={formPagoCompra.monto} onChange={e => setFormPagoCompra({...formPagoCompra, monto: e.target.value})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Forma</div>
+                              <select value={formPagoCompra.forma_pago} onChange={e => setFormPagoCompra({...formPagoCompra, forma_pago: e.target.value})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                                <option value="transferencia">Transferencia</option>
+                                <option value="cheque">Cheque</option>
+                                <option value="e-cheq">E-Cheq</option>
+                                <option value="efectivo">Efectivo</option>
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Fecha</div>
+                              <input type="date" value={formPagoCompra.fecha} onChange={e => setFormPagoCompra({...formPagoCompra, fecha: e.target.value})}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                            {['cheque','e-cheq'].includes(formPagoCompra.forma_pago) && (<>
+                              <div>
+                                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° cheque</div>
+                                <input type="text" value={formPagoCompra.numero_cheque} onChange={e => setFormPagoCompra({...formPagoCompra, numero_cheque: e.target.value})}
+                                  style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Banco</div>
+                                <input type="text" value={formPagoCompra.banco} onChange={e => setFormPagoCompra({...formPagoCompra, banco: e.target.value})}
+                                  style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Vencimiento cheque</div>
+                                <input type="date" value={formPagoCompra.fecha_vencimiento_cheque} onChange={e => setFormPagoCompra({...formPagoCompra, fecha_vencimiento_cheque: e.target.value})}
+                                  style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                              </div>
+                            </>)}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={async () => {
+                              if (!formPagoCompra.monto) return
+                              const monto = parseFloat(formPagoCompra.monto)
+                              await supabase.from('pagos_compras').insert({ lote_id: l.id, fecha: formPagoCompra.fecha, monto, forma_pago: formPagoCompra.forma_pago, numero_cheque: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, fecha_vencimiento_cheque: formPagoCompra.fecha_vencimiento_cheque || null })
+                              await supabase.from('caja_oficial').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Compra ${l.codigo} · ${l.procedencia || ''}`, monto, forma_pago: formPagoCompra.forma_pago })
+                              if (['cheque','e-cheq'].includes(formPagoCompra.forma_pago) && formPagoCompra.fecha_vencimiento_cheque) {
+                                await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, monto, fecha_emision: formPagoCompra.fecha, fecha_vencimiento: formPagoCompra.fecha_vencimiento_cheque, beneficiario: l.procedencia || null, estado: 'emitido' })
+                              }
+                              // Verificar si quedó totalmente pagado
+                              const { data: todosPageos } = await supabase.from('pagos_compras').select('monto').eq('lote_id', l.id)
+                              const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0) + monto
+                              const totalLote = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : null
+                              if (totalLote && totalPag >= totalLote * 0.99) await supabase.from('lotes').update({ estado_pago: 'pagado', fecha_pago: formPagoCompra.fecha }).eq('id', l.id)
+                              setRegistrandoPagoCompra(null)
+                              await cargarDatos()
+                            }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                              Guardar pago
+                            </button>
+                            <button onClick={() => setRegistrandoPagoCompra(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                          </div>
+                          {pagosList.length > 0 && (
+                            <div style={{ marginTop: '1rem', borderTop: `1px solid ${S.border}`, paddingTop: '.75rem' }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, marginBottom: 6 }}>PAGOS REGISTRADOS</div>
+                              {pagosList.map(p => (
+                                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                                  <span>{new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
+                                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <span style={{ fontFamily: 'monospace', color: S.red }}>-${p.monto.toLocaleString('es-AR')}</span>
+                                    <button onClick={async () => { await supabase.from('pagos_compras').delete().eq('id', p.id); await cargarDatos() }}
+                                      style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 11 }}>✕</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
