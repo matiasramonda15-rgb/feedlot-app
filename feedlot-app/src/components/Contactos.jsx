@@ -140,6 +140,9 @@ export default function Contactos({ usuario }) {
   }
 
   // Vista ficha de contacto
+  const [mostrarNegro, setMostrarNegro] = useState(false)
+  const puedeVerNegro = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
+
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
     const { ventas: ventasCto, lotes: lotesCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
@@ -199,79 +202,162 @@ export default function Contactos({ usuario }) {
           </div>
         </div>
 
-        {/* Ventas */}
-        {ventasCto.length > 0 && (
-          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: '1.25rem' }}>
-            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, fontSize: 13, fontWeight: 600, color: S.green }}>Ventas de hacienda</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead><tr style={{ background: S.bg }}>
-                {['Fecha','Corral','Total','Facturado','Negro','Estado','Cobrado'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {ventasCto.map(v => {
-                  const pagado = (pagosVenta[v.id] || []).reduce((s, p) => s + (p.monto || 0), 0)
-                  return (
-                    <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{v.corrales?.numero}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.green }}>{v.total ? `$${(v.total/1000000).toFixed(2)}M` : '—'}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.accent }}>{v.monto_facturado ? `$${(v.monto_facturado/1000000).toFixed(2)}M` : '—'}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#3D1A6B' }}>{v.monto_negro > 0 ? `$${(v.monto_negro/1000000).toFixed(2)}M` : '—'}</td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600,
-                          background: v.estado_comercial === 'cobrado' ? S.greenLight : S.amberLight,
-                          color: v.estado_comercial === 'cobrado' ? S.green : S.amber }}>
-                          {v.estado_comercial || 'pendiente'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: pagado > 0 ? S.green : S.hint }}>{pagado > 0 ? `$${pagado.toLocaleString('es-AR')}` : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        {/* Toggle negro */}
+        {puedeVerNegro && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#3D1A6B', fontWeight: 600, cursor: 'pointer', background: mostrarNegro ? '#F0EAFB' : S.bg, border: '1px solid #9F8ED4', borderRadius: 6, padding: '6px 12px' }}>
+              <input type="checkbox" checked={mostrarNegro} onChange={e => setMostrarNegro(e.target.checked)} />
+              Mostrar movimientos en negro
+            </label>
           </div>
         )}
 
-        {/* Compras */}
-        {lotesCto.length > 0 && (
-          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, fontSize: 13, fontWeight: 600, color: S.red }}>Compras de hacienda</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead><tr style={{ background: S.bg }}>
-                {['Fecha','Lote','Animales','Total','Factura','Vencimientos','Pagado'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {lotesCto.map(l => {
-                  const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : null
-                  const pagado = (pagosCompra[l.id] || []).reduce((s, p) => s + (p.monto || 0), 0)
-                  const venc = vencimientosCompra[l.id] || []
-                  return (
-                    <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(l.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>{l.codigo}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{l.cantidad}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.red }}>{total ? `-$${(total/1000000).toFixed(2)}M` : '—'}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 11, color: S.muted }}>{l.numero_factura || '—'}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 11 }}>
-                        {venc.length === 0 ? '—' : venc.map(v => (
-                          <div key={v.id} style={{ color: v.estado === 'pagado' ? S.green : new Date(v.fecha_vencimiento) < new Date() ? S.red : S.text }}>
-                            {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} · ${v.monto.toLocaleString('es-AR')}
-                          </div>
-                        ))}
+        {/* Cuenta corriente unificada */}
+        {(() => {
+          // Armar lista de movimientos ordenados por fecha
+          const movimientos = []
+
+          // Ventas — crédito (te pagan)
+          ventasCto.forEach(v => {
+            const fechaOp = v.fecha || v.creado_en?.split('T')[0]
+            const fechaVto = v.fecha_vencimiento_cobro
+            const montoFact = v.monto_facturado || v.total || 0
+            const montoNegro = v.monto_negro || 0
+            if (montoFact > 0) {
+              movimientos.push({
+                fecha: fechaOp, fechaVto, tipo: 'e-CVA',
+                nro: v.id, descripcion: `Venta hacienda C-${v.corrales?.numero} · ${v.cantidad || ''} cab`,
+                credito: montoFact, debito: 0, esNegro: false, estado: v.estado_comercial,
+                cobrado: (pagosVenta[v.id] || []).filter(p => p.forma_pago !== 'efectivo' || !montoNegro).reduce((s, p) => s + (p.monto || 0), 0)
+              })
+            }
+            if (montoNegro > 0 && mostrarNegro) {
+              movimientos.push({
+                fecha: fechaOp, fechaVto: null, tipo: 'negro',
+                nro: v.id, descripcion: `Venta hacienda C-${v.corrales?.numero} · NEGRO`,
+                credito: montoNegro, debito: 0, esNegro: true, estado: v.estado_comercial,
+                cobrado: (pagosVenta[v.id] || []).filter(p => p.forma_pago === 'efectivo').reduce((s, p) => s + (p.monto || 0), 0)
+              })
+            }
+          })
+
+          // Compras — débito (les pagás)
+          lotesCto.forEach(l => {
+            const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
+            const montoFact = l.monto_facturado || total
+            const montoNegro = l.monto_negro || 0
+            const venc = vencimientosCompra[l.id] || []
+            const pagado = (pagosCompra[l.id] || []).reduce((s, p) => s + (p.monto || 0), 0)
+            if (montoFact > 0) {
+              movimientos.push({
+                fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
+                fechaVto: venc.length > 0 ? venc[0].fecha_vencimiento : l.fecha_vencimiento_pago,
+                tipo: 'e-LCA', nro: l.codigo,
+                descripcion: `Compra ${l.codigo} · ${l.cantidad} cab · ${l.kg_bascula?.toLocaleString('es-AR')} kg`,
+                credito: 0, debito: montoFact, esNegro: false,
+                factura: l.numero_factura, pagado, total: montoFact
+              })
+            }
+            if (montoNegro > 0 && mostrarNegro) {
+              movimientos.push({
+                fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
+                fechaVto: null, tipo: 'negro', nro: l.codigo,
+                descripcion: `Compra ${l.codigo} · NEGRO`,
+                credito: 0, debito: montoNegro, esNegro: true, pagado: 0, total: montoNegro
+              })
+            }
+          })
+
+          // Ordenar por fecha
+          movimientos.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+
+          // Calcular saldo acumulado
+          let saldoAcum = 0
+          const movConSaldo = movimientos.map(m => {
+            saldoAcum += (m.credito || 0) - (m.debito || 0)
+            return { ...m, saldoAcum }
+          })
+
+          const colNegro = '#3D1A6B'
+          const bgNegro = '#F0EAFB'
+
+          return (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
+              {/* Encabezado estilo estado de cuenta */}
+              <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>Estado de cuenta corriente</div>
+                  {contactoData?.cuit && <div style={{ fontSize: 11, color: S.muted, fontFamily: 'monospace' }}>CUIT: {contactoData.cuit}</div>}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: S.muted }}>Saldo final</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: saldoAcum >= 0 ? S.green : S.red }}>
+                    {saldoAcum >= 0 ? '+' : ''}{saldoAcum.toLocaleString('es-AR')}
+                  </div>
+                  <div style={{ fontSize: 11, color: S.muted }}>{saldoAcum >= 0 ? 'te deben' : 'les debés'}</div>
+                </div>
+              </div>
+
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 800 }}>
+                <thead>
+                  <tr style={{ background: S.accent }}>
+                    {['Fecha op.', 'Tipo', 'N° Doc.', 'Fecha vto.', 'Descripción', 'Débito', 'Crédito', 'Saldo'].map(h => (
+                      <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Débito' || h === 'Crédito' || h === 'Saldo' ? 'right' : 'left', fontWeight: 600, color: '#fff', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {movConSaldo.length === 0 && (
+                    <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay movimientos registrados.</td></tr>
+                  )}
+                  {movConSaldo.map((m, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: m.esNegro ? bgNegro : i % 2 === 0 ? S.surface : S.bg }}>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>
+                        {m.fecha ? new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
                       </td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: pagado > 0 ? S.green : S.hint }}>{pagado > 0 ? `$${pagado.toLocaleString('es-AR')}` : '—'}</td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                          background: m.esNegro ? bgNegro : m.tipo === 'e-CVA' ? S.greenLight : S.accentLight,
+                          color: m.esNegro ? colNegro : m.tipo === 'e-CVA' ? S.green : S.accent,
+                          border: `1px solid ${m.esNegro ? '#9F8ED4' : m.tipo === 'e-CVA' ? '#97C459' : '#85B7EB'}` }}>
+                          {m.esNegro ? 'NEGRO' : m.tipo}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: S.muted }}>{m.factura || (typeof m.nro === 'string' ? m.nro : `#${m.nro}`)}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: m.fechaVto && new Date(m.fechaVto) < new Date() ? S.red : S.muted }}>
+                        {m.fechaVto ? new Date(m.fechaVto + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: m.esNegro ? colNegro : S.text }}>{m.descripcion}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: m.debito > 0 ? S.red : S.hint }}>
+                        {m.debito > 0 ? m.debito.toLocaleString('es-AR') : ''}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: m.credito > 0 ? S.green : S.hint }}>
+                        {m.credito > 0 ? m.credito.toLocaleString('es-AR') : ''}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.saldoAcum >= 0 ? S.green : S.red }}>
+                        {m.saldoAcum.toLocaleString('es-AR')}
+                      </td>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: S.accent }}>
+                    <td colSpan={5} style={{ padding: '10px 12px', fontSize: 12, fontWeight: 700, color: '#fff' }}>SALDO FINAL</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#fff' }}>
+                      {movConSaldo.reduce((s, m) => s + m.debito, 0).toLocaleString('es-AR')}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#fff' }}>
+                      {movConSaldo.reduce((s, m) => s + m.credito, 0).toLocaleString('es-AR')}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: saldoAcum >= 0 ? '#7EE8A2' : '#F09595' }}>
+                      {saldoAcum.toLocaleString('es-AR')}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )
+        })()}
       </div>
     )
   }
