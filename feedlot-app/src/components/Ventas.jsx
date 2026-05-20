@@ -200,6 +200,15 @@ export default function Ventas({ usuario }) {
       await supabase.from('contactos').insert({ nombre: compradorFinal, tipo: 'comprador_hacienda', activo: true })
     }
 
+    // Comisión
+    const comisionPct = parseFloat(ep.comision_pct || 0)
+    const comisionMonto = comisionPct > 0 ? Math.round(montoTotal * comisionPct / 100) : 0
+    const comisionEsParalela = ep.comision_es_paralela || false
+
+    // Retención de ganancias: (total - 240000) * 2%
+    const tieneRetencion = ep.tiene_retencion || false
+    const retencionMonto = tieneRetencion ? Math.max(0, Math.round((montoTotal - 240000) * 0.02)) : 0
+
     const updateData = {
       precio_kg: precioKg, desbaste_pct: desbastePct, kg_neto: kgNeto,
       total: montoTotal, monto_facturado: montoFacturado, monto_negro: montoNegro,
@@ -208,6 +217,11 @@ export default function Ventas({ usuario }) {
       estado_comercial: 'precio_cargado',
       comprador: compradorFinal,
       observaciones: ep.observaciones || venta.observaciones || null,
+      comision_pct: comisionPct || null,
+      comision_monto: comisionMonto || null,
+      comision_es_paralela: comisionEsParalela,
+      tiene_retencion: tieneRetencion,
+      retencion_monto: retencionMonto || null,
     }
 
     if (venta.grupo_venta_id) {
@@ -391,7 +405,7 @@ export default function Ventas({ usuario }) {
                         </div>
                       </div>
                       {!isEdit && (
-                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '' })}
+                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false })}
                           style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                           Completar datos
                         </button>
@@ -486,6 +500,60 @@ export default function Ventas({ usuario }) {
                                   <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, padding: '8px 12px' }}>
                                     <div style={{ fontSize: 10, color: '#3D1A6B', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Parte en negro</div>
                                     <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#3D1A6B' }}>${montoNegroCalc.toLocaleString('es-AR')}</div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+
+                        {/* Comisión y retención */}
+                        {editandoVenta.precio_kg && (() => {
+                          const desbPctC = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
+                          const kgNetoC = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPctC / 100)) : (v.kg_neto || 0)
+                          const montoTotalC = Math.round(kgNetoC * parseFloat(editandoVenta.precio_kg))
+                          const comPct = parseFloat(editandoVenta.comision_pct || 0)
+                          const comMonto = comPct > 0 ? Math.round(montoTotalC * comPct / 100) : 0
+                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoTotalC - 240000) * 0.02)) : 0
+                          return (
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ height: 1, background: S.border, margin: '10px 0' }} />
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Comisión y retenciones</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión %</label>
+                                  <input type="number" value={editandoVenta.comision_pct || ''} onChange={e => setEditandoVenta({...editandoVenta, comision_pct: e.target.value})} placeholder="0"
+                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto comisión</label>
+                                  <input type="text" value={comMonto > 0 ? `$${comMonto.toLocaleString('es-AR')}` : '—'} readOnly
+                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={editandoVenta.comision_es_paralela || false} onChange={e => setEditandoVenta({...editandoVenta, comision_es_paralela: e.target.checked})} />
+                                    Comisión paralela
+                                  </label>
+                                </div>
+                              </div>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: retMonto > 0 ? 6 : 0 }}>
+                                <input type="checkbox" checked={editandoVenta.tiene_retencion || false} onChange={e => setEditandoVenta({...editandoVenta, tiene_retencion: e.target.checked})} />
+                                <span style={{ color: S.muted }}>Aplica retención de ganancias</span>
+                                {editandoVenta.tiene_retencion && (
+                                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>
+                                    -{retMonto > 0 ? `$${retMonto.toLocaleString('es-AR')}` : '$0'}
+                                  </span>
+                                )}
+                              </label>
+                              {(comMonto > 0 || retMonto > 0) && (
+                                <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+                                  <div style={{ color: S.red, fontWeight: 600 }}>Neto a cobrar:</div>
+                                  <div style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: S.red }}>
+                                    ${(montoTotalC - comMonto - retMonto).toLocaleString('es-AR')}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: S.muted }}>
+                                    Total {montoTotalC.toLocaleString('es-AR')} - comisión {comMonto.toLocaleString('es-AR')} - retención {retMonto.toLocaleString('es-AR')}
                                   </div>
                                 </div>
                               )}
