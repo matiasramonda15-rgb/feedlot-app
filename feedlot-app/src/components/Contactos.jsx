@@ -228,18 +228,28 @@ export default function Contactos({ usuario }) {
               movimientos.push({
                 fecha: fechaOp, fechaVto, tipo: 'e-CVA',
                 nro: v.id, descripcion: `Venta hacienda C-${v.corrales?.numero} · ${v.cantidad || ''} cab`,
-                credito: montoFact, debito: 0, esNegro: false, estado: v.estado_comercial,
-                cobrado: (pagosVenta[v.id] || []).filter(p => p.forma_pago !== 'efectivo' || !montoNegro).reduce((s, p) => s + (p.monto || 0), 0)
+                credito: montoFact, debito: 0, esNegro: false,
               })
             }
             if (montoNegro > 0 && mostrarNegro) {
               movimientos.push({
                 fecha: fechaOp, fechaVto: null, tipo: 'negro',
                 nro: v.id, descripcion: `Venta hacienda C-${v.corrales?.numero} · NEGRO`,
-                credito: montoNegro, debito: 0, esNegro: true, estado: v.estado_comercial,
-                cobrado: (pagosVenta[v.id] || []).filter(p => p.forma_pago === 'efectivo').reduce((s, p) => s + (p.monto || 0), 0)
+                credito: montoNegro, debito: 0, esNegro: true,
               })
             }
+            // Cobros de esta venta — reducen el saldo
+            ;(pagosVenta[v.id] || []).forEach(p => {
+              const esNegroP = p.forma_pago === 'efectivo' && montoNegro > 0
+              if (esNegroP && !mostrarNegro) return
+              movimientos.push({
+                fecha: p.fecha, fechaVto: null,
+                tipo: esNegroP ? 'negro' : 'pago',
+                nro: p.id,
+                descripcion: `Cobro venta C-${v.corrales?.numero} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
+                credito: 0, debito: p.monto, esNegro: esNegroP, esPago: true,
+              })
+            })
           })
 
           // Compras — débito (les pagás)
@@ -248,7 +258,6 @@ export default function Contactos({ usuario }) {
             const montoFact = l.monto_facturado || total
             const montoNegro = l.monto_negro || 0
             const venc = vencimientosCompra[l.id] || []
-            const pagado = (pagosCompra[l.id] || []).reduce((s, p) => s + (p.monto || 0), 0)
             if (montoFact > 0) {
               movimientos.push({
                 fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
@@ -256,7 +265,7 @@ export default function Contactos({ usuario }) {
                 tipo: 'e-LCA', nro: l.codigo,
                 descripcion: `Compra ${l.codigo} · ${l.cantidad} cab · ${l.kg_bascula?.toLocaleString('es-AR')} kg`,
                 credito: 0, debito: montoFact, esNegro: false,
-                factura: l.numero_factura, pagado, total: montoFact
+                factura: l.numero_factura,
               })
             }
             if (montoNegro > 0 && mostrarNegro) {
@@ -264,9 +273,21 @@ export default function Contactos({ usuario }) {
                 fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
                 fechaVto: null, tipo: 'negro', nro: l.codigo,
                 descripcion: `Compra ${l.codigo} · NEGRO`,
-                credito: 0, debito: montoNegro, esNegro: true, pagado: 0, total: montoNegro
+                credito: 0, debito: montoNegro, esNegro: true,
               })
             }
+            // Pagos de esta compra — reducen el saldo
+            ;(pagosCompra[l.id] || []).forEach(p => {
+              const esNegroP = p.es_negro || false
+              if (esNegroP && !mostrarNegro) return
+              movimientos.push({
+                fecha: p.fecha, fechaVto: null,
+                tipo: esNegroP ? 'negro' : 'pago',
+                nro: p.id,
+                descripcion: `Pago compra ${l.codigo} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
+                credito: p.monto, debito: 0, esNegro: esNegroP, esPago: true,
+              })
+            })
           })
 
           // Ordenar por fecha
@@ -312,16 +333,16 @@ export default function Contactos({ usuario }) {
                     <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay movimientos registrados.</td></tr>
                   )}
                   {movConSaldo.map((m, i) => (
-                    <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: m.esNegro ? bgNegro : i % 2 === 0 ? S.surface : S.bg }}>
+                    <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: m.esNegro ? bgNegro : m.esPago ? '#F0FFF4' : i % 2 === 0 ? S.surface : S.bg }}>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>
                         {m.fecha ? new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                          background: m.esNegro ? bgNegro : m.tipo === 'e-CVA' ? S.greenLight : S.accentLight,
-                          color: m.esNegro ? colNegro : m.tipo === 'e-CVA' ? S.green : S.accent,
-                          border: `1px solid ${m.esNegro ? '#9F8ED4' : m.tipo === 'e-CVA' ? '#97C459' : '#85B7EB'}` }}>
-                          {m.esNegro ? 'NEGRO' : m.tipo}
+                          background: m.esNegro ? bgNegro : m.esPago ? S.greenLight : m.tipo === 'e-CVA' ? '#E8F8EF' : S.accentLight,
+                          color: m.esNegro ? colNegro : m.esPago ? S.green : m.tipo === 'e-CVA' ? '#0D6E3B' : S.accent,
+                          border: `1px solid ${m.esNegro ? '#9F8ED4' : m.esPago ? '#97C459' : m.tipo === 'e-CVA' ? '#5DBF8C' : '#85B7EB'}` }}>
+                          {m.esNegro ? 'NEGRO' : m.esPago ? 'PAGO' : m.tipo}
                         </span>
                       </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: S.muted }}>{m.factura || (typeof m.nro === 'string' ? m.nro : `#${m.nro}`)}</td>
