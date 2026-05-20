@@ -885,6 +885,22 @@ export default function Ventas({ usuario }) {
                                     <input type="text" value={formComercial.observaciones} onChange={e => setFormComercial({...formComercial, observaciones: e.target.value})}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                                   </div>
+                                  {/* Comisión y retención */}
+                                  <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión %</div>
+                                    <input type="number" value={formComercial.comision_pct || ''} onChange={e => setFormComercial({...formComercial, comision_pct: e.target.value})} placeholder="0"
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'flex-end' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
+                                      <input type="checkbox" checked={formComercial.comision_es_paralela || false} onChange={e => setFormComercial({...formComercial, comision_es_paralela: e.target.checked})} />
+                                      Comisión paralela
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: S.red, cursor: 'pointer' }}>
+                                      <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
+                                      Retención de ganancias
+                                    </label>
+                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                   <button onClick={async () => {
@@ -895,6 +911,7 @@ export default function Ventas({ usuario }) {
                                     const montoFactRaw = formComercial.monto_facturado
                                     const tieneFacturado = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
                                     const montoFactTotal = tieneFacturado ? parseFloat(montoFactRaw) : null
+                                    const comPct = parseFloat(formComercial.comision_pct || 0)
                                     const { data: grupoCompleto } = await supabase.from('ventas').select('*').eq('grupo_venta_id', v0.grupo_venta_id)
                                     const totalKgNetoG = (grupoCompleto || []).reduce((s, v) => s + (v.kg_neto || 0), 0)
                                     for (const v of (grupoCompleto || [])) {
@@ -902,6 +919,8 @@ export default function Ventas({ usuario }) {
                                       const montoTotal = precio ? Math.round(kgNeto * precio) : (v.total || null)
                                       const montoFact = tieneFacturado && totalKgNetoG > 0 ? Math.round(montoFactTotal * kgNeto / totalKgNetoG) : montoTotal
                                       const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
+                                      const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
+                                      const retMonto = formComercial.tiene_retencion && montoTotal ? Math.max(0, Math.round((montoTotal - 240000) * 0.02)) : 0
                                       await supabase.from('ventas').update({
                                         precio_kg: precio || null, total: montoTotal,
                                         monto_facturado: montoFact, monto_negro: montoNegro,
@@ -910,6 +929,11 @@ export default function Ventas({ usuario }) {
                                         estado_comercial: precio ? 'precio_cargado' : 'pendiente',
                                         comprador: formComercial.comprador || null,
                                         observaciones: formComercial.observaciones || null,
+                                        comision_pct: comPct || null,
+                                        comision_monto: comMonto || null,
+                                        comision_es_paralela: formComercial.comision_es_paralela || false,
+                                        tiene_retencion: formComercial.tiene_retencion || false,
+                                        retencion_monto: retMonto || null,
                                       }).eq('id', v.id)
                                     }
                                     setEditandoComercial(null)
