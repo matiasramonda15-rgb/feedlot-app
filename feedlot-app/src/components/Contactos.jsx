@@ -116,14 +116,9 @@ export default function Contactos({ usuario }) {
 
   // Construir mapa de transacciones por nombre
   const transaccionesPorNombre = {}
-  const ventasVistas = new Set()
   ventas.forEach(v => {
     const nombre = v.comprador
     if (!nombre) return
-    if (v.grupo_venta_id) {
-      if (ventasVistas.has(v.grupo_venta_id)) return
-      ventasVistas.add(v.grupo_venta_id)
-    }
     if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [] }
     transaccionesPorNombre[nombre].ventas.push(v)
   })
