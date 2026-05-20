@@ -100,6 +100,17 @@ export default function Contactos({ usuario }) {
     if (contactoSeleccionado?.id === id) setContactoSeleccionado(null)
   }
 
+  function calcularSaldo(nombre) {
+    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [] }
+    const totalVentas = data.ventas.reduce((s, v) => s + (v.total || 0), 0)
+    const cobradoVentas = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const pendienteVentas = totalVentas - cobradoVentas
+    const totalCompras = data.lotes.reduce((s, l) => s + (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0), 0)
+    const pagadoCompras = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const pendienteCompras = totalCompras - pagadoCompras
+    return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
+  }
+
   if (loading) return <Loader />
 
   // Construir mapa de transacciones por nombre
@@ -130,16 +141,7 @@ export default function Contactos({ usuario }) {
     .sort()
 
   // Calcular saldo para un nombre
-  function calcularSaldo(nombre) {
-    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [] }
-    const totalVentas = data.ventas.reduce((s, v) => s + (v.total || 0), 0)
-    const cobradoVentas = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
-    const pendienteVentas = totalVentas - cobradoVentas
-    const totalCompras = data.lotes.reduce((s, l) => s + (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0), 0)
-    const pagadoCompras = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
-    const pendienteCompras = totalCompras - pagadoCompras
-    return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
-  }
+
 
   // Vista ficha de contacto
   if (contactoSeleccionado) {
