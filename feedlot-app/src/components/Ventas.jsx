@@ -313,7 +313,6 @@ export default function Ventas({ usuario }) {
   const TABS = [
     { key: 'ventas', label: 'Ventas' },
     { key: 'gestion', label: 'Gestión comercial' },
-    { key: 'cuentas', label: 'Cuentas por comprador' },
     { key: 'nueva-venta', label: '+ Nueva venta' },
   ]
 
@@ -1424,132 +1423,7 @@ export default function Ventas({ usuario }) {
         </div>
       )}
 
-      {/* ── CUENTAS POR COMPRADOR ── */}
-      {tab === 'cuentas' && (
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Cuentas por comprador</div>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Resumen de operaciones y saldos por contacto</div>
 
-          <div style={{ marginBottom: '1.25rem', maxWidth: 320 }}>
-            <input type="text" placeholder="Buscar comprador..." value={filtroCuentas} onChange={e => setFiltroCuentas(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-          </div>
-
-          {(() => {
-            // Agrupar ventas por comprador
-            const porComprador = {}
-            ventas.forEach(v => {
-              const comp = v.comprador || 'Sin comprador'
-              if (!porComprador[comp]) porComprador[comp] = { ventas: [], totalVendido: 0, totalFacturado: 0, totalNegro: 0, totalPagado: 0, totalKgNeto: 0 }
-              porComprador[comp].ventas.push(v)
-              porComprador[comp].totalVendido += v.total || 0
-              porComprador[comp].totalFacturado += v.monto_facturado || 0
-              porComprador[comp].totalNegro += v.monto_negro || 0
-              porComprador[comp].totalKgNeto += v.kg_neto || 0
-              // Pagos registrados
-              const pagosCv = pagosVenta[v.id] || []
-              porComprador[comp].totalPagado += pagosCv.reduce((s, p) => s + (p.monto || 0), 0)
-            })
-
-            return Object.entries(porComprador).filter(([comp]) => !filtroCuentas || comp.toLowerCase().includes(filtroCuentas.toLowerCase())).sort((a, b) => b[1].totalVendido - a[1].totalVendido).map(([comp, data]) => {
-              const saldo = data.totalVendido - data.totalPagado
-              const pctCobrado = data.totalVendido > 0 ? Math.round(data.totalPagado / data.totalVendido * 100) : 0
-              return (
-                <div key={comp} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
-                  {/* Header comprador */}
-                  <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{comp}</div>
-                      <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{data.ventas.length} operaciones · {data.totalKgNeto.toLocaleString('es-AR')} kg netos</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 11, color: S.muted, marginBottom: 2 }}>Saldo pendiente</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: saldo > 0 ? S.red : S.green }}>
-                        {saldo > 0 ? `-$${saldo.toLocaleString('es-AR')}` : '✓ Al día'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Métricas */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderBottom: `1px solid ${S.border}` }}>
-                    {[
-                      { label: 'Total operado', val: `$${(data.totalVendido/1000000).toFixed(2)}M`, color: S.text },
-                      { label: 'Facturado', val: `$${(data.totalFacturado/1000000).toFixed(2)}M`, color: S.accent },
-                      { label: 'En negro', val: data.totalNegro > 0 ? `$${(data.totalNegro/1000000).toFixed(2)}M` : '—', color: '#3D1A6B' },
-                      { label: 'Cobrado', val: `$${(data.totalPagado/1000000).toFixed(2)}M · ${pctCobrado}%`, color: pctCobrado >= 100 ? S.green : S.amber },
-                    ].map((m, i) => (
-                      <div key={i} style={{ padding: '.85rem 1rem', borderRight: i < 3 ? `1px solid ${S.border}` : 'none' }}>
-                        <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Barra de progreso cobro */}
-                  <div style={{ padding: '8px 1.25rem', borderBottom: `1px solid ${S.border}` }}>
-                    <div style={{ height: 6, background: S.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${S.border}` }}>
-                      <div style={{ width: `${Math.min(pctCobrado, 100)}%`, height: '100%', background: pctCobrado >= 100 ? S.green : S.amber, borderRadius: 3 }} />
-                    </div>
-                  </div>
-
-                  {/* Detalle de ventas agrupando multi-corral */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead><tr style={{ background: S.bg }}>
-                      {['Fecha','Corral/es','Animales','Kg neto','Total','Facturado','Negro','Estado','Cobrado'].map(h => (
-                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      {(() => {
-                        const vistos = new Set()
-                        return data.ventas.filter(v => {
-                          if (v.grupo_venta_id) {
-                            if (vistos.has(v.grupo_venta_id)) return false
-                            vistos.add(v.grupo_venta_id)
-                          }
-                          return true
-                        }).map(v => {
-                          const esGrupo = !!v.grupo_venta_id
-                          const grupo = esGrupo ? data.ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
-                          const totalKgNeto = grupo.reduce((s, vv) => s + (vv.kg_neto || 0), 0)
-                          const totalVenta = grupo.reduce((s, vv) => s + (vv.total || 0), 0)
-                          const totalFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
-                          const totalNegro = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
-                          const corralesStr = esGrupo ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
-                          const pagosCv = grupo.flatMap(vv => pagosVenta[vv.id] || [])
-                          const pagadoCv = pagosCv.reduce((s, p) => s + (p.monto || 0), 0)
-                          const ec = { pendiente: { bg: S.amberLight, color: S.amber }, precio_cargado: { bg: S.accentLight, color: S.accent }, facturado: { bg: '#F0EAFB', color: '#3D1A6B' }, cobrado: { bg: S.greenLight, color: S.green } }[v.estado_comercial] || { bg: S.bg, color: S.muted }
-                          return (
-                            <tr key={v.grupo_venta_id || v.id} style={{ borderBottom: `1px solid ${S.border}`, background: esGrupo ? S.accentLight : 'transparent' }}>
-                              <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                              <td style={{ padding: '7px 12px', fontWeight: 600 }}>
-                                {corralesStr}
-                                {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
-                              </td>
-                              <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{grupo.reduce((s, vv) => s + (vv.cantidad || 0), 0)} cab.</td>
-                              <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')} kg</td>
-                              <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{totalVenta ? `$${(totalVenta/1000000).toFixed(2)}M` : '—'}</td>
-                              <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: S.accent }}>{totalFact ? `$${(totalFact/1000000).toFixed(2)}M` : '—'}</td>
-                              <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: '#3D1A6B' }}>{totalNegro > 0 ? `$${(totalNegro/1000000).toFixed(2)}M` : '—'}</td>
-                              <td style={{ padding: '7px 12px' }}>
-                                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: ec.bg, color: ec.color }}>{v.estado_comercial || 'pendiente'}</span>
-                              </td>
-                              <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: pagadoCv > 0 ? S.green : S.hint }}>
-                                {pagadoCv > 0 ? `$${pagadoCv.toLocaleString('es-AR')}` : '—'}
-                                {pagosCv.length > 0 && <span style={{ fontSize: 10, color: S.muted, marginLeft: 4 }}>({[...new Set(pagosCv.map(p => p.forma_pago))].join(', ')})</span>}
-                              </td>
-                            </tr>
-                          )
-                        })
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            })
-          })()}
-        </div>
-      )}
     </div>
   )
 }

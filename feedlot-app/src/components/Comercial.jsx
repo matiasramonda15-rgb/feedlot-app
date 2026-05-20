@@ -159,7 +159,6 @@ export default function Comercial({ usuario }) {
     { key: 'caja_oficial', label: 'Caja oficial' },
     { key: 'caja_paralela', label: 'Caja paralela' },
     { key: 'cheques', label: `Cheques${chVence7.length > 0 ? ` ⚠${chVence7.length}` : ''}` },
-    { key: 'contactos', label: 'Contactos' },
   ]
 
   const FiltrosPeriodo = () => (
@@ -469,63 +468,7 @@ export default function Comercial({ usuario }) {
         </div>
       )}
 
-      {tab === 'contactos' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{contactos.length} contactos</div>
-            <button onClick={() => setShowFormContacto(!showFormContacto)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>+ Nuevo contacto</button>
-          </div>
-
-          {showFormContacto && (
-            <Card>
-              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Nuevo contacto</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
-                <div style={{ gridColumn: '1/3' }}><Label>Nombre / Razón social</Label><input type="text" value={formContacto.nombre} onChange={e => setFormContacto({...formContacto, nombre: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Tipo</Label>
-                  <select value={formContacto.tipo} onChange={e => setFormContacto({...formContacto, tipo: e.target.value})} style={inputStyle}>
-                    {TIPOS_CONTACTO.map(t => <option key={t} value={t}>{TIPO_LABEL[t] || t}</option>)}
-                  </select>
-                </div>
-                <div><Label>CUIT</Label><input type="text" value={formContacto.cuit} onChange={e => setFormContacto({...formContacto, cuit: e.target.value})} style={inputStyle} placeholder="20-12345678-9" /></div>
-                <div><Label>Teléfono</Label><input type="text" value={formContacto.telefono} onChange={e => setFormContacto({...formContacto, telefono: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Email</Label><input type="text" value={formContacto.email} onChange={e => setFormContacto({...formContacto, email: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Banco</Label><input type="text" value={formContacto.banco} onChange={e => setFormContacto({...formContacto, banco: e.target.value})} style={inputStyle} /></div>
-                <div><Label>CBU</Label><input type="text" value={formContacto.cbu} onChange={e => setFormContacto({...formContacto, cbu: e.target.value})} style={inputStyle} /></div>
-                <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={formContacto.observaciones} onChange={e => setFormContacto({...formContacto, observaciones: e.target.value})} style={inputStyle} /></div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFormContacto(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={guardarContacto} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
-              </div>
-            </Card>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            {contactos.length === 0 && <div style={{ gridColumn: '1/-1', padding: '2rem', textAlign: 'center', color: S.hint }}>No hay contactos.</div>}
-            {contactos.map(c => {
-              const movs = cajaOficial.filter(m => m.contacto_id === c.id)
-              const total = movs.reduce((s, m) => s + (m.tipo === 'ingreso' ? (m.monto || 0) : -(m.monto || 0)), 0)
-              return (
-                <div key={c.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{c.nombre}</div>
-                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: S.accentLight, color: S.accent }}>{TIPO_LABEL[c.tipo] || c.tipo}</span>
-                  </div>
-                  {c.cuit && <div style={{ fontSize: 12, color: S.muted }}>CUIT: {c.cuit}</div>}
-                  {c.telefono && <div style={{ fontSize: 12, color: S.muted }}>Tel: {c.telefono}</div>}
-                  {c.banco && <div style={{ fontSize: 12, color: S.muted }}>Banco: {c.banco}</div>}
-                  {c.cbu && <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.hint, marginTop: 2 }}>CBU: {c.cbu}</div>}
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                    <span style={{ color: S.muted }}>{movs.length} movimientos</span>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 600, color: total >= 0 ? S.green : S.red }}>${(Math.abs(total) / 1000000).toFixed(1)}M</span>
-                  </div>
-                  <button onClick={() => eliminar('contactos', c.id)} style={{ marginTop: 8, width: '100%', padding: '5px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      
 
     </div>
   )

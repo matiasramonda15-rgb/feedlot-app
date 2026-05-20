@@ -175,7 +175,7 @@ export default function Ingresos({ usuario }) {
       const nuevosAnim = Math.max(0, (corral?.animales || 0) - lote.cantidad)
 const updateCorral = { animales: nuevosAnim }
 if (nuevosAnim === 0) { updateCorral.rol = 'libre'; updateCorral.sub = null }
-await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuarentena_id)
+await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuarentena_id)_cuarentena_id)
     }
     await supabase.from('lotes').delete().eq('id', id)
     await cargarDatos()
@@ -451,7 +451,6 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
         {[
           { key: 'lista', label: 'Ingresos' },
           { key: 'gestion', label: 'Gestión comercial' },
-          { key: 'cuentas', label: 'Cuentas por proveedor' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding: '10px 20px', fontSize: 13, fontWeight: tab === t.key ? 600 : 500, cursor: 'pointer', color: tab === t.key ? S.accent : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t.key ? `2px solid ${S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -885,99 +884,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
         </div>
       )}
 
-      {tab === 'cuentas' && (
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Cuentas por proveedor</div>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Resumen de compras y pagos por procedencia</div>
 
-          {(() => {
-            const porProveedor = {}
-            lotes.forEach(l => {
-              const prov = l.procedencia || 'Sin procedencia'
-              if (!porProveedor[prov]) porProveedor[prov] = { lotes: [], totalComprado: 0, totalPagado: 0, totalAnimales: 0 }
-              porProveedor[prov].lotes.push(l)
-              const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
-              porProveedor[prov].totalComprado += total
-              porProveedor[prov].totalAnimales += l.cantidad || 0
-              const pagosList = pagosCompras[l.id] || []
-              porProveedor[prov].totalPagado += pagosList.reduce((s, p) => s + (p.monto || 0), 0)
-            })
-
-            return Object.entries(porProveedor).sort((a, b) => b[1].totalComprado - a[1].totalComprado).map(([prov, data]) => {
-              const saldo = data.totalComprado - data.totalPagado
-              const pctPagado = data.totalComprado > 0 ? Math.round(data.totalPagado / data.totalComprado * 100) : 0
-              return (
-                <div key={prov} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
-                  <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{prov}</div>
-                      <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{data.lotes.length} compras · {data.totalAnimales.toLocaleString('es-AR')} animales</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 11, color: S.muted, marginBottom: 2 }}>Saldo pendiente</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: saldo > 0 ? S.red : S.green }}>
-                        {saldo > 0 ? `-$${saldo.toLocaleString('es-AR')}` : '✓ Pagado'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, borderBottom: `1px solid ${S.border}` }}>
-                    {[
-                      { label: 'Total comprado', val: `$${(data.totalComprado/1000000).toFixed(2)}M`, color: S.red },
-                      { label: 'Total pagado', val: `$${(data.totalPagado/1000000).toFixed(2)}M · ${pctPagado}%`, color: pctPagado >= 100 ? S.green : S.amber },
-                      { label: 'Saldo', val: saldo > 0 ? `-$${(saldo/1000000).toFixed(2)}M` : 'Sin deuda', color: saldo > 0 ? S.red : S.green },
-                    ].map((m, i) => (
-                      <div key={i} style={{ padding: '.85rem 1rem', borderRight: i < 2 ? `1px solid ${S.border}` : 'none' }}>
-                        <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ height: 6, background: S.bg }}>
-                    <div style={{ width: `${Math.min(pctPagado, 100)}%`, height: '100%', background: pctPagado >= 100 ? S.green : S.amber }} />
-                  </div>
-
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead><tr style={{ background: S.bg }}>
-                      {['Fecha','Lote','Animales','Total','Factura','Vencimientos','Pagado'].map(h => (
-                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      {data.lotes.map(l => {
-                        const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : null
-                        const pagosList = pagosCompras[l.id] || []
-                        const pagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
-                        const venc = vencimientosLote[l.id] || []
-                        return (
-                          <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                            <td style={{ padding: '7px 12px', fontWeight: 600 }}>{l.codigo}</td>
-                            <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{l.cantidad}</td>
-                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: S.red }}>{total ? `-$${(total/1000000).toFixed(2)}M` : '—'}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 11, color: S.muted }}>{l.numero_factura || '—'}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 11 }}>
-                              {venc.length === 0 ? '—' : venc.map(v => (
-                                <div key={v.id} style={{ color: v.estado === 'pagado' ? S.green : new Date(v.fecha_vencimiento) < new Date() ? S.red : S.text }}>
-                                  {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} · ${v.monto.toLocaleString('es-AR')}
-                                </div>
-                              ))}
-                            </td>
-                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: pagado > 0 ? S.green : S.hint }}>
-                              {pagado > 0 ? `$${pagado.toLocaleString('es-AR')}` : '—'}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            })
-          })()}
-        </div>
-      )}
     </div>
   )
-} 
+}
