@@ -228,35 +228,45 @@ export default function Contactos({ usuario }) {
           const esParalela = tabFicha === 'paralela' && puedeVerParalelo
           const movimientos = []
 
-          // Ventas
+          // Ventas — agrupar multi-corral
+          const ventasVistasCtaCte = new Set()
           ventasCto.forEach(v => {
+            if (v.grupo_venta_id) {
+              if (ventasVistasCtaCte.has(v.grupo_venta_id)) return
+              ventasVistasCtaCte.add(v.grupo_venta_id)
+            }
+            const grupo = v.grupo_venta_id ? ventasCto.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
             const fechaOp = v.fecha || v.creado_en?.split('T')[0]
             const fechaVto = v.fecha_vencimiento_cobro
-            const montoFact = v.monto_facturado || v.total || 0
-            const montoParalelo = v.monto_negro || 0
+            const montoFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0) || grupo.reduce((s, vv) => s + (vv.total || 0), 0)
+            const montoParalelo = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
+            const corralesStr = grupo.length > 1 ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
+            const cantidadTotal = grupo.reduce((s, vv) => s + (vv.cantidad || 0), 0)
+            const ventaId = v.grupo_venta_id || v.id
 
             if (!esParalela && montoFact > 0) {
               movimientos.push({
-                fecha: fechaOp, fechaVto, tipo: 'e-CVA', nro: v.id,
-                descripcion: `Venta hacienda C-${v.corrales?.numero} · ${v.cantidad || ''} cab`,
+                fecha: fechaOp, fechaVto, tipo: 'e-CVA', nro: ventaId,
+                descripcion: `Venta hacienda ${corralesStr} · ${cantidadTotal} cab`,
                 credito: montoFact, debito: 0,
               })
             }
             if (esParalela && montoParalelo > 0) {
               movimientos.push({
-                fecha: fechaOp, fechaVto: null, tipo: 'PAR', nro: v.id,
-                descripcion: `Venta hacienda C-${v.corrales?.numero} · ${v.cantidad || ''} cab`,
+                fecha: fechaOp, fechaVto: null, tipo: 'PAR', nro: ventaId,
+                descripcion: `Venta hacienda ${corralesStr} · ${cantidadTotal} cab`,
                 credito: montoParalelo, debito: 0,
               })
             }
-            // Cobros
-            ;(pagosVenta[v.id] || []).forEach(p => {
+            // Cobros del grupo
+            const todosLosPagos = grupo.flatMap(vv => pagosVenta[vv.id] || [])
+            todosLosPagos.forEach(p => {
               const esParaleloP = p.forma_pago === 'efectivo' && montoParalelo > 0
               if (esParalela && !esParaleloP) return
               if (!esParalela && esParaleloP) return
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: p.id,
-                descripcion: `Cobro venta C-${v.corrales?.numero} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
+                descripcion: `Cobro venta ${corralesStr} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
                 credito: 0, debito: p.monto, esPago: true,
               })
             })
