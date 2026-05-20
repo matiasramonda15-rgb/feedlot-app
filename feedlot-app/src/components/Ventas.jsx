@@ -353,7 +353,7 @@ export default function Ventas({ usuario }) {
           {/* Métricas */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
             {[
-              { label: 'Vendido este año', val: totalVentasAnio > 0 ? `$${(totalVentasAnio / 1000000).toFixed(1)}M` : '$0', sub: `${ventas.length} operaciones · ${totalAnimVendidos} animales`, ok: true },
+              { label: 'Vendido este año', val: totalVentasAnio > 0 ? `${(totalVentasAnio .toLocaleString('es-AR')}` : '$0', sub: `${ventas.length} operaciones · ${totalAnimVendidos} animales`, ok: true },
               { label: 'Precio prom. obtenido', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg vivo neto (con desbaste)', ok: false },
               { label: 'Margen prom. bruto', val: '—', sub: 'sin costo de alimentación aún', ok: false },
               { label: 'Listos para vender', val: corralesListos.reduce((s, c) => s + (c.animales || 0), 0), sub: corralesListos.length > 0 ? `animales ≥ 400 kg · ${corralesListos.map(c => `C-${c.numero}`).join(', ')}` : 'ningún corral llegó a 400 kg', ok: corralesListos.length > 0 },
@@ -643,7 +643,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.desbaste_pct}%</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(1)}M` : '—'}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `${(v.total .toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
                               <button onClick={() => { setEditandoComercial(v.id); setFormComercial({ precio_kg: v.precio_kg || '', monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', fecha_vencimiento: v.fecha_vencimiento_cobro || '', comprador: v.comprador || '', observaciones: v.observaciones || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
@@ -815,7 +815,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.desbaste_pct}%</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${(totalMonto / 1000000).toFixed(1)}M` : '—'}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `${(totalMonto .toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
                               <button onClick={() => { setEditandoComercial(v0.grupo_venta_id); setFormComercial({ precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', fecha_vencimiento: v0.fecha_vencimiento_cobro || '', monto_facturado: (() => { const tot = g.reduce((s, vv) => s + (vv.monto_facturado || 0), 0); return tot !== null && tot !== undefined ? String(tot) : '' })(), monto_negro: g.reduce((s, vv) => s + (vv.monto_negro || 0), 0) || '', iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comprador: v0.comprador || '', observaciones: v0.observaciones || '', comision_pct: v0.comision_pct || '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false }) }}
@@ -942,7 +942,7 @@ export default function Ventas({ usuario }) {
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
             {[
-              { label: 'Gastado este año', val: totalGastado > 0 ? `$${(totalGastado / 1000000).toFixed(1)}M` : '$0', sub: `${lotes.length} compras · ${totalAnimComprados} animales` },
+              { label: 'Gastado este año', val: totalGastado > 0 ? `${(totalGastado .toLocaleString('es-AR')}` : '$0', sub: `${lotes.length} compras · ${totalAnimComprados} animales` },
               { label: 'Precio prom. pagado', val: lotes.filter(l => l.precio_compra).length > 0 ? `$${Math.round(lotes.filter(l => l.precio_compra).reduce((s, l) => s + l.precio_compra, 0) / lotes.filter(l => l.precio_compra).length).toLocaleString('es-AR')}` : '—', sub: '$/kg vivo promedio' },
               { label: 'Dif. báscula promedio', val: '—', sub: 'vs factura del vendedor' },
               { label: 'Último ingreso', val: lotes[0]?.cantidad || '—', sub: lotes[0] ? `animales · ${lotes[0].codigo} · ${new Date(lotes[0].fecha_ingreso).toLocaleDateString('es-AR')}` : 'sin ingresos' },
@@ -985,7 +985,7 @@ export default function Ventas({ usuario }) {
                           {l.kg_factura ? (diff > 0 ? '+' : '') + diff.toLocaleString('es-AR') + ' kg' : '—'}
                         </td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{l.precio_compra ? `$${l.precio_compra.toLocaleString('es-AR')}` : <span style={{ color: S.hint }}>—</span>}</td>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{total > 0 ? `$${(total / 1000000).toFixed(1)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{total > 0 ? `${(total .toLocaleString('es-AR')}` : '—'}</td>
                         <td style={{ padding: '9px 12px' }}>
                           <Badge type={l.corral_cuarentena_id ? 'warn' : 'ok'}>{l.corral_cuarentena_id ? 'Cuarentena' : 'Activo'}</Badge>
                         </td>
@@ -1015,7 +1015,7 @@ export default function Ventas({ usuario }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
                 {[
                   { label: 'Animales vendidos', val: ventaConfirmada.cantidad, sub: `dados de baja · corral ${ventaConfirmada.corralNumero}` },
-                  { label: 'Total operación', val: ventaConfirmada.totalVenta ? `$${(ventaConfirmada.totalVenta / 1000000).toFixed(1)}M` : '—', sub: `${ventaConfirmada.kgNeto?.toLocaleString('es-AR')} kg netos · ${ventaConfirmada.desbastePct}% desb.` },
+                  { label: 'Total operación', val: ventaConfirmada.totalVenta ? `${(ventaConfirmada.totalVenta .toLocaleString('es-AR')}` : '—', sub: `${ventaConfirmada.kgNeto?.toLocaleString('es-AR')} kg netos · ${ventaConfirmada.desbastePct}% desb.` },
                   { label: 'Kg netos', val: ventaConfirmada.kgNeto?.toLocaleString('es-AR'), sub: `desbaste: ${ventaConfirmada.kgDescuento?.toLocaleString('es-AR')} kg` },
                   { label: 'Precio $/kg', val: ventaConfirmada.precio_kg ? `$${parseFloat(ventaConfirmada.precio_kg).toLocaleString('es-AR')}` : '—', sub: 'kg vivo neto' },
                 ].map((m, i) => (
@@ -1407,9 +1407,9 @@ export default function Ventas({ usuario }) {
                           {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
                         </td>
                         <td style={{ padding: '7px 10px' }}>{v.comprador || '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{totalGrupo ? '$' + (totalGrupo/1000000).toFixed(2) + 'M' : '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{totalFact ? '$' + (totalFact/1000000).toFixed(2) + 'M' : '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{totalNegro > 0 ? '$' + (totalNegro/1000000).toFixed(2) + 'M' : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{totalGrupo ? '$' + totalGrupo.toLocaleString(\'es-AR\') : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{totalFact ? '$' + totalFact.toLocaleString(\'es-AR\') : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{totalNegro > 0 ? '$' + totalNegro.toLocaleString(\'es-AR\') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{totalIva ? '$' + totalIva.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11, fontWeight: venceProx ? 700 : 400, color: venceProx ? '#7A1A1A' : '#1A1916' }}>
                           {v.fecha_vencimiento_cobro ? new Date(v.fecha_vencimiento_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
