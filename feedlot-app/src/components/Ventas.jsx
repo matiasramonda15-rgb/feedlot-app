@@ -353,7 +353,7 @@ export default function Ventas({ usuario }) {
           {/* Métricas */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
             {[
-              { label: 'Vendido este año', val: totalVentasAnio > 0 ? `${(totalVentasAnio .toLocaleString('es-AR')}` : '$0', sub: `${ventas.length} operaciones · ${totalAnimVendidos} animales`, ok: true },
+             { label: 'Vendido este año', val: totalVentasAnio > 0 ? `$${totalVentasAnio.toLocaleString('es-AR')}` : '$0', sub: `${ventas.length} operaciones · ${totalAnimVendidos} animales`, ok: true },
               { label: 'Precio prom. obtenido', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg vivo neto (con desbaste)', ok: false },
               { label: 'Margen prom. bruto', val: '—', sub: 'sin costo de alimentación aún', ok: false },
               { label: 'Listos para vender', val: corralesListos.reduce((s, c) => s + (c.animales || 0), 0), sub: corralesListos.length > 0 ? `animales ≥ 400 kg · ${corralesListos.map(c => `C-${c.numero}`).join(', ')}` : 'ningún corral llegó a 400 kg', ok: corralesListos.length > 0 },
