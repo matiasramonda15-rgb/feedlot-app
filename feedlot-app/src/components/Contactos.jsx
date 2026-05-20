@@ -25,7 +25,8 @@ export default function Contactos({ usuario }) {
   const [filtro, setFiltro] = useState('')
   const [contactoSeleccionado, setContactoSeleccionado] = useState(null)
   const [mostrarNegro, setMostrarNegro] = useState(false)
-  const puedeVerNegro = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
+  const [tabFicha, setTabFicha] = useState('oficial')
+  const puedeVerParalelo = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
   const [showForm, setShowForm] = useState(false)
   const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
@@ -203,89 +204,97 @@ export default function Contactos({ usuario }) {
           </div>
         </div>
 
-        {/* Toggle negro */}
-        {puedeVerNegro && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#3D1A6B', fontWeight: 600, cursor: 'pointer', background: mostrarNegro ? '#F0EAFB' : S.bg, border: '1px solid #9F8ED4', borderRadius: 6, padding: '6px 12px' }}>
-              <input type="checkbox" checked={mostrarNegro} onChange={e => setMostrarNegro(e.target.checked)} />
-              Mostrar movimientos en negro
-            </label>
+        {/* Tabs ficha */}
+        {puedeVerParalelo && (
+          <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.25rem' }}>
+            {[
+              { key: 'oficial', label: 'Cuenta corriente' },
+              { key: 'paralela', label: 'Cuenta paralela' },
+            ].map(t => (
+              <button key={t.key} onClick={() => setTabFicha(t.key)}
+                style={{ padding: '9px 20px', fontSize: 13, fontWeight: tabFicha === t.key ? 600 : 500, cursor: 'pointer',
+                  color: tabFicha === t.key ? (t.key === 'paralela' ? '#3D1A6B' : S.accent) : S.muted,
+                  background: 'transparent', border: 'none',
+                  borderBottom: tabFicha === t.key ? `2px solid ${t.key === 'paralela' ? '#9F8ED4' : S.accent}` : '2px solid transparent',
+                  marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                {t.label}
+              </button>
+            ))}
           </div>
         )}
 
         {/* Cuenta corriente unificada */}
         {(() => {
-          // Armar lista de movimientos ordenados por fecha
+          const esParalela = tabFicha === 'paralela' && puedeVerParalelo
           const movimientos = []
 
-          // Ventas — crédito (te pagan)
+          // Ventas
           ventasCto.forEach(v => {
             const fechaOp = v.fecha || v.creado_en?.split('T')[0]
             const fechaVto = v.fecha_vencimiento_cobro
             const montoFact = v.monto_facturado || v.total || 0
-            const montoNegro = v.monto_negro || 0
-            if (montoFact > 0) {
+            const montoParalelo = v.monto_negro || 0
+
+            if (!esParalela && montoFact > 0) {
               movimientos.push({
-                fecha: fechaOp, fechaVto, tipo: 'e-CVA',
-                nro: v.id, descripcion: `Venta hacienda C-${v.corrales?.numero} · ${v.cantidad || ''} cab`,
-                credito: montoFact, debito: 0, esNegro: false,
+                fecha: fechaOp, fechaVto, tipo: 'e-CVA', nro: v.id,
+                descripcion: `Venta hacienda C-${v.corrales?.numero} · ${v.cantidad || ''} cab`,
+                credito: montoFact, debito: 0,
               })
             }
-            if (montoNegro > 0 && mostrarNegro) {
+            if (esParalela && montoParalelo > 0) {
               movimientos.push({
-                fecha: fechaOp, fechaVto: null, tipo: 'negro',
-                nro: v.id, descripcion: `Venta hacienda C-${v.corrales?.numero} · NEGRO`,
-                credito: montoNegro, debito: 0, esNegro: true,
+                fecha: fechaOp, fechaVto: null, tipo: 'PAR', nro: v.id,
+                descripcion: `Venta hacienda C-${v.corrales?.numero} · ${v.cantidad || ''} cab`,
+                credito: montoParalelo, debito: 0,
               })
             }
-            // Cobros de esta venta — reducen el saldo
+            // Cobros
             ;(pagosVenta[v.id] || []).forEach(p => {
-              const esNegroP = p.forma_pago === 'efectivo' && montoNegro > 0
-              if (esNegroP && !mostrarNegro) return
+              const esParaleloP = p.forma_pago === 'efectivo' && montoParalelo > 0
+              if (esParalela && !esParaleloP) return
+              if (!esParalela && esParaleloP) return
               movimientos.push({
-                fecha: p.fecha, fechaVto: null,
-                tipo: esNegroP ? 'negro' : 'pago',
-                nro: p.id,
+                fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: p.id,
                 descripcion: `Cobro venta C-${v.corrales?.numero} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
-                credito: 0, debito: p.monto, esNegro: esNegroP, esPago: true,
+                credito: 0, debito: p.monto, esPago: true,
               })
             })
           })
 
-          // Compras — débito (les pagás)
+          // Compras
           lotesCto.forEach(l => {
             const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
             const montoFact = l.monto_facturado || total
-            const montoNegro = l.monto_negro || 0
+            const montoParalelo = l.monto_negro || 0
             const venc = vencimientosCompra[l.id] || []
-            if (montoFact > 0) {
+
+            if (!esParalela && montoFact > 0) {
               movimientos.push({
                 fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
                 fechaVto: venc.length > 0 ? venc[0].fecha_vencimiento : l.fecha_vencimiento_pago,
                 tipo: 'e-LCA', nro: l.codigo,
                 descripcion: `Compra ${l.codigo} · ${l.cantidad} cab · ${l.kg_bascula?.toLocaleString('es-AR')} kg`,
-                credito: 0, debito: montoFact, esNegro: false,
-                factura: l.numero_factura,
+                credito: 0, debito: montoFact, factura: l.numero_factura,
               })
             }
-            if (montoNegro > 0 && mostrarNegro) {
+            if (esParalela && montoParalelo > 0) {
               movimientos.push({
                 fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
-                fechaVto: null, tipo: 'negro', nro: l.codigo,
-                descripcion: `Compra ${l.codigo} · NEGRO`,
-                credito: 0, debito: montoNegro, esNegro: true,
+                fechaVto: null, tipo: 'PAR', nro: l.codigo,
+                descripcion: `Compra ${l.codigo} · ${l.cantidad} cab`,
+                credito: 0, debito: montoParalelo,
               })
             }
-            // Pagos de esta compra — reducen el saldo
+            // Pagos
             ;(pagosCompra[l.id] || []).forEach(p => {
-              const esNegroP = p.es_negro || false
-              if (esNegroP && !mostrarNegro) return
+              const esParaleloP = p.es_negro || false
+              if (esParalela && !esParaleloP) return
+              if (!esParalela && esParaleloP) return
               movimientos.push({
-                fecha: p.fecha, fechaVto: null,
-                tipo: esNegroP ? 'negro' : 'pago',
-                nro: p.id,
+                fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: p.id,
                 descripcion: `Pago compra ${l.codigo} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
-                credito: p.monto, debito: 0, esNegro: esNegroP, esPago: true,
+                credito: p.monto, debito: 0, esPago: true,
               })
             })
           })
@@ -308,7 +317,7 @@ export default function Contactos({ usuario }) {
               {/* Encabezado estilo estado de cuenta */}
               <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>Estado de cuenta corriente</div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{esParalela ? 'Cuenta paralela' : 'Cuenta corriente oficial'}</div>
                   {contactoData?.cuit && <div style={{ fontSize: 11, color: S.muted, fontFamily: 'monospace' }}>CUIT: {contactoData.cuit}</div>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -333,16 +342,16 @@ export default function Contactos({ usuario }) {
                     <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay movimientos registrados.</td></tr>
                   )}
                   {movConSaldo.map((m, i) => (
-                    <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: m.esNegro ? bgNegro : m.esPago ? '#F0FFF4' : i % 2 === 0 ? S.surface : S.bg }}>
+                    <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: m.tipo === 'PAR' ? '#F0EAFB' : m.esPago ? '#F0FFF4' : i % 2 === 0 ? S.surface : S.bg }}>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>
                         {m.fecha ? new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                          background: m.esNegro ? bgNegro : m.esPago ? S.greenLight : m.tipo === 'e-CVA' ? '#E8F8EF' : S.accentLight,
-                          color: m.esNegro ? colNegro : m.esPago ? S.green : m.tipo === 'e-CVA' ? '#0D6E3B' : S.accent,
-                          border: `1px solid ${m.esNegro ? '#9F8ED4' : m.esPago ? '#97C459' : m.tipo === 'e-CVA' ? '#5DBF8C' : '#85B7EB'}` }}>
-                          {m.esNegro ? 'NEGRO' : m.esPago ? 'PAGO' : m.tipo}
+                          background: m.esPago ? S.greenLight : m.tipo === 'PAR' ? '#F0EAFB' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' ? '#E8F8EF' : S.accentLight,
+                          color: m.esPago ? S.green : m.tipo === 'PAR' ? '#3D1A6B' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' ? '#0D6E3B' : S.accent,
+                          border: `1px solid ${m.esPago ? '#97C459' : m.tipo === 'PAR' ? '#9F8ED4' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' ? '#5DBF8C' : '#85B7EB'}` }}>
+                          {m.tipo}
                         </span>
                       </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: S.muted }}>{m.factura || (typeof m.nro === 'string' ? m.nro : `#${m.nro}`)}</td>
