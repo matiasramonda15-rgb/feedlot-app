@@ -31,10 +31,13 @@ export default function AppMovil({ usuario, onLogout }) {
       supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
     ])
     // Construir formulas desde BD
-    const formulasObj = { seco: { acostumbramiento: [], recria: [], terminacion: [] } }
+    const formulasObj = {
+      seco: { acostumbramiento: [], recria: [], terminacion: [] },
+      humedo: { acostumbramiento: [], recria: [], terminacion: [] }
+    }
     ;(formulasDB || []).forEach(row => {
-      if (row.dieta === 'seco' && formulasObj.seco[row.etapa]) {
-        formulasObj.seco[row.etapa].push({ n: row.ingrediente, kg: row.kg, c: row.color || '#888' })
+      if (formulasObj[row.dieta] && formulasObj[row.dieta][row.etapa]) {
+        formulasObj[row.dieta][row.etapa].push({ n: row.ingrediente, kg: row.kg, c: row.color || '#888' })
       }
     })
     const procedencias = [...new Set((lotes || []).map(x => x.procedencia).filter(Boolean))].sort()
@@ -466,6 +469,7 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
   )
 }
 function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, onDone }) {
+  const [dieta, setDieta] = useState('seco')
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const RANGOS_RECRIA = ['A','B','C']
   function getEtapa(c) {
@@ -474,7 +478,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     if (c.rol === 'clasificado') return RANGOS_RECRIA.includes(c.sub) ? 'recria' : 'terminacion'
     return 'recria'
   }
-  const FRML = (formulas?.seco) || {
+  const FRML = (formulas?.[dieta]) || {
     acostumbramiento: [{n:'Rollo',kg:38,c:'#639922'},{n:'Maiz seco',kg:39,c:'#E8A020'},{n:'Vitaminas',kg:2,c:'#5090E0'},{n:'Urea',kg:0.5,c:'#9060C0'},{n:'Soja',kg:3,c:'#20A060'},{n:'Agua',kg:17,c:'#60A0E0'}],
     recria:           [{n:'Rollo',kg:26,c:'#639922'},{n:'Maiz seco',kg:55,c:'#E8A020'},{n:'Vitaminas',kg:2,c:'#5090E0'},{n:'Urea',kg:1,c:'#9060C0'},{n:'Agua',kg:17,c:'#60A0E0'}],
     terminacion:      [{n:'Rollo',kg:13,c:'#639922'},{n:'Maiz seco',kg:68,c:'#E8A020'},{n:'Vitaminas',kg:1,c:'#5090E0'},{n:'Urea',kg:1,c:'#9060C0'},{n:'Agua',kg:17,c:'#60A0E0'}],
