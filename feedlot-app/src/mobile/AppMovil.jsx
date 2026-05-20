@@ -622,6 +622,19 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Topbar titulo="Alimentacion" sub="Racion diaria" onBack={() => nav('home')} />
+      <div style={{ display: 'flex', gap: 8, padding: '8px 12px', background: C.surface, borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ fontSize: 11, color: C.muted, alignSelf: 'center' }}>Dieta:</div>
+        {['seco', 'humedo'].map(d => (
+          <button key={d} onClick={() => setDieta(d)}
+            style={{ flex: 1, padding: '7px', fontSize: 13, fontWeight: dieta === d ? 700 : 400,
+              background: dieta === d ? C.green : C.surface2,
+              color: dieta === d ? '#0A1A0A' : C.muted,
+              border: `1px solid ${dieta === d ? C.green : C.border}`,
+              borderRadius: 8, cursor: 'pointer', fontFamily: C.sans }}>
+            {d === 'seco' ? 'Maiz seco' : 'Maiz humedo'}
+          </button>
+        ))}
+      </div>
       <div style={{ display: 'flex', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
         {[['piletas','Piletas y mixer'],['stock','Stock']].map(([t, l]) => (
           <button key={t} onClick={() => setTab(t)}
