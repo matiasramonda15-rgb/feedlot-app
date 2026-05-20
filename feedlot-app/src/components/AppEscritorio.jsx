@@ -13,6 +13,7 @@ import Servicios from './Servicios'
 import Personal from './Personal'
 import Gastos from './Gastos'
 import Comercial from './Comercial'
+import Contactos from './Contactos'
 import Activos from './Activos'
 
 function Placeholder({ titulo, descripcion }) {
@@ -38,6 +39,7 @@ const MODULOS = {
   personal:     Personal,
   gastos:       Gastos,
   comercial:    Comercial,
+  contactos:    Contactos,
   activos:      Activos,
   socios:       Activos,
 }
