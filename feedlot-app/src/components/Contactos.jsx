@@ -238,7 +238,13 @@ export default function Contactos({ usuario }) {
             const grupo = v.grupo_venta_id ? ventasCto.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
             const fechaOp = v.fecha || v.creado_en?.split('T')[0]
             const fechaVto = v.fecha_vencimiento_cobro
-            const montoFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0) || grupo.reduce((s, vv) => s + (vv.total || 0), 0)
+            const montoFact = (() => {
+              const sumFact = grupo.reduce((s, vv) => s + (vv.monto_facturado !== null && vv.monto_facturado !== undefined ? vv.monto_facturado : 0), 0)
+              const sumTotal = grupo.reduce((s, vv) => s + (vv.total || 0), 0)
+              // Si algún item tiene monto_facturado seteado (incluso en 0), usarlo; sino usar total
+              const tieneFacturado = grupo.some(vv => vv.monto_facturado !== null && vv.monto_facturado !== undefined)
+              return tieneFacturado ? sumFact : sumTotal
+            })()
             const montoParalelo = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
             const corralesStr = grupo.length > 1 ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
             const cantidadTotal = grupo.reduce((s, vv) => s + (vv.cantidad || 0), 0)
