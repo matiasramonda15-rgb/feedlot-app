@@ -24,6 +24,8 @@ export default function Contactos({ usuario }) {
   const [vencimientosCompra, setVencimientosCompra] = useState({})
   const [filtro, setFiltro] = useState('')
   const [contactoSeleccionado, setContactoSeleccionado] = useState(null)
+  const [mostrarNegro, setMostrarNegro] = useState(false)
+  const puedeVerNegro = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
   const [showForm, setShowForm] = useState(false)
   const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
@@ -140,9 +142,6 @@ export default function Contactos({ usuario }) {
   }
 
   // Vista ficha de contacto
-  const [mostrarNegro, setMostrarNegro] = useState(false)
-  const puedeVerNegro = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
-
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
     const { ventas: ventasCto, lotes: lotesCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
