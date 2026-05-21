@@ -22,7 +22,7 @@ export default function Ingresos({ usuario }) {
   const [registrandoPagoCompra, setRegistrandoPagoCompra] = useState(null)
   const [formPagoCompra, setFormPagoCompra] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '' })
   const [editandoFactura, setEditandoFactura] = useState(null)
-  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', forma_pago: 'contado', plazo_dias: '', fecha_vencimiento_pago: '', observaciones_pago: '', monto_facturado: '', monto_negro: '' })
+  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', forma_pago: 'contado', plazo_dias: '', fecha_vencimiento_pago: '', observaciones_pago: '', monto_total_con_iva: '', monto_facturado: '', iva_pct: '10.5', monto_negro: '', comision_pct: '', comision_monto_input: '', comision_es_paralela: false, gastos_feria_pct: '', gastos_feria_monto_input: '', gastos_feria_paralelos: false })
   const [editandoLote, setEditandoLote] = useState(null)
   const [vencimientosLote, setVencimientosLote] = useState({})
   const [formVencimientos, setFormVencimientos] = useState([])
@@ -690,7 +690,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { setEditandoFactura(isEdit ? null : l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', forma_pago: l.forma_pago || 'contado', plazo_dias: l.plazo_dias || '', fecha_vencimiento_pago: l.fecha_vencimiento_pago || '', observaciones_pago: l.observaciones_pago || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', monto_negro: l.monto_negro !== null && l.monto_negro !== undefined ? String(l.monto_negro) : '' }) }}
+                          <button onClick={() => { setEditandoFactura(isEdit ? null : l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', forma_pago: l.forma_pago || 'contado', plazo_dias: l.plazo_dias || '', fecha_vencimiento_pago: l.fecha_vencimiento_pago || '', observaciones_pago: l.observaciones_pago || '', monto_total_con_iva: l.monto_total_con_iva || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', iva_pct: l.iva_pct || '10.5', monto_negro: l.monto_negro !== null && l.monto_negro !== undefined ? String(l.monto_negro) : '', comision_pct: l.comision_pct || '', comision_monto_input: l.comision_monto ? String(l.comision_monto) : '', comision_es_paralela: l.comision_es_paralela || false, gastos_feria_pct: l.gastos_feria_pct || '', gastos_feria_monto_input: l.gastos_feria_monto ? String(l.gastos_feria_monto) : '', gastos_feria_paralelos: l.gastos_feria_paralelos || false }) }}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer' }}>
                             {isEdit ? 'Cerrar' : 'Factura'}
                           </button>
