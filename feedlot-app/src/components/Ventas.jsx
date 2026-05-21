@@ -205,9 +205,9 @@ export default function Ventas({ usuario }) {
     const comisionMonto = comisionPct > 0 ? Math.round(montoTotal * comisionPct / 100) : 0
     const comisionEsParalela = ep.comision_es_paralela || false
 
-    // Retención de ganancias: (total - 240000) * 2%
+    // Retención de ganancias: (monto facturado - 240000) * 2%
     const tieneRetencion = ep.tiene_retencion || false
-    const retencionMonto = tieneRetencion ? Math.max(0, Math.round((montoTotal - 240000) * 0.02)) : 0
+    const retencionMonto = tieneRetencion ? Math.max(0, Math.round((montoFacturado - 240000) * 0.02)) : 0
 
     const updateData = {
       precio_kg: precioKg, desbaste_pct: desbastePct, kg_neto: kgNeto,
@@ -514,7 +514,7 @@ export default function Ventas({ usuario }) {
                           const montoTotalC = Math.round(kgNetoC * parseFloat(editandoVenta.precio_kg))
                           const comPct = parseFloat(editandoVenta.comision_pct || 0)
                           const comMonto = comPct > 0 ? Math.round(montoTotalC * comPct / 100) : 0
-                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoTotalC - 240000) * 0.02)) : 0
+                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactCalc - 240000) * 0.02)) : 0
                           return (
                             <div style={{ marginBottom: 10 }}>
                               <div style={{ height: 1, background: S.border, margin: '10px 0' }} />
@@ -715,7 +715,8 @@ export default function Ventas({ usuario }) {
                                   const mt = parseFloat(formComercial.precio_kg) * (v.kg_neto || 0)
                                   const comPct = parseFloat(formComercial.comision_pct || 0)
                                   const comMonto = comPct > 0 ? Math.round(mt * comPct / 100) : 0
-                                  const retMonto = formComercial.tiene_retencion ? Math.max(0, Math.round((mt - 240000) * 0.02)) : 0
+                                  const montoFactCalcInline = formComercial.monto_facturado !== '' && formComercial.monto_facturado !== undefined ? parseFloat(formComercial.monto_facturado) : mt
+                                  const retMonto = formComercial.tiene_retencion ? Math.max(0, Math.round((montoFactCalcInline - 240000) * 0.02)) : 0
                                   return (
                                     <div style={{ marginTop: 8 }}>
                                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -757,7 +758,7 @@ export default function Ventas({ usuario }) {
                                     const fechaVto = formComercial.fecha_vencimiento || (plazo > 0 ? new Date(new Date(v.creado_en).getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
                                     const comPct = parseFloat(formComercial.comision_pct || 0)
                                     const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
-                                    const retMonto = formComercial.tiene_retencion && montoTotal ? Math.max(0, Math.round((montoTotal - 240000) * 0.02)) : 0
+                                    const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 240000) * 0.02)) : 0
                                     await supabase.from('ventas').update({
                                       precio_kg: precio || null,
                                       total: montoTotal,
@@ -920,7 +921,7 @@ export default function Ventas({ usuario }) {
                                       const montoFact = tieneFacturado && totalKgNetoG > 0 ? Math.round(montoFactTotal * kgNeto / totalKgNetoG) : montoTotal
                                       const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
                                       const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
-                                      const retMonto = formComercial.tiene_retencion && montoTotal ? Math.max(0, Math.round((montoTotal - 240000) * 0.02)) : 0
+                                      const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 240000) * 0.02)) : 0
                                       await supabase.from('ventas').update({
                                         precio_kg: precio || null, total: montoTotal,
                                         monto_facturado: montoFact, monto_negro: montoNegro,
