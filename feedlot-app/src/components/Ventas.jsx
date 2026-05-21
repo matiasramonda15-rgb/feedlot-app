@@ -966,7 +966,7 @@ export default function Ventas({ usuario }) {
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
             {[
-              { label: 'Gastado este año', val: totalGastado > 0 ? `${(totalGastado.toLocaleString('es-AR')}` : '$0', sub: `${lotes.length} compras · ${totalAnimComprados} animales` },
+              { label: 'Gastado este año', val: totalGastado > 0 ? `$${totalGastado.toLocaleString('es-AR')}` : '$0', sub: `${lotes.length} compras · ${totalAnimComprados} animales` },
               { label: 'Precio prom. pagado', val: lotes.filter(l => l.precio_compra).length > 0 ? `$${Math.round(lotes.filter(l => l.precio_compra).reduce((s, l) => s + l.precio_compra, 0) / lotes.filter(l => l.precio_compra).length).toLocaleString('es-AR')}` : '—', sub: '$/kg vivo promedio' },
               { label: 'Dif. báscula promedio', val: '—', sub: 'vs factura del vendedor' },
               { label: 'Último ingreso', val: lotes[0]?.cantidad || '—', sub: lotes[0] ? `animales · ${lotes[0].codigo} · ${new Date(lotes[0].fecha_ingreso).toLocaleDateString('es-AR')}` : 'sin ingresos' },
