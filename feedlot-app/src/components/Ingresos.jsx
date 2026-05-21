@@ -887,4 +887,4 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
 
     </div>
   )
-}
+} 
