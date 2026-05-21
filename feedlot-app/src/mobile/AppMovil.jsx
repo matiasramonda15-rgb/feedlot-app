@@ -1552,7 +1552,7 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
               </div>
               {kgVivoCv > 0 && (
                 <div style={{ fontSize: 12, fontFamily: C.mono, color: C.blue }}>
-                  Neto: <strong>{kgNetoCv.toLocaleString('es-AR')} kg</strong> (desbaste {Math.round(kgVivoCv * 0.08).toLocaleString('es-AR')} kg)
+                  Peso prom: <strong>{Math.round(kgVivoCv / (parseInt(cv.cantidad) || 1)).toLocaleString('es-AR')} kg/cabeza</strong>
                 </div>
               )}
             </div>
@@ -1571,8 +1571,8 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
               {[
                 { label: 'KG vivo total', value: totalKgVivo.toLocaleString('es-AR') + ' kg' },
-                { label: 'Desbaste 8%', value: Math.round(desbaste).toLocaleString('es-AR') + ' kg' },
-                { label: 'KG neto total', value: Math.round(kg_neto).toLocaleString('es-AR') + ' kg' },
+                { label: 'Total animales', value: totalCant + ' cab.' },
+                { label: 'Peso prom. bruto', value: totalCant > 0 ? Math.round(totalKgVivo / totalCant).toLocaleString('es-AR') + ' kg' : '—' },
               ].map(s => (
                 <div key={s.label}>
                   <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>{s.label}</div>
@@ -1580,7 +1580,7 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: C.muted }}>{totalCant} animales · {corralesVenta.filter(c => c.corral_id).length} corrales</div>
+            <div style={{ marginTop: 8, fontSize: 12, color: C.muted }}>{corralesVenta.filter(c => c.corral_id).length} corrales</div>
           </div>
         )}
 

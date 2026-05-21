@@ -226,14 +226,29 @@ export default function Ventas({ usuario }) {
       monto_total_con_iva: ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : null,
     }
 
-    if (venta.grupo_venta_id) {
-      const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', venta.grupo_venta_id)
+    const grupoId = ep.grupo_venta_id || venta.grupo_venta_id
+    if (grupoId) {
+      const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', grupoId)
+      const totalKgNetoGrupo = (grupo || []).reduce((s, v) => s + (v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100)) : (v.kg_neto || 0)), 0)
       for (const v of (grupo || [])) {
         const kgNetoV = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (v.kg_neto || 0)
-        const montoTotalV = Math.round(kgNetoV * precioKg)
-        const montoFactV = ep.monto_facturado !== '' && ep.monto_facturado !== null && ep.monto_facturado !== undefined ? Math.round(parseFloat(ep.monto_facturado) * kgNetoV / kgNeto) : montoTotalV
-        const montoNegroV = Math.max(0, montoTotalV - montoFactV)
-        await supabase.from('ventas').update({ ...updateData, kg_neto: kgNetoV, total: montoTotalV, monto_facturado: montoFactV, monto_negro: montoNegroV, iva_monto: montoFactV > 0 ? Math.round(montoFactV * ivaPct / 100) : 0 }).eq('id', v.id)
+        // Distribuir monto proporcionalmente por kg
+        const montoTotalV = montoTotal && totalKgNetoGrupo > 0 ? Math.round(montoTotal * kgNetoV / totalKgNetoGrupo) : (precioKg ? Math.round(kgNetoV * precioKg) : null)
+        const montoFactV = ep.monto_facturado !== '' && ep.monto_facturado !== null && ep.monto_facturado !== undefined && totalKgNetoGrupo > 0 ? Math.round(parseFloat(ep.monto_facturado) * kgNetoV / totalKgNetoGrupo) : montoTotalV
+        const ivaMV = montoFactV > 0 ? Math.round(montoFactV * ivaPct / 100) : 0
+        const montoNegroV = montoTotalV !== null ? Math.max(0, montoTotalV - (montoFactV + ivaMV)) : 0
+        const comMV = comisionPct > 0 && montoTotalV ? Math.round(montoTotalV * comisionPct / 100) : 0
+        const retMV = tieneRetencion && montoFactV ? Math.max(0, Math.round((montoFactV - 240000) * 0.02)) : 0
+        await supabase.from('ventas').update({
+          ...updateData,
+          kg_neto: kgNetoV,
+          total: montoTotalV,
+          monto_facturado: montoFactV,
+          monto_negro: montoNegroV,
+          iva_monto: ivaMV,
+          comision_monto: comMV || null,
+          retencion_monto: retMV || null,
+        }).eq('id', v.id)
       }
     } else {
       await supabase.from('ventas').update(updateData).eq('id', venta.id)
@@ -656,7 +671,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
-                              <button onClick={() => { setEditandoComercial(v.id); setFormComercial({ precio_kg: v.precio_kg || '', monto_total_con_iva: v.monto_total_con_iva || '', monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', fecha_vencimiento: v.fecha_vencimiento_cobro || '', comprador: v.comprador || '', observaciones: v.observaciones || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false }) }}
+                              <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', monto_total_con_iva: v.monto_total_con_iva || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 Editar
                               </button>
@@ -836,7 +851,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => { setEditandoComercial(v0.grupo_venta_id); setFormComercial({ precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_total_con_iva: v0.monto_total_con_iva || '', fecha_vencimiento: v0.fecha_vencimiento_cobro || '', monto_facturado: (() => { const tot = g.reduce((s, vv) => s + (vv.monto_facturado || 0), 0); return tot !== null && tot !== undefined ? String(tot) : '' })(), monto_negro: g.reduce((s, vv) => s + (vv.monto_negro || 0), 0) || '', iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comprador: v0.comprador || '', observaciones: v0.observaciones || '', comision_pct: v0.comision_pct || '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false }) }}
+                              <button onClick={() => setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_total_con_iva: v0.monto_total_con_iva || '', comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), monto_facturado: (() => { const tot = g.reduce((s, vv) => s + (vv.monto_facturado || 0), 0); return tot !== null ? String(tot) : '' })(), iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comision_pct: v0.comision_pct || '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 Editar
                               </button>
