@@ -1009,7 +1009,7 @@ export default function Ventas({ usuario }) {
                           {l.kg_factura ? (diff > 0 ? '+' : '') + diff.toLocaleString('es-AR') + ' kg' : '—'}
                         </td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{l.precio_compra ? `$${l.precio_compra.toLocaleString('es-AR')}` : <span style={{ color: S.hint }}>—</span>}</td>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{total > 0 ? `${(total .toLocaleString('es-AR')}` : '—'}</td>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{total > 0 ? `${total.toLocaleString('es-AR')}` : '—'}</td>
                         <td style={{ padding: '9px 12px' }}>
                           <Badge type={l.corral_cuarentena_id ? 'warn' : 'ok'}>{l.corral_cuarentena_id ? 'Cuarentena' : 'Activo'}</Badge>
                         </td>
@@ -1039,7 +1039,7 @@ export default function Ventas({ usuario }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
                 {[
                   { label: 'Animales vendidos', val: ventaConfirmada.cantidad, sub: `dados de baja · corral ${ventaConfirmada.corralNumero}` },
-                  { label: 'Total operación', val: ventaConfirmada.totalVenta ? `${(ventaConfirmada.totalVenta .toLocaleString('es-AR')}` : '—', sub: `${ventaConfirmada.kgNeto?.toLocaleString('es-AR')} kg netos · ${ventaConfirmada.desbastePct}% desb.` },
+                  { label: 'Total operación', val: ventaConfirmada.totalVenta ? `$${ventaConfirmada.totalVenta.toLocaleString('es-AR')}` : '—', sub: `${ventaConfirmada.kgNeto?.toLocaleString('es-AR')} kg netos · ${ventaConfirmada.desbastePct}% desb.` },
                   { label: 'Kg netos', val: ventaConfirmada.kgNeto?.toLocaleString('es-AR'), sub: `desbaste: ${ventaConfirmada.kgDescuento?.toLocaleString('es-AR')} kg` },
                   { label: 'Precio $/kg', val: ventaConfirmada.precio_kg ? `$${parseFloat(ventaConfirmada.precio_kg).toLocaleString('es-AR')}` : '—', sub: 'kg vivo neto' },
                 ].map((m, i) => (
