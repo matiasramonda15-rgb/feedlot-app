@@ -513,6 +513,46 @@ export default function Ventas({ usuario }) {
                           style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                       </div>
                     </div>
+                    {/* Resumen neto a cobrar */}
+                    {(editandoVenta.monto_total_con_iva || editandoVenta.precio_kg) && (() => {
+                      const desbPctR = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
+                      const kgNetoR = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPctR / 100)) : (v.kg_neto || 0)
+                      const montoTotalR = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : Math.round(kgNetoR * parseFloat(editandoVenta.precio_kg || 0))
+                      const montoFactR = editandoVenta.monto_facturado ? parseFloat(editandoVenta.monto_facturado) : montoTotalR
+                      const comPctR = parseFloat(editandoVenta.comision_pct || 0)
+                      const comMontoR = comPctR > 0 ? Math.round(montoTotalR * comPctR / 100) : 0
+                      const retMontoR = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactR - 240000) * 0.02)) : 0
+                      const descontarCom = !editandoVenta.comision_es_paralela ? comMontoR : 0
+                      const netoACobrar = montoTotalR - descontarCom - retMontoR
+                      if (comMontoR === 0 && retMontoR === 0) return null
+                      return (
+                        <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: S.red, textTransform: 'uppercase', marginBottom: 6 }}>Resumen deducciones</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, fontSize: 12 }}>
+                            <div>
+                              <div style={{ color: S.muted, fontSize: 10 }}>Total operación</div>
+                              <div style={{ fontFamily: 'monospace', fontWeight: 600 }}>${montoTotalR.toLocaleString('es-AR')}</div>
+                            </div>
+                            {comMontoR > 0 && (
+                              <div>
+                                <div style={{ color: S.muted, fontSize: 10 }}>{editandoVenta.comision_es_paralela ? 'Comisión (paralela)' : 'Comisión'}</div>
+                                <div style={{ fontFamily: 'monospace', color: editandoVenta.comision_es_paralela ? '#3D1A6B' : S.red }}>-${comMontoR.toLocaleString('es-AR')}</div>
+                              </div>
+                            )}
+                            {retMontoR > 0 && (
+                              <div>
+                                <div style={{ color: S.muted, fontSize: 10 }}>Retención</div>
+                                <div style={{ fontFamily: 'monospace', color: S.red }}>-${retMontoR.toLocaleString('es-AR')}</div>
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ borderTop: `1px solid #F09595`, marginTop: 8, paddingTop: 8 }}>
+                            <div style={{ fontSize: 11, color: S.muted }}>Neto a cobrar</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.red }}>${netoACobrar.toLocaleString('es-AR')}</div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => guardarDatosVenta(v)}
                         style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
