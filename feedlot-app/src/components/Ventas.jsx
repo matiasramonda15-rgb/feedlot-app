@@ -1431,9 +1431,9 @@ export default function Ventas({ usuario }) {
                           {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
                         </td>
                         <td style={{ padding: '7px 10px' }}>{v.comprador || '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{totalGrupo ? '$' + totalGrupo.toLocaleString(\'es-AR\') : '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{totalFact ? '$' + totalFact.toLocaleString(\'es-AR\') : '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{totalNegro > 0 ? '$' + totalNegro.toLocaleString(\'es-AR\') : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{totalGrupo ? '$' + totalGrupo.toLocaleString('es-AR') : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{totalFact ? '$' + totalFact.toLocaleString('es-AR') : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{totalNegro > 0 ? '$' + totalNegro.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{totalIva ? '$' + totalIva.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11, fontWeight: venceProx ? 700 : 400, color: venceProx ? '#7A1A1A' : '#1A1916' }}>
                           {v.fecha_vencimiento_cobro ? new Date(v.fecha_vencimiento_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
