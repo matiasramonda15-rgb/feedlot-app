@@ -86,7 +86,7 @@ export default function Ventas({ usuario }) {
     const comps = [...new Set([...nombresContactos, ...nombresVentas])].sort()
     setCompradores(comps)
     // Deduplicar por grupo_venta_id - mostrar solo una por grupo
-    const todasSinPrecio = (v || []).filter(x => !x.precio_kg)
+    const todasSinPrecio = (v || []).filter(x => !x.precio_kg && !x.monto_total_con_iva && !x.total)
     const gruposVistos = new Set()
     const sinPrecioDedup = todasSinPrecio.filter(x => {
       if (x.grupo_venta_id) {
@@ -817,7 +817,7 @@ export default function Ventas({ usuario }) {
                         const totalAnim = g.reduce((s, v) => s + (v.cantidad || 0), 0)
                         const totalMonto = g.reduce((s, v) => s + (v.total || 0), 0)
                         const corralesNums = g.map(v => `C-${v.corrales?.numero || v.corral_id}`).join(', ')
-                        const sinPrecio = g.some(v => !v.precio_kg)
+                        const sinPrecio = g.some(v => !v.precio_kg && !v.monto_total_con_iva && !v.total)
                         const v0 = g[0]
                         return (
                           <React.Fragment key={v0.grupo_venta_id}>
@@ -862,6 +862,11 @@ export default function Ventas({ usuario }) {
                                 <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Editar datos comerciales — venta multi-corral</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
                                   <div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto total operación $ (IVA inc.)</div>
+                                    <input type="number" value={formComercial.monto_total_con_iva || ''} onChange={e => setFormComercial({...formComercial, monto_total_con_iva: e.target.value})} placeholder="Total que paga el frigorífico"
+                                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
+                                  </div>
+                                  <div>
                                     <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comprador</div>
                                     <select value={formComercial.comprador} onChange={e => setFormComercial({...formComercial, comprador: e.target.value})}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
@@ -870,12 +875,12 @@ export default function Ventas({ usuario }) {
                                     </select>
                                   </div>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio $/kg</div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio $/kg (opcional)</div>
                                     <input type="number" value={formComercial.precio_kg} onChange={e => setFormComercial({...formComercial, precio_kg: e.target.value})}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                                   </div>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto facturado total $</div>
+                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto facturado total $ (sin IVA)</div>
                                     <input type="number" value={formComercial.monto_facturado} onChange={e => setFormComercial({...formComercial, monto_facturado: e.target.value})}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                                   </div>
@@ -929,20 +934,23 @@ export default function Ventas({ usuario }) {
                                     const montoFactRaw = formComercial.monto_facturado
                                     const tieneFacturado = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
                                     const montoFactTotal = tieneFacturado ? parseFloat(montoFactRaw) : null
+                                    const montoTotalConIva = formComercial.monto_total_con_iva ? parseFloat(formComercial.monto_total_con_iva) : null
                                     const comPct = parseFloat(formComercial.comision_pct || 0)
                                     const { data: grupoCompleto } = await supabase.from('ventas').select('*').eq('grupo_venta_id', v0.grupo_venta_id)
                                     const totalKgNetoG = (grupoCompleto || []).reduce((s, v) => s + (v.kg_neto || 0), 0)
                                     for (const v of (grupoCompleto || [])) {
                                       const kgNeto = v.kg_neto || 0
-                                      const montoTotal = precio ? Math.round(kgNeto * precio) : (v.total || null)
+                                      // Si hay monto total con IVA, distribuirlo proporcionalmente por kg
+                                      const montoTotal = montoTotalConIva && totalKgNetoG > 0 ? Math.round(montoTotalConIva * kgNeto / totalKgNetoG) : (precio ? Math.round(kgNeto * precio) : (v.total || null))
                                       const montoFact = tieneFacturado && totalKgNetoG > 0 ? Math.round(montoFactTotal * kgNeto / totalKgNetoG) : montoTotal
-                                      const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
+                                      const ivaMonto = montoFact > 0 ? Math.round(montoFact * ivaPct / 100) : 0
+                                      const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - (montoFact + ivaMonto)) : 0
                                       const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
                                       const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 240000) * 0.02)) : 0
                                       await supabase.from('ventas').update({
                                         precio_kg: precio || null, total: montoTotal,
                                         monto_facturado: montoFact, monto_negro: montoNegro,
-                                        iva_pct: ivaPct, iva_monto: montoFact > 0 ? Math.round(montoFact * ivaPct / 100) : 0,
+                                        iva_pct: ivaPct, iva_monto: ivaMonto,
                                         plazo_dias: plazo || null, fecha_vencimiento_cobro: fechaVto,
                                         estado_comercial: precio ? 'precio_cargado' : 'pendiente',
                                         comprador: formComercial.comprador || null,
@@ -952,6 +960,7 @@ export default function Ventas({ usuario }) {
                                         comision_es_paralela: formComercial.comision_es_paralela || false,
                                         tiene_retencion: formComercial.tiene_retencion || false,
                                         retencion_monto: retMonto || null,
+                                        monto_total_con_iva: formComercial.monto_total_con_iva ? parseFloat(formComercial.monto_total_con_iva) : null,
                                       }).eq('id', v.id)
                                     }
                                     setEditandoComercial(null)
