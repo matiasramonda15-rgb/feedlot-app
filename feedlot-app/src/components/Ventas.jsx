@@ -479,7 +479,7 @@ export default function Ventas({ usuario }) {
                               </div>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                                 <div>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto facturado $</label>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Neto facturado $ <span style={{ color: S.hint }}>(sin IVA)</span></label>
                                   <input type="number" placeholder={montoTotalCalc} value={editandoVenta.monto_facturado || ''}
                                     onChange={e => setEditandoVenta({ ...editandoVenta, monto_facturado: e.target.value })}
                                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
@@ -499,18 +499,19 @@ export default function Ventas({ usuario }) {
                                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                                 </div>
                               </div>
-                              {montoNegroCalc > 0 && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-                                  <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px' }}>
-                                    <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Parte facturada</div>
-                                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${montoFactCalc.toLocaleString('es-AR')}</div>
-                                  </div>
-                                  <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, padding: '8px 12px' }}>
-                                    <div style={{ fontSize: 10, color: '#3D1A6B', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Parte en negro</div>
-                                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#3D1A6B' }}>${montoNegroCalc.toLocaleString('es-AR')}</div>
-                                  </div>
+                              {/* Resumen factura vs paralelo */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                                <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px' }}>
+                                  <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total factura (neto + IVA)</div>
+                                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${(montoFactCalc + ivaMCalc).toLocaleString('es-AR')}</div>
+                                  <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${montoFactCalc.toLocaleString('es-AR')} + IVA: ${ivaMCalc.toLocaleString('es-AR')}</div>
                                 </div>
-                              )}
+                                <div style={{ background: montoNegroCalc > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${montoNegroCalc > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '8px 12px' }}>
+                                  <div style={{ fontSize: 10, color: montoNegroCalc > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta paralela</div>
+                                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: montoNegroCalc > 0 ? '#3D1A6B' : S.hint }}>${montoNegroCalc.toLocaleString('es-AR')}</div>
+                                  {montoNegroCalc === 0 && <div style={{ fontSize: 11, color: S.hint, marginTop: 2 }}>Operación 100% facturada</div>}
+                                </div>
+                              </div>
                             </div>
                           )
                         })()}
@@ -520,9 +521,10 @@ export default function Ventas({ usuario }) {
                           const desbPctC = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
                           const kgNetoC = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPctC / 100)) : (v.kg_neto || 0)
                           const montoTotalC = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : (editandoVenta.precio_kg ? Math.round(kgNetoC * parseFloat(editandoVenta.precio_kg)) : 0)
+                          const montoFactC = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined ? parseFloat(editandoVenta.monto_facturado) : montoTotalC
                           const comPct = parseFloat(editandoVenta.comision_pct || 0)
                           const comMonto = comPct > 0 ? Math.round(montoTotalC * comPct / 100) : 0
-                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactCalc - 240000) * 0.02)) : 0
+                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactC - 240000) * 0.02)) : 0
                           return (
                             <div style={{ marginBottom: 10 }}>
                               <div style={{ height: 1, background: S.border, margin: '10px 0' }} />
@@ -1568,4 +1570,4 @@ export default function Ventas({ usuario }) {
 
     </div>
   )
-} 
+}
