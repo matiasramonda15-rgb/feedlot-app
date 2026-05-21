@@ -400,6 +400,134 @@ export default function Ventas({ usuario }) {
             )
           })}
 
+          {/* Banner edición desde historial */}
+          {editandoVenta && !ventasSinPrecio.find(v => v.id === editandoVenta.id) && (
+            <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: S.accent }}>✏ Editando venta</div>
+                <button onClick={() => setEditandoVenta(null)} style={{ fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>Cancelar</button>
+              </div>
+              {(() => {
+                const v = [...ventasSinPrecio, ...ventas].find(vv => vv.id === editandoVenta.id)
+                if (!v) return null
+                return (
+                  <div>
+                    <div style={{ fontSize: 12, color: S.muted, marginBottom: 12 }}>
+                      {v.grupo_venta_id ? 'Venta multi-corral' : `C-${v.corrales?.numero || v.corral_id}`} · {v.cantidad} animales · {new Date(v.creado_en).toLocaleDateString('es-AR')}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto total operación $ <span style={{ color: S.accent }}>(IVA incluido)</span></label>
+                        <input type="number" placeholder="Total que paga el frigorífico" value={editandoVenta.monto_total_con_iva || ''}
+                          onChange={e => setEditandoVenta({ ...editandoVenta, monto_total_con_iva: e.target.value })}
+                          style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg <span style={{ color: S.hint }}>(opcional)</span></label>
+                        <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
+                          onChange={e => setEditandoVenta({ ...editandoVenta, precio_kg: e.target.value })}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comprador</label>
+                        <select value={editandoVenta.comprador} onChange={e => setEditandoVenta({ ...editandoVenta, comprador: e.target.value, compradorNuevo: '' })}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
+                          <option value="">— Sin comprador —</option>
+                          {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+                          <option value="Otro">+ Nuevo...</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Neto facturado $ <span style={{ color: S.hint }}>(sin IVA)</span></label>
+                        <input type="number" value={editandoVenta.monto_facturado || ''}
+                          onChange={e => setEditandoVenta({ ...editandoVenta, monto_facturado: e.target.value })}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>% IVA</label>
+                        <select value={editandoVenta.iva_pct || '10.5'} onChange={e => setEditandoVenta({ ...editandoVenta, iva_pct: e.target.value })}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
+                          <option value="0">Sin IVA</option>
+                          <option value="10.5">10.5%</option>
+                          <option value="21">21%</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Plazo (días)</label>
+                        <input type="number" placeholder="0 = contado" value={editandoVenta.plazo_dias || ''}
+                          onChange={e => setEditandoVenta({ ...editandoVenta, plazo_dias: e.target.value })}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      {editandoVenta.comprador === 'Otro' && (
+                        <div style={{ gridColumn: '1/-1' }}>
+                          <input type="text" placeholder="Nombre del nuevo comprador" value={editandoVenta.compradorNuevo || ''}
+                            onChange={e => setEditandoVenta({ ...editandoVenta, compradorNuevo: e.target.value })}
+                            style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                        </div>
+                      )}
+                    </div>
+                    {(editandoVenta.precio_kg || editandoVenta.monto_total_con_iva) && (() => {
+                      const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
+                      const kgNetoCalc = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPct / 100)) : (v.kg_neto || 0)
+                      const montoTotalCalc = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : (editandoVenta.precio_kg ? Math.round(kgNetoCalc * parseFloat(editandoVenta.precio_kg)) : 0)
+                      const montoFactCalc = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined ? parseFloat(editandoVenta.monto_facturado) : montoTotalCalc
+                      const ivaPct2 = parseFloat(editandoVenta.iva_pct || 10.5)
+                      const ivaMCalc = Math.round(montoFactCalc * ivaPct2 / 100)
+                      const totalFacturaCalc = montoFactCalc + ivaMCalc
+                      const montoNegroCalc = Math.max(0, montoTotalCalc - totalFacturaCalc)
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px' }}>
+                            <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total factura (neto + IVA)</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${totalFacturaCalc.toLocaleString('es-AR')}</div>
+                            <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${montoFactCalc.toLocaleString('es-AR')} + IVA: ${ivaMCalc.toLocaleString('es-AR')}</div>
+                          </div>
+                          <div style={{ background: montoNegroCalc > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${montoNegroCalc > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '8px 12px' }}>
+                            <div style={{ fontSize: 10, color: montoNegroCalc > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta paralela</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: montoNegroCalc > 0 ? '#3D1A6B' : S.hint }}>${montoNegroCalc.toLocaleString('es-AR')}</div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                    {/* Comisión y retención */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión %</label>
+                        <input type="number" value={editandoVenta.comision_pct || ''} onChange={e => setEditandoVenta({...editandoVenta, comision_pct: e.target.value})} placeholder="0"
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'flex-end' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={editandoVenta.comision_es_paralela || false} onChange={e => setEditandoVenta({...editandoVenta, comision_es_paralela: e.target.checked})} />
+                          Comisión paralela (se paga aparte)
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.red, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={editandoVenta.tiene_retencion || false} onChange={e => setEditandoVenta({...editandoVenta, tiene_retencion: e.target.checked})} />
+                          Retención de ganancias
+                        </label>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Observaciones</label>
+                        <input type="text" value={editandoVenta.observaciones || ''} onChange={e => setEditandoVenta({...editandoVenta, observaciones: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => guardarDatosVenta(v)}
+                        style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                        Guardar cambios
+                      </button>
+                      <button onClick={() => setEditandoVenta(null)}
+                        style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
           {/* Banner ventas sin precio */}
           {ventasSinPrecio.length > 0 && (
             <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
@@ -576,10 +704,11 @@ export default function Ventas({ usuario }) {
                                 <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
                                   <div style={{ color: S.red, fontWeight: 600 }}>Neto a cobrar:</div>
                                   <div style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: S.red }}>
-                                    ${(montoTotalC - comMonto - retMonto).toLocaleString('es-AR')}
+                                    ${(montoTotalC - (editandoVenta.comision_es_paralela ? 0 : comMonto) - retMonto).toLocaleString('es-AR')}
                                   </div>
                                   <div style={{ fontSize: 11, color: S.muted }}>
-                                    Total {montoTotalC.toLocaleString('es-AR')} - comisión {comMonto.toLocaleString('es-AR')} - retención {retMonto.toLocaleString('es-AR')}
+                                    Total {montoTotalC.toLocaleString('es-AR')}{!editandoVenta.comision_es_paralela && comMonto > 0 ? ` - comisión ${comMonto.toLocaleString('es-AR')}` : ''} - retención {retMonto.toLocaleString('es-AR')}
+                                    {editandoVenta.comision_es_paralela && comMonto > 0 && <div style={{ color: '#3D1A6B', fontWeight: 600 }}>Comisión paralela: ${comMonto.toLocaleString('es-AR')} (se paga aparte)</div>}
                                   </div>
                                 </div>
                               )}
