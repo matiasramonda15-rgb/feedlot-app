@@ -864,7 +864,13 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.desbaste_pct}%</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{(() => {
+                              if (!v.total) return '—'
+                              const com = (!v.comision_es_paralela && v.comision_monto) ? v.comision_monto : 0
+                              const ret = v.retencion_monto || 0
+                              const neto = v.total - com - ret
+                              return `$${neto.toLocaleString('es-AR')}`
+                            })()}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
                               <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', monto_total_con_iva: v.monto_total_con_iva || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
@@ -1652,6 +1658,9 @@ export default function Ventas({ usuario }) {
                     const totalFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
                     const totalNegro = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
                     const totalIva = grupo.reduce((s, vv) => s + (vv.iva_monto || 0), 0)
+                    const totalCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
+                    const totalRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
+                    const netoACobrarGrupo = totalGrupo - totalCom - totalRet
                     const corralesStr = esGrupo ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
                     const pagosList = grupo.flatMap(vv => pagosVenta[vv.id] || [])
                     const totalPagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
@@ -1668,7 +1677,7 @@ export default function Ventas({ usuario }) {
                           {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
                         </td>
                         <td style={{ padding: '7px 10px' }}>{v.comprador || '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{totalGrupo ? '$' + totalGrupo.toLocaleString('es-AR') : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{netoACobrarGrupo > 0 ? '$' + netoACobrarGrupo.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{totalFact ? '$' + totalFact.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{totalNegro > 0 ? '$' + totalNegro.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{totalIva ? '$' + totalIva.toLocaleString('es-AR') : '—'}</td>
