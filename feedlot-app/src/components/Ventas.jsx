@@ -181,13 +181,14 @@ export default function Ventas({ usuario }) {
 
   async function guardarDatosVenta(venta) {
     const ep = editandoVenta
-    if (!ep?.precio_kg) { alert('Ingresa el precio'); return }
-    const precioKg = parseFloat(ep.precio_kg)
+    if (!ep?.precio_kg && !ep?.monto_total_con_iva) { alert('Ingresá el precio por kg o el monto total de la operación'); return }
+    const precioKg = ep.precio_kg ? parseFloat(ep.precio_kg) : null
     const desbastePct = ep.desbaste ? parseFloat(ep.desbaste) : (venta.desbaste_pct || 8)
     const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
-    const montoTotal = Math.round(kgNeto * precioKg)
+    // Monto total: usar monto_total_con_iva si está disponible, sino calcular desde precio
+    const montoTotal = ep.monto_total_con_iva ? Math.round(parseFloat(ep.monto_total_con_iva)) : (precioKg ? Math.round(kgNeto * precioKg) : null)
     const montoFacturado = ep.monto_facturado !== '' && ep.monto_facturado !== null && ep.monto_facturado !== undefined ? parseFloat(ep.monto_facturado) : montoTotal
-    const montoNegro = Math.max(0, montoTotal - montoFacturado)
+    const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFacturado) : 0
     const ivaPct = parseFloat(ep.iva_pct || 10.5)
     const ivaMonto = montoFacturado > 0 ? Math.round(montoFacturado * ivaPct / 100) : 0
     const plazo = parseInt(ep.plazo_dias || 0)
@@ -222,6 +223,7 @@ export default function Ventas({ usuario }) {
       comision_es_paralela: comisionEsParalela,
       tiene_retencion: tieneRetencion,
       retencion_monto: retencionMonto || null,
+      monto_total_con_iva: ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : null,
     }
 
     if (venta.grupo_venta_id) {
@@ -405,7 +407,7 @@ export default function Ventas({ usuario }) {
                         </div>
                       </div>
                       {!isEdit && (
-                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false })}
+                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false, monto_total_con_iva: v.monto_total_con_iva || '' })}
                           style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                           Completar datos
                         </button>
@@ -415,10 +417,16 @@ export default function Ventas({ usuario }) {
                       <div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                           <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg *</label>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto total operación $ <span style={{ color: S.accent }}>(IVA incluido)</span></label>
+                            <input type="number" placeholder="Total que paga el frigorífico" value={editandoVenta.monto_total_con_iva || ''}
+                              onChange={e => setEditandoVenta({ ...editandoVenta, monto_total_con_iva: e.target.value })}
+                              style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg <span style={{ color: S.hint }}>(opcional)</span></label>
                             <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
                               onChange={e => setEditandoVenta({ ...editandoVenta, precio_kg: e.target.value })}
-                              style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
+                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                           </div>
                           <div>
                             <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Desbaste %</label>
@@ -456,11 +464,11 @@ export default function Ventas({ usuario }) {
                           </div>
                         </div>
 
-                        {editandoVenta.precio_kg && (() => {
+                        {(editandoVenta.precio_kg || editandoVenta.monto_total_con_iva) && (() => {
                           const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
                           const kgNetoCalc = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPct / 100)) : (v.kg_neto || 0)
-                          const montoTotalCalc = Math.round(kgNetoCalc * parseFloat(editandoVenta.precio_kg))
-                          const montoFactCalc = editandoVenta.monto_facturado ? parseFloat(editandoVenta.monto_facturado) : montoTotalCalc
+                          const montoTotalCalc = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : (editandoVenta.precio_kg ? Math.round(kgNetoCalc * parseFloat(editandoVenta.precio_kg)) : 0)
+                          const montoFactCalc = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined ? parseFloat(editandoVenta.monto_facturado) : montoTotalCalc
                           const montoNegroCalc = Math.max(0, montoTotalCalc - montoFactCalc)
                           const ivaPct = parseFloat(editandoVenta.iva_pct || 10.5)
                           const ivaMCalc = Math.round(montoFactCalc * ivaPct / 100)
@@ -508,10 +516,10 @@ export default function Ventas({ usuario }) {
                         })()}
 
                         {/* Comisión y retención */}
-                        {editandoVenta.precio_kg && (() => {
+                        {(editandoVenta.precio_kg || editandoVenta.monto_total_con_iva) && (() => {
                           const desbPctC = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
                           const kgNetoC = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPctC / 100)) : (v.kg_neto || 0)
-                          const montoTotalC = Math.round(kgNetoC * parseFloat(editandoVenta.precio_kg))
+                          const montoTotalC = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : (editandoVenta.precio_kg ? Math.round(kgNetoC * parseFloat(editandoVenta.precio_kg)) : 0)
                           const comPct = parseFloat(editandoVenta.comision_pct || 0)
                           const comMonto = comPct > 0 ? Math.round(montoTotalC * comPct / 100) : 0
                           const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactCalc - 240000) * 0.02)) : 0
