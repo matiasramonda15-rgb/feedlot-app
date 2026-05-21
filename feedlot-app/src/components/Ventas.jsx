@@ -188,9 +188,10 @@ export default function Ventas({ usuario }) {
     // Monto total: usar monto_total_con_iva si está disponible, sino calcular desde precio
     const montoTotal = ep.monto_total_con_iva ? Math.round(parseFloat(ep.monto_total_con_iva)) : (precioKg ? Math.round(kgNeto * precioKg) : null)
     const montoFacturado = ep.monto_facturado !== '' && ep.monto_facturado !== null && ep.monto_facturado !== undefined ? parseFloat(ep.monto_facturado) : montoTotal
-    const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFacturado) : 0
     const ivaPct = parseFloat(ep.iva_pct || 10.5)
     const ivaMonto = montoFacturado > 0 ? Math.round(montoFacturado * ivaPct / 100) : 0
+    const totalFactura = montoFacturado + ivaMonto
+    const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - totalFactura) : 0
     const plazo = parseInt(ep.plazo_dias || 0)
     const fechaBase = new Date(venta.creado_en)
     const fechaVto = plazo > 0 ? new Date(fechaBase.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
