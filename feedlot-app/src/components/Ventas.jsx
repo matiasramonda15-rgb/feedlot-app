@@ -204,7 +204,7 @@ export default function Ventas({ usuario }) {
 
     // Comisión
     const comisionPct = parseFloat(ep.comision_pct || 0)
-    const comisionMonto = comisionPct > 0 ? Math.round(montoTotal * comisionPct / 100) : 0
+    const comisionMonto = ep.comision_monto_input ? Math.round(parseFloat(ep.comision_monto_input)) : (comisionPct > 0 && montoTotal ? Math.round(montoTotal * comisionPct / 100) : 0)
     const comisionEsParalela = ep.comision_es_paralela || false
 
     // Retención de ganancias: (monto facturado - 240000) * 2%
@@ -494,7 +494,22 @@ export default function Ventas({ usuario }) {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión %</label>
-                        <input type="number" value={editandoVenta.comision_pct || ''} onChange={e => setEditandoVenta({...editandoVenta, comision_pct: e.target.value})} placeholder="0"
+                        <input type="number" value={editandoVenta.comision_pct || ''} onChange={e => {
+                          const pct = e.target.value
+                          const mt = editandoVenta.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : 0
+                          const monto = pct && mt ? Math.round(mt * parseFloat(pct) / 100) : ''
+                          setEditandoVenta({...editandoVenta, comision_pct: pct, comision_monto_input: String(monto)})
+                        }} placeholder="0"
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión $</label>
+                        <input type="number" value={editandoVenta.comision_monto_input || ''} onChange={e => {
+                          const monto = e.target.value
+                          const mt = editandoVenta.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : 0
+                          const pct = monto && mt ? ((parseFloat(monto) / mt) * 100).toFixed(2) : ''
+                          setEditandoVenta({...editandoVenta, comision_monto_input: monto, comision_pct: pct})
+                        }} placeholder="0"
                           style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'flex-end' }}>
@@ -520,7 +535,7 @@ export default function Ventas({ usuario }) {
                       const montoTotalR = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : Math.round(kgNetoR * parseFloat(editandoVenta.precio_kg || 0))
                       const montoFactR = editandoVenta.monto_facturado ? parseFloat(editandoVenta.monto_facturado) : montoTotalR
                       const comPctR = parseFloat(editandoVenta.comision_pct || 0)
-                      const comMontoR = comPctR > 0 ? Math.round(montoTotalR * comPctR / 100) : 0
+                      const comMontoR = editandoVenta.comision_monto_input ? parseFloat(editandoVenta.comision_monto_input) : (comPctR > 0 ? Math.round(montoTotalR * comPctR / 100) : 0)
                       const retMontoR = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactR - 240000) * 0.02)) : 0
                       const descontarCom = !editandoVenta.comision_es_paralela ? comMontoR : 0
                       const netoACobrar = montoTotalR - descontarCom - retMontoR
@@ -586,12 +601,12 @@ export default function Ventas({ usuario }) {
                           {v.grupo_venta_id && <span style={{ fontSize: 11, color: S.amber, marginLeft: 6 }}>· Se actualizarán todos los corrales del grupo</span>}
                         </div>
                         <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
-                          {v.kg_neto?.toLocaleString('es-AR')} kg netos · {new Date(v.creado_en).toLocaleDateString('es-AR')}
+                          {v.kg_vivo_total ? `${v.kg_vivo_total.toLocaleString('es-AR')} kg brutos` : v.kg_neto ? `${v.kg_neto.toLocaleString('es-AR')} kg` : ''} · {new Date(v.creado_en).toLocaleDateString('es-AR')}
                           {v.comprador && ` · ${v.comprador}`}
                         </div>
                       </div>
                       {!isEdit && (
-                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false, monto_total_con_iva: v.monto_total_con_iva || '' })}
+                        <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_monto_input: v.comision_monto ? String(v.comision_monto) : '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false, monto_total_con_iva: v.monto_total_con_iva || '' })}
                           style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                           Completar datos
                         </button>
@@ -717,13 +732,23 @@ export default function Ventas({ usuario }) {
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                                 <div>
                                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión %</label>
-                                  <input type="number" value={editandoVenta.comision_pct || ''} onChange={e => setEditandoVenta({...editandoVenta, comision_pct: e.target.value})} placeholder="0"
+                                  <input type="number" value={editandoVenta.comision_pct || ''} onChange={e => {
+                                    const pct = e.target.value
+                                    const mt = editandoVenta.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoTotalC
+                                    const monto = pct && mt ? Math.round(mt * parseFloat(pct) / 100) : ''
+                                    setEditandoVenta({...editandoVenta, comision_pct: pct, comision_monto_input: String(monto)})
+                                  }} placeholder="0"
                                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                                 </div>
                                 <div>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto comisión</label>
-                                  <input type="text" value={comMonto > 0 ? `$${comMonto.toLocaleString('es-AR')}` : '—'} readOnly
-                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión $</label>
+                                  <input type="number" value={editandoVenta.comision_monto_input || (comMonto > 0 ? comMonto : '')} onChange={e => {
+                                    const monto = e.target.value
+                                    const mt = editandoVenta.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoTotalC
+                                    const pct = monto && mt ? ((parseFloat(monto) / mt) * 100).toFixed(2) : ''
+                                    setEditandoVenta({...editandoVenta, comision_monto_input: monto, comision_pct: pct})
+                                  }} placeholder="0"
+                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer' }}>
@@ -1021,7 +1046,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_total_con_iva: v0.monto_total_con_iva || '', comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), monto_facturado: (() => { const tot = g.reduce((s, vv) => s + (vv.monto_facturado || 0), 0); return tot !== null ? String(tot) : '' })(), iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comision_pct: v0.comision_pct || '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false })}
+                              <button onClick={() => setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_total_con_iva: v0.monto_total_con_iva || '', comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), monto_facturado: (() => { const tot = g.reduce((s, vv) => s + (vv.monto_facturado || 0), 0); return tot !== null ? String(tot) : '' })(), iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comision_pct: v0.comision_pct || '', comision_monto_input: v0.comision_monto ? String(v0.comision_monto) : '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 Editar
                               </button>
