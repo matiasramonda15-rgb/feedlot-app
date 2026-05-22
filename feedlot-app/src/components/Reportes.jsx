@@ -450,6 +450,191 @@ export default function Reportes({ usuario }) {
           </div>
         </div>
       )}
+
+
+      {tab === 'calculadora' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Calculadora de precio maximo de compra</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>Ingresa los parametros estimados y el sistema calcula el precio maximo a pagar por kg en la compra</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.green, textTransform: 'uppercase', marginBottom: '1rem' }}>Venta estimada</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {[
+                    { label: 'Precio venta $/kg vivo', key: 'precio_venta', placeholder: '4250' },
+                    { label: 'Kg venta por animal', key: 'kg_venta', placeholder: '380' },
+                    { label: 'Desbaste venta %', key: 'desbaste_venta', placeholder: '8' },
+                    { label: 'Flete venta $/animal', key: 'flete_venta', placeholder: '0' },
+                    { label: 'Comision venta %', key: 'comision_venta_pct', placeholder: '0' },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{f.label}</div>
+                      <input type="number" value={calc[f.key]} onChange={e => setCalc({...calc, [f.key]: e.target.value})} placeholder={f.placeholder}
+                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Parametros feedlot</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {[
+                    { label: 'Kg compra por animal', key: 'kg_compra', placeholder: '267' },
+                    { label: 'Aumento diario kg', key: 'aumento_diario', placeholder: '1.25' },
+                    { label: 'Conversion MF/kg carne', key: 'conversion_mf', placeholder: '6.8' },
+                    { label: 'Costo dieta $/kg comida', key: 'costo_dieta', placeholder: '220' },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{f.label}</div>
+                      <input type="number" value={calc[f.key]} onChange={e => setCalc({...calc, [f.key]: e.target.value})} placeholder={f.placeholder}
+                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.red, textTransform: 'uppercase', marginBottom: '1rem' }}>Gastos por animal</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {[
+                    { label: 'Sanidad $/animal', key: 'sanidad_animal', placeholder: '9500' },
+                    { label: 'Gastos fijos $/animal/mes', key: 'gastos_fijos_mes', placeholder: '20000' },
+                    { label: 'Flete compra $/animal', key: 'flete_compra', placeholder: '12000' },
+                    { label: 'Comision compra %', key: 'comision_compra_pct', placeholder: '0' },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{f.label}</div>
+                      <input type="number" value={calc[f.key]} onChange={e => setCalc({...calc, [f.key]: e.target.value})} placeholder={f.placeholder}
+                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.amber, textTransform: 'uppercase', marginBottom: 8 }}>Rentabilidad anual deseada %</div>
+                <input type="number" value={calc.margen_deseado} onChange={e => setCalc({...calc, margen_deseado: e.target.value})} placeholder="15"
+                  style={{ width: '100%', border: `1px solid ${S.amber}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
+              </div>
+            </div>
+            <div>
+              {(() => {
+                const pV = parseFloat(calc.precio_venta)||0, kgV = parseFloat(calc.kg_venta)||0
+                const desbaste = parseFloat(calc.desbaste_venta)/100||0.08
+                const kgC = parseFloat(calc.kg_compra)||0
+                const aumDia = parseFloat(calc.aumento_diario)||1.25
+                const convMF = parseFloat(calc.conversion_mf)||6.8
+                const costDieta = parseFloat(calc.costo_dieta)||220
+                const sanidad = parseFloat(calc.sanidad_animal)||9500
+                const gfMes = parseFloat(calc.gastos_fijos_mes)||20000
+                const flC = parseFloat(calc.flete_compra)||0
+                const flV = parseFloat(calc.flete_venta)||0
+                const comV = parseFloat(calc.comision_venta_pct)/100||0
+                const comC = parseFloat(calc.comision_compra_pct)/100||0
+                const margen = parseFloat(calc.margen_deseado)/100||0.15
+                if (!pV||!kgV||!kgC) return (
+                  <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '2rem', textAlign: 'center', color: S.hint }}>
+                    Completa precio de venta, kg venta y kg compra para ver el calculo.
+                  </div>
+                )
+                const kgNetoV = kgV*(1-desbaste)
+                const aumento = kgV-kgC
+                const dias = aumDia>0 ? Math.round(aumento/aumDia) : 0
+                const meses = dias/30
+                const kgComida = aumento*convMF
+                const costComida = kgComida*costDieta
+                const gfTotal = gfMes*meses
+                const comVMonto = kgNetoV*pV*comV
+                const comCMonto = kgC*comC
+                const ingresoNeto = kgNetoV*pV - flV - comVMonto
+                const costosSinCompra = costComida+sanidad+gfTotal+flC+comCMonto
+                const precioMaxEq = (ingresoNeto-costosSinCompra)/kgC
+                const factorM = 1+(margen*meses/12)
+                const precioMaxConM = (ingresoNeto-costosSinCompra*factorM)/(kgC*factorM)
+                const costos = [
+                  {label:'Alimentacion', val:Math.round(costComida)},
+                  {label:'Sanidad', val:Math.round(sanidad)},
+                  {label:'Gastos fijos', val:Math.round(gfTotal)},
+                  {label:'Flete compra', val:Math.round(flC)},
+                  {label:'Flete venta', val:Math.round(flV)},
+                  {label:'Comision venta', val:Math.round(comVMonto)},
+                ].filter(c=>c.val>0)
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                      {[
+                        {label:'Dias feedlot', val:`${dias} dias`, sub:`${meses.toFixed(1)} meses`},
+                        {label:'Aumento total', val:`${aumento} kg`, sub:`${kgC} a ${kgV} kg`},
+                        {label:'Kg comida total', val:`${Math.round(kgComida).toLocaleString('es-AR')} kg`, sub:`Conv. ${convMF}`},
+                      ].map((c,i) => (
+                        <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+                          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{c.label}</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'monospace', color: S.accent }}>{c.val}</div>
+                          <div style={{ fontSize: 11, color: S.hint }}>{c.sub}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: S.red, textTransform: 'uppercase', marginBottom: '1rem' }}>Costos sin compra</div>
+                      {costos.map((c,i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: `1px solid ${S.border}` }}>
+                          <span style={{ color: S.muted }}>{c.label}</span>
+                          <span style={{ fontFamily: 'monospace', color: S.red }}>-${c.val.toLocaleString('es-AR')}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '8px 0', fontWeight: 700 }}>
+                        <span>Total costos sin compra</span>
+                        <span style={{ fontFamily: 'monospace', color: S.red }}>-${Math.round(costosSinCompra).toLocaleString('es-AR')}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderTop: `1px solid ${S.border}` }}>
+                        <span style={{ color: S.green }}>Ingreso neto venta</span>
+                        <span style={{ fontFamily: 'monospace', color: S.green }}>+${Math.round(ingresoNeto).toLocaleString('es-AR')}</span>
+                      </div>
+                    </div>
+                    <div style={{ background: S.accent, borderRadius: 10, padding: '1.5rem', color: '#fff' }}>
+                      <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.7, marginBottom: 8 }}>Precio maximo de compra - Punto de equilibrio</div>
+                      <div style={{ fontSize: 36, fontWeight: 800, fontFamily: 'monospace' }}>${Math.max(0,Math.round(precioMaxEq)).toLocaleString('es-AR')}</div>
+                      <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>por kg vivo</div>
+                      <div style={{ height: 1, background: 'rgba(255,255,255,0.2)', margin: '12px 0' }} />
+                      <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.7, marginBottom: 6 }}>Con rentabilidad del {calc.margen_deseado}% anual</div>
+                      <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace' }}>${Math.max(0,Math.round(precioMaxConM)).toLocaleString('es-AR')}</div>
+                      <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>por kg vivo</div>
+                    </div>
+                    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Sensibilidad - precio compra vs rentabilidad</div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead><tr style={{ background: S.bg }}>
+                          {['Precio compra $/kg','Costo total','Ingreso neto','Ganancia','Rent. anual'].map(h => (
+                            <th key={h} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {[0.85,0.90,0.95,1.0,1.05,1.10].map(factor => {
+                            const pC = Math.round(precioMaxEq*factor)
+                            const cTotal = pC*kgC+costosSinCompra
+                            const gan = ingresoNeto-cTotal
+                            const rentA = meses>0 ? ((gan/cTotal)*(12/meses)*100) : 0
+                            const esRef = factor===1.0
+                            return (
+                              <tr key={factor} style={{ borderBottom: `1px solid ${S.border}`, background: esRef ? S.accentLight : 'transparent' }}>
+                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:esRef?700:400 }}>${pC.toLocaleString('es-AR')}</td>
+                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', color:S.red }}>-${cTotal.toLocaleString('es-AR')}</td>
+                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', color:S.green }}>+${Math.round(ingresoNeto).toLocaleString('es-AR')}</td>
+                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color:gan>=0?S.green:S.red }}>{gan>=0?'+':''}{Math.round(gan).toLocaleString('es-AR')}</td>
+                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color:rentA>=0?S.green:S.red }}>{rentA.toFixed(1)}%</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
