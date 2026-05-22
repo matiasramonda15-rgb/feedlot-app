@@ -173,14 +173,34 @@ export default function Ingresos({ usuario }) {
   }
 
   async function guardarPrecio(lote) {
-    if (!editandoPrecio?.precio_compra) { alert('Ingresa el precio'); return }
+    if (!editandoPrecio?.precio_compra && !editandoPrecio?.monto_total_con_iva) { alert('Ingresá el precio o el monto total'); return }
     const procFinal = editandoPrecio.procedencia === 'Otro'
       ? (editandoPrecio.otraProcedencia?.trim() || null)
       : (editandoPrecio.procedencia || null)
+    const montoTotal = editandoPrecio.monto_total_con_iva ? parseFloat(editandoPrecio.monto_total_con_iva) : null
+    const montoFact = editandoPrecio.monto_facturado ? parseFloat(editandoPrecio.monto_facturado) : null
+    const ivaPct = parseFloat(editandoPrecio.iva_pct || 10.5)
+    const ivaMonto = montoFact ? Math.round(montoFact * ivaPct / 100) : 0
+    const montoNegro = montoTotal && montoFact ? Math.max(0, montoTotal - montoFact - ivaMonto) : 0
+    const comMonto = editandoPrecio.comision_monto_input ? parseFloat(editandoPrecio.comision_monto_input) : (editandoPrecio.comision_pct ? Math.round((montoTotal || 0) * parseFloat(editandoPrecio.comision_pct) / 100) : 0)
+    const gfMonto = editandoPrecio.gastos_feria_monto_input ? parseFloat(editandoPrecio.gastos_feria_monto_input) : (editandoPrecio.gastos_feria_pct ? Math.round((montoTotal || 0) * parseFloat(editandoPrecio.gastos_feria_pct) / 100) : 0)
     await supabase.from('lotes').update({
-      precio_compra: parseFloat(editandoPrecio.precio_compra),
+      precio_compra: editandoPrecio.precio_compra ? parseFloat(editandoPrecio.precio_compra) : lote.precio_compra,
       kg_factura: editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null,
       procedencia: procFinal || lote.procedencia || null,
+      monto_total_con_iva: montoTotal,
+      monto_facturado: montoFact,
+      monto_negro: montoNegro,
+      iva_pct: ivaPct,
+      iva_monto: ivaMonto,
+      comision_pct: parseFloat(editandoPrecio.comision_pct) || null,
+      comision_monto: comMonto || null,
+      comision_es_paralela: editandoPrecio.comision_es_paralela || false,
+      gastos_feria_pct: parseFloat(editandoPrecio.gastos_feria_pct) || null,
+      gastos_feria_monto: gfMonto || null,
+      gastos_feria_paralelos: editandoPrecio.gastos_feria_paralelos || false,
+      numero_factura: editandoPrecio.numero_factura || null,
+      fecha_factura: editandoPrecio.fecha_factura || null,
     }).eq('id', lote.id)
     setEditandoPrecio(null)
     await cargarDatos()
@@ -202,7 +222,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
 
   if (loading) return <Loader />
 
-  const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra || !l.procedencia) : []
+  const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra && !l.monto_total_con_iva) : []
 
   if (vista === 'editar' && editandoLote) {
     const promEst = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
@@ -646,7 +666,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                     </div>
                   </div>
                   {!isEdit && (
-                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: '', kg_factura: l.kg_factura ? String(l.kg_factura) : '', procedencia: l.procedencia || '', otraProcedencia: '' })}
+                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: l.precio_compra ? String(l.precio_compra) : '', kg_factura: l.kg_factura ? String(l.kg_factura) : '', procedencia: l.procedencia || '', otraProcedencia: '', monto_total_con_iva: l.monto_total_con_iva || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', iva_pct: l.iva_pct || '10.5', comision_pct: l.comision_pct || '', comision_monto_input: l.comision_monto ? String(l.comision_monto) : '', comision_es_paralela: l.comision_es_paralela || false, gastos_feria_pct: l.gastos_feria_pct || '', gastos_feria_monto_input: l.gastos_feria_monto ? String(l.gastos_feria_monto) : '', gastos_feria_paralelos: l.gastos_feria_paralelos || false, numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '' })}
                       style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                       Completar datos
                     </button>
@@ -698,6 +718,84 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                         {' '}({l.kg_bascula?.toLocaleString('es-AR')} kg × ${parseFloat(editandoPrecio.precio_compra).toLocaleString('es-AR')}/kg)
                       </div>
                     )}
+                    {/* Campos comerciales */}
+                    <div style={{ height: 1, background: S.border, margin: '10px 0' }} />
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: 8 }}>Datos comerciales</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto total op. $ (IVA inc.)</label>
+                        <input type="number" value={editandoPrecio.monto_total_con_iva || ''} onChange={e => setEditandoPrecio({...editandoPrecio, monto_total_con_iva: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Neto facturado $ (sin IVA)</label>
+                        <input type="number" value={editandoPrecio.monto_facturado || ''} onChange={e => setEditandoPrecio({...editandoPrecio, monto_facturado: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>% IVA</label>
+                        <select value={editandoPrecio.iva_pct || '10.5'} onChange={e => setEditandoPrecio({...editandoPrecio, iva_pct: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                          <option value="0">Sin IVA</option>
+                          <option value="10.5">10.5%</option>
+                          <option value="21">21%</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión %</label>
+                        <input type="number" value={editandoPrecio.comision_pct || ''} onChange={e => {
+                          const pct = e.target.value, mt = editandoPrecio.monto_total_con_iva ? parseFloat(editandoPrecio.monto_total_con_iva) : 0
+                          setEditandoPrecio({...editandoPrecio, comision_pct: pct, comision_monto_input: pct && mt ? String(Math.round(mt * parseFloat(pct) / 100)) : ''})
+                        }} placeholder="0"
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión $</label>
+                        <input type="number" value={editandoPrecio.comision_monto_input || ''} onChange={e => {
+                          const monto = e.target.value, mt = editandoPrecio.monto_total_con_iva ? parseFloat(editandoPrecio.monto_total_con_iva) : 0
+                          setEditandoPrecio({...editandoPrecio, comision_monto_input: monto, comision_pct: monto && mt ? ((parseFloat(monto) / mt) * 100).toFixed(2) : ''})
+                        }} placeholder="0"
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={editandoPrecio.comision_es_paralela || false} onChange={e => setEditandoPrecio({...editandoPrecio, comision_es_paralela: e.target.checked})} />
+                          Comisión paralela
+                        </label>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Gastos feria %</label>
+                        <input type="number" value={editandoPrecio.gastos_feria_pct || ''} onChange={e => {
+                          const pct = e.target.value, mt = editandoPrecio.monto_total_con_iva ? parseFloat(editandoPrecio.monto_total_con_iva) : 0
+                          setEditandoPrecio({...editandoPrecio, gastos_feria_pct: pct, gastos_feria_monto_input: pct && mt ? String(Math.round(mt * parseFloat(pct) / 100)) : ''})
+                        }} placeholder="0"
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Gastos feria $</label>
+                        <input type="number" value={editandoPrecio.gastos_feria_monto_input || ''} onChange={e => {
+                          const monto = e.target.value, mt = editandoPrecio.monto_total_con_iva ? parseFloat(editandoPrecio.monto_total_con_iva) : 0
+                          setEditandoPrecio({...editandoPrecio, gastos_feria_monto_input: monto, gastos_feria_pct: monto && mt ? ((parseFloat(monto) / mt) * 100).toFixed(2) : ''})
+                        }} placeholder="0"
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={editandoPrecio.gastos_feria_paralelos || false} onChange={e => setEditandoPrecio({...editandoPrecio, gastos_feria_paralelos: e.target.checked})} />
+                          Gastos feria paralelos
+                        </label>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>N° Factura</label>
+                        <input type="text" value={editandoPrecio.numero_factura || ''} onChange={e => setEditandoPrecio({...editandoPrecio, numero_factura: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Fecha factura</label>
+                        <input type="date" value={editandoPrecio.fecha_factura || ''} onChange={e => setEditandoPrecio({...editandoPrecio, fecha_factura: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => guardarPrecio(l)}
                         style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
