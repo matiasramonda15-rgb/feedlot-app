@@ -84,6 +84,15 @@ export default function Alimentacion({ usuario }) {
   const [stockDB, setStockDB] = useState([])
   const [historial, setHistorial] = useState([])
   const [historialArchivo, setHistorialArchivo] = useState([])
+  const [archivoOffset, setArchivoOffset] = useState(100)
+  const [cargandoArchivo, setCargandoArchivo] = useState(false)
+
+  async function cargarArchivo() {
+    setCargandoArchivo(true)
+    const { data } = await supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).range(100, 999)
+    setHistorialArchivo(data || [])
+    setCargandoArchivo(false)
+  }
   const [verArchivo, setVerArchivo] = useState(false)
   const [ingresosStock, setIngresosStock] = useState([])
   const [ingresosStockArchivo, setIngresosStockArchivo] = useState([])
@@ -130,6 +139,7 @@ export default function Alimentacion({ usuario }) {
     setStockDB(s || [])
     setHistorial(rapp || [])
     setHistorialArchivo([])
+    setArchivoOffset(100)
     // Cargar capacidades desde BD
     if (cfgCap && cfgCap.length > 0) {
       const capAcost = parseInt(cfgCap.find(c => c.clave === 'capacidad_mixer_acostumbramiento')?.valor || '2000')
@@ -1083,9 +1093,9 @@ export default function Alimentacion({ usuario }) {
           )}
 
           {/* ARCHIVO */}
-          <button onClick={() => setVerArchivo(!verArchivo)}
+          <button onClick={() => { if (!verArchivo && historialArchivo.length === 0) cargarArchivo(); setVerArchivo(!verArchivo) }}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: '1rem' }}>
-            {verArchivo ? '▾' : '▸'} Archivo ({historialArchivo.length} registros anteriores a 7 dias)
+            {verArchivo ? '▾' : '▸'} {cargandoArchivo ? 'Cargando...' : `Archivo (registros anteriores a los últimos 100)`}
           </button>
           {verArchivo && (
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
@@ -1098,8 +1108,11 @@ export default function Alimentacion({ usuario }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {historialArchivo.length === 0 && (
+                  {historialArchivo.length === 0 && !cargandoArchivo && (
                     <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones archivadas.</td></tr>
+                  )}
+                  {cargandoArchivo && (
+                    <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.muted, fontSize: 13 }}>Cargando archivo...</td></tr>
                   )}
                   {historialArchivo.map(h => (
                     <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
