@@ -64,6 +64,7 @@ export function Badge({ children, type = 'neutral', style = {} }) {
 export default function Tablero({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [metricas, setMetricas] = useState([])
+  const [lotes, setLotes] = useState([])
 
   useEffect(() => {
     cargar()
@@ -71,7 +72,20 @@ export default function Tablero({ usuario }) {
 
   async function cargar() {
     try {
-      // Tu lógica de carga de datos para el dashboard principal va acá
+      // 1. Cargar lotes/tropas para la calculadora
+      const { data: dataLotes } = await supabase
+        .from('lotes')
+        .select('*, pesada_animales(*), ventas(*)')
+        .order('fecha_ingreso', { ascending: false })
+      
+      if (dataLotes) setLotes(dataLotes)
+
+      // 2. Podés armar tus métricas del dashboard acá abajo si lo requerís
+      setMetricas([
+        { label: 'Total Tropas', val: dataLotes?.length || 0, sub: 'Lotes registrados', color: S.accent },
+        { label: 'Animales Activos', val: dataLotes?.reduce((acc, l) => acc + (l.cantidad_inicial || 0), 0) || 0, sub: 'En corrales', color: S.green }
+      ])
+
       setLoading(false)
     } catch (err) {
       console.error(err)
@@ -88,7 +102,8 @@ export default function Tablero({ usuario }) {
         <p style={{ margin: '4px 0 0 0', fontSize: 13, color: S.muted }}>Estado general del feedlot en tiempo real</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
+      {/* Grid de métricas superiores */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {metricas.map((m, i) => (
           <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>{m.label}</div>
@@ -97,15 +112,85 @@ export default function Tablero({ usuario }) {
           </div>
         ))}
       </div>
+
+      {/* Sección de la Calculadora de Márgenes por Tropa */}
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+        <h2 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 600 }}>Márgenes por Tropa / Lotes</h2>
+        <p style={{ margin: '0 0 1rem 0', fontSize: 13, color: S.muted }}>Análisis económico estimado por lote ingresado</p>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: `2px solid ${S.borderStrong}`, color: S.muted, fontSize: 11, textTransform: 'uppercase' }}>
+                <th style={{ padding: '8px 10px', textAlign: 'left' }}>Lote / Tropa</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Cabezas</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>P. Compra</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>P. Actual (Est)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Inversión Inicial</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Costo Alimento</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Ingreso Estimado</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Margen ($)</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Rentabilidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lotes.map(l => {
+                const cant = l.cantidad_inicial || 0
+                const pC = l.precio_compra_kg || 0
+                const pK = l.peso_ingreso_promedio || 0
+                const invInicial = cant * pK * pC
+
+                // Cálculos de peso actual basados en pesadas
+                const pAct = calcPesoProm(l.pesada_animales) || pK
+                const dias = l.fecha_ingreso ? Math.max(0, Math.round((new Date() - new Date(l.fecha_ingreso)) / (1000 * 60 * 60 * 24))) : 0
+                
+                // Costo alimento estimado (ej. 12kg por animal/día a $150 el kg)
+                const cTotal = cant * dias * 12 * 150 
+                
+                // Precio venta estimado (se toma el de venta real o uno de referencia de $2200)
+                const precioVentaEst = l.ventas?.[0]?.precio_kg || 2200
+                const ingresoNeto = cant * pAct * precioVentaEst
+
+                const gan = ingresoNeto - (invInicial + cTotal)
+                const rentA = invInicial > 0 ? (gan / (invInicial + cTotal)) * 100 : 0
+
+                return (
+                  <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '10px', fontWeight: 600 }}>{l.nombre || `Lote ${l.id}`}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace' }}>{cant}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace' }}>{pK} kg</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(pAct)} kg</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>${invInicial.toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', color: S.red }}>-${cTotal.toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>+${Math.round(ingresoNeto).toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: gan >= 0 ? S.green : S.red }}>
+                      {gan >= 0 ? '+' : ''}{Math.round(gan).toLocaleString('es-AR')}
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: rentA >= 0 ? S.green : S.red }}>
+                      {rentA.toFixed(1)}%
+                    </td>
+                  </tr>
+                )
+              })}
+              {lotes.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>
+                    No hay lotes activos para calcular márgenes.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
 
-function calcPesoProm(pesadaAnimales) {
-  if (!pesadaAnimales || pesadaAnimales.length === 0) return null
-  const conPeso = pesadaAnimales.filter(p => p.peso_promedio)
-  if (conPeso.length === 0) return null
-  const totalAnim = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
-  if (totalAnim === 0) return null
-  return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
-}
+function calcPesoProm(pa) {
+  if (!pa || pa.length === 0) return null
+  const conPeso = pa.filter(p => p.peso_promedio && p.rango !== 'menores')
+  if (!conPeso.length) return null
+  const tot = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
+  if (!tot) return null
+  return conPeso.reduce((s, p) => s + p.peso_promedio * (
