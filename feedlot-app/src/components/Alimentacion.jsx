@@ -94,6 +94,8 @@ export default function Alimentacion({ usuario }) {
     setCargandoArchivo(false)
   }
   const [verArchivo, setVerArchivo] = useState(false)
+  const [archivoFechaDesde, setArchivoFechaDesde] = useState('')
+  const [archivoFechaHasta, setArchivoFechaHasta] = useState('')
   const [ingresosStock, setIngresosStock] = useState([])
   const [ingresosStockArchivo, setIngresosStockArchivo] = useState([])
   const [verArchivoIngresos, setVerArchivoIngresos] = useState(false)
@@ -1099,6 +1101,26 @@ export default function Alimentacion({ usuario }) {
           </button>
           {verArchivo && (
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+              {/* Filtros de fecha */}
+              <div style={{ padding: '12px 16px', background: S.bg, borderBottom: `1px solid ${S.border}`, display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div style={{ fontSize: 11, color: S.muted, fontWeight: 600 }}>Filtrar por fecha:</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: S.muted }}>Desde</span>
+                  <input type="date" value={archivoFechaDesde} onChange={e => setArchivoFechaDesde(e.target.value)}
+                    style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '4px 8px', fontSize: 12, background: S.surface }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: S.muted }}>Hasta</span>
+                  <input type="date" value={archivoFechaHasta} onChange={e => setArchivoFechaHasta(e.target.value)}
+                    style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '4px 8px', fontSize: 12, background: S.surface }} />
+                </div>
+                {(archivoFechaDesde || archivoFechaHasta) && (
+                  <button onClick={() => { setArchivoFechaDesde(''); setArchivoFechaHasta('') }}
+                    style={{ fontSize: 11, background: 'transparent', border: 'none', color: S.muted, cursor: 'pointer', textDecoration: 'underline' }}>
+                    Limpiar
+                  </button>
+                )}
+              </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr>
@@ -1114,7 +1136,12 @@ export default function Alimentacion({ usuario }) {
                   {cargandoArchivo && (
                     <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.muted, fontSize: 13 }}>Cargando archivo...</td></tr>
                   )}
-                  {historialArchivo.map(h => (
+                  {historialArchivo.filter(h => {
+                    const fecha = h.creado_en?.split('T')[0]
+                    if (archivoFechaDesde && fecha < archivoFechaDesde) return false
+                    if (archivoFechaHasta && fecha > archivoFechaHasta) return false
+                    return true
+                  }).map(h => (
                     <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(h.creado_en || h.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                       <td style={{ padding: '9px 12px' }}>{h.corrales?.numero ? `C-${h.corrales.numero}` : '-'}</td>
