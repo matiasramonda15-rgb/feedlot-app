@@ -22,19 +22,12 @@ export function Loader() {
 export function Btn({ children, onClick, variant = 'ghost', size = 'md', disabled }) {
   const base = { borderRadius: 6, fontFamily: "'IBM Plex Sans', sans-serif", cursor: disabled ? 'not-allowed' : 'pointer', fontWeight: 500, border: '1px solid', transition: 'all .15s', opacity: disabled ? 0.6 : 1 }
   const variants = {
-    ghost: { background: 'transparent', borderColor: S.border, color: S.text },
-    primary: { background: S.accent, borderColor: S.accent, color: '#fff' },
-    danger: { background: S.red, borderColor: S.red, color: '#fff' }
+    ghost: { background: 'transparent', borderColor: S.border, color: S.muted, padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    primary: { background: S.accent, borderColor: S.accent, color: '#fff', padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    green: { background: S.green, borderColor: S.green, color: '#fff', padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    red: { background: S.redLight, borderColor: '#F09595', color: S.red, padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
   }
-  const sizes = {
-    sm: { padding: '4px 10px', fontSize: 12 },
-    md: { padding: '8px 16px', fontSize: 13 }
-  }
-  return (
-    <button disabled={disabled} onClick={onClick} style={{ ...base, ...variants[variant], ...sizes[size] }}>
-      {children}
-    </button>
-  )
+  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant] }}>{children}</button>
 }
 
 export function Card({ children, style = {} }) {
@@ -51,7 +44,8 @@ export function Badge({ children, type = 'neutral', style = {} }) {
     warn:    { background: '#FDF0E0', color: '#7A4500' },
     red:     { background: '#FDF0F0', color: '#7A1A1A' },
     info:    { background: '#E8EFF8', color: '#1A3D6B' },
-    neutral: { background: '#F7F5F0', color: '#6B6760' }
+    purple:  { background: '#F0EAFB', color: '#3D1A6B' },
+    neutral: { background: '#F7F5F0', color: '#6B6760', border: '1px solid #E2DDD6' },
   }
   const current = BADGE_STYLES[type] || BADGE_STYLES.neutral
   return (
@@ -72,23 +66,29 @@ export default function Tablero({ usuario }) {
 
   async function cargar() {
     try {
-      // 1. Cargar lotes/tropas para la calculadora
-      const { data: dataLotes } = await supabase
+      // 1. Cargar datos de lotes y pesadas para la calculadora
+      const { data: dataLotes, error: errLotes } = await supabase
         .from('lotes')
         .select('*, pesada_animales(*), ventas(*)')
         .order('fecha_ingreso', { ascending: false })
-      
+
+      if (errLotes) throw errLotes
       if (dataLotes) setLotes(dataLotes)
 
-      // 2. Podés armar tus métricas del dashboard acá abajo si lo requerís
+      // 2. Intentar cargar estadísticas generales de corrales para armar las métricas de arriba
+      const { data: dataCorrales } = await supabase.from('corrales').select('*')
+      const totalAnimales = dataCorrales?.reduce((acc, c) => acc + (c.animales || 0), 0) || 0
+      const corralesOcupados = dataCorrales?.filter(c => c.animales > 0).length || 0
+
       setMetricas([
-        { label: 'Total Tropas', val: dataLotes?.length || 0, sub: 'Lotes registrados', color: S.accent },
-        { label: 'Animales Activos', val: dataLotes?.reduce((acc, l) => acc + (l.cantidad_inicial || 0), 0) || 0, sub: 'En corrales', color: S.green }
+        { label: 'Animales en Feedlot', val: totalAnimales.toLocaleString('es-AR'), sub: 'Cabezas totales', color: S.green },
+        { label: 'Corrales Ocupados', val: corralesOcupados, sub: `de ${dataCorrales?.length || 0} corrales`, color: S.accent },
+        { label: 'Tropas Activas', val: dataLotes?.length || 0, sub: 'Lotes en seguimiento', color: S.purple }
       ])
 
       setLoading(false)
     } catch (err) {
-      console.error(err)
+      console.error('Error cargando tablero:', err)
       setLoading(false)
     }
   }
@@ -108,7 +108,7 @@ export default function Tablero({ usuario }) {
           <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>{m.label}</div>
             <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: m.color || S.text }}>{m.val}</div>
-            <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginTop: 2 }}>{m.sub}</div>
+            <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>{m.sub}</div>
           </div>
         ))}
       </div>
@@ -140,19 +140,19 @@ export default function Tablero({ usuario }) {
                 const pK = l.peso_ingreso_promedio || 0
                 const invInicial = cant * pK * pC
 
-                // Cálculos de peso actual basados en pesadas
+                // Cálculo de peso actual basado en pesadas
                 const pAct = calcPesoProm(l.pesada_animales) || pK
                 const dias = l.fecha_ingreso ? Math.max(0, Math.round((new Date() - new Date(l.fecha_ingreso)) / (1000 * 60 * 60 * 24))) : 0
                 
-                // Costo alimento estimado (ej. 12kg por animal/día a $150 el kg)
+                // Costo alimento estimado (12kg por animal/día a $150 el kg)
                 const cTotal = cant * dias * 12 * 150 
                 
-                // Precio venta estimado (se toma el de venta real o uno de referencia de $2200)
+                // Precio venta estimado
                 const precioVentaEst = l.ventas?.[0]?.precio_kg || 2200
                 const ingresoNeto = cant * pAct * precioVentaEst
 
                 const gan = ingresoNeto - (invInicial + cTotal)
-                const rentA = invInicial > 0 ? (gan / (invInicial + cTotal)) * 100 : 0
+                const rentA = (invInicial + cTotal) > 0 ? (gan / (invInicial + cTotal)) * 100 : 0
 
                 return (
                   <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
@@ -193,4 +193,5 @@ function calcPesoProm(pa) {
   if (!conPeso.length) return null
   const tot = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (!tot) return null
-  return conPeso.reduce((s, p) => s + p.peso_promedio * (
+  return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / tot
+}
