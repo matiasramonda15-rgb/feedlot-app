@@ -37,13 +37,13 @@ export default function Contactos({ usuario }) {
     nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', observaciones: ''
   })
 
-  // 3. CARGA DE DATOS OPTIMIZADA CON MANEJO DE ERRORES
+  // 3. CARGA DE DATOS OPTIMIZADA CON MANEJO DE ERRORES CORREGIDO
   const cargarDatos = useCallback(async () => {
     try {
       setLoading(true)
       setErrorMessage(null)
 
-      // Ejecutamos las consultas en paralelo para máxima velocidad
+      // Ejecutamos las consultas en paralelo apuntando a las tablas exactas de tu Base de Datos
       const [
         resContactos,
         resVentas,
@@ -53,7 +53,7 @@ export default function Contactos({ usuario }) {
       ] = await Promise.all([
         supabase.from('contactos').select('*').order('nombre'),
         supabase.from('ventas').select('*'),
-        supabase.from('lotes_compras').select('*'), // Asumo 'lotes_compras' o 'lotes' según tu esquema original
+        supabase.from('lotes').select('*'), // Corregido: tu tabla original se llama 'lotes'
         supabase.from('pagos_ventas').select('*'),
         supabase.from('pagos_compras').select('*')
       ])
@@ -62,8 +62,10 @@ export default function Contactos({ usuario }) {
       if (resContactos.error) throw resContactos.error
       if (resVentas.error) throw resVentas.error
       if (resLotes.error) throw resLotes.error
+      if (resPagosVenta.error) throw resPagosVenta.error
+      if (resPagosCompra.error) throw resPagosCompra.error
 
-      // Procesamos e indexamos Pagos de Ventas para búsquedas instantáneas O(1)
+      // Procesamos e indexamos Pagos de Ventas para búsquedas instantáneas
       const pVentasMap = {}
       if (resPagosVenta.data) {
         resPagosVenta.data.forEach(p => {
@@ -77,7 +79,6 @@ export default function Contactos({ usuario }) {
       const vComprasMap = {}
       if (resPagosCompra.data) {
         resPagosCompra.data.forEach(p => {
-          // Mapeo por lote/compra_id
           const targetId = p.lote_id || p.compra_id
           if (targetId) {
             if (!pComprasMap[targetId]) pComprasMap[targetId] = 0
@@ -100,7 +101,7 @@ export default function Contactos({ usuario }) {
 
     } catch (error) {
       console.error("Error crítico cargando contactos:", error)
-      setErrorMessage("No se pudieron sincronizar los datos con Supabase. Verifique su conexión.")
+      setErrorMessage(`Error de sincronización: ${error.message || 'Verifique la estructura de las tablas.'}`)
     } finally {
       setLoading(false)
     }
@@ -142,11 +143,10 @@ export default function Contactos({ usuario }) {
     }
   }
 
-  // 5. PROCESAMIENTO Y FILTRADO EN MEMORIA (Derivación de nombres únicos)
-  // Agrupamos todos los nombres que aparecen en Ventas y Compras para armar la lista dinámica
+  // 5. PROCESAMIENTO Y FILTRADO EN MEMORIA aplicando filtro de blanco/negro si corresponde
   const nombresUnicos = Array.from(new Set([
-    ...ventas.map(v => v.cliente),
-    ...lotes.map(l => l.proveedor),
+    ...ventas.filter(v => mostrarNegro || v.tipo_operacion !== 'negro').map(v => v.cliente),
+    ...lotes.filter(l => mostrarNegro || l.tipo_operacion !== 'negro').map(l => l.proveedor),
     ...contactos.map(c => c.nombre)
   ])).filter(Boolean).sort((a, b) => a.localeCompare(b))
 
@@ -166,12 +166,21 @@ export default function Contactos({ usuario }) {
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Agenda Comercial</h1>
           <p style={{ margin: '4px 0 0 0', fontSize: 13, color: S.muted }}>Clientes, proveedores y cuentas corrientes</p>
         </div>
-        <button onClick={() => { 
-          setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', observaciones: '' })
-          setShowForm(true) 
-        }} style={{ background: S.accent, color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-          + Nuevo Contacto
-        </button>
+        
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* Checkbox para activar/desactivar la visualización informal si tu usuario lo requiere */}
+          <label style={{ fontSize: 12, color: S.muted, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={mostrarNegro} onChange={e => setMostrarNegro(e.target.checked)} />
+            Mostrar cuentas informales
+          </label>
+
+          <button onClick={() => { 
+            setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', observaciones: '' })
+            setShowForm(true) 
+          }} style={{ background: S.accent, color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+            + Nuevo Contacto
+          </button>
+        </div>
       </div>
 
       {/* Cartel de Alerta de Error si falla Supabase */}
@@ -195,21 +204,21 @@ export default function Contactos({ usuario }) {
       {/* GRID DE CONTACTOS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
         {listaFiltrada.map(nombre => {
-          // Filtramos operaciones de este contacto específico
-          const v = ventas.filter(item => item.cliente === nombre)
-          const l = lotes.filter(item => item.proveedor === nombre)
+          // Filtramos operaciones respetando la visibilidad seleccionada
+          const v = ventas.filter(item => item.cliente === nombre && (mostrarNegro || item.tipo_operacion !== 'negro'))
+          const l = lotes.filter(item => item.proveedor === nombre && (mostrarNegro || item.tipo_operacion !== 'negro'))
           const contactoData = contactos.find(c => c.nombre === nombre)
 
-          // Cálculos financieros limpios
+          // Cálculos financieros
           const totalVendido = v.reduce((sum, item) => sum + (item.monto_total || item.monto || 0), 0)
           const totalCobrado = v.reduce((sum, item) => sum + (pagosVenta[item.id] || 0), 0)
           
           const totalComprado = l.reduce((sum, item) => sum + (item.precio_total || item.monto || 0), 0)
           const totalPagado = l.reduce((sum, item) => sum + (pagosCompra[item.id] || 0), 0)
 
-          const saldoVentas = totalVendido - totalCobrado // Lo que nos deben
-          const saldoCompras = totalComprado - totalPagado // Lo que debemos
-          const saldoNeto = saldoVentas - saldoCompras // Balance general
+          const saldoVentas = totalVendido - totalCobrado
+          const saldoCompras = totalComprado - totalPagado
+          const saldoNeto = saldoVentas - saldoCompras
 
           return (
             <div key={nombre} 
@@ -226,8 +235,7 @@ export default function Contactos({ usuario }) {
                   </div>
                 </div>
 
-                {/* Cuenta Corriente / Saldo */}
-                {(saldoVentas > 0 || saldoCompras > 0) && (
+                {(saldoVentas > 0 || saldoCompras > 0 || saldoNeto !== 0) && (
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 13, color: saldoNeto >= 0 ? S.green : S.red }}>
                       {saldoNeto >= 0 ? '+' : ''}${Math.abs(saldoNeto).toLocaleString('es-AR')}
@@ -239,7 +247,6 @@ export default function Contactos({ usuario }) {
                 )}
               </div>
 
-              {/* Indicadores resumidos en las tarjetas */}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
                 {v.length > 0 && <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontWeight: 600 }}>{v.length} ventas</span>}
                 {l.length > 0 && <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: S.redLight, color: S.red, fontWeight: 600 }}>{l.length} compras</span>}
@@ -260,7 +267,7 @@ export default function Contactos({ usuario }) {
         })}
       </div>
 
-      {/* PANTALLA MODAL DE DETALLE (Contacto Seleccionado) */}
+      {/* PANTALLA MODAL DE DETALLE */}
       {contactoSeleccionado && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '1rem' }}
              onClick={() => setContactoSeleccionado(null)}>
@@ -275,7 +282,6 @@ export default function Contactos({ usuario }) {
               <button onClick={() => setContactoSeleccionado(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: S.hint, cursor: 'pointer' }}>✕</button>
             </div>
 
-            {/* Datos de contacto guardados */}
             {contactoSeleccionado.contactoData ? (
               <div style={{ background: S.bg, padding: '12px', borderRadius: 8, fontSize: 13, marginBottom: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 {contactoSeleccionado.contactoData.cuit && <div><strong>CUIT:</strong> {contactoSeleccionado.contactoData.cuit}</div>}
@@ -291,10 +297,9 @@ export default function Contactos({ usuario }) {
                 </button>
               </div>
             ) : (
-              <p style={{ fontSize: 12, color: S.hint, italic: true }}>No hay datos adicionales de contacto registrados para esta firma.</p>
+              <p style={{ fontSize: 12, color: S.hint, fontStyle: 'italic' }}>No hay datos adicionales de contacto registrados para esta firma.</p>
             )}
 
-            {/* Balance general del cliente deudor/acreedor */}
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', display: 'flex', justifyContent: 'space-around', background: S.surface, marginBottom: '1.5rem' }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: S.muted }}>Total Ventas (Vendido)</div>
@@ -314,7 +319,6 @@ export default function Contactos({ usuario }) {
               </div>
             </div>
 
-            {/* Listas de transacciones detalladas si existen */}
             <div style={{ fontSize: 13 }}>
               {contactoSeleccionado.v.length > 0 && (
                 <div style={{ marginBottom: '1rem' }}>
@@ -345,7 +349,7 @@ export default function Contactos({ usuario }) {
         </div>
       )}
 
-      {/* MODAL DEL FORMULARIO DE REGISTRO (Altas y Modificaciones) */}
+      {/* MODAL DEL FORMULARIO DE REGISTRO */}
       {showForm && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: '1rem' }}>
           <form onSubmit={guardarContacto} style={{ background: S.surface, borderRadius: 12, width: '100%', maxWidth: 420, padding: '1.5rem', boxSizing: 'border-box' }}>
