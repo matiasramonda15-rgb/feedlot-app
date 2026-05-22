@@ -77,6 +77,24 @@ export default function Ingresos({ usuario }) {
       observaciones: lote.observaciones || '',
       corral_cuarentena_id: String(lote.corral_cuarentena_id || ''),
     })
+    setFormFactura({
+      numero_factura: lote.numero_factura || '',
+      fecha_factura: lote.fecha_factura || '',
+      forma_pago: lote.forma_pago || 'contado',
+      plazo_dias: lote.plazo_dias || '',
+      fecha_vencimiento_pago: lote.fecha_vencimiento_pago || '',
+      observaciones_pago: lote.observaciones_pago || '',
+      monto_total_con_iva: lote.monto_total_con_iva || '',
+      monto_facturado: lote.monto_facturado !== null && lote.monto_facturado !== undefined ? String(lote.monto_facturado) : '',
+      iva_pct: lote.iva_pct || '10.5',
+      monto_negro: lote.monto_negro !== null && lote.monto_negro !== undefined ? String(lote.monto_negro) : '',
+      comision_pct: lote.comision_pct || '',
+      comision_monto_input: lote.comision_monto ? String(lote.comision_monto) : '',
+      comision_es_paralela: lote.comision_es_paralela || false,
+      gastos_feria_pct: lote.gastos_feria_pct || '',
+      gastos_feria_monto_input: lote.gastos_feria_monto ? String(lote.gastos_feria_monto) : '',
+      gastos_feria_paralelos: lote.gastos_feria_paralelos || false,
+    })
     setVista('editar')
   }
 
@@ -261,6 +279,143 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
           )}
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn onClick={guardarEdicion} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar cambios'}</Btn>
+            <Btn ghost onClick={() => { setVista('lista'); setEditandoLote(null) }}>Cancelar</Btn>
+          </div>
+        </Card>
+
+        <Card titulo="Datos comerciales">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Monto total operación $ (IVA inc.)</label>
+              <input type="number" value={formFactura.monto_total_con_iva || ''} onChange={e => setFormFactura({...formFactura, monto_total_con_iva: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Neto facturado $ (sin IVA)</label>
+              <input type="number" value={formFactura.monto_facturado || ''} onChange={e => setFormFactura({...formFactura, monto_facturado: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>% IVA</label>
+              <select value={formFactura.iva_pct || '10.5'} onChange={e => setFormFactura({...formFactura, iva_pct: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface }}>
+                <option value="0">Sin IVA</option>
+                <option value="10.5">10.5%</option>
+                <option value="21">21%</option>
+              </select>
+            </div>
+            {(formFactura.monto_total_con_iva && formFactura.monto_facturado) && (() => {
+              const total = parseFloat(formFactura.monto_total_con_iva)
+              const neto = parseFloat(formFactura.monto_facturado)
+              const iva = Math.round(neto * parseFloat(formFactura.iva_pct || 10.5) / 100)
+              const paralelo = Math.max(0, total - neto - iva)
+              return (
+                <div style={{ gridColumn: '1/-1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 10, color: S.red, fontWeight: 600, marginBottom: 2 }}>Total factura (neto + IVA)</div>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>${(neto + iva).toLocaleString('es-AR')}</div>
+                    <div style={{ fontSize: 11, color: S.muted }}>Neto: ${neto.toLocaleString('es-AR')} + IVA: ${iva.toLocaleString('es-AR')}</div>
+                  </div>
+                  <div style={{ background: paralelo > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${paralelo > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, marginBottom: 2 }}>Cuenta paralela</div>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 700, color: paralelo > 0 ? '#3D1A6B' : S.hint }}>${paralelo.toLocaleString('es-AR')}</div>
+                  </div>
+                </div>
+              )
+            })()}
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Comisión %</label>
+              <input type="number" value={formFactura.comision_pct || ''} onChange={e => {
+                const pct = e.target.value
+                const mt = formFactura.monto_total_con_iva ? parseFloat(formFactura.monto_total_con_iva) : 0
+                const monto = pct && mt ? Math.round(mt * parseFloat(pct) / 100) : ''
+                setFormFactura({...formFactura, comision_pct: pct, comision_monto_input: String(monto)})
+              }} placeholder="0"
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Comisión $</label>
+              <input type="number" value={formFactura.comision_monto_input || ''} onChange={e => {
+                const monto = e.target.value
+                const mt = formFactura.monto_total_con_iva ? parseFloat(formFactura.monto_total_con_iva) : 0
+                const pct = monto && mt ? ((parseFloat(monto) / mt) * 100).toFixed(2) : ''
+                setFormFactura({...formFactura, comision_monto_input: monto, comision_pct: pct})
+              }} placeholder="0"
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 4 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#3D1A6B', cursor: 'pointer' }}>
+                <input type="checkbox" checked={formFactura.comision_es_paralela || false} onChange={e => setFormFactura({...formFactura, comision_es_paralela: e.target.checked})} />
+                Comisión paralela
+              </label>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Gastos feria %</label>
+              <input type="number" value={formFactura.gastos_feria_pct || ''} onChange={e => {
+                const pct = e.target.value
+                const mt = formFactura.monto_total_con_iva ? parseFloat(formFactura.monto_total_con_iva) : 0
+                const monto = pct && mt ? Math.round(mt * parseFloat(pct) / 100) : ''
+                setFormFactura({...formFactura, gastos_feria_pct: pct, gastos_feria_monto_input: String(monto)})
+              }} placeholder="0"
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Gastos feria $</label>
+              <input type="number" value={formFactura.gastos_feria_monto_input || ''} onChange={e => {
+                const monto = e.target.value
+                const mt = formFactura.monto_total_con_iva ? parseFloat(formFactura.monto_total_con_iva) : 0
+                const pct = monto && mt ? ((parseFloat(monto) / mt) * 100).toFixed(2) : ''
+                setFormFactura({...formFactura, gastos_feria_monto_input: monto, gastos_feria_pct: pct})
+              }} placeholder="0"
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 4 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#3D1A6B', cursor: 'pointer' }}>
+                <input type="checkbox" checked={formFactura.gastos_feria_paralelos || false} onChange={e => setFormFactura({...formFactura, gastos_feria_paralelos: e.target.checked})} />
+                Gastos feria paralelos
+              </label>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>N° Factura</label>
+              <input type="text" value={formFactura.numero_factura || ''} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Fecha factura</label>
+              <input type="date" value={formFactura.fecha_factura || ''} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>Observaciones</label>
+              <input type="text" value={formFactura.observaciones_pago || ''} onChange={e => setFormFactura({...formFactura, observaciones_pago: e.target.value})}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn onClick={async () => {
+              const montoTotal = formFactura.monto_total_con_iva ? parseFloat(formFactura.monto_total_con_iva) : null
+              const montoFact = formFactura.monto_facturado ? parseFloat(formFactura.monto_facturado) : null
+              const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
+              const ivaMonto = montoFact ? Math.round(montoFact * ivaPct / 100) : 0
+              const montoNegro = montoTotal && montoFact ? Math.max(0, montoTotal - montoFact - ivaMonto) : 0
+              const comMonto = formFactura.comision_monto_input ? parseFloat(formFactura.comision_monto_input) : (formFactura.comision_pct ? Math.round((montoTotal || 0) * parseFloat(formFactura.comision_pct) / 100) : 0)
+              const gfMonto = formFactura.gastos_feria_monto_input ? parseFloat(formFactura.gastos_feria_monto_input) : (formFactura.gastos_feria_pct ? Math.round((montoTotal || 0) * parseFloat(formFactura.gastos_feria_pct) / 100) : 0)
+              await supabase.from('lotes').update({
+                numero_factura: formFactura.numero_factura || null,
+                fecha_factura: formFactura.fecha_factura || null,
+                observaciones_pago: formFactura.observaciones_pago || null,
+                monto_total_con_iva: montoTotal, monto_facturado: montoFact,
+                monto_negro: montoNegro, iva_pct: ivaPct, iva_monto: ivaMonto,
+                comision_pct: parseFloat(formFactura.comision_pct) || null,
+                comision_monto: comMonto || null,
+                comision_es_paralela: formFactura.comision_es_paralela || false,
+                gastos_feria_pct: parseFloat(formFactura.gastos_feria_pct) || null,
+                gastos_feria_monto: gfMonto || null,
+                gastos_feria_paralelos: formFactura.gastos_feria_paralelos || false,
+              }).eq('id', editandoLote.id)
+              setVista('lista'); setEditandoLote(null)
+              await cargarDatos()
+            }}>Guardar datos comerciales</Btn>
             <Btn ghost onClick={() => { setVista('lista'); setEditandoLote(null) }}>Cancelar</Btn>
           </div>
         </Card>
