@@ -1,3 +1,4 @@
+// v2 - gestión comercial expandida
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Card, Btn, Badge, Loader } from './Tablero'
