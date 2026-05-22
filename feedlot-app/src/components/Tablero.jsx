@@ -253,4 +253,28 @@ export default function Reportes({ usuario }) {
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 600, color: gan >= 0 ? S.green : S.red }}>
                           {gan >= 0 ? '+' : ''}{Math.round(gan).toLocaleString('es-AR')}
                         </td>
-                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 600, color: rentA >= 0 ?
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 600, color: rentA >= 0 ?<td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 600, color: rentA >= 0 ? S.green : S.red }}>
+                            {rentA.toFixed(1)}%
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+    </div>
+  )
+}
+
+function calcPesoProm(pa) {
+  if (!pa || pa.length === 0) return null
+  const conPeso = pa.filter(p => p.peso_promedio && p.rango !== 'menores')
+  if (!conPeso.length) return null
+  const tot = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
+  if (!tot) return null
+  return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / tot
+}
