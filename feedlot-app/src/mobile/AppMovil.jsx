@@ -484,6 +484,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     terminacion:      [{n:'Rollo',kg:13,c:'#639922'},{n:'Maiz seco',kg:68,c:'#E8A020'},{n:'Vitaminas',kg:1,c:'#5090E0'},{n:'Urea',kg:1,c:'#9060C0'},{n:'Agua',kg:17,c:'#60A0E0'}],
   }
   const [kgs, setKgs] = useState({})
+  const [soloRollo, setSoloRollo] = useState({})
   const [pils, setPils] = useState({})
   const [tab, setTab] = useState('piletas')
   const [mostrarMixer, setMostrarMixer] = useState(false)
@@ -569,6 +570,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         fecha: hoy,
         kg_total: kgs[c.id] || 0,
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
+        solo_rollo: soloRollo[c.id] || false,
       }
     })
     for (const reg of registros) {
@@ -576,11 +578,17 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       await supabase.from('raciones_app').insert(reg)
     }
 
-    // Descontar del stock por etapa
+    // Descontar del stock — separar corrales con solo rollo de los normales
     const descuentoPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
+    let kgSoloRollo = 0
     corralesAlim.forEach(c => {
       const etapa = getEtapa(c)
-      descuentoPorEtapa[etapa] = (descuentoPorEtapa[etapa] || 0) + (kgs[c.id] || 0)
+      const kg = kgs[c.id] || 0
+      if (soloRollo[c.id]) {
+        kgSoloRollo += kg
+      } else {
+        descuentoPorEtapa[etapa] = (descuentoPorEtapa[etapa] || 0) + kg
+      }
     })
 
     const { data: stockItems } = await supabase.from('stock_insumos').select('*')
@@ -609,6 +617,14 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
             cantidad_kg: nuevaCantidad,
             actualizado_en: new Date().toISOString()
           }).eq('id', stockItem.id)
+        }
+      }
+      // Descontar solo rollo para corrales marcados
+      if (kgSoloRollo > 0) {
+        const rolloItem = stockItems.find(s => s.insumo === 'Rollo (heno)') || stockItems.find(s => s.insumo.toLowerCase().includes('rollo'))
+        if (rolloItem) {
+          const nuevaCantidad = Math.max(0, stockFresh[rolloItem.id] - kgSoloRollo)
+          await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
         }
       }
     }
@@ -657,6 +673,12 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                       <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: getEtapa(c) === 'acostumbramiento' ? C.amber : getEtapa(c) === 'recria' ? C.blue : C.green }}>
                         {getEtapa(c) === 'acostumbramiento' ? '🌱 Acostumbramiento' : getEtapa(c) === 'recria' ? '🌾 Recría' : '🏁 Terminación'}
                       </div>
+                      {getEtapa(c) === 'acostumbramiento' && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer', marginTop: 4 }}>
+                          <input type="checkbox" checked={soloRollo[c.id] || false} onChange={e => setSoloRollo({...soloRollo, [c.id]: e.target.checked})} />
+                          Solo rollo (adaptación)
+                        </label>
+                      )}
                       {kgsAyer && kgsAyer[c.id] > 0 && (
                         <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
                           Ayer: {kgsAyer[c.id].toLocaleString('es-AR')} kg

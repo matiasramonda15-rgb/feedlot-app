@@ -194,6 +194,7 @@ export default function Ingresos({ usuario }) {
     const gfMonto = editandoPrecio.gastos_feria_monto_input ? parseFloat(editandoPrecio.gastos_feria_monto_input) : (editandoPrecio.gastos_feria_pct ? Math.round((montoTotal || 0) * parseFloat(editandoPrecio.gastos_feria_pct) / 100) : 0)
     await supabase.from('lotes').update({
       precio_compra: editandoPrecio.precio_compra ? parseFloat(editandoPrecio.precio_compra) : lote.precio_compra,
+      desbaste_pct: editandoPrecio.desbaste_pct ? parseFloat(editandoPrecio.desbaste_pct) : null,
       kg_factura: editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null,
       procedencia: procFinal || lote.procedencia || null,
       monto_total_con_iva: montoTotal,
@@ -675,7 +676,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                     </div>
                   </div>
                   {!isEdit && (
-                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: l.precio_compra ? String(l.precio_compra) : '', kg_factura: l.kg_factura ? String(l.kg_factura) : '', procedencia: l.procedencia || '', otraProcedencia: '', monto_total_con_iva: l.monto_total_con_iva || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', iva_pct: l.iva_pct || '10.5', comision_pct: l.comision_pct || '', comision_monto_input: l.comision_monto ? String(l.comision_monto) : '', comision_es_paralela: l.comision_es_paralela || false, gastos_feria_pct: l.gastos_feria_pct || '', gastos_feria_monto_input: l.gastos_feria_monto ? String(l.gastos_feria_monto) : '', gastos_feria_paralelos: l.gastos_feria_paralelos || false, numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '' })}
+                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: l.precio_compra ? String(l.precio_compra) : '', kg_factura: l.kg_factura ? String(l.kg_factura) : '', procedencia: l.procedencia || '', otraProcedencia: '', desbaste_pct: l.desbaste_pct ? String(l.desbaste_pct) : '', monto_total_con_iva: l.monto_total_con_iva || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', iva_pct: l.iva_pct || '10.5', comision_pct: l.comision_pct || '', comision_monto_input: l.comision_monto ? String(l.comision_monto) : '', comision_es_paralela: l.comision_es_paralela || false, gastos_feria_pct: l.gastos_feria_pct || '', gastos_feria_monto_input: l.gastos_feria_monto ? String(l.gastos_feria_monto) : '', gastos_feria_paralelos: l.gastos_feria_paralelos || false, numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '' })}
                       style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                       Completar datos
                     </button>
@@ -720,7 +721,34 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                           {diffPct !== null && <span style={{ fontSize: 11, marginLeft: 4 }}>({diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%{alertaDiff ? ' ⚠' : ''})</span>}
                         </div>
                       </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Desbaste compra %</label>
+                        <input type="number" placeholder="0" value={editandoPrecio.desbaste_pct || ''}
+                          onChange={e => setEditandoPrecio({...editandoPrecio, desbaste_pct: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
                     </div>
+                    {/* Resumen con desbaste */}
+                    {editandoPrecio.precio_compra && editandoPrecio.desbaste_pct && (() => {
+                      const kgBas = l.kg_bascula || 0
+                      const desbPct = parseFloat(editandoPrecio.desbaste_pct) / 100
+                      const kgNeto = Math.round(kgBas * (1 - desbPct))
+                      const kgDesbaste = kgBas - kgNeto
+                      const precio = parseFloat(editandoPrecio.precio_compra)
+                      const totalBruto = Math.round(kgBas * precio)
+                      const totalNeto = Math.round(kgNeto * precio)
+                      return (
+                        <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10, fontSize: 13 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+                            <div><div style={{ fontSize: 10, color: S.muted }}>Kg báscula</div><div style={{ fontFamily: 'monospace', fontWeight: 600 }}>{kgBas.toLocaleString('es-AR')} kg</div></div>
+                            <div><div style={{ fontSize: 10, color: S.muted }}>Desbaste {editandoPrecio.desbaste_pct}%</div><div style={{ fontFamily: 'monospace', color: S.red }}>-{kgDesbaste.toLocaleString('es-AR')} kg</div></div>
+                            <div><div style={{ fontSize: 10, color: S.muted }}>Kg netos</div><div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{kgNeto.toLocaleString('es-AR')} kg</div></div>
+                            <div><div style={{ fontSize: 10, color: S.muted }}>Total a pagar</div><div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>${totalNeto.toLocaleString('es-AR')}</div></div>
+                          </div>
+                          <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Sin desbaste sería: ${totalBruto.toLocaleString('es-AR')} · Ahorro: ${(totalBruto - totalNeto).toLocaleString('es-AR')}</div>
+                        </div>
+                      )
+                    })()}
                     {editandoPrecio.precio_compra && (
                       <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
                         Total: <strong>${(l.kg_bascula * parseFloat(editandoPrecio.precio_compra)).toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong>
