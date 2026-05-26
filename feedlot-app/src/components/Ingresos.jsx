@@ -210,6 +210,9 @@ export default function Ingresos({ usuario }) {
       gastos_feria_paralelos: editandoPrecio.gastos_feria_paralelos || false,
       numero_factura: editandoPrecio.numero_factura || null,
       fecha_factura: editandoPrecio.fecha_factura || null,
+      forma_pago: editandoPrecio.forma_pago || null,
+      plazo_dias: editandoPrecio.plazo_dias ? parseInt(editandoPrecio.plazo_dias) : null,
+      fecha_vencimiento_pago: editandoPrecio.fecha_vencimiento_pago || (editandoPrecio.plazo_dias ? new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(editandoPrecio.plazo_dias) * 86400000).toISOString().split('T')[0] : null),
     }).eq('id', lote.id)
     setEditandoPrecio(null)
     await cargarDatos()
@@ -676,7 +679,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                     </div>
                   </div>
                   {!isEdit && (
-                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: l.precio_compra ? String(l.precio_compra) : '', kg_factura: l.kg_factura ? String(l.kg_factura) : '', procedencia: l.procedencia || '', otraProcedencia: '', desbaste_pct: l.desbaste_pct ? String(l.desbaste_pct) : '', monto_total_con_iva: l.monto_total_con_iva || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', iva_pct: l.iva_pct || '10.5', comision_pct: l.comision_pct || '', comision_monto_input: l.comision_monto ? String(l.comision_monto) : '', comision_es_paralela: l.comision_es_paralela || false, gastos_feria_pct: l.gastos_feria_pct || '', gastos_feria_monto_input: l.gastos_feria_monto ? String(l.gastos_feria_monto) : '', gastos_feria_paralelos: l.gastos_feria_paralelos || false, numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '' })}
+                    <button onClick={() => setEditandoPrecio({ id: l.id, precio_compra: l.precio_compra ? String(l.precio_compra) : '', kg_factura: l.kg_factura ? String(l.kg_factura) : '', procedencia: l.procedencia || '', otraProcedencia: '', desbaste_pct: l.desbaste_pct ? String(l.desbaste_pct) : '', monto_total_con_iva: l.monto_total_con_iva || '', monto_facturado: l.monto_facturado !== null && l.monto_facturado !== undefined ? String(l.monto_facturado) : '', iva_pct: l.iva_pct || '10.5', comision_pct: l.comision_pct || '', comision_monto_input: l.comision_monto ? String(l.comision_monto) : '', comision_es_paralela: l.comision_es_paralela || false, gastos_feria_pct: l.gastos_feria_pct || '', gastos_feria_monto_input: l.gastos_feria_monto ? String(l.gastos_feria_monto) : '', gastos_feria_paralelos: l.gastos_feria_paralelos || false, numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', forma_pago: l.forma_pago || 'contado', plazo_dias: l.plazo_dias || '', fecha_vencimiento_pago: l.fecha_vencimiento_pago || '' })}
                       style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                       Completar datos
                     </button>
@@ -830,6 +833,26 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                       <div>
                         <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Fecha factura</label>
                         <input type="date" value={editandoPrecio.fecha_factura || ''} onChange={e => setEditandoPrecio({...editandoPrecio, fecha_factura: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Forma de pago</label>
+                        <select value={editandoPrecio.forma_pago || 'contado'} onChange={e => setEditandoPrecio({...editandoPrecio, forma_pago: e.target.value})}
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                          <option value="contado">Contado</option>
+                          <option value="30 dias">30 días</option>
+                          <option value="60 dias">60 días</option>
+                          <option value="otro">Otro</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Plazo (días)</label>
+                        <input type="number" value={editandoPrecio.plazo_dias || ''} onChange={e => setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value, fecha_vencimiento_pago: ''})} placeholder="0"
+                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>O fecha vencimiento</label>
+                        <input type="date" value={editandoPrecio.fecha_vencimiento_pago || ''} onChange={e => setEditandoPrecio({...editandoPrecio, fecha_vencimiento_pago: e.target.value, plazo_dias: ''})}
                           style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                       </div>
                     </div>
