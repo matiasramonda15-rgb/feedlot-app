@@ -125,7 +125,19 @@ export default function Comercial({ usuario }) {
 
   async function eliminar(tabla, id) {
     if (!confirm('Eliminar este registro?')) return
-    await supabase.from(tabla).delete().eq('id', id)
+    if (tabla === 'cheques') {
+      // Si tiene pago_venta_id, borrar el pago (cascade borra cheque y caja)
+      const cheque = cheques.find(c => c.id === id)
+      if (cheque?.pago_venta_id) {
+        await supabase.from('pagos_ventas').delete().eq('id', cheque.pago_venta_id)
+      } else if (cheque?.pago_compra_id) {
+        await supabase.from('pagos_compras').delete().eq('id', cheque.pago_compra_id)
+      } else {
+        await supabase.from('cheques').delete().eq('id', id)
+      }
+    } else {
+      await supabase.from(tabla).delete().eq('id', id)
+    }
     await cargar()
   }
 

@@ -207,9 +207,9 @@ export default function Ventas({ usuario }) {
     const comisionMonto = ep.comision_monto_input ? Math.round(parseFloat(ep.comision_monto_input)) : (comisionPct > 0 && montoTotal ? Math.round(montoTotal * comisionPct / 100) : 0)
     const comisionEsParalela = ep.comision_es_paralela || false
 
-    // Retención de ganancias: (monto facturado - 240000) * 2%
+    // Retención de ganancias: (monto facturado - 224000) * 2%
     const tieneRetencion = ep.tiene_retencion || false
-    const retencionMonto = tieneRetencion ? Math.max(0, Math.round((montoFacturado - 240000) * 0.02)) : 0
+    const retencionMonto = tieneRetencion ? Math.max(0, Math.round((montoFacturado - 224000) * 0.02)) : 0
 
     const updateData = {
       precio_kg: precioKg, desbaste_pct: desbastePct, kg_neto: kgNeto,
@@ -239,7 +239,7 @@ export default function Ventas({ usuario }) {
         const ivaMV = montoFactV > 0 ? Math.round(montoFactV * ivaPct / 100) : 0
         const montoNegroV = montoTotalV !== null ? Math.max(0, montoTotalV - (montoFactV + ivaMV)) : 0
         const comMV = comisionPct > 0 && montoTotalV ? Math.round(montoTotalV * comisionPct / 100) : 0
-        const retMV = tieneRetencion && montoFactV ? Math.max(0, Math.round((montoFactV - 240000) * 0.02)) : 0
+        const retMV = tieneRetencion && montoFactV ? Math.max(0, Math.round((montoFactV - 224000) * 0.02)) : 0
         await supabase.from('ventas').update({
           ...updateData,
           kg_neto: kgNetoV,
@@ -546,7 +546,7 @@ export default function Ventas({ usuario }) {
                       const montoFactR = editandoVenta.monto_facturado ? parseFloat(editandoVenta.monto_facturado) : montoTotalR
                       const comPctR = parseFloat(editandoVenta.comision_pct || 0)
                       const comMontoR = editandoVenta.comision_monto_input ? parseFloat(editandoVenta.comision_monto_input) : (comPctR > 0 ? Math.round(montoTotalR * comPctR / 100) : 0)
-                      const retMontoR = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactR - 240000) * 0.02)) : 0
+                      const retMontoR = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactR - 224000) * 0.02)) : 0
                       const descontarCom = !editandoVenta.comision_es_paralela ? comMontoR : 0
                       const netoACobrar = montoTotalR - descontarCom - retMontoR
                       if (comMontoR === 0 && retMontoR === 0) return null
@@ -734,7 +734,7 @@ export default function Ventas({ usuario }) {
                           const montoFactC = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined ? parseFloat(editandoVenta.monto_facturado) : montoTotalC
                           const comPct = parseFloat(editandoVenta.comision_pct || 0)
                           const comMonto = comPct > 0 ? Math.round(montoTotalC * comPct / 100) : 0
-                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactC - 240000) * 0.02)) : 0
+                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactC - 224000) * 0.02)) : 0
                           return (
                             <div style={{ marginBottom: 10 }}>
                               <div style={{ height: 1, background: S.border, margin: '10px 0' }} />
@@ -958,7 +958,7 @@ export default function Ventas({ usuario }) {
                                   const comPct = parseFloat(formComercial.comision_pct || 0)
                                   const comMonto = comPct > 0 ? Math.round(mt * comPct / 100) : 0
                                   const montoFactCalcInline = formComercial.monto_facturado !== '' && formComercial.monto_facturado !== undefined ? parseFloat(formComercial.monto_facturado) : mt
-                                  const retMonto = formComercial.tiene_retencion ? Math.max(0, Math.round((montoFactCalcInline - 240000) * 0.02)) : 0
+                                  const retMonto = formComercial.tiene_retencion ? Math.max(0, Math.round((montoFactCalcInline - 224000) * 0.02)) : 0
                                   return (
                                     <div style={{ marginTop: 8 }}>
                                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -1000,7 +1000,7 @@ export default function Ventas({ usuario }) {
                                     const fechaVto = formComercial.fecha_vencimiento || (plazo > 0 ? new Date(new Date(v.creado_en).getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
                                     const comPct = parseFloat(formComercial.comision_pct || 0)
                                     const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
-                                    const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 240000) * 0.02)) : 0
+                                    const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 224000) * 0.02)) : 0
                                     await supabase.from('ventas').update({
                                       precio_kg: precio || null,
                                       total: montoTotal,
@@ -1172,7 +1172,7 @@ export default function Ventas({ usuario }) {
                                       const ivaMonto = montoFact > 0 ? Math.round(montoFact * ivaPct / 100) : 0
                                       const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - (montoFact + ivaMonto)) : 0
                                       const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
-                                      const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 240000) * 0.02)) : 0
+                                      const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 224000) * 0.02)) : 0
                                       await supabase.from('ventas').update({
                                         precio_kg: precio || null, total: montoTotal,
                                         monto_facturado: montoFact, monto_negro: montoNegro,
@@ -1800,7 +1800,7 @@ export default function Ventas({ usuario }) {
                                     const esParalela = formPago.es_paralela || (totalNegro > 0 && formPago.forma_pago === 'efectivo')
                                     if (esParalela) await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
                                     else await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: formPago.forma_pago, pago_venta_id: pagoId })
-                                    if (['cheque','e-cheq'].includes(formPago.forma_pago) && formPago.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: v.comprador || null, estado: 'en_cartera', es_paralelo: esParalela })
+                                    if (['cheque','e-cheq'].includes(formPago.forma_pago) && formPago.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: v.comprador || null, estado: 'en_cartera', es_paralelo: esParalela, pago_venta_id: pagoId })
                                     const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)
                                     const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0) + monto
                                     if (totalPag >= totalGrupo * 0.99) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
