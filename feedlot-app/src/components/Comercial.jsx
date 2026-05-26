@@ -150,7 +150,7 @@ export default function Comercial({ usuario }) {
 
   const chRec = cheques.filter(c => c.tipo === 'recibido')
   const chEm = cheques.filter(c => c.tipo === 'emitido')
-  const chVence7 = cheques.filter(c => c.estado === 'en_cartera' && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
+  const chVence7 = cheques.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
   const chFiltrados = filtroCheque === 'todos' ? cheques : filtroCheque === 'recibidos' ? chRec : chEm
 
   const isChecque = ['cheque', 'e-cheq'].includes(formOf.forma_pago)
@@ -425,7 +425,7 @@ export default function Comercial({ usuario }) {
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead><tr style={{ background: S.bg }}>
-                  {['Tipo', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Vencimiento', 'Librador/Beneficiario', 'Estado', ''].map(h => (
+                  {['Tipo', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Vencimiento', 'Librador/Beneficiario', 'Estado', ''].map(h => (
                     <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr></thead>
@@ -436,19 +436,29 @@ export default function Comercial({ usuario }) {
                     const diasVence = Math.ceil((new Date(c.fecha_vencimiento + 'T12:00:00') - new Date()) / (1000 * 60 * 60 * 24))
                     const urgente = diasVence <= 7 && c.estado === 'en_cartera'
                     return (
-                      <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, background: urgente ? '#FFF5F5' : 'transparent' }}>
+                      <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, background: urgente ? '#FFF5F5' : c.es_paralelo ? '#F8F4FF' : 'transparent' }}>
                         <td style={{ padding: '9px 12px' }}>
-                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.tipo === 'recibido' ? S.greenLight : S.amberLight, color: c.tipo === 'recibido' ? S.green : S.amber }}>
-                            {c.tipo === 'recibido' ? '📥 Recibido' : '📤 Emitido'}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.tipo === 'recibido' ? S.greenLight : S.amberLight, color: c.tipo === 'recibido' ? S.green : S.amber }}>
+                              {c.tipo === 'recibido' ? '📥 Recibido' : '📤 Emitido'}
+                            </span>
+                            {c.es_paralelo && (
+                              <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: '#F0EAFB', color: '#3D1A6B', border: '1px solid #9F8ED4' }}>
+                                PARALELO
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{c.numero || '—'}</td>
                         <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{c.banco || '—'}</td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>${c.monto?.toLocaleString('es-AR')}</td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{c.fecha_emision ? new Date(c.fecha_emision + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>
+                          {c.fecha_cobro ? new Date(c.fecha_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                        </td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, fontWeight: urgente ? 700 : 400, color: urgente ? S.red : S.text }}>
                           {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                          {urgente && <span style={{ fontSize: 10, marginLeft: 4, color: S.red }}>({diasVence}d)</span>}
+                          {urgente && <span style={{ fontSize: 10, marginLeft: 4, color: S.red }}>({diasVence}d) ⚠</span>}
                         </td>
                         <td style={{ padding: '9px 12px', fontSize: 12 }}>{c.librador || c.beneficiario || '—'}</td>
                         <td style={{ padding: '9px 12px' }}>
