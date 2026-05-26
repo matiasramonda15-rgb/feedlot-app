@@ -414,7 +414,7 @@ export default function Ventas({ usuario }) {
                 return (
                   <div>
                     <div style={{ fontSize: 12, color: S.muted, marginBottom: 12 }}>
-                      {v.grupo_venta_id ? 'Venta multi-corral' : `C-${v.corrales?.numero || v.corral_id}`} · {v.cantidad} animales · {new Date(v.creado_en).toLocaleDateString('es-AR')}
+                      {v.grupo_venta_id ? 'Venta multi-corral' : `C-${v.corrales?.numero || v.corral_id}`} · {v.cantidad} animales · {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR')}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                       <div>
@@ -601,7 +601,7 @@ export default function Ventas({ usuario }) {
                           {v.grupo_venta_id && <span style={{ fontSize: 11, color: S.amber, marginLeft: 6 }}>· Se actualizarán todos los corrales del grupo</span>}
                         </div>
                         <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
-                          {v.kg_vivo_total ? `${v.kg_vivo_total.toLocaleString('es-AR')} kg brutos` : v.kg_neto ? `${v.kg_neto.toLocaleString('es-AR')} kg` : ''} · {new Date(v.creado_en).toLocaleDateString('es-AR')}
+                          {v.kg_vivo_total ? `${v.kg_vivo_total.toLocaleString('es-AR')} kg brutos` : v.kg_neto ? `${v.kg_neto.toLocaleString('es-AR')} kg` : ''} · {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR')}
                           {v.comprador && ` · ${v.comprador}`}
                         </div>
                       </div>
@@ -856,7 +856,7 @@ export default function Ventas({ usuario }) {
                         return (
                           <React.Fragment key={v.id}>
                           <tr style={{ borderBottom: `1px solid ${S.border}` }}>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                             <td style={{ padding: '9px 12px' }}>C-{v.corrales?.numero || v.corral_id}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>{v.comprador || '—'}</td>
@@ -1038,7 +1038,7 @@ export default function Ventas({ usuario }) {
                         return (
                           <React.Fragment key={v0.grupo_venta_id}>
                           <tr style={{ borderBottom: `1px solid ${S.border}`, background: S.accentLight }}>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v0.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + (v0.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>
                               <div style={{ fontWeight: 600 }}>{corralesNums}</div>
                               <div style={{ fontSize: 10, color: S.accent }}>Venta multi-corral</div>
@@ -1671,7 +1671,7 @@ export default function Ventas({ usuario }) {
                     const venceProx = v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)
                     return (
                       <tr key={rowKey} style={{ borderBottom: '1px solid #E2DDD6', background: esGrupo ? S.accentLight : venceProx ? '#FFF5F5' : 'transparent' }}>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                         <td style={{ padding: '7px 10px', fontWeight: 600 }}>
                           {corralesStr}
                           {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
