@@ -705,17 +705,33 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
               )
             })}
             <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.75rem' }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Total mixer hoy</div>
-                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: C.mono, color: C.green }}>{total.toLocaleString('es-AR')} kg</div>
-              </div>
-              <button onClick={() => setMostrarMixer(!mostrarMixer)}
-                style={{ width: '100%', background: C.green, border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans }}>
-                {mostrarMixer ? 'Ocultar ingredientes' : 'Ver ingredientes del mixer'}
-              </button>
+              {(() => {
+                const kgSoloRolloTotal = corralesAlim.filter(c => soloRollo[c.id]).reduce((s, c) => s + (kgs[c.id] || 0), 0)
+                const kgMixer = total - kgSoloRolloTotal
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>Total mixer hoy</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, fontFamily: C.mono, color: C.green }}>{kgMixer.toLocaleString('es-AR')} kg</div>
+                    </div>
+                    {kgSoloRolloTotal > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem', background: '#F0F7E6', borderRadius: 6, padding: '6px 10px' }}>
+                        <div style={{ fontSize: 12, color: '#639922', fontWeight: 600 }}>🌿 Solo rollo (adaptación)</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: C.mono, color: '#639922' }}>{kgSoloRolloTotal.toLocaleString('es-AR')} kg</div>
+                      </div>
+                    )}
+                    <button onClick={() => setMostrarMixer(!mostrarMixer)}
+                      style={{ width: '100%', background: C.green, border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans }}>
+                      {mostrarMixer ? 'Ocultar ingredientes' : 'Ver ingredientes del mixer'}
+                    </button>
+                  </>
+                )
+              })()}
             </div>
             {mostrarMixer && MIXERS.map((mx, mi) => {
-              const totalMx = mx.corralesIds.reduce((a, id) => a + (kgs[id] || 0), 0)
+              // Excluir corrales con solo rollo del mixer
+              const totalMx = mx.corralesIds.reduce((a, id) => a + (soloRollo[id] ? 0 : (kgs[id] || 0)), 0)
+              if (totalMx === 0) return null
               const f = FRML[mx.etapa]
               const factor = totalMx / 100
               const superaCap = totalMx > mx.cap
