@@ -420,13 +420,23 @@ export default function Ventas({ usuario }) {
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto total operación $ <span style={{ color: S.accent }}>(IVA incluido)</span></label>
                         <input type="number" placeholder="Total que paga el frigorífico" value={editandoVenta.monto_total_con_iva || ''}
-                          onChange={e => setEditandoVenta({ ...editandoVenta, monto_total_con_iva: e.target.value })}
+                          onChange={e => {
+                          const mt = e.target.value
+                          const kg = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - (parseFloat(editandoVenta.desbaste||8)/100))) : (v.kg_neto || 0)
+                          const precio = mt && kg ? Math.round(parseFloat(mt) / kg) : ''
+                          setEditandoVenta({ ...editandoVenta, monto_total_con_iva: mt, precio_kg: String(precio) })
+                        }}
                           style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
                       </div>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg <span style={{ color: S.hint }}>(opcional)</span></label>
                         <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
-                          onChange={e => setEditandoVenta({ ...editandoVenta, precio_kg: e.target.value })}
+                          onChange={e => {
+                          const precio = e.target.value
+                          const kg = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - (parseFloat(editandoVenta.desbaste||8)/100))) : (v.kg_neto || 0)
+                          const mt = precio && kg ? Math.round(parseFloat(precio) * kg) : ''
+                          setEditandoVenta({ ...editandoVenta, precio_kg: precio, monto_total_con_iva: String(mt) })
+                        }}
                           style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                       </div>
                       <div>
