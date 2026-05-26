@@ -47,7 +47,7 @@ export default function Reportes({ usuario }) {
     const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
-      supabase.from('raciones_diarias').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(500),
       supabase.from('stock_insumos').select('*'),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -646,4 +646,4 @@ function calcPesoProm(pa) {
   const tot = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (!tot) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / tot
-} 
+}
