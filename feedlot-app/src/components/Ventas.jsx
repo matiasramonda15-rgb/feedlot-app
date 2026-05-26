@@ -1795,7 +1795,7 @@ export default function Ventas({ usuario }) {
                                   <button onClick={async () => {
                                     if (!formPago.monto) return
                                     const monto = parseFloat(formPago.monto)
-                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null }).select().single()
+                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null, es_paralelo: formPago.es_paralela || false }).select().single()
                                     const pagoId = pagoInsertado?.id || null
                                     const esParalela = formPago.es_paralela || (totalNegro > 0 && formPago.forma_pago === 'efectivo')
                                     if (esParalela) await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
