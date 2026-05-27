@@ -57,7 +57,7 @@ export default function Ingresos({ usuario }) {
   async function cargarDatos() {
     setLoading(true)
     const [{ data: lotesDB }, { data: corralesDB }] = await Promise.all([
-      supabase.from('lotes').select('*, corrales:corral_cuarentena_id(numero)').order('creado_en', { ascending: false }),
+      supabase.from('lotes').select('*').order('creado_en', { ascending: false }),
       supabase.from('corrales').select('id, numero, rol, sub, animales').order('numero'),
     ])
     setLotes(lotesDB || [])
@@ -253,7 +253,7 @@ export default function Ingresos({ usuario }) {
               <div key={l.id} style={{ background: S.surface, borderRadius: 8, padding: '1rem', marginBottom: 8, border: `1px solid ${isEdit ? S.accent : S.border}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isEdit ? '1rem' : 0 }}>
                   <div style={{ fontSize: 13 }}>
-                    <strong>C-{l.corrales?.numero || l.corral_cuarentena_id}</strong>
+                    <strong>C-{corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id}</strong>
                     {' · '}{l.cantidad} animales
                     {' · '}{(l.kg_vivo_total || l.kg_bascula || 0).toLocaleString('es-AR')} kg brutos
                     {l.categoria && ` · ${l.categoria}`}
@@ -416,7 +416,7 @@ export default function Ingresos({ usuario }) {
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted, whiteSpace: 'nowrap' }}>
                         {l.fecha_ingreso ? new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
                       </td>
-                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{l.corrales?.numero || l.corral_cuarentena_id || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id || '—'}</td>
                       <td style={{ padding: '8px 12px', color: S.muted }}>{l.procedencia || '—'}</td>
                       <td style={{ padding: '8px 12px', fontSize: 11, color: S.muted }}>{l.categoria || '—'}</td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right' }}>{l.cantidad?.toLocaleString('es-AR') || '—'}</td>
@@ -714,9 +714,9 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
     await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', lote.id)
 
     if (formPago.es_paralela) {
-      await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: `Pago compra ${lote.procedencia || ''} C-${lote.corrales?.numero || lote.corral_cuarentena_id}`, monto, pago_compra_id: pagoInsertado?.id })
+      await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: `Pago compra ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`, monto, pago_compra_id: pagoInsertado?.id })
     } else {
-      await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Pago ${lote.procedencia || ''} C-${lote.corrales?.numero || lote.corral_cuarentena_id}`, monto, forma_pago: formPago.forma_pago, pago_compra_id: pagoInsertado?.id })
+      await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Pago ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`, monto, forma_pago: formPago.forma_pago, pago_compra_id: pagoInsertado?.id })
     }
     if (['cheque', 'e-cheq'].includes(formPago.forma_pago) && formPago.fecha_vencimiento_cheque) {
       await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, beneficiario: lote.procedencia || null, estado: 'emitido', es_paralelo: formPago.es_paralela || false, pago_compra_id: pagoInsertado?.id })
@@ -753,7 +753,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
             {/* Header */}
             <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>C-{l.corrales?.numero || l.corral_cuarentena_id} · {l.procedencia || '—'}</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>C-{corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id} · {l.procedencia || '—'}</div>
                 <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                   {l.cantidad} animales · {l.fecha_ingreso ? new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR') : ''}
                   {l.kg_factura > 0 && ` · ${l.kg_factura.toLocaleString('es-AR')} kg fac`}
