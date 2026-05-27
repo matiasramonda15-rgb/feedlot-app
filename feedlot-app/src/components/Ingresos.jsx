@@ -243,7 +243,9 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
     const diffKg = kgBas && kgFac ? kgBas - kgFac : null
     const diffPct = diffKg !== null && kgFac > 0 ? (diffKg / kgFac * 100) : null
     const alertaDiff = diffPct !== null && Math.abs(diffPct) > 3
-    const totalCompra = kgBas && form.precio_compra ? Math.round(kgBas * parseFloat(form.precio_compra)) : null
+    // Total se calcula sobre kg factura (ya viene con desbaste), no sobre bascula
+    const kgParaTotal = kgFac > 0 ? kgFac : kgBas
+    const totalCompra = kgParaTotal && form.precio_compra ? Math.round(kgParaTotal * parseFloat(form.precio_compra)) : null
 
     return (
       <div>
