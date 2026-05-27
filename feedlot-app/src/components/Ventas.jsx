@@ -260,7 +260,7 @@ export default function Ventas({ usuario }) {
   }
 
   async function cargarChequesParalelos() {
-    const { data } = await supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').eq('es_paralelo', true).order('fecha_vencimiento')
+    const { data } = await supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento')
     setChequesParalelos(data || [])
   }
 
@@ -1768,21 +1768,29 @@ export default function Ventas({ usuario }) {
                                       Cobro en cuenta paralela
                                     </label>
                                   </div>
-                                  {/* Selector cheque paralelo */}
-                                  {formPago.es_paralela && ['cheque','e-cheq'].includes(formPago.forma_pago) && chequesParalelos.length > 0 && (
-                                    <div style={{ gridColumn: '1/-1' }}>
-                                      <div style={{ fontSize: 9, color: '#3D1A6B', textTransform: 'uppercase', marginBottom: 2 }}>Cheque en cartera paralela</div>
-                                      <select onChange={e => {
-                                        const ch = chequesParalelos.find(c => String(c.id) === e.target.value)
-                                        if (ch) setFormPago({...formPago, numero_cheque: ch.numero || '', banco: ch.banco || '', monto: String(ch.monto || ''), fecha_cobro_cheque: ch.fecha_cobro || '', fecha_vencimiento_cheque: ch.fecha_vencimiento || ''})
-                                      }} style={{ width: '100%', border: '1px solid #9F8ED4', borderRadius: 4, padding: '4px 6px', fontSize: 11, background: '#F0EAFB' }}>
-                                        <option value="">— Seleccioná un cheque —</option>
-                                        {chequesParalelos.map(ch => (
-                                          <option key={ch.id} value={ch.id}>#{ch.numero} · {ch.banco} · ${ch.monto?.toLocaleString('es-AR')} · vto {ch.fecha_vencimiento}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  )}
+                                  {/* Selector cheque en cartera */}
+                                  {['cheque','e-cheq'].includes(formPago.forma_pago) && (() => {
+                                    const chFiltrados = formPago.es_paralela
+                                      ? chequesParalelos.filter(c => c.es_paralelo)
+                                      : chequesParalelos.filter(c => !c.es_paralelo)
+                                    if (chFiltrados.length === 0) return null
+                                    return (
+                                      <div style={{ gridColumn: '1/-1' }}>
+                                        <div style={{ fontSize: 9, color: formPago.es_paralela ? '#3D1A6B' : '#1A3D6B', textTransform: 'uppercase', marginBottom: 2 }}>
+                                          {formPago.es_paralela ? 'Cheque en cartera paralela' : 'Cheque en cartera oficial'}
+                                        </div>
+                                        <select onChange={e => {
+                                          const ch = chequesParalelos.find(c => String(c.id) === e.target.value)
+                                          if (ch) setFormPago({...formPago, numero_cheque: ch.numero || '', banco: ch.banco || '', monto: String(ch.monto || ''), fecha_cobro_cheque: ch.fecha_cobro || '', fecha_vencimiento_cheque: ch.fecha_vencimiento || ''})
+                                        }} style={{ width: '100%', border: `1px solid ${formPago.es_paralela ? '#9F8ED4' : '#1A3D6B'}`, borderRadius: 4, padding: '4px 6px', fontSize: 11, background: formPago.es_paralela ? '#F0EAFB' : '#E8EFF8' }}>
+                                          <option value="">— Seleccioná un cheque en cartera —</option>
+                                          {chFiltrados.map(ch => (
+                                            <option key={ch.id} value={ch.id}>#{ch.numero} · {ch.banco} · ${(ch.monto || 0).toLocaleString('es-AR')} · vto {ch.fecha_vencimiento}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )
+                                  })()}
                                   {['cheque','e-cheq'].includes(formPago.forma_pago) && (
                                     <>
                                       <div>
