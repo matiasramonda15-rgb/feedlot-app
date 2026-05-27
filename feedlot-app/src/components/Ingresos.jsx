@@ -1281,7 +1281,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                                 await supabase.from('caja_oficial').insert({ fecha: formPagoCompra.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Compra ${l.codigo} · ${l.procedencia || ''}`, monto, forma_pago: formPagoCompra.forma_pago, pago_compra_id: pagoCompraInsert?.id || null })
                               }
                               if (['cheque','e-cheq'].includes(formPagoCompra.forma_pago) && formPagoCompra.fecha_vencimiento_cheque) {
-                                await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, monto, fecha_emision: formPagoCompra.fecha, fecha_vencimiento: formPagoCompra.fecha_vencimiento_cheque, beneficiario: l.procedencia || null, estado: 'emitido' })
+                                await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPagoCompra.numero_cheque || null, banco: formPagoCompra.banco || null, monto, fecha_emision: formPagoCompra.fecha, fecha_vencimiento: formPagoCompra.fecha_vencimiento_cheque, beneficiario: l.procedencia || null, estado: 'emitido', pago_compra_id: pagoCompraInsert?.id || null })
                               }
                               // Verificar si quedó totalmente pagado
                               const { data: todosPageos } = await supabase.from('pagos_compras').select('monto').eq('lote_id', l.id)
@@ -1303,7 +1303,13 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                                   <span>{new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
                                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                     <span style={{ fontFamily: 'monospace', color: S.red }}>-${p.monto.toLocaleString('es-AR')}</span>
-                                    <button onClick={async () => { await supabase.from('pagos_compras').delete().eq('id', p.id); await cargarDatos() }}
+                                    <button onClick={async () => { 
+                                      // Buscar si hay cheque asociado y borrarlo
+                                      const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).single()
+                                      if (chAsoc) await supabase.from('cheques').delete().eq('id', chAsoc.id)
+                                      await supabase.from('pagos_compras').delete().eq('id', p.id)
+                                      await cargarDatos() 
+                                    }}
                                       style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 11 }}>✕</button>
                                   </div>
                                 </div>
