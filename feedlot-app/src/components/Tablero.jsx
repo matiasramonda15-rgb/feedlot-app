@@ -136,6 +136,7 @@ export default function Tablero({ usuario }) {
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
     const stockBajo = (stockItems || []).filter(s => s.cantidad_kg != null && s.minimo_kg != null && s.cantidad_kg <= s.minimo_kg)
+    const stockBajo = (stockItems || []).filter(s => s.cantidad_kg != null && s.minimo_kg != null && s.cantidad_kg <= s.minimo_kg)
     setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [] })
     setLoading(false)
   }
