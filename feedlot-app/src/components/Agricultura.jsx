@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './Tablero'
 
@@ -18,633 +18,1129 @@ function Label({ children }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{children}</div>
 }
 
-function Card({ children, style = {} }) {
-  return <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem', ...style }}>{children}</div>
-}
-
-function SecTitle({ children }) {
-  return <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>{children}</div>
+function Card({ children, titulo, style = {} }) {
+  return (
+    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden', ...style }}>
+      {titulo && <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, fontSize: 13, fontWeight: 600 }}>{titulo}</div>}
+      <div style={{ padding: '1.25rem' }}>{children}</div>
+    </div>
+  )
 }
 
 const CULTIVOS = ['Soja', 'Maiz', 'Trigo', 'Alfalfa', 'Girasol', 'Sorgo', 'Otro']
-const TIPOS_AGRO = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Otro']
-const CATEGORIAS_GASTO = ['Semilla', 'Fertilizante', 'Herbicida', 'Fungicida', 'Insecticida', 'Laboreo', 'Siembra', 'Cosecha', 'Flete', 'Seguro', 'Arriendo', 'Otro']
-const LABORES = ['Pulverización', 'Fertilización', 'Siembra', 'Cosecha', 'Roturación', 'Rastreo', 'Otro']
+const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'Labranza', 'Otro']
 
 export default function Agricultura({ usuario }) {
-  const [tab, setTab] = useState('campanas')
+  const [tab, setTab] = useState('campos')
   const [loading, setLoading] = useState(true)
 
-  const [potreros, setPotreros] = useState([])
+  // Data
+  const [campos, setCampos] = useState([])
   const [campanas, setCampanas] = useState([])
-  const [gastosCampana, setGastosCampana] = useState([])
-  const [ventasGrano, setVentasGrano] = useState([])
-  const [agroquimicos, setAgroquimicos] = useState([])
-  const [ingresosAgro, setIngresosAgro] = useState([])
+  const [planes, setPlanes] = useState([])
   const [ordenes, setOrdenes] = useState([])
-  const [maquinaria, setMaquinaria] = useState([])
+  const [cosechas, setCosechas] = useState([])
+  const [ventasGranos, setVentasGranos] = useState([])
+  const [gastosAgro, setGastosAgro] = useState([])
+  const [stockAgro, setStockAgro] = useState([])
 
-  const [campanaSelId, setCampanaSelId] = useState('')
+  // UI states
+  const [showForm, setShowForm] = useState(false)
+  const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
-
-  // Forms
-  const [showFormCampana, setShowFormCampana] = useState(false)
-  const [showFormGasto, setShowFormGasto] = useState(false)
-  const [showFormVenta, setShowFormVenta] = useState(false)
-  const [showFormAgro, setShowFormAgro] = useState(false)
-  const [showFormIngresoAgro, setShowFormIngresoAgro] = useState(false)
-  const [showFormOrden, setShowFormOrden] = useState(false)
-
-  const [formCampana, setFormCampana] = useState({ potrero_id: '', cultivo: 'Soja', anio: new Date().getFullYear(), fecha_siembra: '', observaciones: '' })
-  const [formGasto, setFormGasto] = useState({ campana_id: '', categoria: 'Semilla', descripcion: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '' })
-  const [formVenta, setFormVenta] = useState({ campana_id: '', cultivo: '', kg: '', precio_kg: '', comprador: '', fecha: new Date().toISOString().split('T')[0], destino: 'venta', observaciones: '' })
-  const [formAgro, setFormAgro] = useState({ nombre: '', tipo: 'Herbicida', unidad: 'litros', stock_minimo: '' })
-  const [formIngresoAgro, setFormIngresoAgro] = useState({ agroquimico_id: '', cantidad: '', precio_unitario: '', proveedor: '', fecha: new Date().toISOString().split('T')[0] })
-  const [formOrden, setFormOrden] = useState({ potrero_id: '', campana_id: '', labor: 'Pulverización', fecha: new Date().toISOString().split('T')[0], hectareas: '', maquina_id: '', observaciones: '', agroquimicos: [] })
-  const [ordenAgro, setOrdenAgro] = useState([{ agroquimico_id: '', cantidad: '', dosis_por_ha: '' }])
+  const [campanaActiva, setCampanaActiva] = useState(null)
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: pot }, { data: cam }, { data: gc }, { data: vg }, { data: agro }, { data: ia }, { data: ord }, { data: maq }] = await Promise.all([
-      supabase.from('potreros').select('*').eq('activo', true).order('nombre'),
-      supabase.from('campanas').select('*, potreros(nombre, hectareas)').order('anio', { ascending: false }),
-      supabase.from('gastos_campana').select('*').order('fecha', { ascending: false }),
-      supabase.from('ventas_grano').select('*').order('fecha', { ascending: false }),
-      supabase.from('agroquimicos').select('*').order('nombre'),
-      supabase.from('ingresos_agroquimicos').select('*, agroquimicos(nombre, unidad)').order('fecha', { ascending: false }).limit(50),
-      supabase.from('ordenes_trabajo').select('*, potreros(nombre), campanas(cultivo, anio), maquinaria(nombre), ordenes_agroquimicos(*, agroquimicos(nombre, unidad))').order('fecha', { ascending: false }).limit(50),
-      supabase.from('maquinaria').select('*').eq('activo', true).order('nombre'),
+    setLoading(true)
+    const [
+      { data: c }, { data: ca }, { data: pl }, { data: or },
+      { data: co }, { data: vg }, { data: ga }, { data: sa }
+    ] = await Promise.all([
+      supabase.from('campos').select('*, lotes_agricolas(*)').order('nombre'),
+      supabase.from('campanas').select('*').order('año_inicio', { ascending: false }),
+      supabase.from('plan_cultivos').select('*, campos(nombre), lotes_agricolas(numero), campanas(nombre)').order('creado_en', { ascending: false }),
+      supabase.from('ordenes_trabajo').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
+      supabase.from('cosechas').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
+      supabase.from('ventas_granos').select('*').order('fecha', { ascending: false }),
+      supabase.from('gastos_agro').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
+      supabase.from('stock_agro').select('*').order('insumo'),
     ])
-    setPotreros(pot || [])
-    setCampanas(cam || [])
-    setGastosCampana(gc || [])
-    setVentasGrano(vg || [])
-    setAgroquimicos(agro || [])
-    setIngresosAgro(ia || [])
-    setOrdenes(ord || [])
-    setMaquinaria(maq || [])
+    setCampos(c || [])
+    setCampanas(ca || [])
+    setPlanes(pl || [])
+    setOrdenes(or || [])
+    setCosechas(co || [])
+    setVentasGranos(vg || [])
+    setGastosAgro(ga || [])
+    setStockAgro(sa || [])
+    const activa = (ca || []).find(c => c.activa)
+    if (activa) setCampanaActiva(activa)
     setLoading(false)
-  }
-
-  async function guardarCampana() {
-    if (!formCampana.potrero_id || !formCampana.cultivo) { alert('Completá potrero y cultivo'); return }
-    setGuardando(true)
-    await supabase.from('campanas').insert({ ...formCampana, potrero_id: parseInt(formCampana.potrero_id) })
-    await cargar()
-    setShowFormCampana(false)
-    setFormCampana({ potrero_id: '', cultivo: 'Soja', anio: new Date().getFullYear(), fecha_siembra: '', observaciones: '' })
-    setGuardando(false)
-  }
-
-  async function guardarGasto() {
-    if (!formGasto.campana_id || !formGasto.monto) { alert('Completá campaña y monto'); return }
-    setGuardando(true)
-    await supabase.from('gastos_campana').insert({ ...formGasto, campana_id: parseInt(formGasto.campana_id), monto: parseFloat(formGasto.monto), registrado_por: usuario?.id })
-    await cargar()
-    setShowFormGasto(false)
-    setGuardando(false)
-  }
-
-  async function guardarVenta() {
-    if (!formVenta.campana_id || !formVenta.kg) { alert('Completá campaña y kg'); return }
-    setGuardando(true)
-    const total = formVenta.kg && formVenta.precio_kg ? parseFloat(formVenta.kg) * parseFloat(formVenta.precio_kg) : null
-    await supabase.from('ventas_grano').insert({ ...formVenta, campana_id: parseInt(formVenta.campana_id), kg: parseFloat(formVenta.kg), precio_kg: formVenta.precio_kg ? parseFloat(formVenta.precio_kg) : null, total, registrado_por: usuario?.id })
-    await cargar()
-    setShowFormVenta(false)
-    setGuardando(false)
-  }
-
-  async function guardarAgroquimico() {
-    if (!formAgro.nombre) { alert('Ingresá el nombre'); return }
-    setGuardando(true)
-    await supabase.from('agroquimicos').insert({ ...formAgro, stock_minimo: parseFloat(formAgro.stock_minimo) || 0 })
-    await cargar()
-    setShowFormAgro(false)
-    setFormAgro({ nombre: '', tipo: 'Herbicida', unidad: 'litros', stock_minimo: '' })
-    setGuardando(false)
-  }
-
-  async function guardarIngresoAgro() {
-    if (!formIngresoAgro.agroquimico_id || !formIngresoAgro.cantidad) { alert('Completá producto y cantidad'); return }
-    setGuardando(true)
-    const agro = agroquimicos.find(a => String(a.id) === String(formIngresoAgro.agroquimico_id))
-    const cant = parseFloat(formIngresoAgro.cantidad)
-    const total = formIngresoAgro.precio_unitario ? cant * parseFloat(formIngresoAgro.precio_unitario) : null
-    await supabase.from('ingresos_agroquimicos').insert({ ...formIngresoAgro, agroquimico_id: parseInt(formIngresoAgro.agroquimico_id), cantidad: cant, precio_unitario: formIngresoAgro.precio_unitario ? parseFloat(formIngresoAgro.precio_unitario) : null, total, registrado_por: usuario?.id })
-    await supabase.from('agroquimicos').update({ stock_actual: (agro?.stock_actual || 0) + cant }).eq('id', agro.id)
-    await cargar()
-    setShowFormIngresoAgro(false)
-    setFormIngresoAgro({ agroquimico_id: '', cantidad: '', precio_unitario: '', proveedor: '', fecha: new Date().toISOString().split('T')[0] })
-    setGuardando(false)
-  }
-
-  async function guardarOrden() {
-    if (!formOrden.potrero_id || !formOrden.labor) { alert('Completá potrero y labor'); return }
-    setGuardando(true)
-    const { data: orden } = await supabase.from('ordenes_trabajo').insert({
-      potrero_id: parseInt(formOrden.potrero_id),
-      campana_id: formOrden.campana_id ? parseInt(formOrden.campana_id) : null,
-      labor: formOrden.labor,
-      fecha: formOrden.fecha,
-      hectareas: formOrden.hectareas ? parseFloat(formOrden.hectareas) : null,
-      maquina_id: formOrden.maquina_id ? parseInt(formOrden.maquina_id) : null,
-      observaciones: formOrden.observaciones || null,
-      registrado_por: usuario?.id,
-    }).select().single()
-
-    if (orden) {
-      // Insertar agroquímicos de la orden y descontar stock
-      for (const oa of ordenAgro) {
-        if (!oa.agroquimico_id || !oa.cantidad) continue
-        const cant = parseFloat(oa.cantidad)
-        await supabase.from('ordenes_agroquimicos').insert({ orden_id: orden.id, agroquimico_id: parseInt(oa.agroquimico_id), cantidad: cant, dosis_por_ha: oa.dosis_por_ha ? parseFloat(oa.dosis_por_ha) : null })
-        const agro = agroquimicos.find(a => String(a.id) === String(oa.agroquimico_id))
-        if (agro) await supabase.from('agroquimicos').update({ stock_actual: Math.max(0, (agro.stock_actual || 0) - cant) }).eq('id', agro.id)
-      }
-    }
-    await cargar()
-    setShowFormOrden(false)
-    setFormOrden({ potrero_id: '', campana_id: '', labor: 'Pulverización', fecha: new Date().toISOString().split('T')[0], hectareas: '', maquina_id: '', observaciones: '' })
-    setOrdenAgro([{ agroquimico_id: '', cantidad: '', dosis_por_ha: '' }])
-    setGuardando(false)
-  }
-
-  async function eliminar(tabla, id) {
-    if (!confirm('¿Eliminar este registro?')) return
-    await supabase.from(tabla).delete().eq('id', id)
-    await cargar()
-  }
-
-  async function cerrarCampana(id) {
-    const kg = prompt('¿Cuántos kg se cosecharon?')
-    if (kg === null) return
-    await supabase.from('campanas').update({ estado: 'cerrada', fecha_cosecha: new Date().toISOString().split('T')[0], kg_cosechados: parseFloat(kg) || null }).eq('id', id)
-    await cargar()
   }
 
   if (loading) return <Loader />
 
-  const campanaSel = campanas.find(c => String(c.id) === String(campanaSelId))
-  const gastosSel = gastosCampana.filter(g => String(g.campana_id) === String(campanaSelId))
-  const ventasSel = ventasGrano.filter(v => String(v.campana_id) === String(campanaSelId))
-  const totalGastosSel = gastosSel.reduce((s, g) => s + (g.monto || 0), 0)
-  const totalVentasSel = ventasSel.reduce((s, v) => s + (v.total || 0), 0)
-
   const TABS = [
-    { key: 'campanas', label: 'Campañas' },
-    { key: 'stock', label: 'Stock agroquímicos' },
+    { key: 'campos', label: 'Campos' },
+    { key: 'campanas', label: 'Campaña' },
     { key: 'ordenes', label: 'Órdenes de trabajo' },
+    { key: 'cosechas', label: 'Cosechas' },
+    { key: 'ventas', label: 'Ventas de granos' },
+    { key: 'gastos', label: 'Gastos' },
+    { key: 'stock', label: 'Stock agroquímicos' },
   ]
+
+  // ── Métricas generales ──
+  const hasTotales = campos.reduce((s, c) => s + (c.superficie_ha || 0), 0)
+  const cosechaActiva = cosechas.filter(c => c.campana_id === campanaActiva?.id)
+  const kgTotales = cosechaActiva.reduce((s, c) => s + (c.kg_totales || 0), 0)
+  const ventasActivas = ventasGranos.filter(v => v.campana_id === campanaActiva?.id)
+  const ingresosGranos = ventasActivas.reduce((s, v) => s + (v.total || 0), 0)
 
   return (
     <div>
-      <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 3 }}>Agricultura</div>
-      <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', marginBottom: '1.5rem' }}>
-        Campañas · Agroquímicos · Órdenes de trabajo
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 3 }}>Agricultura</div>
+          <div style={{ fontSize: 12, color: S.muted }}>
+            Campaña activa: <strong>{campanaActiva?.nombre || 'Sin campaña activa'}</strong>
+            {campanaActiva && ` · ${campanaActiva.año_inicio}/${campanaActiva.año_fin}`}
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.5rem' }}>
+      {/* Métricas rápidas */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: '1.5rem' }}>
+        {[
+          { label: 'Hectáreas totales', val: `${hasTotales.toLocaleString('es-AR')} ha`, color: S.accent },
+          { label: 'Campos activos', val: campos.length, color: S.accent },
+          { label: `Cosecha ${campanaActiva?.nombre || ''}`, val: kgTotales > 0 ? `${(kgTotales / 1000).toLocaleString('es-AR')} tn` : '—', color: S.green },
+          { label: 'Ingresos granos', val: ingresosGranos > 0 ? `$${ingresosGranos.toLocaleString('es-AR')}` : '—', color: S.green },
+        ].map((m, i) => (
+          <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+            <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.5rem', overflowX: 'auto' }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            style={{ padding: '10px 20px', fontSize: 13, fontWeight: tab === t.key ? 600 : 500, cursor: 'pointer', color: tab === t.key ? S.accent : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t.key ? `2px solid ${S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            style={{ padding: '10px 18px', fontSize: 13, fontWeight: tab === t.key ? 600 : 500, cursor: 'pointer', color: tab === t.key ? S.accent : S.muted, background: 'transparent', border: 'none', borderBottom: tab === t.key ? `2px solid ${S.accent}` : '2px solid transparent', marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif", whiteSpace: 'nowrap' }}>
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* ── CAMPAÑAS ── */}
-      {tab === 'campanas' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Campañas</div>
-            <button onClick={() => setShowFormCampana(!showFormCampana)}
-              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              + Nueva campaña
+      {/* ── CAMPOS ── */}
+      {tab === 'campos' && <TabCampos campos={campos} campanas={campanas} planes={planes} campanaActiva={campanaActiva} cargar={cargar} />}
+      {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
+      {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} />}
+      {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} />}
+      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} />}
+      {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
+      {tab === 'stock' && <TabStockAgro stock={stockAgro} cargar={cargar} />}
+    </div>
+  )
+}
+
+// ── TAB CAMPOS ──
+function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_ha: '', ubicacion: '' })
+  const [editando, setEditando] = useState(null)
+  const [guardando, setGuardando] = useState(false)
+  const [selectedCampo, setSelectedCampo] = useState(null)
+  const [showLoteForm, setShowLoteForm] = useState(false)
+  const [formLote, setFormLote] = useState({ numero: '', superficie_ha: '' })
+
+  async function guardar() {
+    if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
+    setGuardando(true)
+    if (editando) {
+      await supabase.from('campos').update({ ...form, superficie_ha: parseFloat(form.superficie_ha) || null, arrendamiento_ha: parseFloat(form.arrendamiento_ha) || null }).eq('id', editando)
+    } else {
+      await supabase.from('campos').insert({ ...form, superficie_ha: parseFloat(form.superficie_ha) || null, arrendamiento_ha: parseFloat(form.arrendamiento_ha) || null, activo: true })
+    }
+    await cargar()
+    setShowForm(false)
+    setEditando(null)
+    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_ha: '', ubicacion: '' })
+    setGuardando(false)
+  }
+
+  async function guardarLote() {
+    if (!formLote.numero) { alert('Ingresá el número de lote'); return }
+    await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null })
+    await cargar()
+    setShowLoteForm(false)
+    setFormLote({ numero: '', superficie_ha: '' })
+  }
+
+  async function eliminarLote(id) {
+    if (!confirm('¿Eliminar este lote?')) return
+    await supabase.from('lotes_agricolas').delete().eq('id', id)
+    await cargar()
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Campos arrendados</div>
+        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_ha: '', ubicacion: '' }) }}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Nuevo campo
+        </button>
+      </div>
+
+      {showForm && (
+        <Card titulo={editando ? 'Editar campo' : 'Nuevo campo'}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            {[
+              { label: 'Nombre del campo *', key: 'nombre', type: 'text' },
+              { label: 'Superficie total (ha)', key: 'superficie_ha', type: 'number' },
+              { label: 'Propietario', key: 'propietario', type: 'text' },
+              { label: 'Arrendamiento $/ha', key: 'arrendamiento_ha', type: 'number' },
+              { label: 'Ubicación', key: 'ubicacion', type: 'text' },
+            ].map(f => (
+              <div key={f.key}>
+                <Label>{f.label}</Label>
+                <input type={f.type} value={form[f.key]} onChange={e => setForm({...form, [f.key]: e.target.value})}
+                  style={inputStyle} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando}
+              style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              {guardando ? 'Guardando...' : 'Guardar'}
+            </button>
+            <button onClick={() => { setShowForm(false); setEditando(null) }}
+              style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+              Cancelar
             </button>
           </div>
+        </Card>
+      )}
 
-          {showFormCampana && (
-            <Card>
-              <SecTitle>Nueva campaña</SecTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
-                <div><Label>Potrero</Label>
-                  <select value={formCampana.potrero_id} onChange={e => setFormCampana({...formCampana, potrero_id: e.target.value})} style={inputStyle}>
-                    <option value="">— Seleccioná —</option>
-                    {potreros.map(p => <option key={p.id} value={p.id}>{p.nombre} ({p.hectareas} ha)</option>)}
-                  </select>
-                </div>
-                <div><Label>Cultivo</Label>
-                  <select value={formCampana.cultivo} onChange={e => setFormCampana({...formCampana, cultivo: e.target.value})} style={inputStyle}>
-                    {CULTIVOS.map(c => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div><Label>Año</Label>
-                  <input type="number" value={formCampana.anio} onChange={e => setFormCampana({...formCampana, anio: e.target.value})} style={inputStyle} />
-                </div>
-                <div><Label>Fecha siembra</Label>
-                  <input type="date" value={formCampana.fecha_siembra} onChange={e => setFormCampana({...formCampana, fecha_siembra: e.target.value})} style={inputStyle} />
-                </div>
-                <div style={{ gridColumn: '2/-1' }}><Label>Observaciones</Label>
-                  <input type="text" value={formCampana.observaciones} onChange={e => setFormCampana({...formCampana, observaciones: e.target.value})} style={inputStyle} />
+      {campos.length === 0 && !showForm && (
+        <div style={{ padding: '3rem', textAlign: 'center', color: S.hint, background: S.surface, borderRadius: 10, border: `1px solid ${S.border}` }}>
+          No hay campos registrados. Agregá el primero.
+        </div>
+      )}
+
+      {campos.map(c => {
+        const planesDelCampo = planes.filter(p => p.campo_id === c.id && p.campana_id === campanaActiva?.id)
+        const arrendamientoAnual = c.arrendamiento_ha && c.superficie_ha ? c.arrendamiento_ha * c.superficie_ha : null
+        return (
+          <div key={c.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{c.nombre}</div>
+                <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                  {c.superficie_ha ? `${c.superficie_ha.toLocaleString('es-AR')} ha` : '—'}
+                  {c.propietario && ` · ${c.propietario}`}
+                  {c.ubicacion && ` · ${c.ubicacion}`}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFormCampana(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={guardarCampana} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                  {guardando ? 'Guardando...' : 'Crear campaña'}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {arrendamientoAnual && (
+                  <div style={{ textAlign: 'right', marginRight: 8 }}>
+                    <div style={{ fontSize: 10, color: S.muted }}>Arrendamiento anual</div>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>-${arrendamientoAnual.toLocaleString('es-AR')}</div>
+                  </div>
+                )}
+                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_ha: c.arrendamiento_ha || '', ubicacion: c.ubicacion || '' }); setShowForm(true); setSelectedCampo(null) }}
+                  style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                  Editar
+                </button>
+                <button onClick={() => setSelectedCampo(selectedCampo?.id === c.id ? null : c)}
+                  style={{ padding: '5px 10px', fontSize: 11, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+                  {selectedCampo?.id === c.id ? 'Ocultar lotes' : `Lotes (${(c.lotes_agricolas || []).length})`}
                 </button>
               </div>
-            </Card>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '1rem' }}>
-            {/* Lista campañas */}
-            <div>
-              {campanas.length === 0 && <div style={{ fontSize: 13, color: S.hint }}>No hay campañas.</div>}
-              {campanas.map(c => {
-                const gTot = gastosCampana.filter(g => g.campana_id === c.id).reduce((s, g) => s + (g.monto || 0), 0)
-                const vTot = ventasGrano.filter(v => v.campana_id === c.id).reduce((s, v) => s + (v.total || 0), 0)
-                const isSel = String(c.id) === String(campanaSelId)
-                return (
-                  <div key={c.id} onClick={() => setCampanaSelId(String(c.id))}
-                    style={{ border: `1px solid ${isSel ? S.accent : S.border}`, borderRadius: 8, padding: '.85rem', marginBottom: 8, cursor: 'pointer', background: isSel ? S.accentLight : S.surface }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{c.cultivo} {c.anio}</div>
-                      <span style={{ display: 'inline-block', padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: c.estado === 'cerrada' ? S.greenLight : S.amberLight, color: c.estado === 'cerrada' ? S.green : S.amber }}>{c.estado}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: S.muted }}>{c.potreros?.nombre} · {c.potreros?.hectareas} ha</div>
-                    <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 6, display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: S.red }}>-${gTot.toLocaleString('es-AR')}</span>
-                      <span style={{ color: S.green }}>+${vTot.toLocaleString('es-AR')}</span>
-                    </div>
-                  </div>
-                )
-              })}
             </div>
 
-            {/* Detalle campaña */}
-            {!campanaSel ? (
-              <div style={{ padding: '3rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Seleccioná una campaña.</div>
-            ) : (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>{campanaSel.cultivo} {campanaSel.anio} · {campanaSel.potreros?.nombre}</div>
-                    <div style={{ fontSize: 12, color: S.muted }}>{campanaSel.kg_cosechados ? `${campanaSel.kg_cosechados.toLocaleString('es-AR')} kg cosechados` : 'Sin cosecha registrada'}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {campanaSel.estado !== 'cerrada' && (
-                      <button onClick={() => cerrarCampana(campanaSel.id)} style={{ padding: '6px 12px', fontSize: 12, background: S.greenLight, border: `1px solid #97C459`, color: S.green, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>Cerrar campaña</button>
-                    )}
-                    <button onClick={() => { setFormGasto({...formGasto, campana_id: campanaSelId}); setShowFormGasto(true) }}
-                      style={{ padding: '6px 12px', fontSize: 12, background: S.amberLight, border: `1px solid #EF9F27`, color: S.amber, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>+ Gasto</button>
-                    <button onClick={() => { setFormVenta({...formVenta, campana_id: campanaSelId, cultivo: campanaSel.cultivo}); setShowFormVenta(true) }}
-                      style={{ padding: '6px 12px', fontSize: 12, background: S.greenLight, border: `1px solid #97C459`, color: S.green, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>+ Venta grano</button>
-                  </div>
-                </div>
+            {/* Cultivos de campaña activa */}
+            {planesDelCampo.length > 0 && (
+              <div style={{ padding: '8px 1.25rem', background: S.accentLight, borderBottom: `1px solid ${S.border}`, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: S.accent, fontWeight: 600 }}>Campaña actual:</span>
+                {planesDelCampo.map(p => (
+                  <span key={p.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontWeight: 600 }}>
+                    {p.cultivo} · {p.superficie_ha ? `${p.superficie_ha} ha` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
 
-                {/* Resumen */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1rem' }}>
-                  {[
-                    { label: 'Total gastos', val: `$${totalGastosSel.toLocaleString('es-AR')}`, color: S.red },
-                    { label: 'Total ventas', val: `$${totalVentasSel.toLocaleString('es-AR')}`, color: S.green },
-                    { label: 'Margen', val: `$${(totalVentasSel - totalGastosSel).toLocaleString('es-AR')}`, color: totalVentasSel >= totalGastosSel ? S.green : S.red },
-                  ].map((m, i) => (
-                    <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem' }}>
-                      <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
+            {/* Lotes */}
+            {selectedCampo?.id === c.id && (
+              <div style={{ padding: '1rem 1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: S.muted }}>Lotes</div>
+                  <button onClick={() => setShowLoteForm(!showLoteForm)}
+                    style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                    + Agregar lote
+                  </button>
+                </div>
+                {showLoteForm && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
+                    <div style={{ flex: 1 }}>
+                      <Label>N° Lote</Label>
+                      <input type="text" value={formLote.numero} onChange={e => setFormLote({...formLote, numero: e.target.value})} placeholder="ej. 1, 2A" style={{...inputStyle, fontSize: 12}} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Label>Superficie (ha)</Label>
+                      <input type="number" value={formLote.superficie_ha} onChange={e => setFormLote({...formLote, superficie_ha: e.target.value})} style={{...inputStyle, fontSize: 12}} />
+                    </div>
+                    <button onClick={guardarLote} style={{ padding: '9px 14px', fontSize: 12, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+                    <button onClick={() => setShowLoteForm(false)} style={{ padding: '9px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+                  {(c.lotes_agricolas || []).map(l => (
+                    <div key={l.id} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>Lote {l.numero}</div>
+                        {l.superficie_ha && <div style={{ fontSize: 11, color: S.muted }}>{l.superficie_ha} ha</div>}
+                      </div>
+                      <button onClick={() => eliminarLote(l.id)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 12 }}>✕</button>
                     </div>
                   ))}
+                  {(c.lotes_agricolas || []).length === 0 && <div style={{ fontSize: 12, color: S.hint, gridColumn: '1/-1' }}>Sin lotes registrados</div>}
                 </div>
-
-                {/* Form gasto */}
-                {showFormGasto && (
-                  <Card>
-                    <SecTitle>Nuevo gasto</SecTitle>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
-                      <div><Label>Categoría</Label>
-                        <select value={formGasto.categoria} onChange={e => setFormGasto({...formGasto, categoria: e.target.value})} style={inputStyle}>
-                          {CATEGORIAS_GASTO.map(c => <option key={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <div><Label>Monto $</Label><input type="number" value={formGasto.monto} onChange={e => setFormGasto({...formGasto, monto: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Fecha</Label><input type="date" value={formGasto.fecha} onChange={e => setFormGasto({...formGasto, fecha: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Descripción</Label><input type="text" value={formGasto.descripcion} onChange={e => setFormGasto({...formGasto, descripcion: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Proveedor</Label><input type="text" value={formGasto.proveedor} onChange={e => setFormGasto({...formGasto, proveedor: e.target.value})} style={inputStyle} /></div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button onClick={() => setShowFormGasto(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                      <button onClick={guardarGasto} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
-                    </div>
-                  </Card>
-                )}
-
-                {/* Form venta */}
-                {showFormVenta && (
-                  <Card>
-                    <SecTitle>Nueva venta de grano</SecTitle>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
-                      <div><Label>Kg</Label><input type="number" value={formVenta.kg} onChange={e => setFormVenta({...formVenta, kg: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Precio $/kg</Label><input type="number" value={formVenta.precio_kg} onChange={e => setFormVenta({...formVenta, precio_kg: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Fecha</Label><input type="date" value={formVenta.fecha} onChange={e => setFormVenta({...formVenta, fecha: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Destino</Label>
-                        <select value={formVenta.destino} onChange={e => setFormVenta({...formVenta, destino: e.target.value})} style={inputStyle}>
-                          <option value="venta">Venta</option>
-                          <option value="feedlot">Uso feedlot</option>
-                          <option value="acopio">Acopio</option>
-                        </select>
-                      </div>
-                      <div><Label>Comprador</Label><input type="text" value={formVenta.comprador} onChange={e => setFormVenta({...formVenta, comprador: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Observaciones</Label><input type="text" value={formVenta.observaciones} onChange={e => setFormVenta({...formVenta, observaciones: e.target.value})} style={inputStyle} /></div>
-                    </div>
-                    {formVenta.kg && formVenta.precio_kg && (
-                      <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
-                        Total: <strong>${(parseFloat(formVenta.kg) * parseFloat(formVenta.precio_kg)).toLocaleString('es-AR')}</strong>
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button onClick={() => setShowFormVenta(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                      <button onClick={guardarVenta} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
-                    </div>
-                  </Card>
-                )}
-
-                {/* Tabla gastos */}
-                <Card>
-                  <SecTitle>Gastos</SecTitle>
-                  <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead><tr style={{ background: S.bg }}>
-                        {['Fecha','Categoría','Descripción','Proveedor','Monto',''].map(h => <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}
-                      </tr></thead>
-                      <tbody>
-                        {gastosSel.length === 0 && <tr><td colSpan={6} style={{ padding: '1.5rem', textAlign: 'center', color: S.hint }}>Sin gastos.</td></tr>}
-                        {gastosSel.map(g => (
-                          <tr key={g.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(g.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
-                            <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber }}>{g.categoria}</span></td>
-                            <td style={{ padding: '9px 12px', color: S.muted }}>{g.descripcion || '—'}</td>
-                            <td style={{ padding: '9px 12px', color: S.muted }}>{g.proveedor || '—'}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${g.monto?.toLocaleString('es-AR')}</td>
-                            <td style={{ padding: '9px 12px' }}><button onClick={() => eliminar('gastos_campana', g.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
-
-                {/* Tabla ventas grano */}
-                <Card>
-                  <SecTitle>Ventas / destino de grano</SecTitle>
-                  <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead><tr style={{ background: S.bg }}>
-                        {['Fecha','Destino','Kg','Precio/kg','Total','Comprador',''].map(h => <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}
-                      </tr></thead>
-                      <tbody>
-                        {ventasSel.length === 0 && <tr><td colSpan={7} style={{ padding: '1.5rem', textAlign: 'center', color: S.hint }}>Sin ventas.</td></tr>}
-                        {ventasSel.map(v => (
-                          <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
-                            <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: v.destino === 'feedlot' ? S.accentLight : S.greenLight, color: v.destino === 'feedlot' ? S.accent : S.green }}>{v.destino}</span></td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg?.toLocaleString('es-AR')} kg</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : '—'}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</td>
-                            <td style={{ padding: '9px 12px', color: S.muted }}>{v.comprador || '—'}</td>
-                            <td style={{ padding: '9px 12px' }}><button onClick={() => eliminar('ventas_grano', v.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
               </div>
             )}
           </div>
-        </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── TAB CAMPAÑAS ──
+function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ nombre: '', año_inicio: new Date().getFullYear(), año_fin: new Date().getFullYear() + 1 })
+  const [guardando, setGuardando] = useState(false)
+  const [showPlanForm, setShowPlanForm] = useState(false)
+  const [formPlan, setFormPlan] = useState({ campo_id: '', lote_id: '', cultivo: '', superficie_ha: '', fecha_siembra: '', variedad: '' })
+  const [planes, setPlanes] = useState([])
+  const [campanaVista, setCampanaVista] = useState(null)
+  const [lotesDeCampo, setLotesDeCampo] = useState([])
+
+  useEffect(() => {
+    if (campanaActiva) { setCampanaVista(campanaActiva.id); cargarPlanes(campanaActiva.id) }
+  }, [campanaActiva])
+
+  async function cargarPlanes(campanaId) {
+    const { data } = await supabase.from('plan_cultivos').select('*, campos(nombre), lotes_agricolas(numero)').eq('campana_id', campanaId)
+    setPlanes(data || [])
+  }
+
+  async function guardar() {
+    if (!form.nombre) { alert('Ingresá el nombre'); return }
+    setGuardando(true)
+    await supabase.from('campanas').insert({ ...form, año_inicio: parseInt(form.año_inicio), año_fin: parseInt(form.año_fin), activa: true })
+    await supabase.from('campanas').update({ activa: false }).neq('nombre', form.nombre)
+    await cargar()
+    setShowForm(false)
+    setGuardando(false)
+  }
+
+  async function activar(c) {
+    await supabase.from('campanas').update({ activa: false }).neq('id', c.id)
+    await supabase.from('campanas').update({ activa: true }).eq('id', c.id)
+    setCampanaActiva(c)
+    await cargar()
+  }
+
+  async function guardarPlan() {
+    if (!formPlan.campo_id || !formPlan.cultivo) { alert('Seleccioná campo y cultivo'); return }
+    await supabase.from('plan_cultivos').insert({
+      campo_id: parseInt(formPlan.campo_id),
+      lote_id: formPlan.lote_id ? parseInt(formPlan.lote_id) : null,
+      campana_id: campanaVista,
+      cultivo: formPlan.cultivo,
+      superficie_ha: parseFloat(formPlan.superficie_ha) || null,
+      fecha_siembra: formPlan.fecha_siembra || null,
+      variedad: formPlan.variedad || null,
+    })
+    await cargarPlanes(campanaVista)
+    setShowPlanForm(false)
+    setFormPlan({ campo_id: '', lote_id: '', cultivo: '', superficie_ha: '', fecha_siembra: '', variedad: '' })
+  }
+
+  const campanaSeleccionada = campanas.find(c => c.id === campanaVista)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Campañas</div>
+        <button onClick={() => setShowForm(!showForm)}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Nueva campaña
+        </button>
+      </div>
+
+      {showForm && (
+        <Card titulo="Nueva campaña">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div><Label>Nombre *</Label><input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} placeholder="ej. Campaña 2025/26" style={inputStyle} /></div>
+            <div><Label>Año inicio</Label><input type="number" value={form.año_inicio} onChange={e => setForm({...form, año_inicio: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Año fin</Label><input type="number" value={form.año_fin} onChange={e => setForm({...form, año_fin: e.target.value})} style={inputStyle} /></div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
       )}
 
-      {/* ── STOCK AGROQUÍMICOS ── */}
-      {tab === 'stock' && (
+      {/* Lista de campañas */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+        {campanas.map(c => (
+          <button key={c.id} onClick={() => { setCampanaVista(c.id); cargarPlanes(c.id) }}
+            style={{ padding: '8px 16px', fontSize: 13, fontWeight: campanaVista === c.id ? 700 : 400, background: campanaVista === c.id ? S.accent : S.surface, border: `1px solid ${campanaVista === c.id ? S.accent : S.border}`, color: campanaVista === c.id ? '#fff' : S.text, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {c.nombre}
+            {c.activa && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: S.greenLight, color: S.green }}>Activa</span>}
+          </button>
+        ))}
+      </div>
+
+      {campanaSeleccionada && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Stock de agroquímicos</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{campanaSeleccionada.nombre} — Plan de cultivos</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setShowFormIngresoAgro(!showFormIngresoAgro)}
-                style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                + Ingreso
-              </button>
-              <button onClick={() => setShowFormAgro(!showFormAgro)}
-                style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                + Nuevo producto
+              {!campanaSeleccionada.activa && (
+                <button onClick={() => activar(campanaSeleccionada)} style={{ padding: '6px 12px', fontSize: 12, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer' }}>
+                  Activar campaña
+                </button>
+              )}
+              <button onClick={() => setShowPlanForm(!showPlanForm)} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                + Agregar cultivo
               </button>
             </div>
           </div>
 
-          {showFormAgro && (
+          {showPlanForm && (
             <Card>
-              <SecTitle>Nuevo producto</SecTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
-                <div style={{ gridColumn: '1/3' }}><Label>Nombre</Label><input type="text" value={formAgro.nombre} onChange={e => setFormAgro({...formAgro, nombre: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Tipo</Label>
-                  <select value={formAgro.tipo} onChange={e => setFormAgro({...formAgro, tipo: e.target.value})} style={inputStyle}>
-                    {TIPOS_AGRO.map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div><Label>Unidad</Label>
-                  <select value={formAgro.unidad} onChange={e => setFormAgro({...formAgro, unidad: e.target.value})} style={inputStyle}>
-                    {['litros', 'kg', 'unidades', 'bolsas'].map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div><Label>Stock mínimo</Label><input type="number" value={formAgro.stock_minimo} onChange={e => setFormAgro({...formAgro, stock_minimo: e.target.value})} style={inputStyle} /></div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFormAgro(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={guardarAgroquimico} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Agregar'}</button>
-              </div>
-            </Card>
-          )}
-
-          {showFormIngresoAgro && (
-            <Card>
-              <SecTitle>Registrar ingreso</SecTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
-                <div><Label>Producto</Label>
-                  <select value={formIngresoAgro.agroquimico_id} onChange={e => setFormIngresoAgro({...formIngresoAgro, agroquimico_id: e.target.value})} style={inputStyle}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <Label>Campo *</Label>
+                  <select value={formPlan.campo_id} onChange={e => {
+                    const campo = campos.find(c => c.id === parseInt(e.target.value))
+                    setLotesDeCampo(campo?.lotes_agricolas || [])
+                    setFormPlan({...formPlan, campo_id: e.target.value, lote_id: ''})
+                  }} style={inputStyle}>
                     <option value="">— Seleccioná —</option>
-                    {agroquimicos.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.unidad})</option>)}
+                    {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                   </select>
                 </div>
-                <div><Label>Cantidad</Label><input type="number" value={formIngresoAgro.cantidad} onChange={e => setFormIngresoAgro({...formIngresoAgro, cantidad: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Precio unitario $</Label><input type="number" value={formIngresoAgro.precio_unitario} onChange={e => setFormIngresoAgro({...formIngresoAgro, precio_unitario: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Proveedor</Label><input type="text" value={formIngresoAgro.proveedor} onChange={e => setFormIngresoAgro({...formIngresoAgro, proveedor: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Fecha</Label><input type="date" value={formIngresoAgro.fecha} onChange={e => setFormIngresoAgro({...formIngresoAgro, fecha: e.target.value})} style={inputStyle} /></div>
+                <div>
+                  <Label>Lote (opcional)</Label>
+                  <select value={formPlan.lote_id} onChange={e => setFormPlan({...formPlan, lote_id: e.target.value})} style={inputStyle}>
+                    <option value="">Todo el campo</option>
+                    {lotesDeCampo.map(l => <option key={l.id} value={l.id}>Lote {l.numero} — {l.superficie_ha} ha</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Cultivo *</Label>
+                  <select value={formPlan.cultivo} onChange={e => setFormPlan({...formPlan, cultivo: e.target.value})} style={inputStyle}>
+                    <option value="">— Seleccioná —</option>
+                    {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Superficie (ha)</Label>
+                  <input type="number" value={formPlan.superficie_ha} onChange={e => setFormPlan({...formPlan, superficie_ha: e.target.value})} style={inputStyle} />
+                </div>
+                <div>
+                  <Label>Fecha siembra</Label>
+                  <input type="date" value={formPlan.fecha_siembra} onChange={e => setFormPlan({...formPlan, fecha_siembra: e.target.value})} style={inputStyle} />
+                </div>
+                <div>
+                  <Label>Variedad</Label>
+                  <input type="text" value={formPlan.variedad} onChange={e => setFormPlan({...formPlan, variedad: e.target.value})} placeholder="ej. DM 5.1i" style={inputStyle} />
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFormIngresoAgro(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={guardarIngresoAgro} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={guardarPlan} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+                <button onClick={() => setShowPlanForm(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
               </div>
             </Card>
           )}
 
-          {/* Estado del stock */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
-            {agroquimicos.map(a => {
-              const bajo = a.stock_actual <= a.stock_minimo
-              const pct = a.stock_minimo > 0 ? Math.min(100, Math.round(a.stock_actual / (a.stock_minimo * 3) * 100)) : 50
-              const barColor = bajo ? S.red : pct < 40 ? S.amber : S.green
+          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr style={{ background: S.bg }}>
+                {['Campo', 'Lote', 'Cultivo', 'Superficie', 'Fecha siembra', 'Variedad', ''].map(h => (
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {planes.length === 0 && <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cultivos planificados para esta campaña.</td></tr>}
+                {planes.map(p => (
+                  <tr key={p.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '8px 12px', fontWeight: 600 }}>{p.campos?.nombre}</td>
+                    <td style={{ padding: '8px 12px', color: S.muted }}>{p.lotes_agricolas ? `Lote ${p.lotes_agricolas.numero}` : 'Todo el campo'}</td>
+                    <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>{p.cultivo}</span></td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{p.superficie_ha ? `${p.superficie_ha} ha` : '—'}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{p.fecha_siembra ? new Date(p.fecha_siembra + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+                    <td style={{ padding: '8px 12px', color: S.muted }}>{p.variedad || '—'}</td>
+                    <td style={{ padding: '8px 12px' }}>
+                      <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('plan_cultivos').delete().eq('id', p.id); cargarPlanes(campanaVista) }}
+                        style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── TAB ÓRDENES DE TRABAJO ──
+function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', costo_total: '', costo_ha: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroCampo, setFiltroCampo] = useState('')
+
+  async function guardar() {
+    if (!form.campo_id || !form.tipo) { alert('Seleccioná campo y tipo de trabajo'); return }
+    setGuardando(true)
+    const campo = campos.find(c => c.id === parseInt(form.campo_id))
+    const costoHa = form.costo_total && campo?.superficie_ha ? Math.round(parseFloat(form.costo_total) / campo.superficie_ha) : (parseFloat(form.costo_ha) || null)
+    await supabase.from('ordenes_trabajo').insert({
+      campo_id: parseInt(form.campo_id),
+      campana_id: parseInt(form.campana_id) || null,
+      tipo: form.tipo,
+      fecha: form.fecha,
+      descripcion: form.descripcion || null,
+      proveedor: form.proveedor || null,
+      costo_total: parseFloat(form.costo_total) || null,
+      costo_ha: costoHa,
+      estado: 'completado',
+      observaciones: form.observaciones || null,
+    })
+    await cargar()
+    setShowForm(false)
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', costo_total: '', costo_ha: '', observaciones: '' })
+    setGuardando(false)
+  }
+
+  const ordenesFiltradas = ordenes.filter(o => {
+    if (filtroTipo && o.tipo !== filtroTipo) return false
+    if (filtroCampo && o.campo_id !== parseInt(filtroCampo)) return false
+    return true
+  })
+
+  const costoTotal = ordenesFiltradas.reduce((s, o) => s + (o.costo_total || 0), 0)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Órdenes de trabajo</div>
+        <button onClick={() => setShowForm(!showForm)}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Nueva orden
+        </button>
+      </div>
+
+      {showForm && (
+        <Card titulo="Nueva orden de trabajo">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <Label>Campo *</Label>
+              <select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Campaña</Label>
+              <select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Tipo de trabajo *</Label>
+              <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {TIPOS_ORDEN.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Fecha</Label>
+              <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Proveedor / Contratista</Label>
+              <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Descripción</Label>
+              <input type="text" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Costo total $</Label>
+              <input type="number" value={form.costo_total} onChange={e => setForm({...form, costo_total: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Costo $/ha (auto si hay total)</Label>
+              <input type="number" value={form.costo_ha} onChange={e => setForm({...form, costo_ha: e.target.value})}
+                placeholder={form.costo_total && campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha ? Math.round(parseFloat(form.costo_total) / campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha) : ''} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Observaciones</Label>
+              <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: '1rem' }}>
+        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={{ padding: '7px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+          <option value="">Todos los tipos</option>
+          {TIPOS_ORDEN.map(t => <option key={t}>{t}</option>)}
+        </select>
+        <select value={filtroCampo} onChange={e => setFiltroCampo(e.target.value)} style={{ padding: '7px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+          <option value="">Todos los campos</option>
+          {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        </select>
+        <div style={{ marginLeft: 'auto', fontSize: 13, color: S.muted, alignSelf: 'center' }}>
+          Total: <strong style={{ fontFamily: 'monospace', color: S.red }}>${costoTotal.toLocaleString('es-AR')}</strong>
+        </div>
+      </div>
+
+      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: S.bg }}>
+            {['Fecha', 'Campo', 'Tipo', 'Descripción', 'Proveedor', 'Costo total', '$/ha', ''].map(h => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {ordenesFiltradas.length === 0 && <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay órdenes registradas.</td></tr>}
+            {ordenesFiltradas.map(o => (
+              <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>{o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 600 }}>{o.campos?.nombre}</td>
+                <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11, fontWeight: 600 }}>{o.tipo}</span></td>
+                <td style={{ padding: '8px 12px', color: S.muted }}>{o.descripcion || '—'}</td>
+                <td style={{ padding: '8px 12px', color: S.muted }}>{o.proveedor || '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.red }}>{o.costo_total ? `-$${o.costo_total.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{o.costo_ha ? `$${o.costo_ha.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px' }}>
+                  <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('ordenes_trabajo').delete().eq('id', o.id); cargar() }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── TAB COSECHAS ──
+function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    if (!form.campo_id || !form.cultivo || !form.kg_totales) { alert('Completá campo, cultivo y kg totales'); return }
+    setGuardando(true)
+    const campo = campos.find(c => c.id === parseInt(form.campo_id))
+    const rendimiento = form.rendimiento_qq_ha || (form.kg_totales && campo?.superficie_ha ? ((parseFloat(form.kg_totales) / 1000) / campo.superficie_ha * 100).toFixed(1) : null)
+    await supabase.from('cosechas').insert({
+      campo_id: parseInt(form.campo_id),
+      campana_id: parseInt(form.campana_id) || null,
+      cultivo: form.cultivo,
+      fecha: form.fecha,
+      kg_totales: parseFloat(form.kg_totales),
+      rendimiento_qq_ha: parseFloat(rendimiento) || null,
+      humedad_pct: parseFloat(form.humedad_pct) || null,
+      observaciones: form.observaciones || null,
+    })
+    await cargar()
+    setShowForm(false)
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', observaciones: '' })
+    setGuardando(false)
+  }
+
+  const kgTotal = cosechas.filter(c => c.campana_id === campanaActiva?.id).reduce((s, c) => s + (c.kg_totales || 0), 0)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Cosechas</div>
+          {kgTotal > 0 && <div style={{ fontSize: 12, color: S.green, marginTop: 2 }}>Campaña activa: {(kgTotal / 1000).toLocaleString('es-AR')} tn cosechadas</div>}
+        </div>
+        <button onClick={() => setShowForm(!showForm)}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Registrar cosecha
+        </button>
+      </div>
+
+      {showForm && (
+        <Card titulo="Registrar cosecha">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <Label>Campo *</Label>
+              <select value={form.campo_id} onChange={e => { setForm({...form, campo_id: e.target.value, cultivo: ''}) }} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Cultivo *</Label>
+              <select value={form.cultivo} onChange={e => setForm({...form, cultivo: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Campaña</Label>
+              <select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Fecha cosecha</Label>
+              <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Kg totales *</Label>
+              <input type="number" value={form.kg_totales} onChange={e => setForm({...form, kg_totales: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Humedad %</Label>
+              <input type="number" value={form.humedad_pct} onChange={e => setForm({...form, humedad_pct: e.target.value})} placeholder="ej. 13.5" style={inputStyle} />
+            </div>
+            <div>
+              <Label>Rendimiento qq/ha (auto si hay kg)</Label>
+              <input type="number" value={form.rendimiento_qq_ha} onChange={e => setForm({...form, rendimiento_qq_ha: e.target.value})}
+                placeholder={form.kg_totales && campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha ? ((parseFloat(form.kg_totales) / 1000) / campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha * 100).toFixed(1) : ''} style={inputStyle} />
+            </div>
+            <div style={{ gridColumn: '1/-1' }}>
+              <Label>Observaciones</Label>
+              <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: S.bg }}>
+            {['Fecha', 'Campo', 'Campaña', 'Cultivo', 'Kg totales', 'Tn', 'Rend. qq/ha', 'Humedad', 'Obs.', ''].map(h => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {cosechas.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cosechas registradas.</td></tr>}
+            {cosechas.map(c => (
+              <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>{c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 600 }}>{c.campos?.nombre}</td>
+                <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{c.campanas?.nombre}</td>
+                <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>{c.cultivo}</span></td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{c.kg_totales ? c.kg_totales.toLocaleString('es-AR') : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.kg_totales ? (c.kg_totales / 1000).toLocaleString('es-AR') : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{c.rendimiento_qq_ha ? `${c.rendimiento_qq_ha} qq/ha` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.humedad_pct ? `${c.humedad_pct}%` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{c.observaciones || '—'}</td>
+                <td style={{ padding: '8px 12px' }}>
+                  <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('cosechas').delete().eq('id', c.id); cargar() }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── TAB VENTAS DE GRANOS ──
+function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [editando, setEditando] = useState(null)
+
+  const totalVendido = ventas.reduce((s, v) => s + (v.kg || 0), 0)
+  const totalIngresos = ventas.reduce((s, v) => s + (v.total || 0), 0)
+
+  async function guardar() {
+    if (!form.cultivo || !form.kg) { alert('Completá cultivo y kg'); return }
+    setGuardando(true)
+    const kg = parseFloat(form.kg)
+    const precioTn = parseFloat(form.precio_tn) || 0
+    const total = precioTn ? Math.round(kg * precioTn / 1000) : null
+    const montoFact = form.monto_facturado ? parseFloat(form.monto_facturado) : total
+    const montoNegro = total && montoFact ? Math.max(0, total - montoFact) : 0
+    const data = {
+      campo_id: parseInt(form.campo_id) || null,
+      campana_id: parseInt(form.campana_id) || null,
+      cultivo: form.cultivo,
+      fecha: form.fecha,
+      kg,
+      precio_tn: precioTn || null,
+      total,
+      monto_facturado: montoFact,
+      monto_negro: montoNegro,
+      iva_pct: parseFloat(form.iva_pct) || 10.5,
+      comprador: form.comprador || null,
+      numero_contrato: form.numero_contrato || null,
+      observaciones: form.observaciones || null,
+      estado: 'confirmado',
+    }
+    if (editando) {
+      await supabase.from('ventas_granos').update(data).eq('id', editando)
+    } else {
+      await supabase.from('ventas_granos').insert(data)
+    }
+    await cargar()
+    setShowForm(false)
+    setEditando(null)
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
+    setGuardando(false)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Ventas de granos</div>
+          <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+            Total vendido: <strong>{(totalVendido / 1000).toLocaleString('es-AR')} tn</strong>
+            {totalIngresos > 0 && <> · Ingresos: <strong style={{ color: S.green }}>${totalIngresos.toLocaleString('es-AR')}</strong></>}
+          </div>
+        </div>
+        <button onClick={() => { setShowForm(!showForm); setEditando(null) }}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Registrar venta
+        </button>
+      </div>
+
+      {showForm && (
+        <Card titulo={editando ? 'Editar venta' : 'Nueva venta de granos'}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <Label>Campo</Label>
+              <select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Cultivo *</Label>
+              <select value={form.cultivo} onChange={e => setForm({...form, cultivo: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Campaña</Label>
+              <select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Fecha</Label>
+              <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Kg vendidos *</Label>
+              <input type="number" value={form.kg} onChange={e => setForm({...form, kg: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Precio $/tn</Label>
+              <input type="number" value={form.precio_tn} onChange={e => setForm({...form, precio_tn: e.target.value})} style={inputStyle} />
+            </div>
+            {form.precio_tn && form.kg && (
+              <div style={{ gridColumn: '1/-1', background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: S.green }}>
+                Total operación: <strong>${Math.round(parseFloat(form.kg) * parseFloat(form.precio_tn) / 1000).toLocaleString('es-AR')}</strong>
+                {' '}· ({(parseFloat(form.kg) / 1000).toLocaleString('es-AR')} tn × ${parseFloat(form.precio_tn).toLocaleString('es-AR')}/tn)
+              </div>
+            )}
+            <div>
+              <Label>Neto facturado $</Label>
+              <input type="number" value={form.monto_facturado} onChange={e => setForm({...form, monto_facturado: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>% IVA</Label>
+              <select value={form.iva_pct} onChange={e => setForm({...form, iva_pct: e.target.value})} style={inputStyle}>
+                <option value="0">Sin IVA</option>
+                <option value="10.5">10.5%</option>
+                <option value="21">21%</option>
+              </select>
+            </div>
+            <div>
+              <Label>Comprador / Acopio</Label>
+              <input type="text" value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>N° Contrato</Label>
+              <input type="text" value={form.numero_contrato} onChange={e => setForm({...form, numero_contrato: e.target.value})} style={inputStyle} />
+            </div>
+            <div>
+              <Label>Observaciones</Label>
+              <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => { setShowForm(false); setEditando(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
+          <thead><tr style={{ background: S.bg }}>
+            {['Fecha', 'Campo', 'Cultivo', 'Kg', 'Tn', '$/tn', 'Total', 'Facturado', 'Paralelo', 'Comprador', ''].map(h => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {ventas.length === 0 && <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ventas registradas.</td></tr>}
+            {ventas.map(v => (
+              <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>{v.fecha ? new Date(v.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12 }}>{campos.find(c => c.id === v.campo_id)?.nombre || '—'}</td>
+                <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>{v.cultivo}</span></td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{v.kg ? v.kg.toLocaleString('es-AR') : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{v.kg ? (v.kg / 1000).toLocaleString('es-AR') : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{v.precio_tn ? `$${v.precio_tn.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.accent }}>{v.monto_facturado ? `$${v.monto_facturado.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.purple }}>{v.monto_negro > 0 ? `$${v.monto_negro.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.comprador || '—'}</td>
+                <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
+                  <button onClick={() => { setEditando(v.id); setForm({ campo_id: v.campo_id || '', campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', kg: v.kg || '', precio_tn: v.precio_tn || '', monto_facturado: v.monto_facturado || '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', comprador: v.comprador || '', numero_contrato: v.numero_contrato || '', observaciones: v.observaciones || '' }); setShowForm(true) }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
+                  <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('ventas_granos').delete().eq('id', v.id); cargar() }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── TAB GASTOS ──
+function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [editando, setEditando] = useState(null)
+
+  const totalGastos = gastos.reduce((s, g) => s + (g.monto || 0), 0)
+
+  async function guardar() {
+    if (!form.concepto || !form.monto) { alert('Completá concepto y monto'); return }
+    setGuardando(true)
+    const data = { campo_id: parseInt(form.campo_id) || null, campana_id: parseInt(form.campana_id) || null, concepto: form.concepto, monto: parseFloat(form.monto), fecha: form.fecha, proveedor: form.proveedor || null, observaciones: form.observaciones || null }
+    if (editando) {
+      await supabase.from('gastos_agro').update(data).eq('id', editando)
+    } else {
+      await supabase.from('gastos_agro').insert(data)
+    }
+    await cargar()
+    setShowForm(false)
+    setEditando(null)
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '' })
+    setGuardando(false)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Gastos agrícolas</div>
+          <div style={{ fontSize: 12, color: S.red, marginTop: 2 }}>Total: <strong>-${totalGastos.toLocaleString('es-AR')}</strong></div>
+        </div>
+        <button onClick={() => { setShowForm(!showForm); setEditando(null) }}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Registrar gasto
+        </button>
+      </div>
+
+      {showForm && (
+        <Card titulo={editando ? 'Editar gasto' : 'Nuevo gasto'}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div><Label>Campo</Label><select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value})} style={inputStyle}><option value="">— Todos —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+            <div><Label>Campaña</Label><select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+            <div><Label>Concepto *</Label><input type="text" value={form.concepto} onChange={e => setForm({...form, concepto: e.target.value})} placeholder="ej. Arrendamiento, Seguro, etc." style={inputStyle} /></div>
+            <div><Label>Monto $ *</Label><input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Proveedor</Label><input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} /></div>
+            <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} /></div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => { setShowForm(false); setEditando(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: S.bg }}>
+            {['Fecha', 'Campo', 'Campaña', 'Concepto', 'Proveedor', 'Monto', ''].map(h => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {gastos.length === 0 && <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay gastos registrados.</td></tr>}
+            {gastos.map(g => (
+              <tr key={g.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>{g.fecha ? new Date(g.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12 }}>{g.campos?.nombre || '—'}</td>
+                <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{g.campanas?.nombre || '—'}</td>
+                <td style={{ padding: '8px 12px' }}>{g.concepto}</td>
+                <td style={{ padding: '8px 12px', color: S.muted }}>{g.proveedor || '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>-${g.monto ? g.monto.toLocaleString('es-AR') : '—'}</td>
+                <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
+                  <button onClick={() => { setEditando(g.id); setForm({ campo_id: g.campo_id || '', campana_id: g.campana_id || '', concepto: g.concepto, monto: g.monto || '', fecha: g.fecha || '', proveedor: g.proveedor || '', observaciones: g.observaciones || '' }); setShowForm(true) }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
+                  <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('gastos_agro').delete().eq('id', g.id); cargar() }}
+                    style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── TAB STOCK AGROQUÍMICOS ──
+function TabStockAgro({ stock, cargar }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', precio_referencia: '', minimo_stock: '' })
+  const [editando, setEditando] = useState(null)
+  const [guardando, setGuardando] = useState(false)
+
+  const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Otro']
+  const UNIDADES = ['litros', 'kg', 'bolsas', 'unidades']
+
+  async function guardar() {
+    if (!form.insumo) { alert('Ingresá el nombre del insumo'); return }
+    setGuardando(true)
+    const data = { insumo: form.insumo, tipo: form.tipo || null, cantidad: parseFloat(form.cantidad) || 0, unidad: form.unidad, precio_referencia: parseFloat(form.precio_referencia) || null, minimo_stock: parseFloat(form.minimo_stock) || 0, actualizado_en: new Date().toISOString() }
+    if (editando) {
+      await supabase.from('stock_agro').update(data).eq('id', editando)
+    } else {
+      await supabase.from('stock_agro').insert(data)
+    }
+    await cargar()
+    setShowForm(false)
+    setEditando(null)
+    setForm({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', precio_referencia: '', minimo_stock: '' })
+    setGuardando(false)
+  }
+
+  const stockBajo = stock.filter(s => s.minimo_stock > 0 && s.cantidad <= s.minimo_stock)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Stock agroquímicos e insumos</div>
+        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', precio_referencia: '', minimo_stock: '' }) }}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Agregar insumo
+        </button>
+      </div>
+
+      {stockBajo.length > 0 && (
+        <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: S.red, marginBottom: 4 }}>⚠ Stock bajo</div>
+          {stockBajo.map(s => <div key={s.id} style={{ fontSize: 12, color: S.red }}>{s.insumo}: {s.cantidad} {s.unidad} (mínimo: {s.minimo_stock})</div>)}
+        </div>
+      )}
+
+      {showForm && (
+        <Card titulo={editando ? 'Editar insumo' : 'Nuevo insumo'}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div><Label>Nombre *</Label><input type="text" value={form.insumo} onChange={e => setForm({...form, insumo: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Tipo</Label><select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select></div>
+            <div><Label>Unidad</Label><select value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})} style={inputStyle}>{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
+            <div><Label>Cantidad en stock</Label><input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Precio referencia</Label><input type="number" value={form.precio_referencia} onChange={e => setForm({...form, precio_referencia: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Stock mínimo alerta</Label><input type="number" value={form.minimo_stock} onChange={e => setForm({...form, minimo_stock: e.target.value})} style={inputStyle} /></div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => { setShowForm(false); setEditando(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: S.bg }}>
+            {['Insumo', 'Tipo', 'Stock', 'Unidad', 'Precio ref.', 'Mínimo', ''].map(h => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {stock.length === 0 && <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay insumos cargados.</td></tr>}
+            {stock.map(s => {
+              const bajo = s.minimo_stock > 0 && s.cantidad <= s.minimo_stock
               return (
-                <div key={a.id} style={{ background: S.surface, border: `1px solid ${bajo ? '#F09595' : S.border}`, borderRadius: 8, padding: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{a.nombre}</div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: bajo ? S.red : S.muted }}>{bajo ? '⚠ Bajo' : 'OK'}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: S.muted, marginBottom: 6 }}>{a.tipo} · {a.unidad}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: barColor, marginBottom: 6 }}>
-                    {a.stock_actual?.toLocaleString('es-AR')} {a.unidad}
-                  </div>
-                  <div style={{ height: 4, background: S.bg, borderRadius: 2, overflow: 'hidden', border: `1px solid ${S.border}` }}>
-                    <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: barColor }} />
-                  </div>
-                  <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>Mínimo: {a.stock_minimo?.toLocaleString('es-AR')} {a.unidad}</div>
-                </div>
+                <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}`, background: bajo ? '#FFF5F5' : 'transparent' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{s.insumo}</td>
+                  <td style={{ padding: '8px 12px' }}>{s.tipo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11 }}>{s.tipo}</span> : '—'}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: bajo ? S.red : S.text }}>{s.cantidad?.toLocaleString('es-AR')}</td>
+                  <td style={{ padding: '8px 12px', color: S.muted }}>{s.unidad}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}` : '—'}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{s.minimo_stock || '—'}</td>
+                  <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
+                    <button onClick={() => { setEditando(s.id); setForm({ insumo: s.insumo, tipo: s.tipo || '', cantidad: s.cantidad || '', unidad: s.unidad || 'litros', precio_referencia: s.precio_referencia || '', minimo_stock: s.minimo_stock || '' }); setShowForm(true) }}
+                      style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
+                    <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('stock_agro').delete().eq('id', s.id); cargar() }}
+                      style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                  </td>
+                </tr>
               )
             })}
-          </div>
-
-          {/* Historial ingresos */}
-          <Card>
-            <SecTitle>Historial de ingresos</SecTitle>
-            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead><tr style={{ background: S.bg }}>
-                  {['Fecha','Producto','Cantidad','Precio unit.','Total','Proveedor'].map(h => <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {ingresosAgro.length === 0 && <tr><td colSpan={6} style={{ padding: '1.5rem', textAlign: 'center', color: S.hint }}>Sin ingresos registrados.</td></tr>}
-                  {ingresosAgro.map(i => (
-                    <tr key={i.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(i.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                      <td style={{ padding: '9px 12px', fontWeight: 600 }}>{i.agroquimicos?.nombre}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{i.cantidad?.toLocaleString('es-AR')} {i.agroquimicos?.unidad}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{i.precio_unitario ? `$${i.precio_unitario.toLocaleString('es-AR')}` : '—'}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{i.total ? `$${i.total.toLocaleString('es-AR')}` : '—'}</td>
-                      <td style={{ padding: '9px 12px', color: S.muted }}>{i.proveedor || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* ── ÓRDENES DE TRABAJO ── */}
-      {tab === 'ordenes' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Órdenes de trabajo</div>
-            <button onClick={() => setShowFormOrden(!showFormOrden)}
-              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-              + Nueva orden
-            </button>
-          </div>
-
-          {showFormOrden && (
-            <Card>
-              <SecTitle>Nueva orden de trabajo</SecTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div><Label>Potrero</Label>
-                  <select value={formOrden.potrero_id} onChange={e => setFormOrden({...formOrden, potrero_id: e.target.value})} style={inputStyle}>
-                    <option value="">— Seleccioná —</option>
-                    {potreros.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                  </select>
-                </div>
-                <div><Label>Labor</Label>
-                  <select value={formOrden.labor} onChange={e => setFormOrden({...formOrden, labor: e.target.value})} style={inputStyle}>
-                    {LABORES.map(l => <option key={l}>{l}</option>)}
-                  </select>
-                </div>
-                <div><Label>Fecha</Label><input type="date" value={formOrden.fecha} onChange={e => setFormOrden({...formOrden, fecha: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Campaña (opcional)</Label>
-                  <select value={formOrden.campana_id} onChange={e => setFormOrden({...formOrden, campana_id: e.target.value})} style={inputStyle}>
-                    <option value="">— Sin campaña —</option>
-                    {campanas.filter(c => c.estado !== 'cerrada').map(c => <option key={c.id} value={c.id}>{c.cultivo} {c.anio} · {c.potreros?.nombre}</option>)}
-                  </select>
-                </div>
-                <div><Label>Máquina</Label>
-                  <select value={formOrden.maquina_id} onChange={e => setFormOrden({...formOrden, maquina_id: e.target.value})} style={inputStyle}>
-                    <option value="">— Sin máquina —</option>
-                    {maquinaria.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                  </select>
-                </div>
-                <div><Label>Hectáreas</Label><input type="number" value={formOrden.hectareas} onChange={e => setFormOrden({...formOrden, hectareas: e.target.value})} style={inputStyle} /></div>
-                <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={formOrden.observaciones} onChange={e => setFormOrden({...formOrden, observaciones: e.target.value})} style={inputStyle} /></div>
-              </div>
-
-              {/* Agroquímicos de la orden */}
-              <div style={{ marginBottom: '1rem' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Agroquímicos aplicados</div>
-                {ordenAgro.map((oa, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'end' }}>
-                    <div><Label>Producto</Label>
-                      <select value={oa.agroquimico_id} onChange={e => { const n = [...ordenAgro]; n[i].agroquimico_id = e.target.value; setOrdenAgro(n) }} style={inputStyle}>
-                        <option value="">— Seleccioná —</option>
-                        {agroquimicos.map(a => <option key={a.id} value={a.id}>{a.nombre} (stock: {a.stock_actual} {a.unidad})</option>)}
-                      </select>
-                    </div>
-                    <div><Label>Cantidad total</Label><input type="number" value={oa.cantidad} onChange={e => { const n = [...ordenAgro]; n[i].cantidad = e.target.value; setOrdenAgro(n) }} style={inputStyle} /></div>
-                    <div><Label>Dosis/ha (opcional)</Label><input type="number" value={oa.dosis_por_ha} onChange={e => { const n = [...ordenAgro]; n[i].dosis_por_ha = e.target.value; setOrdenAgro(n) }} style={inputStyle} /></div>
-                    <button onClick={() => setOrdenAgro(ordenAgro.filter((_, j) => j !== i))} style={{ padding: '9px 12px', background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>✕</button>
-                  </div>
-                ))}
-                <button onClick={() => setOrdenAgro([...ordenAgro, { agroquimico_id: '', cantidad: '', dosis_por_ha: '' }])}
-                  style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                  + Agregar producto
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFormOrden(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={guardarOrden} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Confirmar orden'}</button>
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead><tr style={{ background: S.bg }}>
-                  {['Fecha','Potrero','Labor','Campaña','Máquina','Ha','Productos aplicados',''].map(h => <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {ordenes.length === 0 && <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay órdenes registradas.</td></tr>}
-                  {ordenes.map(o => (
-                    <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(o.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                      <td style={{ padding: '9px 12px', fontWeight: 600 }}>{o.potreros?.nombre}</td>
-                      <td style={{ padding: '9px 12px' }}>{o.labor}</td>
-                      <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{o.campanas ? `${o.campanas.cultivo} ${o.campanas.anio}` : '—'}</td>
-                      <td style={{ padding: '9px 12px', color: S.muted }}>{o.maquinaria?.nombre || '—'}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{o.hectareas ? `${o.hectareas} ha` : '—'}</td>
-                      <td style={{ padding: '9px 12px', fontSize: 12 }}>
-                        {o.ordenes_agroquimicos?.length > 0
-                          ? o.ordenes_agroquimicos.map(oa => `${oa.agroquimicos?.nombre}: ${oa.cantidad} ${oa.agroquimicos?.unidad}`).join(' · ')
-                          : <span style={{ color: S.hint }}>—</span>
-                        }
-                      </td>
-                      <td style={{ padding: '9px 12px' }}><button onClick={() => eliminar('ordenes_trabajo', o.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
-      )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
