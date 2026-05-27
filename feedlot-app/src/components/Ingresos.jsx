@@ -624,7 +624,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
           { label: 'Comprados este mes', val: totalAnimMes.toLocaleString('es-AR'), sub: 'animales', color: S.accent },
           { label: 'Precio promedio', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg neto', color: S.green },
           { label: 'Kg promedio', val: kgPromedio ? `${kgPromedio} kg` : '—', sub: 'por animal' },
-          { label: `Gastado ${anio}`, val: totalGastadoAnio > 0 ? `$${(totalGastadoAnio/1000000).toFixed(1)}M` : '—', sub: 'en compras', color: S.red },
+          { label: `Gastado ${anio}`, val: totalGastadoAnio > 0 ? `${totalGastadoAnio.toLocaleString('es-AR')}` : '—', sub: 'en compras', color: S.red },
         ].map((m, i) => (
           <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
@@ -905,7 +905,7 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                       {l.precio_compra ? `$${l.precio_compra.toLocaleString('es-AR')}/kg` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
                     </td>
                     <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: total ? S.green : S.hint }}>
-                      {total ? `$${(total / 1000000).toFixed(1)}M` : '—'}
+                      {total ? `$${total.toLocaleString('es-AR')}` : '—'}
                     </td>
                     <td style={{ padding: '9px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
@@ -976,12 +976,16 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                       <td style={{ padding: '8px 12px', fontWeight: 600 }}>{l.codigo}</td>
                       <td style={{ padding: '8px 12px' }}>{l.procedencia || '—'}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>{total ? `-$${(total/1000000).toFixed(2)}M` : '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>{total ? `-${total.toLocaleString('es-AR')}` : '—'}</td>
                       <td style={{ padding: '8px 12px', fontSize: 11, color: S.muted }}>
                         {l.numero_factura || '—'}
                         {l.monto_negro > 0 && <div style={{ fontSize: 10, color: '#3D1A6B', fontWeight: 600 }}>Negro: ${l.monto_negro.toLocaleString('es-AR')}</div>}
                       </td>
-                      <td style={{ padding: '8px 12px', fontSize: 11 }}>{l.forma_pago || '—'}{l.plazo_dias ? ` ${l.plazo_dias}d` : ''}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 11 }}>
+                        {pagosList.length > 0 
+                          ? [...new Set(pagosList.map(p => p.forma_pago))].join(', ')
+                          : (l.forma_pago || '—')
+                        }{l.plazo_dias ? ` ${l.plazo_dias}d` : ''}</td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>
                         {(() => {
                           const venc = vencimientosLote[l.id] || []
@@ -1305,9 +1309,15 @@ await supabase.from('corrales').update(updateCorral).eq('id', lote.corral_cuaren
                                     <span style={{ fontFamily: 'monospace', color: S.red }}>-${p.monto.toLocaleString('es-AR')}</span>
                                     <button onClick={async () => { 
                                       // Buscar si hay cheque asociado y borrarlo
-                                      const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).single()
+                                      const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).single().catch(() => ({ data: null }))
                                       if (chAsoc) await supabase.from('cheques').delete().eq('id', chAsoc.id)
                                       await supabase.from('pagos_compras').delete().eq('id', p.id)
+                                      // Recalcular estado_pago
+                                      const { data: pagosRestantes } = await supabase.from('pagos_compras').select('monto').eq('lote_id', l.id)
+                                      const totalPagadoRest = (pagosRestantes || []).reduce((s, pp) => s + (pp.monto || 0), 0)
+                                      const totalLote = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : null
+                                      const nuevoEstado = totalLote && totalPagadoRest >= totalLote * 0.99 ? 'pagado' : 'pendiente'
+                                      await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', l.id)
                                       await cargarDatos() 
                                     }}
                                       style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 11 }}>✕</button>
