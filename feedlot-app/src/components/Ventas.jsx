@@ -54,6 +54,7 @@ export default function Ventas({ usuario }) {
   const [formComercial, setFormComercial] = useState({})
   const [formPagoVto, setFormPagoVto] = useState('')
   const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '' })
+  const [chequesParalelos, setChequesParalelos] = useState([])
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
   const [form, setForm] = useState({
@@ -67,7 +68,7 @@ export default function Ventas({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [ventaConfirmada, setVentaConfirmada] = useState(null)
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => { cargar(); cargarChequesParalelos() }, [])
 
   async function cargar() {
     const [{ data: v }, { data: l }, { data: c }, { data: ps }] = await Promise.all([
@@ -256,6 +257,11 @@ export default function Ventas({ usuario }) {
     }
     setEditandoVenta(null)
     await cargar()
+  }
+
+  async function cargarChequesParalelos() {
+    const { data } = await supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').eq('es_paralelo', true).order('fecha_vencimiento')
+    setChequesParalelos(data || [])
   }
 
   async function confirmarVenta() {
@@ -1762,6 +1768,21 @@ export default function Ventas({ usuario }) {
                                       Cobro en cuenta paralela
                                     </label>
                                   </div>
+                                  {/* Selector cheque paralelo */}
+                                  {formPago.es_paralela && ['cheque','e-cheq'].includes(formPago.forma_pago) && chequesParalelos.length > 0 && (
+                                    <div style={{ gridColumn: '1/-1' }}>
+                                      <div style={{ fontSize: 9, color: '#3D1A6B', textTransform: 'uppercase', marginBottom: 2 }}>Cheque en cartera paralela</div>
+                                      <select onChange={e => {
+                                        const ch = chequesParalelos.find(c => String(c.id) === e.target.value)
+                                        if (ch) setFormPago({...formPago, numero_cheque: ch.numero || '', banco: ch.banco || '', monto: String(ch.monto || ''), fecha_cobro_cheque: ch.fecha_cobro || '', fecha_vencimiento_cheque: ch.fecha_vencimiento || ''})
+                                      }} style={{ width: '100%', border: '1px solid #9F8ED4', borderRadius: 4, padding: '4px 6px', fontSize: 11, background: '#F0EAFB' }}>
+                                        <option value="">— Seleccioná un cheque —</option>
+                                        {chequesParalelos.map(ch => (
+                                          <option key={ch.id} value={ch.id}>#{ch.numero} · {ch.banco} · ${ch.monto?.toLocaleString('es-AR')} · vto {ch.fecha_vencimiento}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
                                   {['cheque','e-cheq'].includes(formPago.forma_pago) && (
                                     <>
                                       <div>
