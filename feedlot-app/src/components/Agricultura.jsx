@@ -84,6 +84,7 @@ export default function Agricultura({ usuario }) {
 
   const TABS = [
     { key: 'campos', label: 'Campos' },
+    { key: 'arriendos', label: 'Arriendos' },
     { key: 'campanas', label: 'Campaña' },
     { key: 'ordenes', label: 'Órdenes de trabajo' },
     { key: 'cosechas', label: 'Cosechas' },
@@ -138,6 +139,7 @@ export default function Agricultura({ usuario }) {
 
       {/* ── CAMPOS ── */}
       {tab === 'campos' && <TabCampos campos={campos} campanas={campanas} planes={planes} campanaActiva={campanaActiva} cargar={cargar} />}
+      {tab === 'arriendos' && <TabArriendos campos={campos} cargar={cargar} />}
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} />}
@@ -151,7 +153,7 @@ export default function Agricultura({ usuario }) {
 // ── TAB CAMPOS ──
 function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_ha: '', ubicacion: '' })
+  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', ubicacion: '' })
   const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [selectedCampo, setSelectedCampo] = useState(null)
@@ -161,15 +163,16 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
     setGuardando(true)
+    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_qq_ha: parseFloat(form.arrendamiento_qq_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', ubicacion: form.ubicacion || null }
     if (editando) {
-      await supabase.from('campos').update({ ...form, superficie_ha: parseFloat(form.superficie_ha) || null, arrendamiento_ha: parseFloat(form.arrendamiento_ha) || null }).eq('id', editando)
+      await supabase.from('campos').update(campoData).eq('id', editando)
     } else {
-      await supabase.from('campos').insert({ ...form, superficie_ha: parseFloat(form.superficie_ha) || null, arrendamiento_ha: parseFloat(form.arrendamiento_ha) || null, activo: true })
+      await supabase.from('campos').insert({ ...campoData, activo: true })
     }
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_ha: '', ubicacion: '' })
+    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', ubicacion: '' })
     setGuardando(false)
   }
 
@@ -200,19 +203,20 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
       {showForm && (
         <Card titulo={editando ? 'Editar campo' : 'Nuevo campo'}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            {[
-              { label: 'Nombre del campo *', key: 'nombre', type: 'text' },
-              { label: 'Superficie total (ha)', key: 'superficie_ha', type: 'number' },
-              { label: 'Propietario', key: 'propietario', type: 'text' },
-              { label: 'Arrendamiento $/ha', key: 'arrendamiento_ha', type: 'number' },
-              { label: 'Ubicación', key: 'ubicacion', type: 'text' },
-            ].map(f => (
-              <div key={f.key}>
-                <Label>{f.label}</Label>
-                <input type={f.type} value={form[f.key]} onChange={e => setForm({...form, [f.key]: e.target.value})}
-                  style={inputStyle} />
-              </div>
-            ))}
+            <div><Label>Nombre del campo *</Label><input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Superficie total (ha)</Label><input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Propietario</Label><input type="text" value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Arrendamiento qq soja/ha/año</Label><input type="number" value={form.arrendamiento_qq_ha} onChange={e => setForm({...form, arrendamiento_qq_ha: e.target.value})} placeholder="ej. 9" style={inputStyle} /></div>
+            <div>
+              <Label>Forma de pago arriendo</Label>
+              <select value={form.forma_pago_arriendo} onChange={e => setForm({...form, forma_pago_arriendo: e.target.value})} style={inputStyle}>
+                <option value="mensual">Mensual</option>
+                <option value="cuatrimestral">Cuatrimestral</option>
+                <option value="semestral">Semestral</option>
+                <option value="anual">Anual</option>
+              </select>
+            </div>
+            <div><Label>Ubicación</Label><input type="text" value={form.ubicacion} onChange={e => setForm({...form, ubicacion: e.target.value})} style={inputStyle} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={guardar} disabled={guardando}
@@ -248,13 +252,14 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {arrendamientoAnual && (
+                {c.arrendamiento_qq_ha && (
                   <div style={{ textAlign: 'right', marginRight: 8 }}>
-                    <div style={{ fontSize: 10, color: S.muted }}>Arrendamiento anual</div>
-                    <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>-${arrendamientoAnual.toLocaleString('es-AR')}</div>
+                    <div style={{ fontSize: 10, color: S.muted }}>Arrendamiento</div>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>{c.arrendamiento_qq_ha} qq/ha · {arrendamientoAnual?.toLocaleString('es-AR')} qq/año</div>
+                    <div style={{ fontSize: 10, color: S.muted }}>{c.forma_pago_arriendo}</div>
                   </div>
                 )}
-                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_ha: c.arrendamiento_ha || '', ubicacion: c.ubicacion || '' }); setShowForm(true); setSelectedCampo(null) }}
+                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_qq_ha: c.arrendamiento_qq_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', ubicacion: c.ubicacion || '' }); setShowForm(true); setSelectedCampo(null) }}
                   style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                   Editar
                 </button>
@@ -1048,7 +1053,177 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
   )
 }
 
-// ── TAB STOCK AGROQUÍMICOS ──
+// ── TAB ARRIENDOS ──
+function TabArriendos({ campos, cargar }) {
+  const [vencimientos, setVencimientos] = useState([])
+  const [showForm, setShowForm] = useState(null) // campo_id
+  const [formVenc, setFormVenc] = useState({ fecha_vencimiento: '', qq_ha: '', precio_pizarra: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { cargarVencimientos() }, [])
+
+  async function cargarVencimientos() {
+    const { data } = await supabase.from('vencimientos_arriendo').select('*, campos(nombre, superficie_ha, arrendamiento_qq_ha)').order('fecha_vencimiento')
+    setVencimientos(data || [])
+    setLoading(false)
+  }
+
+  async function guardarVenc(campo_id) {
+    if (!formVenc.fecha_vencimiento) { alert('Ingresá la fecha de vencimiento'); return }
+    setGuardando(true)
+    const campo = campos.find(c => c.id === campo_id)
+    const qqHa = parseFloat(formVenc.qq_ha) || campo?.arrendamiento_qq_ha || 0
+    const pizarra = parseFloat(formVenc.precio_pizarra) || 0
+    const monto = qqHa && pizarra && campo?.superficie_ha ? Math.round(qqHa * pizarra * campo.superficie_ha) : null
+    await supabase.from('vencimientos_arriendo').insert({
+      campo_id, fecha_vencimiento: formVenc.fecha_vencimiento,
+      qq_ha: qqHa || null, precio_pizarra: pizarra || null,
+      monto_total: monto, estado: 'pendiente',
+      observaciones: formVenc.observaciones || null,
+    })
+    await cargarVencimientos()
+    setShowForm(null)
+    setFormVenc({ fecha_vencimiento: '', qq_ha: '', precio_pizarra: '', observaciones: '' })
+    setGuardando(false)
+  }
+
+  async function marcarPagado(id) {
+    await supabase.from('vencimientos_arriendo').update({ estado: 'pagado', pagado_en: new Date().toISOString().split('T')[0] }).eq('id', id)
+    await cargarVencimientos()
+  }
+
+  const hoy = new Date()
+  const en7dias = new Date(Date.now() + 7 * 86400000)
+  const proximos = vencimientos.filter(v => v.estado === 'pendiente' && new Date(v.fecha_vencimiento) <= en7dias)
+
+  if (loading) return <div style={{ padding: '2rem', color: S.muted }}>Cargando...</div>
+
+  return (
+    <div>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '1.25rem' }}>Arriendos y vencimientos</div>
+
+      {proximos.length > 0 && (
+        <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ Vencimientos próximos — 7 días</div>
+          {proximos.map(v => (
+            <div key={v.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
+              {v.campos?.nombre} · {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')}
+              {v.monto_total && ` · $${v.monto_total.toLocaleString('es-AR')}`}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {campos.filter(c => c.arrendamiento_qq_ha).map(c => {
+        const vencsCampo = vencimientos.filter(v => v.campo_id === c.id)
+        const isShowForm = showForm === c.id
+        const qqAnual = c.arrendamiento_qq_ha * (c.superficie_ha || 0)
+        return (
+          <div key={c.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{c.nombre}</div>
+                <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                  {c.arrendamiento_qq_ha} qq/ha/año · {c.superficie_ha} ha · Total: {qqAnual.toLocaleString('es-AR')} qq/año · {c.forma_pago_arriendo}
+                </div>
+              </div>
+              <button onClick={() => { setShowForm(isShowForm ? null : c.id); setFormVenc({ fecha_vencimiento: '', qq_ha: c.arrendamiento_qq_ha || '', precio_pizarra: '', observaciones: '' }) }}
+                style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                + Agregar vencimiento
+              </button>
+            </div>
+
+            {isShowForm && (
+              <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, background: S.accentLight }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <Label>Fecha vencimiento</Label>
+                    <input type="date" value={formVenc.fecha_vencimiento} onChange={e => setFormVenc({...formVenc, fecha_vencimiento: e.target.value})} style={inputStyle} />
+                  </div>
+                  <div>
+                    <Label>qq/ha a pagar</Label>
+                    <input type="number" value={formVenc.qq_ha} onChange={e => setFormVenc({...formVenc, qq_ha: e.target.value})} placeholder={c.arrendamiento_qq_ha} style={inputStyle} />
+                  </div>
+                  <div>
+                    <Label>Precio pizarra Rosario $/qq</Label>
+                    <input type="number" value={formVenc.precio_pizarra} onChange={e => setFormVenc({...formVenc, precio_pizarra: e.target.value})} placeholder="ej. 78500" style={inputStyle} />
+                  </div>
+                  <div>
+                    <Label>Observaciones</Label>
+                    <input type="text" value={formVenc.observaciones} onChange={e => setFormVenc({...formVenc, observaciones: e.target.value})} style={inputStyle} />
+                  </div>
+                </div>
+                {formVenc.qq_ha && formVenc.precio_pizarra && c.superficie_ha && (
+                  <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', marginBottom: '1rem', fontSize: 13 }}>
+                    Total a pagar: <strong style={{ color: S.red }}>
+                      ${Math.round(parseFloat(formVenc.qq_ha) * parseFloat(formVenc.precio_pizarra) * c.superficie_ha).toLocaleString('es-AR')}
+                    </strong>
+                    {' '}({formVenc.qq_ha} qq/ha × {c.superficie_ha} ha × ${parseFloat(formVenc.precio_pizarra).toLocaleString('es-AR')}/qq)
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => guardarVenc(c.id)} disabled={guardando}
+                    style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.red, border: `1px solid ${S.red}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                    {guardando ? 'Guardando...' : 'Guardar vencimiento'}
+                  </button>
+                  <button onClick={() => setShowForm(null)}
+                    style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                </div>
+              </div>
+            )}
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead><tr style={{ background: S.bg }}>
+                {['Vencimiento', 'qq/ha', 'Precio pizarra', 'Monto total', 'Estado', ''].map(h => (
+                  <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {vencsCampo.length === 0 && <tr><td colSpan={6} style={{ padding: '1rem', textAlign: 'center', color: S.hint }}>Sin vencimientos registrados.</td></tr>}
+                {vencsCampo.map(v => {
+                  const vencido = v.estado === 'pendiente' && new Date(v.fecha_vencimiento) < hoy
+                  const proximo = v.estado === 'pendiente' && new Date(v.fecha_vencimiento) <= en7dias
+                  return (
+                    <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}`, background: vencido ? '#FFF5F5' : proximo ? '#FFFBF0' : 'transparent' }}>
+                      <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: proximo ? 700 : 400, color: vencido ? S.red : S.text }}>
+                        {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')}
+                        {vencido && <span style={{ fontSize: 10, color: S.red, marginLeft: 4 }}>VENCIDO</span>}
+                        {proximo && !vencido && <span style={{ fontSize: 10, color: S.amber, marginLeft: 4 }}>⚠ PRÓXIMO</span>}
+                      </td>
+                      <td style={{ padding: '7px 12px', fontFamily: 'monospace' }}>{v.qq_ha || '—'}</td>
+                      <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: S.muted }}>{v.precio_pizarra ? `$${v.precio_pizarra.toLocaleString('es-AR')}` : '—'}</td>
+                      <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>{v.monto_total ? `-$${v.monto_total.toLocaleString('es-AR')}` : '—'}</td>
+                      <td style={{ padding: '7px 12px' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: v.estado === 'pagado' ? S.greenLight : vencido ? S.redLight : S.amberLight, color: v.estado === 'pagado' ? S.green : vencido ? S.red : S.amber }}>
+                          {v.estado === 'pagado' ? `Pagado ${v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR') : ''}` : v.estado}
+                        </span>
+                      </td>
+                      <td style={{ padding: '7px 12px', display: 'flex', gap: 4 }}>
+                        {v.estado === 'pendiente' && (
+                          <button onClick={() => marcarPagado(v.id)}
+                            style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>✓ Pagado</button>
+                        )}
+                        <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('vencimientos_arriendo').delete().eq('id', v.id); cargarVencimientos() }}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
+
+      {campos.filter(c => c.arrendamiento_qq_ha).length === 0 && (
+        <div style={{ padding: '3rem', textAlign: 'center', color: S.hint, background: S.surface, borderRadius: 10, border: `1px solid ${S.border}` }}>
+          No hay campos con arrendamiento configurado. Editá los campos y completá los qq/ha.
+        </div>
+      )}
+    </div>
+  )
+}
 function TabStockAgro({ stock, cargar }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', precio_referencia: '', minimo_stock: '' })
