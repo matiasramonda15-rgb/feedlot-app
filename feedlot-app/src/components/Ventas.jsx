@@ -424,26 +424,39 @@ export default function Ventas({ usuario }) {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                       <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto total operación $ <span style={{ color: S.accent }}>(IVA incluido)</span></label>
-                        <input type="number" placeholder="Total que paga el frigorífico" value={editandoVenta.monto_total_con_iva || ''}
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg <span style={{ color: S.accent }}>*</span></label>
+                        <input type="number" placeholder="ej. 4800" value={editandoVenta.precio_kg}
                           onChange={e => {
-                          const mt = e.target.value
-                          const kg = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - (parseFloat(editandoVenta.desbaste||8)/100))) : (v.kg_neto || 0)
-                          const precio = mt && kg ? Math.round(parseFloat(mt) / kg) : ''
-                          setEditandoVenta({ ...editandoVenta, monto_total_con_iva: mt, precio_kg: String(precio) })
+                          const precio = e.target.value
+                          // Solo autocompleta monto si NO es multi-corral
+                          if (!v.grupo_venta_id) {
+                            const kg = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - (parseFloat(editandoVenta.desbaste||8)/100))) : (v.kg_neto || 0)
+                            const mt = precio && kg ? Math.round(parseFloat(precio) * kg) : ''
+                            setEditandoVenta({ ...editandoVenta, precio_kg: precio, monto_total_con_iva: String(mt) })
+                          } else {
+                            setEditandoVenta({ ...editandoVenta, precio_kg: precio })
+                          }
                         }}
                           style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
                       </div>
                       <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg <span style={{ color: S.hint }}>(opcional)</span></label>
-                        <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
+                        <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>
+                          Monto total operación $ <span style={{ color: S.accent }}>(IVA incluido)</span>
+                          {v.grupo_venta_id && <span style={{ color: S.red, marginLeft: 4 }}>ingresá el real</span>}
+                        </label>
+                        <input type="number" placeholder="Total que paga el frigorífico" value={editandoVenta.monto_total_con_iva || ''}
                           onChange={e => {
-                          const precio = e.target.value
-                          const kg = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - (parseFloat(editandoVenta.desbaste||8)/100))) : (v.kg_neto || 0)
-                          const mt = precio && kg ? Math.round(parseFloat(precio) * kg) : ''
-                          setEditandoVenta({ ...editandoVenta, precio_kg: precio, monto_total_con_iva: String(mt) })
+                          const mt = e.target.value
+                          // Solo autocompleta precio si NO es multi-corral
+                          if (!v.grupo_venta_id) {
+                            const kg = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - (parseFloat(editandoVenta.desbaste||8)/100))) : (v.kg_neto || 0)
+                            const precio = mt && kg ? Math.round(parseFloat(mt) / kg) : ''
+                            setEditandoVenta({ ...editandoVenta, monto_total_con_iva: mt, precio_kg: String(precio) })
+                          } else {
+                            setEditandoVenta({ ...editandoVenta, monto_total_con_iva: mt })
+                          }
                         }}
-                          style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                          style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
                       </div>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comprador</label>
