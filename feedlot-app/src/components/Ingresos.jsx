@@ -57,7 +57,7 @@ export default function Ingresos({ usuario }) {
   async function cargarDatos() {
     setLoading(true)
     const [{ data: lotesDB }, { data: corralesDB }] = await Promise.all([
-      supabase.from('lotes').select('*').order('creado_en', { ascending: false }),
+      supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('corrales').select('id, numero, rol, sub, animales').order('numero'),
     ])
     setLotes(lotesDB || [])
@@ -946,4 +946,4 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
       })}
     </div>
   )
-}
+} 
