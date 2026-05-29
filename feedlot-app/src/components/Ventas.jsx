@@ -819,7 +819,10 @@ export default function Ventas({ usuario }) {
                         })()}
 
                         <div style={{ display: 'flex', gap: 8 }}>
-                         onClick={() => { console.log('v:', v, 'ep:', editandoVenta); guardarDatosVenta(v) }}
+                         <button onClick={() => guardarDatosVenta(v)}
+  style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+  Guardar
+</button>
                             style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                             Guardar
                           </button>
