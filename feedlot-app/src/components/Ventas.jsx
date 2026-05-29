@@ -844,14 +844,14 @@ export default function Ventas({ usuario }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: S.bg }}>
-                    {['Fecha', 'Corral', 'Anim.', 'Comprador', 'Kg brutos', 'Desbaste', 'Kg netos', '$/kg', 'Total', ''].map(h => (
+                    {['Fecha', 'Corral', 'Anim.', 'Comprador', 'Kg brutos', 'Kg prom.', 'Desbaste', 'Kg netos', '$/kg', 'Total', ''].map(h => (
                       <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {ventas.length === 0 && (
-                    <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ventas registradas.</td></tr>
+                    <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ventas registradas.</td></tr>
                   )}
                   {(() => {
                     // Agrupar por grupo_venta_id
@@ -892,6 +892,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>{v.comprador || '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_vivo_total?.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{v.kg_vivo_total && v.cantidad ? Math.round(v.kg_vivo_total / v.cantidad).toLocaleString('es-AR') : '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.desbaste_pct}%</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
@@ -922,7 +923,7 @@ export default function Ventas({ usuario }) {
                           </tr>
                           {editandoComercial === v.id && (
                             <tr style={{ background: S.accentLight }}>
-                              <td colSpan={10} style={{ padding: '1rem 1.25rem' }}>
+                              <td colSpan={11} style={{ padding: '1rem 1.25rem' }}>
                                 <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Editar datos comerciales</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
                                   <div>
@@ -1077,6 +1078,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalAnim}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>{v0.comprador || '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgVivo.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{totalKgVivo && totalAnim ? Math.round(totalKgVivo / totalAnim).toLocaleString('es-AR') : '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.desbaste_pct}%</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
@@ -1105,7 +1107,7 @@ export default function Ventas({ usuario }) {
                           </tr>
                           {editandoComercial === v0.grupo_venta_id && (
                             <tr style={{ background: S.accentLight }}>
-                              <td colSpan={10} style={{ padding: '1rem 1.25rem' }}>
+                              <td colSpan={11} style={{ padding: '1rem 1.25rem' }}>
                                 <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Editar datos comerciales — venta multi-corral</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
                                   <div>
@@ -1266,7 +1268,7 @@ export default function Ventas({ usuario }) {
                 </thead>
                 <tbody>
                   {lotes.length === 0 && (
-                    <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ingresos registrados.</td></tr>
+                    <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ingresos registrados.</td></tr>
                   )}
                   {lotes.map(l => {
                     const diff = (l.kg_bascula || 0) - (l.kg_factura || l.kg_bascula || 0)
