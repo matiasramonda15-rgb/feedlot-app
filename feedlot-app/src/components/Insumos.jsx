@@ -576,8 +576,9 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
     if (!ep?.precio) { alert('Ingresá el precio'); return }
     const precioNum = parseFloat(ep.precio)
     const total = Math.round(ing.cantidad_kg * precioNum)
+    const fecha = new Date().toISOString().split('T')[0]
 
-    // 1. Actualizar ingresos_stock con el precio
+    // 1. Actualizar ingresos_stock
     await supabase.from('ingresos_stock').update({
       precio_por_kg: precioNum,
       total,
@@ -586,17 +587,14 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
       precio_cargado_en: new Date().toISOString(),
     }).eq('id', ing.id)
 
-    // 2. Recalcular precio_referencia: traer todos los ingresos CON precio de ese insumo (ya actualizado)
+    // 2. Recalcular precio_referencia (promedio ponderado)
     const { data: todos } = await supabase.from('ingresos_stock')
       .select('cantidad_kg, precio_por_kg')
       .eq('insumo_id', ing.insumo_id)
       .not('precio_por_kg', 'is', null)
-
     const lista = todos || []
-    // Asegurarse de incluir el que acabamos de actualizar (por si la query no lo devuelve aún)
     const yaIncluido = lista.some(i => i.precio_por_kg === precioNum && i.cantidad_kg === ing.cantidad_kg)
     if (!yaIncluido) lista.push({ cantidad_kg: ing.cantidad_kg, precio_por_kg: precioNum })
-
     const totalKg = lista.reduce((s, i) => s + (i.cantidad_kg || 0), 0)
     if (totalKg > 0) {
       const prom = Math.round(lista.reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0) / totalKg)
@@ -607,6 +605,19 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
           actualizado_en: new Date().toISOString(),
         }).eq('id', item.id)
       }
+    }
+
+    // 3. Registrar en caja
+    const desc = `Compra ${ing.insumo_nombre}${ep.proveedor ? ` — ${ep.proveedor}` : ''} (${ing.cantidad_kg?.toLocaleString('es-AR')} kg)`
+    if (ep.es_paralelo) {
+      await supabase.from('caja_paralela').insert({
+        fecha, tipo: 'egreso', descripcion: desc, monto: total,
+      })
+    } else {
+      await supabase.from('caja_oficial').insert({
+        fecha, tipo: 'egreso', categoria: 'Insumos alimentación',
+        descripcion: desc, monto: total, forma_pago: ep.forma_pago || 'transferencia',
+      })
     }
 
     const nuevo = { ...editando }
@@ -622,6 +633,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
       </div>
       {ingresos.map(ing => {
         const ep = editando[ing.id]
+        const totalCalc = ep?.precio ? Math.round(ing.cantidad_kg * parseFloat(ep.precio)) : null
         return (
           <div key={ing.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: ep ? 12 : 0 }}>
@@ -632,7 +644,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
                 </div>
               </div>
               {!ep && (
-                <button onClick={() => setEditando({ ...editando, [ing.id]: { precio: '', proveedor: '' } })}
+                <button onClick={() => setEditando({ ...editando, [ing.id]: { precio: '', proveedor: '', forma_pago: 'transferencia', es_paralelo: false } })}
                   style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                   Cargar precio
                 </button>
@@ -640,7 +652,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
             </div>
             {ep && (
               <div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio por kg ($) *</div>
                     <input type="number" placeholder="ej. 130" value={ep.precio}
@@ -653,17 +665,34 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
                       onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, proveedor: e.target.value } })}
                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
                   </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Forma de pago</div>
+                    <select value={ep.forma_pago} onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, forma_pago: e.target.value } })}
+                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="efectivo">Efectivo</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="cuenta_corriente">Cuenta corriente</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: S.purple, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={ep.es_paralelo} onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, es_paralelo: e.target.checked } })} />
+                      Pago paralelo
+                    </label>
+                  </div>
                 </div>
-                {ep.precio && (
-                  <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
-                    Total: <strong>${Math.round(ing.cantidad_kg * parseFloat(ep.precio)).toLocaleString('es-AR')}</strong>
+                {totalCalc && (
+                  <div style={{ background: ep.es_paralelo ? S.purpleLight : S.greenLight, border: `1px solid ${ep.es_paralelo ? '#C4A8F0' : '#97C459'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: ep.es_paralelo ? S.purple : S.green }}>
+                    Total: <strong>${totalCalc.toLocaleString('es-AR')}</strong>
                     {' '}({ing.cantidad_kg?.toLocaleString('es-AR')} kg × ${parseFloat(ep.precio).toLocaleString('es-AR')}/kg)
+                    {' · '}{ep.es_paralelo ? '💜 Paralelo' : `🏦 ${ep.forma_pago}`}
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => guardarPrecio(ing)}
                     style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                    Guardar precio
+                    Guardar y registrar en caja
                   </button>
                   <button onClick={() => { const n = { ...editando }; delete n[ing.id]; setEditando(n) }}
                     style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
