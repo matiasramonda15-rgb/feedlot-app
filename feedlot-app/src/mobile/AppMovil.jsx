@@ -859,6 +859,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   const [revState, setRevState] = useState([])
   const [formEvento, setFormEvento] = useState({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
+  const [stockSanitario, setStockSanitario] = useState([])
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
@@ -869,6 +870,10 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   useEffect(() => {
     setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, enfermos: [] })))
   }, [corrales])
+
+  useEffect(() => {
+    supabase.from('stock_sanitario').select('*').order('producto').then(({ data }) => setStockSanitario(data || []))
+  }, [])
 
   async function confirmarAlerta(id) {
     await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('id', id)
@@ -1024,7 +1029,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                       <>
                         <button onClick={() => { const n = [...revState]; n[i] = {...n[i], ok: true, enfermos: []}; setRevState(n) }}
                           style={{ padding: '7px 10px', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 7, color: C.green, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Sin novedades ✓</button>
-                        <button onClick={() => { const n = [...revState]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',prod:''}]}; setRevState(n) }}
+                        <button onClick={() => { const n = [...revState]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',prod:'',prod_id:null,ml:'',mover_enfermeria:false}]}; setRevState(n) }}
                           style={{ padding: '7px 10px', background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 7, color: C.amber, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>Hay novedad</button>
                       </>
                     )}
@@ -1053,14 +1058,30 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                           style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans, marginBottom: 6 }}>
                           {['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro'].map(d => <option key={d}>{d}</option>)}
                         </select>
-                        <select value={enf.prod} onChange={e => { const n = [...revState]; n[i].enfermos[ei].prod = e.target.value; setRevState(n) }}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <select value={enf.prod} onChange={e => { 
+                          const prod = stockSanitario.find(p => p.producto === e.target.value)
+                          const n = [...revState]
+                          n[i].enfermos[ei].prod = e.target.value
+                          n[i].enfermos[ei].prod_id = prod?.id || null
+                          setRevState(n) 
+                        }}
                           style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: C.text, fontFamily: C.sans }}>
                           <option value="">— Producto aplicado —</option>
-                          {PRODUCTOS.map(p => <option key={p}>{p}</option>)}
+                          {stockSanitario.map(p => <option key={p.id} value={p.producto}>{p.producto} ({(p.cantidad_ml||0).toLocaleString('es-AR')} {p.unidad||'ml'})</option>)}
                         </select>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="number" value={enf.ml || ''} placeholder="ml" onChange={e => { const n=[...revState]; n[i].enfermos[ei].ml=e.target.value; setRevState(n) }}
+                            style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, background: C.surface, color: C.text }} />
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={enf.mover_enfermeria || false} onChange={e => { const n=[...revState]; n[i].enfermos[ei].mover_enfermeria=e.target.checked; setRevState(n) }} />
+                            → Enf.
+                          </label>
+                        </div>
+                        </div>
                       </div>
                     ))}
-                    <button onClick={() => { const n = [...revState]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',prod:''}); setRevState(n) }}
+                    <button onClick={() => { const n = [...revState]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',prod:'',prod_id:null,ml:'',mover_enfermeria:false}); setRevState(n) }}
                       style={{ width: '100%', padding: '8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: C.sans, marginTop: 4 }}>
                       + Agregar otro animal
                     </button>
