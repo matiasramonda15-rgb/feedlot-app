@@ -71,7 +71,7 @@ export default function AppMovil({ usuario, onLogout }) {
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} onDone={cargarDatos} />,
-    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} usuario={usuario} />,
+    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
   }
@@ -840,7 +840,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     </div>
   )
 }
-function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, usuario }) {
+function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, movimientos, usuario }) {
   const [pantSan, setPantSan] = useState('alertas')
   const [confirmados, setConfirmados] = useState({})
   const [revState, setRevState] = useState([])
@@ -943,10 +943,8 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, us
             {alertas.length === 0 && corrales.filter(c => c.rol === 'cuarentena').length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
             {/* Cuarentenas */}
             {corrales.filter(c => c.rol === 'cuarentena').map(c => {
-              const lotesCorral = (lotes || []).filter(l => l.corral_cuarentena_id === c.id)
-              const ultimaFecha = lotesCorral.length > 0
-                ? lotesCorral.reduce((max, l) => l.fecha_ingreso > max ? l.fecha_ingreso : max, lotesCorral[0].fecha_ingreso)
-                : null
+              const ultimoMov = (movimientos || []).find(m => m.corral_destino_id === c.id)
+              const ultimaFecha = ultimoMov ? ultimoMov.fecha.split('T')[0] : null
               const dias = ultimaFecha ? Math.floor((new Date() - new Date(ultimaFecha + 'T12:00:00')) / (1000 * 60 * 60 * 24)) : null
               if (dias !== null && dias < 8) return null
               return (
