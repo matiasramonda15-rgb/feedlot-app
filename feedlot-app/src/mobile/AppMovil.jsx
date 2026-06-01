@@ -175,7 +175,6 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
   const [rolDestino, setRolDestino] = useState('')
   const [subDestino, setSubDestino] = useState('')
   const [guardando, setGuardando] = useState(false)
-  const [mostrarConfirmReemplazo, setMostrarConfirmReemplazo] = useState(false)
   const corralesActivos = corrales.filter(c => c.rol !== 'deshabilitado')
   const colors = { cuarentena: C.amber, acumulacion: C.blue, enfermeria: C.red, clasificado: '#B09ED4', libre: C.muted }
 
@@ -490,6 +489,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   const [tab, setTab] = useState('piletas')
   const [mostrarMixer, setMostrarMixer] = useState(false)
   const [guardando, setGuardando] = useState(false)
+  const [mostrarConfirmReemplazo, setMostrarConfirmReemplazo] = useState(false)
 
   useEffect(() => {
     const inicial = {}
