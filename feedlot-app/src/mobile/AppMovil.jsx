@@ -15,13 +15,14 @@ export default function AppMovil({ usuario, onLogout }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }] = await Promise.all([
+    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }, { data: movimientos }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('lotes').select('procedencia, fecha_ingreso, corral_cuarentena_id').order('created_at', { ascending: false }),
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
+      supabase.from('movimientos').select('corral_destino_id, fecha').order('fecha', { ascending: false }),
     ])
     const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
     const ayerStr = ayer.toISOString().split('T')[0]
@@ -61,7 +62,7 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer, lotes: lotes || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer, lotes: lotes || [], movimientos: movimientos || [] })
   }
 
   const pantallas = {
@@ -118,20 +119,18 @@ function Home({ usuario, nav, onLogout, datos }) {
   // Corrales en cuarentena próximos a vencer (ingresados hace más de 8 días)
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena')
   corralesCuarentena.forEach(c => {
-    // Buscar el último ingreso de lotes a este corral
-    const lotesCorral = (datos.lotes || []).filter(l => l.corral_cuarentena_id === c.id)
-    const ultimaEntrada = lotesCorral.length > 0
-      ? lotesCorral.reduce((max, l) => l.fecha_ingreso > max ? l.fecha_ingreso : max, lotesCorral[0].fecha_ingreso)
-      : null
-    const diasEnCuarentena = ultimaEntrada
-      ? Math.floor((new Date() - new Date(ultimaEntrada + 'T12:00:00')) / (1000 * 60 * 60 * 24))
+    // Buscar el último movimiento hacia este corral
+    const ultimoMov = (datos.movimientos || []).find(m => m.corral_destino_id === c.id)
+    const ultimaFecha = ultimoMov ? ultimoMov.fecha.split('T')[0] : null
+    const diasDesde = ultimaFecha
+      ? Math.floor((new Date() - new Date(ultimaFecha + 'T12:00:00')) / (1000 * 60 * 60 * 24))
       : null
     tareas.push({
       icon: '🐄',
-      titulo: `Cuarentena C-${c.numero} por vencer`,
-      sub: `${c.animales || 0} animales · último ingreso ${ultimaEntrada ? new Date(ultimaEntrada + 'T12:00:00').toLocaleDateString('es-AR') : '?'} (${diasEnCuarentena !== null ? `${diasEnCuarentena} días` : 'fecha desconocida'})`,
+      titulo: `Cuarentena C-${c.numero} — ${diasDesde !== null ? `${diasDesde} días` : 'fecha desconocida'}`,
+      sub: `${c.animales || 0} animales · último ingreso ${ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}`,
       pantalla: 'corrales',
-      urgente: diasEnCuarentena === null || diasEnCuarentena >= 8
+      urgente: diasDesde === null || diasDesde >= 8
     })
   })
 
