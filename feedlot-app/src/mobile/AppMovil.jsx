@@ -574,7 +574,6 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       }
       // Eliminar raciones de hoy
       await supabase.from('raciones_app').delete().eq('fecha', hoy)
-    }
     const registros = corralesAlim.map(c => {
       const etapa = getEtapa(c)
       return {
