@@ -71,7 +71,7 @@ export default function AppMovil({ usuario, onLogout }) {
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} onDone={cargarDatos} />,
-    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} tabInicial={tabSanidad} />,
+    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
   }
@@ -130,7 +130,6 @@ function Home({ usuario, nav, onLogout, datos }) {
       titulo: `Cuarentena C-${c.numero} — ${diasDesde !== null ? `${diasDesde} días` : 'fecha desconocida'}`,
       sub: `${c.animales || 0} animales · último ingreso ${ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}`,
       pantalla: 'sanidad',
-      tabSanidad: 'alertas',
       urgente: diasDesde === null || diasDesde >= 8
     })
   })
@@ -138,7 +137,7 @@ function Home({ usuario, nav, onLogout, datos }) {
   // Revision bisemanal los lunes (1) y jueves (4)
   const diaSemana = new Date().getDay()
   if (diaSemana === 1 || diaSemana === 4) {
-    tareas.unshift({ icon: '🔍', titulo: 'Revision bisemanal de corrales', sub: 'Hoy corresponde revisar todos los corrales', pantalla: 'sanidad', tabSanidad: 'revision', urgente: true })
+    tareas.unshift({ icon: '🔍', titulo: 'Revision bisemanal de corrales', sub: 'Hoy corresponde revisar todos los corrales', pantalla: 'sanidad', urgente: true })
   }
 
   if (tareas.length === 0) {
@@ -151,7 +150,7 @@ function Home({ usuario, nav, onLogout, datos }) {
       <Scroll>
         <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.65rem' }}>Tareas del dia</div>
         {tareas.map((t, i) => (
-          <div key={i} onClick={() => { if (t.tabSanidad) setTabSanidad(t.tabSanidad); else setTabSanidad('alertas'); nav(t.pantalla) }}
+          <div key={i} onClick={() => nav(t.pantalla)}
             style={{ background: C.surface, border: `1px solid ${t.urgente ? C.amber : C.border}`, borderRadius: 12, padding: '.9rem', marginBottom: '.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 24 }}>{t.icon}</div>
             <div style={{ flex: 1 }}>
@@ -841,8 +840,8 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     </div>
   )
 }
-function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, movimientos, usuario, tabInicial }) {
-  const [pantSan, setPantSan] = useState(tabInicial || 'alertas')
+function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, movimientos, usuario }) {
+  const [pantSan, setPantSan] = useState('alertas')
   const [confirmados, setConfirmados] = useState({})
   const [revState, setRevState] = useState([])
   const [formEvento, setFormEvento] = useState({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
@@ -1723,4 +1722,4 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
       </Scroll>
     </div>
   )
-}
+} 
