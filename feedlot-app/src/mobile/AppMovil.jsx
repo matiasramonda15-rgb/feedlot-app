@@ -602,11 +602,11 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       }
     })
 
-    const { data: stockItems } = await supabase.from('stock_insumos').select('*')
-    if (stockItems) {
+    const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
+    if (stockItemsFresh) {
       // Recargar stock fresco para evitar valores desactualizados
       const stockFresh = {}
-      stockItems.forEach(s => { stockFresh[s.id] = s.cantidad_kg || 0 })
+      stockItemsFresh.forEach(s => { stockFresh[s.id] = s.cantidad_kg || 0 })
 
       for (const etapa of Object.keys(descuentoPorEtapa)) {
         const totalKgEtapa = descuentoPorEtapa[etapa]
@@ -616,8 +616,8 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         for (const ing of formula) {
           const kgIng = Math.round(ing.kg * totalKgEtapa / 100)
           if (kgIng === 0) continue
-          const stockItem = stockItems.find(s => s.insumo === ing.n) ||
-            stockItems.find(s =>
+          const stockItem = stockItemsFresh.find(s => s.insumo === ing.n) ||
+            stockItemsFresh.find(s =>
               s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()) ||
               ing.n.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0].toLowerCase())
             )
@@ -632,7 +632,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       }
       // Descontar solo rollo para corrales marcados
       if (kgSoloRollo > 0) {
-        const rolloItem = stockItems.find(s => s.insumo === 'Rollo (heno)') || stockItems.find(s => s.insumo.toLowerCase().includes('rollo'))
+        const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
         if (rolloItem) {
           const nuevaCantidad = Math.max(0, stockFresh[rolloItem.id] - kgSoloRollo)
           await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
