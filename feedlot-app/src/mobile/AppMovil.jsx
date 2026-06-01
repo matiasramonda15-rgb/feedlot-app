@@ -19,7 +19,7 @@ export default function AppMovil({ usuario, onLogout }) {
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
-      supabase.from('lotes').select('procedencia').order('created_at', { ascending: false }),
+      supabase.from('lotes').select('procedencia, fecha_ingreso, corral_cuarentena_id').order('created_at', { ascending: false }),
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
     ])
@@ -61,7 +61,7 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer, lotes: lotes || [] })
   }
 
   const pantallas = {
@@ -118,7 +118,21 @@ function Home({ usuario, nav, onLogout, datos }) {
   // Corrales en cuarentena próximos a vencer (ingresados hace más de 8 días)
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena')
   corralesCuarentena.forEach(c => {
-    tareas.push({ icon: '🐄', titulo: `Cuarentena C-${c.numero} por vencer`, sub: `${c.animales || 0} animales · verificar pase a acumulación`, pantalla: 'corrales', urgente: true })
+    // Buscar el último ingreso de lotes a este corral
+    const lotesCorral = (datos.lotes || []).filter(l => l.corral_cuarentena_id === c.id)
+    const ultimaEntrada = lotesCorral.length > 0
+      ? lotesCorral.reduce((max, l) => l.fecha_ingreso > max ? l.fecha_ingreso : max, lotesCorral[0].fecha_ingreso)
+      : null
+    const diasEnCuarentena = ultimaEntrada
+      ? Math.floor((new Date() - new Date(ultimaEntrada + 'T12:00:00')) / (1000 * 60 * 60 * 24))
+      : null
+    tareas.push({
+      icon: '🐄',
+      titulo: `Cuarentena C-${c.numero} por vencer`,
+      sub: `${c.animales || 0} animales · último ingreso ${ultimaEntrada ? new Date(ultimaEntrada + 'T12:00:00').toLocaleDateString('es-AR') : '?'} (${diasEnCuarentena !== null ? `${diasEnCuarentena} días` : 'fecha desconocida'})`,
+      pantalla: 'corrales',
+      urgente: diasEnCuarentena === null || diasEnCuarentena >= 8
+    })
   })
 
   // Revision bisemanal los lunes (1) y jueves (4)
