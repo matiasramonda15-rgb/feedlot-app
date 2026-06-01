@@ -345,6 +345,8 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nombre: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
   const [guardando, setGuardando] = useState(false)
+  const [editandoIng, setEditandoIng] = useState(null) // id del ingreso en edición
+  const [formIng, setFormIng] = useState({ cantidad_kg: '', precio_por_kg: '', proveedor: '' })
 
   async function guardarInsumo() {
     if (!form.nombre) { alert('Ingresá el nombre'); return }
@@ -444,34 +446,117 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
             ? <div style={{ fontSize: 13, color: S.hint }}>No hay ingresos registrados.</div>
             : (
               <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 650 }}>
                   <thead>
                     <tr style={{ background: S.bg }}>
-                      {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por'].map((h, i) => (
-                        <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por', ''].map((h, i) => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 && i < 7 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {ingresosStock.map(ing => (
-                      <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted, whiteSpace: 'nowrap' }}>
-                          {new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                        </td>
-                        <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
-                          {ing.precio_por_kg
-                            ? `$${ing.precio_por_kg.toLocaleString('es-AR')}`
-                            : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
-                        </td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                          {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}
-                        </td>
-                        <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '—'}</td>
-                        <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '—'}</td>
-                      </tr>
-                    ))}
+                    {ingresosStock.map(ing => {
+                      const esEditando = editandoIng === ing.id
+                      return (
+                        <>
+                          <tr key={ing.id} style={{ borderBottom: esEditando ? 'none' : `1px solid ${S.border}`, background: esEditando ? S.accentLight : 'transparent' }}>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted, whiteSpace: 'nowrap' }}>
+                              {new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                            </td>
+                            <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                              {ing.precio_por_kg
+                                ? `$${ing.precio_por_kg.toLocaleString('es-AR')}`
+                                : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
+                            </td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                              {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}
+                            </td>
+                            <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '—'}</td>
+                            <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '—'}</td>
+                            <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => {
+                                  setEditandoIng(ing.id)
+                                  setFormIng({ cantidad_kg: String(ing.cantidad_kg || ''), precio_por_kg: String(ing.precio_por_kg || ''), proveedor: ing.proveedor || '' })
+                                }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                                  Editar
+                                </button>
+                                <button onClick={async () => {
+                                  if (!confirm('¿Eliminar este ingreso? Se restará del stock.')) return
+                                  // Restar del stock
+                                  const item = items.find(s => s.id === ing.insumo_id)
+                                  if (item && ing.cantidad_kg) {
+                                    await supabase.from('stock_insumos').update({
+                                      cantidad_kg: Math.max(0, (item.cantidad_kg || 0) - ing.cantidad_kg),
+                                      actualizado_en: new Date().toISOString(),
+                                    }).eq('id', item.id)
+                                  }
+                                  await supabase.from('ingresos_stock').delete().eq('id', ing.id)
+                                  await onCargar()
+                                }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                                  Eliminar
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {esEditando && (
+                            <tr key={`edit-${ing.id}`} style={{ borderBottom: `1px solid ${S.border}`, background: S.accentLight }}>
+                              <td colSpan={8} style={{ padding: '12px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 8, alignItems: 'flex-end' }}>
+                                  <div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Cantidad (kg)</div>
+                                    <input type="number" value={formIng.cantidad_kg} onChange={e => setFormIng({ ...formIng, cantidad_kg: e.target.value })}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio/kg ($)</div>
+                                    <input type="number" value={formIng.precio_por_kg} onChange={e => setFormIng({ ...formIng, precio_por_kg: e.target.value })}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Proveedor</div>
+                                    <input type="text" value={formIng.proveedor} onChange={e => setFormIng({ ...formIng, proveedor: e.target.value })}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
+                                  </div>
+                                  <button onClick={async () => {
+                                    const nuevaCant = parseFloat(formIng.cantidad_kg) || ing.cantidad_kg
+                                    const nuevoPrecio = formIng.precio_por_kg ? parseFloat(formIng.precio_por_kg) : ing.precio_por_kg
+                                    const diffKg = nuevaCant - (ing.cantidad_kg || 0)
+                                    // Actualizar ingresos_stock
+                                    await supabase.from('ingresos_stock').update({
+                                      cantidad_kg: nuevaCant,
+                                      precio_por_kg: nuevoPrecio || null,
+                                      total: nuevoPrecio ? Math.round(nuevaCant * nuevoPrecio) : null,
+                                      proveedor: formIng.proveedor || null,
+                                    }).eq('id', ing.id)
+                                    // Ajustar stock si cambió la cantidad
+                                    if (diffKg !== 0) {
+                                      const item = items.find(s => s.id === ing.insumo_id)
+                                      if (item) {
+                                        await supabase.from('stock_insumos').update({
+                                          cantidad_kg: Math.max(0, (item.cantidad_kg || 0) + diffKg),
+                                          actualizado_en: new Date().toISOString(),
+                                        }).eq('id', item.id)
+                                      }
+                                    }
+                                    setEditandoIng(null)
+                                    await onCargar()
+                                  }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                    Guardar
+                                  </button>
+                                  <button onClick={() => setEditandoIng(null)}
+                                    style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
