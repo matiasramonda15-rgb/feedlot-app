@@ -146,6 +146,23 @@ export default function Ingresos({ usuario }) {
   const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra && !l.monto_total_con_iva) : []
   const compradores = [...new Set(lotes.map(l => l.procedencia).filter(Boolean))]
 
+  // Métricas encabezado
+  const ahora = new Date()
+  const anioActual = ahora.getFullYear()
+  const mesActual = ahora.getMonth()
+  const lotesAnio = lotes.filter(l => l.created_at && new Date(l.created_at).getFullYear() === anioActual)
+  const lotesMes = lotes.filter(l => l.created_at && new Date(l.created_at).getFullYear() === anioActual && new Date(l.created_at).getMonth() === mesActual)
+  const totalAnimAnio = lotesAnio.reduce((s, l) => s + (l.cantidad || 0), 0)
+  const totalAnimMes = lotesMes.reduce((s, l) => s + (l.cantidad || 0), 0)
+  const lotesConPrecio = lotes.filter(l => l.precio_compra)
+  const precioPromedio = lotesConPrecio.length > 0
+    ? Math.round(lotesConPrecio.reduce((s, l) => s + l.precio_compra, 0) / lotesConPrecio.length)
+    : null
+  const lotesConKg = lotes.filter(l => l.cantidad && l.kg_bascula)
+  const kgPromedio = lotesConKg.length > 0
+    ? Math.round(lotesConKg.reduce((s, l) => s + (l.kg_bascula / l.cantidad), 0) / lotesConKg.length)
+    : null
+
   const TABS = [
     { key: 'lista', label: 'Ingresos' },
     { key: 'gestion', label: 'Gestión comercial' },
@@ -229,6 +246,22 @@ export default function Ingresos({ usuario }) {
             setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
           }}>+ Nuevo ingreso</Btn>
         )}
+      </div>
+
+      {/* Métricas */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+        {[
+          { label: 'Comprados este año', val: totalAnimAnio.toLocaleString('es-AR'), sub: `${lotesAnio.length} ingreso${lotesAnio.length !== 1 ? 's' : ''}`, ok: totalAnimAnio > 0 },
+          { label: 'Comprados este mes', val: totalAnimMes.toLocaleString('es-AR'), sub: `${lotesMes.length} ingreso${lotesMes.length !== 1 ? 's' : ''}`, ok: totalAnimMes > 0 },
+          { label: 'Precio prom. compra', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg · promedio histórico', ok: false },
+          { label: 'Kg prom. por animal', val: kgPromedio ? `${kgPromedio.toLocaleString('es-AR')} kg` : '—', sub: 'kg báscula / cantidad', ok: false },
+        ].map((m, i) => (
+          <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+            <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>{m.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: m.ok ? S.green : S.text }}>{m.val}</div>
+            <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{m.sub}</div>
+          </div>
+        ))}
       </div>
 
       {/* Banner lotes sin precio */}
