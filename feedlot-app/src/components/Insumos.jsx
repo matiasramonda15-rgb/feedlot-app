@@ -77,7 +77,28 @@ export default function Insumos({ usuario }) {
     const precioUnit = parseFloat(form.precio_unitario)
     const total = form.total ? parseFloat(form.total) : Math.round(cantidad * precioUnit)
 
-    // Registrar compra
+    // Registrar en caja primero para obtener el id
+    let caja_oficial_id = null
+    let caja_paralela_id = null
+    if (form.es_paralelo) {
+      const { data: cp } = await supabase.from('caja_paralela').insert({
+        fecha: form.fecha, tipo: 'egreso',
+        descripcion: `Compra ${form.insumo_nombre} — ${form.proveedor || ''}`,
+        monto: total,
+      }).select().single()
+      caja_paralela_id = cp?.id || null
+    } else {
+      const { data: co } = await supabase.from('caja_oficial').insert({
+        fecha: form.fecha, tipo: 'egreso',
+        categoria: 'Compra insumos',
+        descripcion: `Compra ${form.insumo_nombre} — ${form.proveedor || ''}`,
+        monto: total,
+        forma_pago: form.forma_pago,
+      }).select().single()
+      caja_oficial_id = co?.id || null
+    }
+
+    // Registrar compra con referencia a caja
     await supabase.from('compras_insumos').insert({
       fecha: form.fecha,
       insumo_id: parseInt(form.insumo_id),
@@ -93,6 +114,8 @@ export default function Insumos({ usuario }) {
       es_paralelo: form.es_paralelo,
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id,
+      caja_oficial_id,
+      caja_paralela_id,
     })
 
     // Actualizar stock
@@ -114,23 +137,6 @@ export default function Insumos({ usuario }) {
           actualizado_en: new Date().toISOString(),
         }).eq('id', item.id)
       }
-    }
-
-    // Registrar en caja
-    if (form.es_paralelo) {
-      await supabase.from('caja_paralela').insert({
-        fecha: form.fecha, tipo: 'egreso',
-        descripcion: `Compra ${form.insumo_nombre} — ${form.proveedor || ''}`,
-        monto: total,
-      })
-    } else {
-      await supabase.from('caja_oficial').insert({
-        fecha: form.fecha, tipo: 'egreso',
-        categoria: 'Compra insumos',
-        descripcion: `Compra ${form.insumo_nombre} — ${form.proveedor || ''}`,
-        monto: total,
-        forma_pago: form.forma_pago,
-      })
     }
 
     setShowForm(false)
@@ -318,8 +324,19 @@ export default function Insumos({ usuario }) {
                       {c.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Paralelo</span> : c.forma_pago}
                     </td>
                     <td style={{ padding: '8px 12px' }}>
-                      <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('compras_insumos').delete().eq('id', c.id); await cargar() }}
-                        style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                      <button onClick={async () => {
+                        if (!confirm('¿Eliminar esta compra? Se eliminará también de la caja.')) return
+                        // Eliminar de caja
+                        if (c.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', c.caja_oficial_id)
+                        if (c.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', c.caja_paralela_id)
+                        // Revertir stock
+                        const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
+                        const cantCol = c.insumo_tipo === 'alimentacion' ? 'cantidad_kg' : 'cantidad_ml'
+                        const { data: item } = await supabase.from(tabla).select('*').eq('id', c.insumo_id).single()
+                        if (item) await supabase.from(tabla).update({ [cantCol]: Math.max(0, (item[cantCol] || 0) - (c.cantidad || 0)) }).eq('id', c.insumo_id)
+                        await supabase.from('compras_insumos').delete().eq('id', c.id)
+                        await cargar()
+                      }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
                         Eliminar
                       </button>
                     </td>
