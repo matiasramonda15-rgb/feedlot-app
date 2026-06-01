@@ -49,6 +49,7 @@ export default function Sanidad({ usuario }) {
   const [corrales, setCorrales] = useState([])
   const [lotes, setLotes] = useState([])
   const [enfermeria, setEnfermeria] = useState([])
+  const [corralesEnfermeria, setCorralesEnfermeria] = useState([])
   const [mortalidad, setMortalidad] = useState([])
   const [eventos, setEventos] = useState([])
   const [revisiones, setRevisiones] = useState([])
@@ -97,8 +98,8 @@ export default function Sanidad({ usuario }) {
   }, [])
 
   async function cargarProductos() {
-    const { data } = await supabase.from('productos_sanidad').select('*').eq('activo', true).order('nombre')
-    if (data) setProductos(data.map(p => ({ n: p.nombre, tipo: p.tipo, lab: p.laboratorio, car: p.carencia_dias, id: p.id })))
+    const { data } = await supabase.from('stock_sanitario').select('*').order('producto')
+    if (data) setProductos(data.map(p => ({ n: p.producto, tipo: p.tipo, id: p.id, cantidad_ml: p.cantidad_ml, unidad: p.unidad || 'ml' })))
   }
 
   useEffect(() => { cargarDatos() }, [])
@@ -146,10 +147,25 @@ export default function Sanidad({ usuario }) {
       })
       for (const enf of (st.enfermos || [])) {
         if (enf.desc) {
+          // Descontar del stock sanitario
+          if (enf.prod_id && enf.ml) {
+            const prod = productos.find(p => p.id === enf.prod_id)
+            if (prod) {
+              const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - parseFloat(enf.ml))
+              await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', enf.prod_id)
+            }
+          }
+          // Registrar en animales_enfermeria
+          const corrEnf = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
           await supabase.from('animales_enfermeria').insert({
             corral_origen_id: corrales[i].id,
-            descripcion: enf.desc, diagnostico: enf.diag, tratamiento: enf.prod,
-            estado: 'en tratamiento', registrado_por: usuario?.id,
+            corral_id: corrEnf?.id || null,
+            descripcion: enf.desc,
+            diagnostico: enf.diag,
+            tratamiento: enf.prod,
+            cantidad_ml: enf.ml ? parseFloat(enf.ml) : null,
+            estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
+            registrado_por: usuario?.id,
           })
         }
       }
@@ -162,7 +178,7 @@ export default function Sanidad({ usuario }) {
     const n = [...revState]; n[i] = { ok: true, enfermos: [] }; setRevState(n)
   }
   function setRevNov(i) {
-    const n = [...revState]; n[i] = { ok: false, enfermos: [{ desc: '', diag: 'Conjuntivitis', prod: '' }] }; setRevState(n)
+    const n = [...revState]; n[i] = { ok: false, enfermos: [{ desc: '', diag: 'Conjuntivitis', prod: '', prod_id: null, ml: '', mover_enfermeria: false }] }; setRevState(n)
   }
   function resetRev(i) {
     const n = [...revState]; n[i] = { ok: null, enfermos: [] }; setRevState(n)
@@ -465,13 +481,13 @@ export default function Sanidad({ usuario }) {
 
                 {st.ok === false && (
                   <div style={{ padding: '1rem', borderTop: `1px solid ${S.border}`, background: '#fffef8' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 170px 160px 32px', gap: 8, padding: '4px 0 8px', borderBottom: `1px solid ${S.border}`, marginBottom: 4 }}>
-                      {['Descripcion del animal','Diagnostico','Producto aplicado',''].map(h => (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 160px 70px 60px 32px', gap: 8, padding: '4px 0 8px', borderBottom: `1px solid ${S.border}`, marginBottom: 4 }}>
+                      {['Descripcion del animal','Diagnostico','Producto aplicado','ml','Enf.',''].map(h => (
                         <div key={h} style={{ fontSize: 10, fontWeight: 600, color: S.hint, textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</div>
                       ))}
                     </div>
                     {st.enfermos.map((e, ei) => (
-                      <div key={ei} style={{ display: 'grid', gridTemplateColumns: '1fr 170px 160px 32px', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${S.border}` }}>
+                      <div key={ei} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 160px 70px 60px 32px', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${S.border}` }}>
                         <input type="text" value={e.desc} placeholder="ej. novillo negro, oreja cortada"
                           onChange={ev => updEnfermo(i, ei, 'desc', ev.target.value)}
                           style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }} />
@@ -479,11 +495,21 @@ export default function Sanidad({ usuario }) {
                           style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
                           {DIAGNOSTICOS.map(d => <option key={d}>{d}</option>)}
                         </select>
-                        <select value={e.prod} onChange={ev => updEnfermo(i, ei, 'prod', ev.target.value)}
+                        <select value={e.prod} onChange={ev => {
+                          const prod = productos.find(p => p.n === ev.target.value)
+                          updEnfermo(i, ei, 'prod', ev.target.value)
+                          updEnfermo(i, ei, 'prod_id', prod?.id || null)
+                        }}
                           style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
                           <option value="">— Producto —</option>
-                          {productos.map(p => <option key={p.n} value={p.n}>{p.n}</option>)}
+                          {productos.map(p => <option key={p.n} value={p.n}>{p.n} ({p.cantidad_ml?.toLocaleString('es-AR')} {p.unidad})</option>)}
                         </select>
+                        <input type="number" value={e.ml || ''} placeholder="ml" onChange={ev => updEnfermo(i, ei, 'ml', ev.target.value)}
+                          style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, width: 70, background: S.surface }} />
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: S.red, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={e.mover_enfermeria || false} onChange={ev => updEnfermo(i, ei, 'mover_enfermeria', ev.target.checked)} />
+                          Enf.
+                        </label>
                         <button onClick={() => delEnfermo(i, ei)}
                           style={{ border: `1px solid ${S.border}`, background: 'transparent', color: S.muted, borderRadius: 5, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           ✕
