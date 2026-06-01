@@ -22,6 +22,7 @@ export default function Insumos({ usuario }) {
   const [stockSan, setStockSan] = useState([])
   const [sinPrecio, setSinPrecio] = useState([])
   const [ingresosStock, setIngresosStock] = useState([])
+  const [chequesCartera, setChequesCartera] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -45,17 +46,19 @@ export default function Insumos({ usuario }) {
 
   async function cargar() {
     setLoading(true)
-    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }, { data: is_ }] = await Promise.all([
+    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }, { data: is_ }, { data: ch }] = await Promise.all([
       supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
+      supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
     ])
     setCompras(c || [])
     setStockAlim(sa || [])
     setStockSan(ss || [])
     setIngresosStock(is_ || [])
+    setChequesCartera(ch || [])
     // Ingresos de alimentación sin precio → van al banner
     setSinPrecio(ip || [])
     setLoading(false)
@@ -263,7 +266,7 @@ export default function Insumos({ usuario }) {
 
       {/* Banner ingresos sin precio */}
       {sinPrecio.length > 0 && (
-        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} usuario={usuario} onCargar={cargar} S={S} />
+        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} usuario={usuario} onCargar={cargar} chequesCartera={chequesCartera} S={S} />
       )}
 
       {/* Tabs */}
@@ -631,8 +634,12 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
   )
 }
 
-function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
+function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCartera = [], S }) {
   const [editando, setEditando] = useState({})
+
+  function initEp() {
+    return { precio: '', proveedor: '', forma_pago: 'transferencia', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+  }
 
   async function guardarPrecio(ing) {
     const ep = editando[ing.id]
@@ -672,15 +679,39 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
 
     // 3. Registrar en caja
     const desc = `Compra ${ing.insumo_nombre}${ep.proveedor ? ` — ${ep.proveedor}` : ''} (${ing.cantidad_kg?.toLocaleString('es-AR')} kg)`
+    const formaPago = ep.subtipo_cheque ? `e-cheq` : (ep.forma_pago || 'transferencia')
+
     if (ep.es_paralelo) {
-      await supabase.from('caja_paralela').insert({
-        fecha, tipo: 'egreso', descripcion: desc, monto: total,
-      })
+      await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion: desc, monto: total })
+      // Si entregó cheque de tercero como pago paralelo, marcarlo como depositado
+      if (ep.subtipo_cheque === 'tercero' && ep.cheque_tercero_id) {
+        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(ep.cheque_tercero_id))
+      }
     } else {
-      await supabase.from('caja_oficial').insert({
+      const { data: mov } = await supabase.from('caja_oficial').insert({
         fecha, tipo: 'egreso', categoria: 'Insumos alimentación',
-        descripcion: desc, monto: total, forma_pago: ep.forma_pago || 'transferencia',
-      })
+        descripcion: desc, monto: total, forma_pago: formaPago,
+      }).select().single()
+
+      // 4. Manejo de cheques
+      if (ep.subtipo_cheque === 'propio') {
+        // Crear cheque emitido
+        await supabase.from('cheques').insert({
+          tipo: 'emitido',
+          numero: ep.cheque_propio.numero || null,
+          banco: ep.cheque_propio.banco || null,
+          fecha_cobro: fecha,
+          fecha_vencimiento: ep.cheque_propio.fecha_vencimiento,
+          monto: total,
+          beneficiario: ep.proveedor || null,
+          estado: 'en_cartera',
+          caja_oficial_id: mov?.id || null,
+          registrado_por: usuario?.id,
+        })
+      } else if (ep.subtipo_cheque === 'tercero' && ep.cheque_tercero_id) {
+        // Marcar cheque de tercero como entregado
+        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(ep.cheque_tercero_id))
+      }
     }
 
     const nuevo = { ...editando }
@@ -697,6 +728,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
       {ingresos.map(ing => {
         const ep = editando[ing.id]
         const totalCalc = ep?.precio ? Math.round(ing.cantidad_kg * parseFloat(ep.precio)) : null
+        const esCheque = ep?.subtipo_cheque
         return (
           <div key={ing.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: ep ? 12 : 0 }}>
@@ -707,7 +739,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
                 </div>
               </div>
               {!ep && (
-                <button onClick={() => setEditando({ ...editando, [ing.id]: { precio: '', proveedor: '', forma_pago: 'transferencia', es_paralelo: false } })}
+                <button onClick={() => setEditando({ ...editando, [ing.id]: initEp() })}
                   style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
                   Cargar precio
                 </button>
@@ -715,7 +747,8 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
             </div>
             {ep && (
               <div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                {/* Fila 1: precio, proveedor, forma pago, paralelo */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio por kg ($) *</div>
                     <input type="number" placeholder="ej. 130" value={ep.precio}
@@ -730,11 +763,11 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
                   </div>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Forma de pago</div>
-                    <select value={ep.forma_pago} onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, forma_pago: e.target.value } })}
+                    <select value={ep.forma_pago} onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, forma_pago: e.target.value, subtipo_cheque: '' } })}
                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                       <option value="transferencia">Transferencia</option>
                       <option value="efectivo">Efectivo</option>
-                      <option value="cheque">Cheque</option>
+                      <option value="e-cheq">E-cheq</option>
                       <option value="cuenta_corriente">Cuenta corriente</option>
                     </select>
                   </div>
@@ -745,11 +778,79 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
                     </label>
                   </div>
                 </div>
+
+                {/* E-cheq: selección propio / tercero — solo cuando no es paralelo y forma_pago es e-cheq, O cuando es paralelo (solo tercero) */}
+                {((ep.forma_pago === 'e-cheq' && !ep.es_paralelo) || ep.es_paralelo) && (
+                  <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>{ep.es_paralelo ? 'Cheque de tercero (paralelo)' : 'Tipo de e-cheq'}</div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: esCheque ? 10 : 0 }}>
+                      {(!ep.es_paralelo ? ['propio', 'tercero'] : ['tercero']).map(t => (
+                        <button key={t} onClick={() => setEditando({ ...editando, [ing.id]: { ...ep, subtipo_cheque: ep.subtipo_cheque === t ? '' : t } })}
+                          style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", border: `1px solid ${ep.subtipo_cheque === t ? S.accent : S.border}`, background: ep.subtipo_cheque === t ? S.accentLight : 'transparent', color: ep.subtipo_cheque === t ? S.accent : S.muted }}>
+                          {t === 'propio' ? '📤 E-cheq propio' : '📥 E-cheq de tercero'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Cheq propio: campos */}
+                    {ep.subtipo_cheque === 'propio' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° cheque</div>
+                          <input type="text" value={ep.cheque_propio.numero}
+                            onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, cheque_propio: { ...ep.cheque_propio, numero: e.target.value } } })}
+                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Banco</div>
+                          <input type="text" value={ep.cheque_propio.banco}
+                            onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, cheque_propio: { ...ep.cheque_propio, banco: e.target.value } } })}
+                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 3 }}>Fecha vencimiento *</div>
+                          <input type="date" value={ep.cheque_propio.fecha_vencimiento}
+                            onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, cheque_propio: { ...ep.cheque_propio, fecha_vencimiento: e.target.value } } })}
+                            style={{ width: '100%', border: `1px solid ${S.amber}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cheq tercero: lista cheques en cartera */}
+                    {ep.subtipo_cheque === 'tercero' && (
+                      <div style={{ marginTop: 10 }}>
+                        {chequesCartera.length === 0
+                          ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques de terceros en cartera.</div>
+                          : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {chequesCartera.map(ch => (
+                                <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${ep.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: ep.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer' }}>
+                                  <input type="radio" name={`cheque_${ing.id}`} value={ch.id}
+                                    checked={ep.cheque_tercero_id === String(ch.id)}
+                                    onChange={() => setEditando({ ...editando, [ing.id]: { ...ep, cheque_tercero_id: String(ch.id) } })} />
+                                  <div style={{ fontSize: 13 }}>
+                                    <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
+                                    <span style={{ color: S.muted, marginLeft: 8 }}>
+                                      #{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                                      {ch.librador ? ` · ${ch.librador}` : ''}
+                                    </span>
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          )
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Resumen */}
                 {totalCalc && (
                   <div style={{ background: ep.es_paralelo ? S.purpleLight : S.greenLight, border: `1px solid ${ep.es_paralelo ? '#C4A8F0' : '#97C459'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: ep.es_paralelo ? S.purple : S.green }}>
                     Total: <strong>${totalCalc.toLocaleString('es-AR')}</strong>
                     {' '}({ing.cantidad_kg?.toLocaleString('es-AR')} kg × ${parseFloat(ep.precio).toLocaleString('es-AR')}/kg)
-                    {' · '}{ep.es_paralelo ? '💜 Paralelo' : `🏦 ${ep.forma_pago}`}
+                    {' · '}{ep.es_paralelo ? `💜 Paralelo${ep.subtipo_cheque === 'tercero' ? ' · 📥 cheq tercero' : ''}` : ep.subtipo_cheque === 'propio' ? '📤 E-cheq propio' : ep.subtipo_cheque === 'tercero' ? '📥 E-cheq tercero' : `🏦 ${ep.forma_pago}`}
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
