@@ -175,6 +175,7 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
   const [rolDestino, setRolDestino] = useState('')
   const [subDestino, setSubDestino] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [mostrarConfirmReemplazo, setMostrarConfirmReemplazo] = useState(false)
   const corralesActivos = corrales.filter(c => c.rol !== 'deshabilitado')
   const colors = { cuarentena: C.amber, acumulacion: C.blue, enfermeria: C.red, clasificado: '#B09ED4', libre: C.muted }
 
@@ -527,12 +528,23 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     const hoy = new Date().toISOString().split('T')[0]
 
     // Verificar si ya hay raciones confirmadas hoy
-    const { data: yaConfirmadas } = await supabase.from('raciones_app').select('id').eq('fecha', hoy).limit(1)
+    const { data: yaConfirmadas } = await supabase.from('raciones_app').select('id, creado_en').eq('fecha', hoy).limit(1)
     if (yaConfirmadas && yaConfirmadas.length > 0) {
+      // Verificar si es el mismo dia calendario (antes de medianoche)
+      const ahora = new Date()
+      const horaActual = ahora.getHours()
+      // Si es antes de medianoche del mismo dia, advertir
       setGuardando(false)
-      const confirmar = window.confirm('Ya se confirmaron raciones hoy. ¿Querés reemplazarlas con los valores actuales?')
-      if (!confirmar) return
-      setGuardando(true)
+      setMostrarConfirmReemplazo(true)
+      return
+    }
+    setGuardando(true)
+    await ejecutarConfirmar(hoy)
+  }
+
+  async function ejecutarConfirmar(hoy) {
+    setGuardando(true)
+    setMostrarConfirmReemplazo(false)
       // Eliminar raciones de hoy y recomponer stock
       const { data: racionesHoy } = await supabase.from('raciones_app').select('corral_id, kg_total, mezclador').eq('fecha', hoy)
       // Recomponer stock — sumar lo que se había descontado
@@ -574,7 +586,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
       }
     })
     for (const reg of registros) {
-      if (!reg.corral_id || !reg.kg_total) continue
+      if (!reg.corral_id) continue
       await supabase.from('raciones_app').insert(reg)
     }
 
@@ -785,6 +797,23 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                 </div>
               )
             })}
+            {/* Modal confirmación reemplazo */}
+            {mostrarConfirmReemplazo && (
+              <div style={{ background: '#FFF3CD', border: '2px solid #FFC107', borderRadius: 12, padding: '1.25rem', marginBottom: 10 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#7A4500', marginBottom: 8 }}>⚠ Ya se confirmaron raciones hoy</div>
+                <div style={{ fontSize: 13, color: '#7A4500', marginBottom: 12 }}>¿Querés reemplazar las raciones de hoy con los valores actuales?</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => ejecutarConfirmar(new Date().toISOString().split('T')[0])}
+                    style={{ flex: 1, background: C.green, border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer' }}>
+                    Sí, reemplazar
+                  </button>
+                  <button onClick={() => setMostrarConfirmReemplazo(false)}
+                    style={{ flex: 1, background: '#fff', border: '1px solid #CCC', borderRadius: 8, padding: 12, fontSize: 14, color: '#555', cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
             <button onClick={confirmar} disabled={guardando}
               style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
               {guardando ? 'Guardando...' : 'Confirmar raciones'}
