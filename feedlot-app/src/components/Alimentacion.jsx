@@ -106,7 +106,7 @@ export default function Alimentacion({ usuario }) {
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
   const [editando, setEditando] = useState({})
   const [showFormIngreso, setShowFormIngreso] = useState(false)
-  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', precio_kg: '', proveedor: '', remito: '' })
+  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
   const [guardando, setGuardando] = useState(false)
   const [confirmado, setConfirmado] = useState(false)
   const [kgsHoy, setKgsHoy] = useState([[800, 2400], [840, 900], [1160, 1225]])
@@ -306,19 +306,16 @@ export default function Alimentacion({ usuario }) {
         insumo_id: item.id,
         insumo_nombre: formIngreso.insumo,
         cantidad_kg: parseFloat(formIngreso.cantidad),
-        precio_por_kg: formIngreso.precio_kg ? parseFloat(formIngreso.precio_kg) : null,
-        total: formIngreso.precio_kg ? parseFloat(formIngreso.cantidad) * parseFloat(formIngreso.precio_kg) : null,
+        precio_por_kg: null,
+        total: null,
         registrado_por: usuario?.nombre || usuario?.email,
-        precio_cargado_por: formIngreso.precio_kg ? (usuario?.nombre || usuario?.email) : null,
-        precio_cargado_en: formIngreso.precio_kg ? new Date().toISOString() : null,
+        precio_cargado_por: null,
+        precio_cargado_en: null,
       })
-      if (formIngreso.precio_kg) {
-        await actualizarPrecioReferencia(item.id)
-      }
     }
     await cargarDatos()
     setShowFormIngreso(false)
-    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', precio_kg: '', proveedor: '', remito: '' })
+    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
     setGuardando(false)
   }
 
@@ -807,11 +804,6 @@ export default function Alimentacion({ usuario }) {
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Cantidad (kg)</label>
                   <input type="number" placeholder="ej. 5000" value={formIngreso.cantidad} onChange={e => setFormIngreso({...formIngreso, cantidad: e.target.value})}
-                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Precio por kg ($ - opcional)</label>
-                  <input type="number" placeholder="ej. 130" value={formIngreso.precio_kg} onChange={e => setFormIngreso({...formIngreso, precio_kg: e.target.value})}
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
                 </div>
                 <div>
