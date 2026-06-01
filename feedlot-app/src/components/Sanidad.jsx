@@ -686,7 +686,7 @@ export default function Sanidad({ usuario }) {
           </div>
 
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-            {formProd.show && (
+            {false && formProd.show && (
               <div style={{ marginBottom: '1.25rem', paddingBottom: '1.25rem', borderBottom: `1px solid ${S.border}` }}>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Nuevo producto</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
