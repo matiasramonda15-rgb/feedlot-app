@@ -123,7 +123,13 @@ function Home({ usuario, nav, onLogout, datos }) {
     const ultimoMov = (datos.movimientos || []).find(m => m.corral_destino_id === c.id)
     const ultimaFecha = ultimoMov ? ultimoMov.fecha.split('T')[0] : null
     const diasDesde = ultimaFecha
-      ? Math.floor((new Date() - new Date(ultimaFecha + 'T12:00:00')) / (1000 * 60 * 60 * 24))
+      ? (() => {
+          const hoy = new Date(); const inicio = new Date(ultimaFecha + 'T00:00:00')
+          const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+          const inicioStr = ultimaFecha
+          const diff = new Date(hoyStr) - new Date(inicioStr)
+          return Math.floor(diff / (1000 * 60 * 60 * 24))
+        })()
       : null
     tareas.push({
       icon: '🐄',
@@ -952,8 +958,12 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
             {corrales.filter(c => c.rol === 'cuarentena').map(c => {
               const ultimoMov = (movimientos || []).find(m => m.corral_destino_id === c.id)
               const ultimaFecha = ultimoMov ? ultimoMov.fecha.split('T')[0] : null
-              const dias = ultimaFecha ? Math.floor((new Date() - new Date(ultimaFecha + 'T12:00:00')) / (1000 * 60 * 60 * 24)) : null
-              if (dias !== null && dias < 8) return null
+              const dias = ultimaFecha ? (() => {
+                const hoy = new Date()
+                const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+                return Math.floor((new Date(hoyStr) - new Date(ultimaFecha)) / (1000 * 60 * 60 * 24))
+              })() : null
+              if (dias === null) return null
               return (
                 <div key={c.id} style={{ background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>🐄 Cuarentena C-{c.numero} — movs: {(movimientos||[]).length} — {dias !== null ? `${dias} días` : 'fecha desconocida'}</div>
