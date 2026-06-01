@@ -21,6 +21,7 @@ export default function Insumos({ usuario }) {
   const [stockAlim, setStockAlim] = useState([])
   const [stockSan, setStockSan] = useState([])
   const [sinPrecio, setSinPrecio] = useState([])
+  const [ingresosStock, setIngresosStock] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -44,15 +45,17 @@ export default function Insumos({ usuario }) {
 
   async function cargar() {
     setLoading(true)
-    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }] = await Promise.all([
+    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }, { data: is_ }] = await Promise.all([
       supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
+      supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
     ])
     setCompras(c || [])
     setStockAlim(sa || [])
     setStockSan(ss || [])
+    setIngresosStock(is_ || [])
     // Ingresos de alimentación sin precio → van al banner
     setSinPrecio(ip || [])
     setLoading(false)
@@ -327,7 +330,7 @@ export default function Insumos({ usuario }) {
 
       {/* TAB STOCK ALIMENTACION */}
       {tab === 'stock_alim' && (
-        <StockTable items={stockAlim} tipo="alimentacion" onCargar={cargar} />
+        <StockTable items={stockAlim} tipo="alimentacion" onCargar={cargar} ingresosStock={ingresosStock} />
       )}
 
       {/* TAB STOCK SANITARIO */}
@@ -338,7 +341,7 @@ export default function Insumos({ usuario }) {
   )
 }
 
-function StockTable({ items, tipo, onCargar }) {
+function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nombre: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
   const [guardando, setGuardando] = useState(false)
@@ -430,6 +433,52 @@ function StockTable({ items, tipo, onCargar }) {
           </tbody>
         </table>
       </div>
+
+      {/* Historial de ingresos (solo alimentación) */}
+      {tipo === 'alimentacion' && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+            Historial de ingresos de stock
+          </div>
+          {ingresosStock.length === 0
+            ? <div style={{ fontSize: 13, color: S.hint }}>No hay ingresos registrados.</div>
+            : (
+              <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por'].map((h, i) => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ingresosStock.map(ing => (
+                      <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted, whiteSpace: 'nowrap' }}>
+                          {new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                        </td>
+                        <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                          {ing.precio_por_kg
+                            ? `$${ing.precio_por_kg.toLocaleString('es-AR')}`
+                            : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                          {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}
+                        </td>
+                        <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '—'}</td>
+                        <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          }
+        </div>
+      )}
     </div>
   )
 }
@@ -443,7 +492,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
     const precioNum = parseFloat(ep.precio)
     const total = Math.round(ing.cantidad_kg * precioNum)
 
-    // Actualizar ingresos_stock
+    // 1. Actualizar ingresos_stock con el precio
     await supabase.from('ingresos_stock').update({
       precio_por_kg: precioNum,
       total,
@@ -452,17 +501,22 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
       precio_cargado_en: new Date().toISOString(),
     }).eq('id', ing.id)
 
-    // Actualizar precio_referencia en stock_insumos (promedio ponderado)
-    const item = stockAlim.find(s => s.id === ing.insumo_id)
-    if (item) {
-      const { data: todos } = await supabase.from('ingresos_stock')
-        .select('cantidad_kg, precio_por_kg')
-        .eq('insumo_id', ing.insumo_id)
-        .not('precio_por_kg', 'is', null)
-      const lista = [...(todos || []), { cantidad_kg: ing.cantidad_kg, precio_por_kg: precioNum }]
-      const totalKg = lista.reduce((s, i) => s + (i.cantidad_kg || 0), 0)
-      if (totalKg > 0) {
-        const prom = Math.round(lista.reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0) / totalKg)
+    // 2. Recalcular precio_referencia: traer todos los ingresos CON precio de ese insumo (ya actualizado)
+    const { data: todos } = await supabase.from('ingresos_stock')
+      .select('cantidad_kg, precio_por_kg')
+      .eq('insumo_id', ing.insumo_id)
+      .not('precio_por_kg', 'is', null)
+
+    const lista = todos || []
+    // Asegurarse de incluir el que acabamos de actualizar (por si la query no lo devuelve aún)
+    const yaIncluido = lista.some(i => i.precio_por_kg === precioNum && i.cantidad_kg === ing.cantidad_kg)
+    if (!yaIncluido) lista.push({ cantidad_kg: ing.cantidad_kg, precio_por_kg: precioNum })
+
+    const totalKg = lista.reduce((s, i) => s + (i.cantidad_kg || 0), 0)
+    if (totalKg > 0) {
+      const prom = Math.round(lista.reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0) / totalKg)
+      const item = stockAlim.find(s => s.id === ing.insumo_id)
+      if (item) {
         await supabase.from('stock_insumos').update({
           precio_referencia: prom,
           actualizado_en: new Date().toISOString(),
