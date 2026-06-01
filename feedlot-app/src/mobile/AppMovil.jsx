@@ -51,7 +51,7 @@ export default function AppMovil({ usuario, onLogout }) {
     // Usar el kg_total mas reciente por corral
     const kgsAyer = {}
     ;(racionesAyer || []).forEach(r => {
-      if (!kgsAyer[r.corral_id]) kgsAyer[r.corral_id] = r.kg_total || 0
+      if (kgsAyer[r.corral_id] === undefined) kgsAyer[r.corral_id] = r.kg_total ?? 0
     })
     // Calcular próxima pesada: última pesada + 40 días
     const ultimaPesadaFecha = cfg?.fecha || cfg?.creado_en?.split('T')[0]
@@ -495,7 +495,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     const inicial = {}
     corralesAlim.forEach(c => {
       // Si hay datos de ayer, usarlos; sino calcular por defecto
-      if (kgsAyer && kgsAyer[c.id]) {
+      if (kgsAyer && kgsAyer[c.id] !== undefined) {
         inicial[c.id] = kgsAyer[c.id]
       } else {
         inicial[c.id] = Math.round(Math.round((c.animales || 0) * 10) / 100) * 100
@@ -525,7 +525,8 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
 
   async function confirmar() {
     setGuardando(true)
-    const hoy = new Date().toISOString().split('T')[0]
+    const ahora = new Date()
+    const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
 
     // Verificar si ya hay raciones confirmadas hoy
     const { data: yaConfirmadas } = await supabase.from('raciones_app').select('id, creado_en').eq('fecha', hoy).limit(1)
