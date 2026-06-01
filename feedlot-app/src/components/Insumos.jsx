@@ -44,18 +44,17 @@ export default function Insumos({ usuario }) {
 
   async function cargar() {
     setLoading(true)
-    const [{ data: c }, { data: sa }, { data: ss }] = await Promise.all([
+    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }] = await Promise.all([
       supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
+      supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
     ])
     setCompras(c || [])
     setStockAlim(sa || [])
     setStockSan(ss || [])
-    // Insumos con stock > 0 pero sin precio de referencia
-    const todosStock = [...(sa || []).map(s => ({ ...s, tipo: 'alimentacion', nombre: s.insumo, cant: s.cantidad_kg || 0 })),
-                       ...(ss || []).map(s => ({ ...s, tipo: 'sanitario', nombre: s.producto, cant: s.cantidad_ml || 0 }))]
-    setSinPrecio(todosStock.filter(s => !s.precio_referencia && s.cant > 0))
+    // Ingresos de alimentación sin precio → van al banner
+    setSinPrecio(ip || [])
     setLoading(false)
   }
 
@@ -259,23 +258,9 @@ export default function Insumos({ usuario }) {
         </div>
       )}
 
-      {/* Banner insumos sin precio de referencia */}
+      {/* Banner ingresos sin precio */}
       {sinPrecio.length > 0 && (
-        <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '.75rem' }}>
-            ⚠ {sinPrecio.length} insumo{sinPrecio.length !== 1 ? 's' : ''} sin precio de referencia — registrá una compra para asignarlo
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {sinPrecio.map(s => (
-              <div key={s.id + s.tipo} style={{ background: S.surface, border: `1px solid #EF9F27`, borderRadius: 8, padding: '8px 14px', fontSize: 13 }}>
-                <span style={{ fontWeight: 600 }}>{s.nombre}</span>
-                <span style={{ color: S.muted, fontSize: 12, marginLeft: 8 }}>
-                  {s.cant.toLocaleString('es-AR')} {s.tipo === 'alimentacion' ? 'kg' : 'ml'} · {s.tipo === 'alimentacion' ? 'Alim.' : 'Sanit.'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} usuario={usuario} onCargar={cargar} S={S} />
       )}
 
       {/* Tabs */}
@@ -445,6 +430,112 @@ function StockTable({ items, tipo, onCargar }) {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, S }) {
+  const [editando, setEditando] = useState({})
+
+  async function guardarPrecio(ing) {
+    const ep = editando[ing.id]
+    if (!ep?.precio) { alert('Ingresá el precio'); return }
+    const precioNum = parseFloat(ep.precio)
+    const total = Math.round(ing.cantidad_kg * precioNum)
+
+    // Actualizar ingresos_stock
+    await supabase.from('ingresos_stock').update({
+      precio_por_kg: precioNum,
+      total,
+      proveedor: ep.proveedor || null,
+      precio_cargado_por: usuario?.nombre || usuario?.email,
+      precio_cargado_en: new Date().toISOString(),
+    }).eq('id', ing.id)
+
+    // Actualizar precio_referencia en stock_insumos (promedio ponderado)
+    const item = stockAlim.find(s => s.id === ing.insumo_id)
+    if (item) {
+      const { data: todos } = await supabase.from('ingresos_stock')
+        .select('cantidad_kg, precio_por_kg')
+        .eq('insumo_id', ing.insumo_id)
+        .not('precio_por_kg', 'is', null)
+      const lista = [...(todos || []), { cantidad_kg: ing.cantidad_kg, precio_por_kg: precioNum }]
+      const totalKg = lista.reduce((s, i) => s + (i.cantidad_kg || 0), 0)
+      if (totalKg > 0) {
+        const prom = Math.round(lista.reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0) / totalKg)
+        await supabase.from('stock_insumos').update({
+          precio_referencia: prom,
+          actualizado_en: new Date().toISOString(),
+        }).eq('id', item.id)
+      }
+    }
+
+    const nuevo = { ...editando }
+    delete nuevo[ing.id]
+    setEditando(nuevo)
+    await onCargar()
+  }
+
+  return (
+    <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '.85rem' }}>
+        ⚠ {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} de stock sin precio cargado
+      </div>
+      {ingresos.map(ing => {
+        const ep = editando[ing.id]
+        return (
+          <div key={ing.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: ep ? 12 : 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{ing.insumo_nombre}</div>
+                <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                  {ing.cantidad_kg?.toLocaleString('es-AR')} kg · registrado por {ing.registrado_por} · {new Date(ing.creado_en).toLocaleDateString('es-AR')}
+                </div>
+              </div>
+              {!ep && (
+                <button onClick={() => setEditando({ ...editando, [ing.id]: { precio: '', proveedor: '' } })}
+                  style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
+                  Cargar precio
+                </button>
+              )}
+            </div>
+            {ep && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio por kg ($) *</div>
+                    <input type="number" placeholder="ej. 130" value={ep.precio}
+                      onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, precio: e.target.value } })}
+                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Proveedor</div>
+                    <input type="text" placeholder="ej. Agrosol" value={ep.proveedor}
+                      onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, proveedor: e.target.value } })}
+                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                {ep.precio && (
+                  <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
+                    Total: <strong>${Math.round(ing.cantidad_kg * parseFloat(ep.precio)).toLocaleString('es-AR')}</strong>
+                    {' '}({ing.cantidad_kg?.toLocaleString('es-AR')} kg × ${parseFloat(ep.precio).toLocaleString('es-AR')}/kg)
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => guardarPrecio(ing)}
+                    style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                    Guardar precio
+                  </button>
+                  <button onClick={() => { const n = { ...editando }; delete n[ing.id]; setEditando(n) }}
+                    style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

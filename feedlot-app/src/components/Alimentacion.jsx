@@ -864,6 +864,14 @@ export default function Alimentacion({ usuario }) {
                           <td style={{ padding: '9px 12px' }}>
                             <button onClick={async () => {
                               if (!confirm('¿Eliminar este ingreso del historial?')) return
+                              // Restar del stock antes de eliminar
+                              const item = stockDB.find(s => s.id === ing.insumo_id)
+                              if (item && ing.cantidad_kg) {
+                                await supabase.from('stock_insumos').update({
+                                  cantidad_kg: Math.max(0, (item.cantidad_kg || 0) - ing.cantidad_kg),
+                                  actualizado_en: new Date().toISOString(),
+                                }).eq('id', item.id)
+                              }
                               await supabase.from('ingresos_stock').delete().eq('id', ing.id)
                               await cargarDatos()
                             }} style={{ padding: '3px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
