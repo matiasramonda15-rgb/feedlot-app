@@ -96,9 +96,7 @@ export default function Alimentacion({ usuario }) {
   const [verArchivo, setVerArchivo] = useState(false)
   const [archivoFechaDesde, setArchivoFechaDesde] = useState('')
   const [archivoFechaHasta, setArchivoFechaHasta] = useState('')
-  const [ingresosStock, setIngresosStock] = useState([])
-  const [ingresosStockArchivo, setIngresosStockArchivo] = useState([])
-  const [verArchivoIngresos, setVerArchivoIngresos] = useState(false)
+
 
   const [formulaActiva, setFormulaActiva] = useState('seco')
   const [formulaDieta, setFormulaDieta] = useState('seco')
@@ -125,12 +123,11 @@ export default function Alimentacion({ usuario }) {
     hace7dias.setDate(hace7dias.getDate() - 7)
     const hace7diasISO = hace7dias.toISOString()
 
-    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: is_ }, { data: fdb }, { data: cfgCap }, { data: rapp }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100).range(200, 299),
-      supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion']),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100),
@@ -159,25 +156,6 @@ export default function Alimentacion({ usuario }) {
       setFormulas(formulasDB)
     }
 
-    // Mostrar los últimos 2 por insumo, el resto va al archivo
-    const todos = is_ || []
-    const porInsumo = {}
-    todos.forEach(i => {
-      const key = i.insumo_nombre || 'sin_nombre'
-      if (!porInsumo[key]) porInsumo[key] = []
-      porInsumo[key].push(i)
-    })
-    const visibles = []
-    const archivados = []
-    Object.values(porInsumo).forEach(arr => {
-      arr.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
-      visibles.push(...arr.slice(0, 2))
-      archivados.push(...arr.slice(2))
-    })
-    visibles.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
-    archivados.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en))
-    setIngresosStock(visibles)
-    setIngresosStockArchivo(archivados)
     setLoading(false)
   }
 
@@ -827,105 +805,6 @@ export default function Alimentacion({ usuario }) {
           )}
 
 
-
-          {/* ── HISTORIAL DE INGRESOS DE STOCK ── */}
-          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
-              Historial de ingresos
-            </div>
-            {ingresosStock.length === 0
-              ? <div style={{ fontSize: 13, color: S.hint }}>No hay ingresos registrados.</div>
-              : (
-                <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ background: S.bg }}>
-                        {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por', ''].map((h, i) => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ingresosStock.map(ing => (
-                        <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                          <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
-                            {ing.precio_por_kg
-                              ? `$${ing.precio_por_kg.toLocaleString('es-AR')}`
-                              : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
-                          </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                            {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '-'}
-                          </td>
-                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '-'}</td>
-                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '-'}</td>
-                          <td style={{ padding: '9px 12px' }}>
-                            <button onClick={async () => {
-                              if (!confirm('¿Eliminar este ingreso del historial?')) return
-                              // Restar del stock antes de eliminar
-                              const item = stockDB.find(s => s.id === ing.insumo_id)
-                              if (item && ing.cantidad_kg) {
-                                await supabase.from('stock_insumos').update({
-                                  cantidad_kg: Math.max(0, (item.cantidad_kg || 0) - ing.cantidad_kg),
-                                  actualizado_en: new Date().toISOString(),
-                                }).eq('id', item.id)
-                              }
-                              await supabase.from('ingresos_stock').delete().eq('id', ing.id)
-                              await cargarDatos()
-                            }} style={{ padding: '3px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                              Eliminar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            }
-          </div>
-
-          {/* Archivo de ingresos */}
-          {ingresosStockArchivo.length > 0 && (
-            <div style={{ marginBottom: '1.25rem' }}>
-              <button onClick={() => setVerArchivoIngresos(!verArchivoIngresos)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: '1rem' }}>
-                {verArchivoIngresos ? '▾' : '▸'} Archivo de ingresos ({ingresosStockArchivo.length} registros anteriores)
-              </button>
-              {verArchivoIngresos && (
-                <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ background: S.bg }}>
-                        {['Fecha', 'Insumo', 'Cantidad', 'Precio/kg', 'Total', 'Proveedor', 'Registrado por'].map((h, i) => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: i > 1 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ingresosStockArchivo.map(ing => (
-                        <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
-                          <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{new Date(ing.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                          <td style={{ padding: '9px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
-                            {ing.precio_por_kg ? `$${ing.precio_por_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}
-                          </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                            {ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '-'}
-                          </td>
-                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.proveedor || '-'}</td>
-                          <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{ing.registrado_por || '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
 
           <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} />
         </div>
