@@ -71,7 +71,7 @@ export default function AppMovil({ usuario, onLogout }) {
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} onDone={cargarDatos} />,
-    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} usuario={usuario} />,
+    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
   }
@@ -840,7 +840,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     </div>
   )
 }
-function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }) {
+function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, usuario }) {
   const [pantSan, setPantSan] = useState('alertas')
   const [confirmados, setConfirmados] = useState({})
   const [revState, setRevState] = useState([])
@@ -940,7 +940,33 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, usuario }
                 </div>
               </div>
             )}
-            {alertas.length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
+            {alertas.length === 0 && corrales.filter(c => c.rol === 'cuarentena').length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
+            {/* Cuarentenas */}
+            {corrales.filter(c => c.rol === 'cuarentena').map(c => {
+              const lotesCorral = (lotes || []).filter(l => l.corral_cuarentena_id === c.id)
+              const ultimaFecha = lotesCorral.length > 0
+                ? lotesCorral.reduce((max, l) => l.fecha_ingreso > max ? l.fecha_ingreso : max, lotesCorral[0].fecha_ingreso)
+                : null
+              const dias = ultimaFecha ? Math.floor((new Date() - new Date(ultimaFecha + 'T12:00:00')) / (1000 * 60 * 60 * 24)) : null
+              if (dias !== null && dias < 8) return null
+              return (
+                <div key={c.id} style={{ background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>🐄 Cuarentena C-{c.numero} — {dias !== null ? `${dias} días` : 'fecha desconocida'}</div>
+                  <div style={{ fontSize: 12, color: C.muted, marginBottom: '.65rem' }}>
+                    {c.animales} animales · último ingreso {ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}
+                  </div>
+                  {dias >= 10 && (
+                    <button onClick={async () => {
+                      await supabase.from('corrales').update({ rol: 'acumulacion' }).eq('id', c.id)
+                      await supabase.from('movimientos').insert({ fecha: new Date().toISOString(), tipo: 'cambio_rol', corral_destino_id: c.id, cantidad: c.animales, motivo: 'Fin cuarentena — pase a acumulacion', registrado_por: usuario?.id })
+                      onDone()
+                    }} style={{ width: '100%', padding: 10, background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, color: C.green, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
+                      ✓ Confirmar pasaje a acumulacion
+                    </button>
+                  )}
+                </div>
+              )
+            })}
             {alertas.map(a => (
               <div key={a.id} style={{ background: confirmados[a.id] ? '#1A3D26' : '#3D2A00', border: `1px solid ${confirmados[a.id] ? C.green : C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
                 {confirmados[a.id] ? (
