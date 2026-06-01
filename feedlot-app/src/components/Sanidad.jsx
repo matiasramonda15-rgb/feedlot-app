@@ -395,9 +395,22 @@ export default function Sanidad({ usuario }) {
                 )}
                 <div style={{ padding: '.85rem 0', display: 'flex', gap: '1rem' }}>
                   <div style={{ width: 28, height: 28, borderRadius: '50%', background: dias >= 10 ? S.green : S.border, color: dias >= 10 ? '#fff' : S.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{dias >= 10 ? '✓' : segunda ? '4' : '3'}</div>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3, color: dias >= 10 ? S.text : S.muted }}>Dia 10 — Cierre del protocolo</div>
                     <div style={{ fontSize: 12, color: S.muted, lineHeight: 1.6 }}>El lote pasa a acumulacion y queda bajo revision bisemanal.</div>
+                    {dias >= 10 && enCuarentena && (
+                      <button onClick={async () => {
+                        if (!confirm(`¿Confirmar pasaje de ${l.cantidad} animales a acumulación?`)) return
+                        const corral = corrales.find(c => c.id === l.corral_cuarentena_id)
+                        if (corral) {
+                          await supabase.from('corrales').update({ rol: 'acumulacion' }).eq('id', corral.id)
+                          await supabase.from('movimientos').insert({ fecha: new Date().toISOString(), tipo: 'cambio_rol', corral_destino_id: corral.id, cantidad: l.cantidad, motivo: 'Fin cuarentena — pase a acumulación', registrado_por: usuario?.id })
+                        }
+                        await cargar()
+                      }} style={{ marginTop: 8, padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                        ✓ Confirmar pasaje a acumulación
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
