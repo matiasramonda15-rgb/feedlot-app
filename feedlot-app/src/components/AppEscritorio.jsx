@@ -15,6 +15,7 @@ import Gastos from './Gastos'
 import Comercial from './Comercial'
 import Contactos from './Contactos'
 import Activos from './Activos'
+import Insumos from './Insumos'
 
 function Placeholder({ titulo, descripcion }) {
   return (
@@ -42,6 +43,7 @@ const MODULOS = {
   contactos:    Contactos,
   activos:      Activos,
   socios:       Activos,
+  insumos:      Insumos,
 }
 
 export default function AppEscritorio({ usuario, onLogout }) {
