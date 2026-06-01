@@ -137,7 +137,7 @@ function Home({ usuario, nav, onLogout, datos }) {
   // Revision bisemanal los lunes (1) y jueves (4)
   const diaSemana = new Date().getDay()
   if (diaSemana === 1 || diaSemana === 4) {
-    tareas.unshift({ icon: '🔍', titulo: 'Revision bisemanal de corrales', sub: 'Hoy corresponde revisar todos los corrales', pantalla: 'sanidad', urgente: true })
+    tareas.unshift({ icon: '🔍', titulo: 'Revision bisemanal de corrales', sub: 'Hoy corresponde revisar todos los corrales', pantalla: 'sanidad', tabDestino: 'revision', urgente: true })
   }
 
   if (tareas.length === 0) {
@@ -150,7 +150,10 @@ function Home({ usuario, nav, onLogout, datos }) {
       <Scroll>
         <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.65rem' }}>Tareas del dia</div>
         {tareas.map((t, i) => (
-          <div key={i} onClick={() => nav(t.pantalla)}
+          <div key={i} onClick={() => { 
+                  if (t.tabDestino) window.__sanidadTab = t.tabDestino
+                  nav(t.pantalla) 
+                }}
             style={{ background: C.surface, border: `1px solid ${t.urgente ? C.amber : C.border}`, borderRadius: 12, padding: '.9rem', marginBottom: '.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 24 }}>{t.icon}</div>
             <div style={{ flex: 1 }}>
@@ -841,7 +844,11 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   )
 }
 function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, movimientos, usuario }) {
-  const [pantSan, setPantSan] = useState('alertas')
+  const [pantSan, setPantSan] = useState(() => {
+    const t = window.__sanidadTab || 'alertas'
+    window.__sanidadTab = null
+    return t
+  })
   const [confirmados, setConfirmados] = useState({})
   const [revState, setRevState] = useState([])
   const [formEvento, setFormEvento] = useState({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
