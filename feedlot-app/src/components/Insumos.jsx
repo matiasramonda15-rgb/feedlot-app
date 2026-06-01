@@ -20,6 +20,7 @@ export default function Insumos({ usuario }) {
   const [compras, setCompras] = useState([])
   const [stockAlim, setStockAlim] = useState([])
   const [stockSan, setStockSan] = useState([])
+  const [sinPrecio, setSinPrecio] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -51,6 +52,10 @@ export default function Insumos({ usuario }) {
     setCompras(c || [])
     setStockAlim(sa || [])
     setStockSan(ss || [])
+    // Insumos con stock > 0 pero sin precio de referencia
+    const todosStock = [...(sa || []).map(s => ({ ...s, tipo: 'alimentacion', nombre: s.insumo, cant: s.cantidad_kg || 0 })),
+                       ...(ss || []).map(s => ({ ...s, tipo: 'sanitario', nombre: s.producto, cant: s.cantidad_ml || 0 }))]
+    setSinPrecio(todosStock.filter(s => !s.precio_referencia && s.cant > 0))
     setLoading(false)
   }
 
@@ -250,6 +255,25 @@ export default function Insumos({ usuario }) {
               style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
               Cancelar
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner insumos sin precio de referencia */}
+      {sinPrecio.length > 0 && (
+        <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '.75rem' }}>
+            ⚠ {sinPrecio.length} insumo{sinPrecio.length !== 1 ? 's' : ''} sin precio de referencia — registrá una compra para asignarlo
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {sinPrecio.map(s => (
+              <div key={s.id + s.tipo} style={{ background: S.surface, border: `1px solid #EF9F27`, borderRadius: 8, padding: '8px 14px', fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>{s.nombre}</span>
+                <span style={{ color: S.muted, fontSize: 12, marginLeft: 8 }}>
+                  {s.cant.toLocaleString('es-AR')} {s.tipo === 'alimentacion' ? 'kg' : 'ml'} · {s.tipo === 'alimentacion' ? 'Alim.' : 'Sanit.'}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

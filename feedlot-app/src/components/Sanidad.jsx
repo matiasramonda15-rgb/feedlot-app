@@ -55,7 +55,7 @@ export default function Sanidad({ usuario }) {
   const [revisiones, setRevisiones] = useState([])
   const [productos, setProductos] = useState([])
   const [revState, setRevState] = useState([])
-  const [formProd, setFormProd] = useState({ show: false, nombre: '', tipo: 'Vacuna', lab: '', car: '', precio: '', unidad: 'dosis' })
+  const [formProd, setFormProd] = useState({ show: false, nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'dosis' })
   const [showFormMort, setShowFormMort] = useState(false)
   const [formMort, setFormMort] = useState({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
   const [guardandoMort, setGuardandoMort] = useState(false)
@@ -211,12 +211,11 @@ export default function Sanidad({ usuario }) {
       await supabase.from('productos_sanidad').update({
         nombre: ep.nombre, tipo: ep.tipo, laboratorio: ep.lab,
         carencia_dias: parseInt(ep.car) || 0,
-        precio_unitario: ep.precio ? parseFloat(ep.precio) : null,
         unidad: ep.unidad || 'dosis',
       }).eq('id', p.id)
     }
     const nuevos = [...productos]
-    nuevos[i] = { ...p, n: ep.nombre, tipo: ep.tipo, lab: ep.lab, car: parseInt(ep.car) || 0, precio: ep.precio ? parseFloat(ep.precio) : null, unidad: ep.unidad }
+    nuevos[i] = { ...p, n: ep.nombre, tipo: ep.tipo, lab: ep.lab, car: parseInt(ep.car) || 0, unidad: ep.unidad }
     setProductos(nuevos)
     const ne = { ...editProd }; delete ne[i]; setEditProd(ne)
   }
@@ -715,12 +714,6 @@ export default function Sanidad({ usuario }) {
                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface, boxSizing: 'border-box' }} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Precio $</label>
-                    <input type="number" placeholder="ej. 1500" value={formProd.precio}
-                      onChange={e => setFormProd({...formProd, precio: e.target.value})}
-                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface, boxSizing: 'border-box' }} />
-                  </div>
-                  <div>
                     <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Unidad</label>
                     <select value={formProd.unidad} onChange={e => setFormProd({...formProd, unidad: e.target.value})}
                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
@@ -746,14 +739,13 @@ export default function Sanidad({ usuario }) {
                       <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
                         <Badge bg={tc.bg} color={tc.color}>{p.tipo}</Badge>
                         <span style={{ marginLeft: 6 }}>{p.lab}</span>
-                        {p.precio && <span style={{ marginLeft: 8, fontFamily: 'monospace', color: S.green, fontWeight: 600 }}>${parseFloat(p.precio).toLocaleString('es-AR')}/{p.unidad || 'dosis'}</span>}
                       </div>
                     </div>
                     <div style={{ minWidth: 110, textAlign: 'right', fontSize: 12 }}>
                       {p.car > 0 ? <span style={{ color: S.amber, fontWeight: 600 }}>Carencia: {p.car} dias</span> : <span style={{ color: S.hint }}>Sin carencia</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => setEditProd({ ...editProd, [i]: { nombre: p.n, tipo: p.tipo, lab: p.lab || '', car: String(p.car || 0), precio: p.precio ? String(p.precio) : '', unidad: p.unidad || 'dosis' } })}
+                      <button onClick={() => setEditProd({ ...editProd, [i]: { nombre: p.n, tipo: p.tipo, lab: p.lab || '', car: String(p.car || 0), unidad: p.unidad || 'dosis' } })}
                         style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Editar</button>
                       <button onClick={() => eliminarProd(i)} style={{ padding: '5px 10px', fontSize: 12, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Eliminar</button>
                     </div>
@@ -781,11 +773,6 @@ export default function Sanidad({ usuario }) {
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Carencia (días)</label>
                           <input type="number" value={ep.car} onChange={e => setEditProd({...editProd, [i]: {...ep, car: e.target.value}})}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Precio $</label>
-                          <input type="number" value={ep.precio} onChange={e => setEditProd({...editProd, [i]: {...ep, precio: e.target.value}})}
                             style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                         </div>
                         <div>
