@@ -447,7 +447,7 @@ export default function Gastos({ usuario }) {
               <Label>Seleccionar de contactos</Label>
               <select onChange={e => {
                 const ct = contactos.find(c => String(c.id) === e.target.value)
-                if (ct) setForm({...form, proveedor: ct.nombre, domicilio: ct.direccion || '', localidad: ct.localidad || '', cuit: ct.cuit || '', iva: ct.iva || '', cbu: ct.cbu || ''})
+                if (ct) setForm({...form, proveedor: ct.nombre, domicilio: ct.banco || '', localidad: ct.localidad || '', cuit: ct.cuit || '', iva: ct.iva || '', cbu: ct.cbu || ''})
               }} style={inputStyle} defaultValue="">
                 <option value="">— Seleccionar contacto —</option>
                 {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}

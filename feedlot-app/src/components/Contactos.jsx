@@ -28,7 +28,7 @@ export default function Contactos({ usuario }) {
   const [tabFicha, setTabFicha] = useState('oficial')
   const puedeVerParalelo = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
   const [showForm, setShowForm] = useState(false)
-  const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', localidad: '', iva: '', cbu: '', observaciones: '' })
+  const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   const TIPOS = ['comprador_hacienda', 'vendedor_hacienda', 'ambos', 'servicio', 'otro']
@@ -89,10 +89,10 @@ export default function Contactos({ usuario }) {
       telefono: formContacto.telefono || null,
       email: formContacto.email || null,
       cuit: formContacto.cuit || null,
-      direccion: formContacto.direccion || null,
       localidad: formContacto.localidad || null,
       iva: formContacto.iva || null,
       cbu: formContacto.cbu || null,
+      banco: formContacto.banco || null,
       observaciones: formContacto.observaciones || null,
     }
     if (formContacto.id) {
@@ -104,7 +104,7 @@ export default function Contactos({ usuario }) {
     }
     await cargar()
     setShowForm(false)
-    setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', localidad: '', iva: '', cbu: '', observaciones: '' })
+    setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -185,7 +185,7 @@ export default function Contactos({ usuario }) {
               {contactoData.telefono && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Teléfono</div><div>{contactoData.telefono}</div></div>}
               {contactoData.email && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Email</div><div>{contactoData.email}</div></div>}
               {contactoData.cuit && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>CUIT</div><div style={{ fontFamily: 'monospace' }}>{contactoData.cuit}</div></div>}
-              {contactoData.direccion && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Dirección</div><div>{contactoData.direccion}</div></div>}
+              {contactoData.banco && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Banco</div><div>{contactoData.banco}</div></div>}
               {contactoData.localidad && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Localidad</div><div>{contactoData.localidad}</div></div>}
               {contactoData.iva && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Condición IVA</div><div>{contactoData.iva}</div></div>}
               {contactoData.cbu && <div><div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>CBU</div><div style={{ fontFamily: 'monospace' }}>{contactoData.cbu}</div></div>}
@@ -430,7 +430,7 @@ export default function Contactos({ usuario }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <input type="text" placeholder="Buscar contacto..." value={filtro} onChange={e => setFiltro(e.target.value)}
           style={{ width: 280, padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, fontFamily: "'IBM Plex Sans', sans-serif" }} />
-        <button onClick={() => { setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', localidad: '', iva: '', cbu: '', observaciones: '' }); setShowForm(!showForm) }}
+        <button onClick={() => { setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' }); setShowForm(!showForm) }}
           style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Nuevo contacto
         </button>
@@ -445,7 +445,7 @@ export default function Contactos({ usuario }) {
               { label: 'Teléfono', key: 'telefono', type: 'text' },
               { label: 'Email', key: 'email', type: 'email' },
               { label: 'CUIT', key: 'cuit', type: 'text' },
-              { label: 'Dirección', key: 'direccion', type: 'text' },
+              { label: 'Banco', key: 'banco', type: 'text' },
               { label: 'Localidad', key: 'localidad', type: 'text' },
               { label: 'Condición IVA', key: 'iva', type: 'text' },
               { label: 'CBU', key: 'cbu', type: 'text' },
