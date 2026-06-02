@@ -157,7 +157,7 @@ export default function Contactos({ usuario }) {
             {contactoData?.tipo && <div style={{ fontSize: 12, color: S.muted, textTransform: 'capitalize' }}>{contactoData.tipo.replace('_', ' ')}</div>}
           </div>
           {contactoData && (
-            <button onClick={() => { setFormContacto({...contactoData}); setShowForm(true) }}
+            <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
               style={{ marginLeft: 'auto', padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
               Editar contacto
             </button>
