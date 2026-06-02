@@ -119,7 +119,55 @@ export default function Reportes({ usuario }) {
     costoAlimPorCorral[num].dias.add(new Date(r.creado_en).toDateString())
   })
 
-  // ── Rentabilidad por venta ──
+  // ── GDP global feedlot — estimación por inventario (PEPS implícito) ──
+  const hoy = new Date()
+
+  // Peso promedio entrada (todos los lotes)
+  const totalAnimIngresados = lotes.reduce((s, l) => s + (l.cantidad || 0), 0)
+  const totalKgIngresados = lotes.reduce((s, l) => s + (l.kg_bascula || 0), 0)
+  const pesoProm_entrada = totalAnimIngresados > 0 ? totalKgIngresados / totalAnimIngresados : null
+
+  // Peso promedio salida (todas las ventas)
+  const totalAnimVendidos = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
+  const totalKgVendidos = ventas.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
+  const pesoProm_salida = totalAnimVendidos > 0 ? totalKgVendidos / totalAnimVendidos : null
+
+  // Permanencia promedio — ponderada por animales
+  // Salidos: días entre fecha_ingreso del lote y fecha_venta
+  let diasPonderadosSalidos = 0
+  let animalesSalidos = 0
+  ventas.forEach(v => {
+    const lote = lotes.find(l => l.corral_cuarentena_id === v.corral_id)
+    if (!lote?.fecha_ingreso || !v.cantidad) return
+    const dias = Math.round((new Date(v.creado_en) - new Date(lote.fecha_ingreso + 'T12:00:00')) / 86400000)
+    if (dias > 0) { diasPonderadosSalidos += dias * v.cantidad; animalesSalidos += v.cantidad }
+  })
+  // Activos: días desde fecha_ingreso hasta hoy
+  let diasPonderadosActivos = 0
+  let animalesActivos = 0
+  lotes.filter(l => l.estado === 'activo').forEach(l => {
+    if (!l.fecha_ingreso || !l.cantidad) return
+    const dias = Math.round((hoy - new Date(l.fecha_ingreso + 'T12:00:00')) / 86400000)
+    if (dias > 0) { diasPonderadosActivos += dias * l.cantidad; animalesActivos += l.cantidad }
+  })
+  const totalAnimPerm = animalesSalidos + animalesActivos
+  const permanenciaPromedio = totalAnimPerm > 0
+    ? Math.round((diasPonderadosSalidos + diasPonderadosActivos) / totalAnimPerm)
+    : null
+
+  // GDP estimado
+  const kgGanadosPorAnimal = pesoProm_entrada && pesoProm_salida ? pesoProm_salida - pesoProm_entrada : null
+  const gdpFeedlotGlobal = kgGanadosPorAnimal && permanenciaPromedio ? kgGanadosPorAnimal / permanenciaPromedio : null
+
+  // Conversión: kg alimento (30d) / kg ganados estimados (30d)
+  const totalKgAlimConsumido = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
+  const totalAnimActivos = lotes.filter(l => l.estado === 'activo').reduce((s, l) => s + (l.cantidad || 0), 0)
+  const kgGanadosEstim30d = gdpFeedlotGlobal && totalAnimActivos ? gdpFeedlotGlobal * 30 * totalAnimActivos : null
+  const conversionGlobal = kgGanadosEstim30d && totalKgAlimConsumido > 0
+    ? totalKgAlimConsumido / kgGanadosEstim30d
+    : null
+
+  // Rentabilidad por venta
   const rentabilidadVentas = ventas.map(v => {
     const lote = lotes.find(l => l.corral_cuarentena_id === v.corral_id) || lotes[0]
     const costoCompra = lote?.precio_compra && v.kg_vivo_total ? v.kg_vivo_total * lote.precio_compra : null
@@ -128,33 +176,6 @@ export default function Reportes({ usuario }) {
     const margenPct = costoCompra && margen ? (margen / costoCompra * 100) : null
     return { ...v, costoCompra, ingreso, margen, margenPct }
   })
-
-  // ── GDP global feedlot (ventas reales × lotes) ──
-  // Para cada venta: buscar el lote del corral, calcular GDP por animal
-  const gdpVentas = ventas.map(v => {
-    const lote = lotes.find(l => l.corral_cuarentena_id === v.corral_id)
-    if (!lote || !lote.kg_bascula || !lote.cantidad || !v.kg_vivo_total || !v.cantidad) return null
-    const pesoProm_entrada = lote.kg_bascula / lote.cantidad
-    const pesoProm_salida = v.kg_vivo_total / v.cantidad
-    const kgGanados = pesoProm_salida - pesoProm_entrada
-    const fechaIngreso = new Date(lote.fecha_ingreso + 'T12:00:00')
-    const fechaVenta = new Date(v.creado_en)
-    const dias = Math.round((fechaVenta - fechaIngreso) / 86400000)
-    if (dias <= 0 || kgGanados <= 0) return null
-    return { gdp: kgGanados / dias, dias, kgGanados, animales: v.cantidad }
-  }).filter(Boolean)
-
-  const gdpFeedlotGlobal = gdpVentas.length > 0
-    ? gdpVentas.reduce((s, v) => s + v.gdp * v.animales, 0) / gdpVentas.reduce((s, v) => s + v.animales, 0)
-    : null
-  const diasPromedio = gdpVentas.length > 0
-    ? Math.round(gdpVentas.reduce((s, v) => s + v.dias * v.animales, 0) / gdpVentas.reduce((s, v) => s + v.animales, 0))
-    : null
-  const kgGanadosTotales = gdpVentas.reduce((s, v) => s + v.kgGanados * v.animales, 0)
-  const totalKgAlimConsumido = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
-  const conversionGlobal = kgGanadosTotales > 0 && totalKgAlimConsumido > 0
-    ? totalKgAlimConsumido / kgGanadosTotales
-    : null
 
   if (loading) return <Loader />
 
@@ -193,22 +214,22 @@ export default function Reportes({ usuario }) {
         <div>
           <SectionHeader title="GDP y conversión" sub="Ganancia diaria de peso · basado en ventas reales e historial de raciones" />
 
-          {/* GDP Global Feedlot — basado en ventas reales */}
+          {/* GDP Global Feedlot — estimación por inventario */}
           {gdpFeedlotGlobal ? (
             <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
-                Rendimiento real del feedlot · {gdpVentas.length} venta{gdpVentas.length !== 1 ? 's' : ''} con datos completos
+                Rendimiento estimado del feedlot · método inventario (entradas, salidas y stock actual)
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                <Stat label="GDP real promedio" val={`${gdpFeedlotGlobal.toFixed(2)} kg/d`} sub="por animal · prom. ponderado" color={gdpFeedlotGlobal >= 1.1 ? S.green : gdpFeedlotGlobal >= 0.9 ? S.amber : S.red} />
-                <Stat label="Días promedio feedlot" val={`${diasPromedio} días`} sub="ingreso → venta" />
-                <Stat label="Kg ganados por animal" val={`${Math.round(kgGanadosTotales / gdpVentas.reduce((s,v)=>s+v.animales,0))} kg`} sub="promedio histórico" color={S.green} />
+                <Stat label="GDP estimado" val={`${gdpFeedlotGlobal.toFixed(2)} kg/d`} sub={`${Math.round(pesoProm_entrada)} kg entrada → ${Math.round(pesoProm_salida)} kg salida`} color={gdpFeedlotGlobal >= 1.1 ? S.green : gdpFeedlotGlobal >= 0.9 ? S.amber : S.red} />
+                <Stat label="Permanencia promedio" val={`${permanenciaPromedio} días`} sub={`${animalesSalidos} vendidos · ${animalesActivos} activos`} />
+                <Stat label="Kg ganados por animal" val={`${Math.round(kgGanadosPorAnimal)} kg`} sub="peso salida − peso entrada" color={S.green} />
                 <Stat label="Conversión alimenticia" val={conversionGlobal ? `${conversionGlobal.toFixed(2)}` : '—'} sub="kg alimento / kg ganado (30d)" color={conversionGlobal ? (conversionGlobal <= 7 ? S.green : conversionGlobal <= 9 ? S.amber : S.red) : S.hint} />
               </div>
             </div>
           ) : (
             <div style={{ background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', fontSize: 13, color: S.amber }}>
-              ⚠ Sin datos suficientes — se necesitan ventas con kg y lotes con precio y kg de ingreso para calcular GDP real.
+              ⚠ Sin datos suficientes — se necesitan lotes con kg de ingreso y ventas con kg para estimar GDP.
             </div>
           )}
 
