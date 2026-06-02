@@ -129,6 +129,16 @@ export default function Ingresos({ usuario }) {
     const plazo = editandoPrecio.plazo_dias ? parseInt(editandoPrecio.plazo_dias) : null
     const fechaVto = plazo ? new Date(new Date(lote.fecha_ingreso + 'T12:00:00').getTime() + plazo * 86400000).toISOString().split('T')[0] : null
     const comMonto = editandoPrecio.comision_monto ? parseFloat(editandoPrecio.comision_monto) : 0
+
+    // Resolver procedencia — si es nuevo, crear contacto
+    let procFinal = editandoPrecio.procedencia !== 'Nuevo' ? (editandoPrecio.procedencia || lote.procedencia) : lote.procedencia
+    if (editandoPrecio.procedencia === 'Nuevo' && editandoPrecio.nuevaProcedencia?.trim()) {
+      const nombre = editandoPrecio.nuevaProcedencia.trim()
+      const existente = contactos.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())
+      if (!existente) await supabase.from('contactos').insert({ nombre, tipo: 'proveedor_hacienda', activo: true })
+      procFinal = nombre
+    }
+
     await supabase.from('lotes').update({
       kg_factura: kgFac,
       precio_compra: precio || (montoTotal && kgFac ? Math.round(montoTotal / kgFac) : null),
@@ -138,7 +148,7 @@ export default function Ingresos({ usuario }) {
       comision_monto: comMonto || null,
       comision_a_quien: editandoPrecio.comision_a_quien || null,
       comision_es_paralela: editandoPrecio.comision_es_paralela || false,
-      procedencia: editandoPrecio.procedencia && editandoPrecio.procedencia !== lote.procedencia ? editandoPrecio.procedencia : lote.procedencia,
+      procedencia: procFinal,
     }).eq('id', lote.id)
     setEditandoPrecio(null)
     await cargarDatos()
@@ -411,6 +421,22 @@ export default function Ingresos({ usuario }) {
                         <input type="checkbox" checked={editandoPrecio.comision_es_paralela || false} onChange={e => setEditandoPrecio({...editandoPrecio, comision_es_paralela: e.target.checked})} />
                         Comisión se paga por cuenta paralela
                       </label>
+                    </div>
+
+                    {/* Procedencia / Vendedor */}
+                    <div style={{ marginBottom: 12 }}>
+                      <Lbl>Procedencia / Vendedor</Lbl>
+                      <select value={editandoPrecio.procedencia || ''} onChange={e => setEditandoPrecio({...editandoPrecio, procedencia: e.target.value, nuevaProcedencia: ''})}
+                        style={{ ...inp, marginBottom: editandoPrecio.procedencia === 'Nuevo' ? 6 : 0 }}>
+                        <option value="">— Seleccioná —</option>
+                        {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                        <option value="Nuevo">+ Nuevo contacto...</option>
+                      </select>
+                      {editandoPrecio.procedencia === 'Nuevo' && (
+                        <input type="text" placeholder="Nombre del vendedor" value={editandoPrecio.nuevaProcedencia || ''}
+                          onChange={e => setEditandoPrecio({...editandoPrecio, nuevaProcedencia: e.target.value})}
+                          style={inp} />
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -704,7 +730,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
   const [editandoFactura, setEditandoFactura] = useState(null)
   const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '' })
   const [pagosMap, setPagosMap] = useState({})
-  const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false })
+  const [chequesCartera, setChequesCartera] = useState([])
+  const [formPago, setFormPago] = useState({ monto: '', tipo: 'transferencia', fecha: new Date().toISOString().split('T')[0], es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' })
   const [pagoAbierto, setPagoAbierto] = useState(null)
   const [guardando, setGuardando] = useState(false)
 
@@ -713,13 +740,17 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
   async function cargarPagos() {
     if (!lotes.length) return
     const ids = lotes.map(l => l.id)
-    const { data } = await supabase.from('pagos_compras').select('*').in('lote_id', ids).order('fecha')
+    const [{ data }, { data: ch }] = await Promise.all([
+      supabase.from('pagos_compras').select('*').in('lote_id', ids).order('fecha'),
+      supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
+    ])
     const map = {}
     ;(data || []).forEach(p => {
       if (!map[p.lote_id]) map[p.lote_id] = []
       map[p.lote_id].push(p)
     })
     setPagosMap(map)
+    setChequesCartera(ch || [])
   }
 
   async function guardarFactura(lote) {
@@ -746,12 +777,14 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
     const monto = parseFloat(formPago.monto)
     if (!monto) { alert('Ingresá el monto'); return }
     setGuardando(true)
+    const formaPago = formPago.subtipo_cheque ? 'e-cheq' : formPago.tipo
+    const desc = `Pago compra ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`
     const { data: pagoInsertado } = await supabase.from('pagos_compras').insert({
       lote_id: lote.id, fecha: formPago.fecha, monto,
-      forma_pago: formPago.forma_pago,
-      numero_cheque: formPago.numero_cheque || null,
-      banco: formPago.banco || null,
-      fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null,
+      forma_pago: formaPago,
+      numero_cheque: formPago.subtipo_cheque === 'propio' ? formPago.cheque_propio.numero || null : null,
+      banco: formPago.subtipo_cheque === 'propio' ? formPago.cheque_propio.banco || null : null,
+      fecha_vencimiento_cheque: formPago.subtipo_cheque === 'propio' ? formPago.cheque_propio.fecha_vencimiento || null : null,
       es_negro: formPago.es_paralela || false,
     }).select().single()
 
@@ -762,17 +795,21 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
     const nuevoEstado = totalLote && totalPagado >= totalLote * 0.99 ? 'pagado' : 'pendiente'
     await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', lote.id)
 
+    let caja_oficial_id = null
     if (formPago.es_paralela) {
-      await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: `Pago compra ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`, monto, pago_compra_id: pagoInsertado?.id })
+      await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id })
     } else {
-      await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: `Pago ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`, monto, forma_pago: formPago.forma_pago, pago_compra_id: pagoInsertado?.id })
+      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
+      caja_oficial_id = co?.id || null
     }
-    if (['cheque', 'e-cheq'].includes(formPago.forma_pago) && formPago.fecha_vencimiento_cheque) {
-      await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, beneficiario: lote.procedencia || null, estado: 'emitido', es_paralelo: formPago.es_paralela || false, pago_compra_id: pagoInsertado?.id })
+    if (formPago.subtipo_cheque === 'propio' && formPago.cheque_propio.fecha_vencimiento) {
+      await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPago.cheque_propio.numero || null, banco: formPago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: formPago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: formPago.es_paralela || false, caja_oficial_id, pago_compra_id: pagoInsertado?.id })
+    } else if (formPago.subtipo_cheque === 'tercero' && formPago.cheque_tercero_id) {
+      await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(formPago.cheque_tercero_id))
     }
 
     setPagoAbierto(null)
-    setFormPago({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false })
+    setFormPago({ monto: '', tipo: 'transferencia', fecha: new Date().toISOString().split('T')[0], es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' })
     setGuardando(false)
     await cargarDatos()
     await cargarPagos()
@@ -943,7 +980,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
 
               {/* Botón + pago */}
               {!isPagoAbierto && l.precio_compra && (
-                <button onClick={() => { setPagoAbierto(l.id); setFormPago({ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false }) }}
+                <button onClick={() => { setPagoAbierto(l.id); setFormPago({ monto: saldo > 0 ? String(Math.round(saldo)) : '', tipo: 'transferencia', fecha: new Date().toISOString().split('T')[0], es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }) }}
                   style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer' }}>
                   + Registrar pago
                 </button>
@@ -956,35 +993,59 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
                     <div><Lbl>Monto $</Lbl><input type="number" value={formPago.monto} onChange={e => setFormPago({...formPago, monto: e.target.value})} style={inpMono} /></div>
                     <div><Lbl>Forma de pago</Lbl>
-                      <select value={formPago.forma_pago} onChange={e => setFormPago({...formPago, forma_pago: e.target.value})} style={inp}>
+                      <select value={formPago.tipo} onChange={e => setFormPago({...formPago, tipo: e.target.value, subtipo_cheque: ''})} style={inp}>
                         <option value="transferencia">Transferencia</option>
                         <option value="efectivo">Efectivo</option>
-                        <option value="cheque">Cheque</option>
                         <option value="e-cheq">E-cheq</option>
+                        <option value="cuenta_corriente">Cuenta corriente</option>
                       </select>
                     </div>
                     <div><Lbl>Fecha</Lbl><input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={inp} /></div>
-                    {['cheque','e-cheq'].includes(formPago.forma_pago) && (
-                      <>
-                        <div><Lbl>N° Cheque</Lbl><input type="text" value={formPago.numero_cheque} onChange={e => setFormPago({...formPago, numero_cheque: e.target.value})} style={inp} /></div>
-                        <div><Lbl>Banco</Lbl><input type="text" value={formPago.banco} onChange={e => setFormPago({...formPago, banco: e.target.value})} style={inp} /></div>
-                        <div><Lbl>Fecha cobro</Lbl><input type="date" value={formPago.fecha_cobro_cheque} onChange={e => {
-                          const fc = e.target.value
-                          const fv = fc ? new Date(new Date(fc + 'T12:00:00').getTime() + 30 * 86400000).toISOString().split('T')[0] : ''
-                          setFormPago({...formPago, fecha_cobro_cheque: fc, fecha_vencimiento_cheque: fv})
-                        }} style={inp} /></div>
-                        <div><Lbl>Vencimiento (auto +30d)</Lbl><input type="date" value={formPago.fecha_vencimiento_cheque} onChange={e => setFormPago({...formPago, fecha_vencimiento_cheque: e.target.value})} style={inp} /></div>
-                      </>
-                    )}
                     <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={formPago.es_paralela} onChange={e => setFormPago({...formPago, es_paralela: e.target.checked})} />
-                        Pago en cuenta paralela
+                        <input type="checkbox" checked={formPago.es_paralela} onChange={e => setFormPago({...formPago, es_paralela: e.target.checked, subtipo_cheque: ''})} />
+                        Pago paralelo
                       </label>
                     </div>
                   </div>
+                  {/* E-cheq */}
+                  {formPago.tipo === 'e-cheq' && (
+                    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 10 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Tipo de e-cheq</div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: formPago.subtipo_cheque ? 10 : 0 }}>
+                        {(formPago.es_paralela ? ['tercero'] : ['propio', 'tercero']).map(t => (
+                          <button key={t} onClick={() => setFormPago({...formPago, subtipo_cheque: formPago.subtipo_cheque === t ? '' : t})}
+                            style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${formPago.subtipo_cheque === t ? S.accent : S.border}`, background: formPago.subtipo_cheque === t ? S.accentLight : 'transparent', color: formPago.subtipo_cheque === t ? S.accent : S.muted }}>
+                            {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
+                          </button>
+                        ))}
+                      </div>
+                      {formPago.subtipo_cheque === 'propio' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                          <div><Lbl>N° cheque</Lbl><input type="text" value={formPago.cheque_propio.numero} onChange={e => setFormPago({...formPago, cheque_propio: {...formPago.cheque_propio, numero: e.target.value}})} style={inp} /></div>
+                          <div><Lbl>Banco</Lbl><input type="text" value={formPago.cheque_propio.banco} onChange={e => setFormPago({...formPago, cheque_propio: {...formPago.cheque_propio, banco: e.target.value}})} style={inp} /></div>
+                          <div><Lbl>Vencimiento *</Lbl><input type="date" value={formPago.cheque_propio.fecha_vencimiento} onChange={e => setFormPago({...formPago, cheque_propio: {...formPago.cheque_propio, fecha_vencimiento: e.target.value}})} style={{ ...inp, borderColor: S.amber }} /></div>
+                        </div>
+                      )}
+                      {formPago.subtipo_cheque === 'tercero' && (
+                        <div style={{ marginTop: 8 }}>
+                          {(() => {
+                            const lista = chequesCartera.filter(ch => formPago.es_paralela ? ch.es_paralelo : !ch.es_paralelo)
+                            return lista.length === 0
+                              ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {formPago.es_paralela ? '(paralelo)' : '(oficial)'}.</div>
+                              : lista.map(ch => (
+                                <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${formPago.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: formPago.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
+                                  <input type="radio" name="cheque_gc" value={ch.id} checked={formPago.cheque_tercero_id === String(ch.id)} onChange={() => setFormPago({...formPago, cheque_tercero_id: String(ch.id)})} />
+                                  <div style={{ fontSize: 13 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong><span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</span></div>
+                                </label>
+                              ))
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => registrarPago(l)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Registrar'}</button>
+                    <button onClick={() => registrarPago(l)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Registrar pago'}</button>
                     <button onClick={() => setPagoAbierto(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                   </div>
                 </div>
