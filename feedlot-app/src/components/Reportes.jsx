@@ -129,6 +129,33 @@ export default function Reportes({ usuario }) {
     return { ...v, costoCompra, ingreso, margen, margenPct }
   })
 
+  // ── GDP global feedlot (ventas reales × lotes) ──
+  // Para cada venta: buscar el lote del corral, calcular GDP por animal
+  const gdpVentas = ventas.map(v => {
+    const lote = lotes.find(l => l.corral_cuarentena_id === v.corral_id)
+    if (!lote || !lote.kg_bascula || !lote.cantidad || !v.kg_vivo_total || !v.cantidad) return null
+    const pesoProm_entrada = lote.kg_bascula / lote.cantidad
+    const pesoProm_salida = v.kg_vivo_total / v.cantidad
+    const kgGanados = pesoProm_salida - pesoProm_entrada
+    const fechaIngreso = new Date(lote.fecha_ingreso + 'T12:00:00')
+    const fechaVenta = new Date(v.creado_en)
+    const dias = Math.round((fechaVenta - fechaIngreso) / 86400000)
+    if (dias <= 0 || kgGanados <= 0) return null
+    return { gdp: kgGanados / dias, dias, kgGanados, animales: v.cantidad }
+  }).filter(Boolean)
+
+  const gdpFeedlotGlobal = gdpVentas.length > 0
+    ? gdpVentas.reduce((s, v) => s + v.gdp * v.animales, 0) / gdpVentas.reduce((s, v) => s + v.animales, 0)
+    : null
+  const diasPromedio = gdpVentas.length > 0
+    ? Math.round(gdpVentas.reduce((s, v) => s + v.dias * v.animales, 0) / gdpVentas.reduce((s, v) => s + v.animales, 0))
+    : null
+  const kgGanadosTotales = gdpVentas.reduce((s, v) => s + v.kgGanados * v.animales, 0)
+  const totalKgAlimConsumido = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
+  const conversionGlobal = kgGanadosTotales > 0 && totalKgAlimConsumido > 0
+    ? totalKgAlimConsumido / kgGanadosTotales
+    : null
+
   if (loading) return <Loader />
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre')
@@ -164,10 +191,29 @@ export default function Reportes({ usuario }) {
       {/* ── GDP Y CONVERSIÓN ── */}
       {tab === 'gdp' && (
         <div>
-          <SectionHeader title="GDP y conversión" sub="Ganancia diaria de peso por corral · basado en pesadas registradas" />
+          <SectionHeader title="GDP y conversión" sub="Ganancia diaria de peso · basado en ventas reales e historial de raciones" />
+
+          {/* GDP Global Feedlot — basado en ventas reales */}
+          {gdpFeedlotGlobal ? (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+                Rendimiento real del feedlot · {gdpVentas.length} venta{gdpVentas.length !== 1 ? 's' : ''} con datos completos
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                <Stat label="GDP real promedio" val={`${gdpFeedlotGlobal.toFixed(2)} kg/d`} sub="por animal · prom. ponderado" color={gdpFeedlotGlobal >= 1.1 ? S.green : gdpFeedlotGlobal >= 0.9 ? S.amber : S.red} />
+                <Stat label="Días promedio feedlot" val={`${diasPromedio} días`} sub="ingreso → venta" />
+                <Stat label="Kg ganados por animal" val={`${Math.round(kgGanadosTotales / gdpVentas.reduce((s,v)=>s+v.animales,0))} kg`} sub="promedio histórico" color={S.green} />
+                <Stat label="Conversión alimenticia" val={conversionGlobal ? `${conversionGlobal.toFixed(2)}` : '—'} sub="kg alimento / kg ganado (30d)" color={conversionGlobal ? (conversionGlobal <= 7 ? S.green : conversionGlobal <= 9 ? S.amber : S.red) : S.hint} />
+              </div>
+            </div>
+          ) : (
+            <div style={{ background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', fontSize: 13, color: S.amber }}>
+              ⚠ Sin datos suficientes — se necesitan ventas con kg y lotes con precio y kg de ingreso para calcular GDP real.
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
-            <Stat label="GDP global ponderado" val={gdpGlobal ? gdpGlobal.toFixed(2) + ' kg/d' : '—'} sub={`${corralesConGDP.length} corrales con datos`} color={gdpGlobal ? (gdpGlobal >= 1.1 ? S.green : gdpGlobal >= 0.9 ? S.amber : S.red) : S.hint} />
+            <Stat label="GDP global ponderado" val={gdpGlobal ? gdpGlobal.toFixed(2) + ' kg/d' : '—'} sub={`${corralesConGDP.length} corrales con datos (pesadas)`} color={gdpGlobal ? (gdpGlobal >= 1.1 ? S.green : gdpGlobal >= 0.9 ? S.amber : S.red) : S.hint} />
             <Stat label="Animales activos" val={totalAnimales} sub={`${corralesActivos.length} corrales activos`} />
             <Stat label="Animales ≥ 400 kg" val={corralesActivos.filter(c => gdpPorCorral[c.numero]?.pesoActual >= 400).reduce((s, c) => s + (c.animales || 0), 0)} sub="listos para venta" color={S.green} />
             <Stat label="Pesadas registradas" val={pesadas.length} sub="en el historial" />
