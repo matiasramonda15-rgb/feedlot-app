@@ -319,6 +319,12 @@ export default function Gastos({ usuario }) {
       fecha: form.fecha,
       proveedor: form.proveedor || null,
       comprobante: form.comprobante || null,
+      domicilio: form.domicilio || null,
+      localidad: form.localidad || null,
+      cuit: form.cuit || null,
+      iva: form.iva || null,
+      cbu: form.cbu || null,
+      pagos_detalle: form.pagos,
       forma_pago: form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
       es_paralelo: form.pagos.some(p => p.es_paralelo),
       caja_oficial_id,
@@ -327,8 +333,6 @@ export default function Gastos({ usuario }) {
     })
 
     await cargar()
-    // Generar recibo automáticamente
-    generarRecibo(form, form.pagos)
     setShowForm(false)
     setForm(FORM_INIT)
     setGuardando(false)
@@ -544,7 +548,7 @@ export default function Gastos({ usuario }) {
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
             <button onClick={guardar} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-              {guardando ? 'Guardando...' : '💾 Guardar y generar recibo'}
+              {guardando ? 'Guardando...' : '💾 Guardar'}
             </button>
           </div>
         </Card>
@@ -578,9 +582,15 @@ export default function Gastos({ usuario }) {
                     <td style={{ padding: '9px 12px', fontSize: 11 }}>{g.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Paralelo</span> : g.forma_pago || '—'}</td>
                     <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${g.monto?.toLocaleString('es-AR')}</td>
                     <td style={{ padding: '9px 12px' }}>
-                      <button onClick={() => eliminar(g)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
-                        Eliminar
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => generarRecibo(g, g.pagos_detalle || [])}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                          🖨️ Recibo
+                        </button>
+                        <button onClick={() => eliminar(g)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
