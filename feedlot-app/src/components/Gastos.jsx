@@ -226,6 +226,7 @@ export default function Gastos({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [gastos, setGastos] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
+  const [contactos, setContactos] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [filtroActividad, setFiltroActividad] = useState('')
@@ -235,12 +236,14 @@ export default function Gastos({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: g }, { data: ch }] = await Promise.all([
+    const [{ data: g }, { data: ch }, { data: ct }] = await Promise.all([
       supabase.from('gastos_generales').select('*').order('fecha', { ascending: false }),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
+      supabase.from('contactos').select('*').order('nombre'),
     ])
     setGastos(g || [])
     setChequesCartera(ch || [])
+    setContactos(ct || [])
     setLoading(false)
   }
 
@@ -440,6 +443,16 @@ export default function Gastos({ usuario }) {
           {/* Datos proveedor para recibo */}
           <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: '1rem' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Datos del proveedor (para el recibo)</div>
+            <div style={{ marginBottom: 10 }}>
+              <Label>Seleccionar de contactos</Label>
+              <select onChange={e => {
+                const ct = contactos.find(c => String(c.id) === e.target.value)
+                if (ct) setForm({...form, proveedor: ct.nombre, domicilio: ct.direccion || '', localidad: ct.localidad || '', cuit: ct.cuit || '', iva: ct.iva || '', cbu: ct.cbu || ''})
+              }} style={inputStyle} defaultValue="">
+                <option value="">— Seleccionar contacto —</option>
+                {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+              </select>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               <div><Label>Nombre / Razón social</Label><input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} /></div>
               <div><Label>Domicilio</Label><input type="text" value={form.domicilio} onChange={e => setForm({...form, domicilio: e.target.value})} style={inputStyle} /></div>
