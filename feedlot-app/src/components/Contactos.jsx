@@ -171,10 +171,16 @@ export default function Contactos({ usuario }) {
             {contactoData?.tipo && <div style={{ fontSize: 12, color: S.muted, textTransform: 'capitalize' }}>{contactoData.tipo.replace('_', ' ')}</div>}
           </div>
           {contactoData && (
-            <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
-              style={{ marginLeft: 'auto', padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
-              Editar contacto
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
+                style={{ padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                Editar contacto
+              </button>
+              <button onClick={async () => { await eliminarContacto(contactoData.id); setContactoSeleccionado(null) }}
+                style={{ padding: '7px 14px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>
+                Eliminar
+              </button>
+            </div>
           )}
         </div>
 
