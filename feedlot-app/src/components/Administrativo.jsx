@@ -995,4 +995,4 @@ export default function Administrativo({ usuario }) {
       )}
     </div>
   )
-}
+} 
