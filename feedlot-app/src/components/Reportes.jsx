@@ -99,6 +99,13 @@ export default function Reportes({ usuario }) {
 
   // ── Costo alimentación por corral/día ──
   const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
+  // Precio promedio ponderado de alimentación (kg × precio_referencia)
+  const stockConPrecio = stock.filter(s => s.precio_referencia && s.cantidad_kg > 0)
+  const totalKgStock = stockConPrecio.reduce((s, i) => s + i.cantidad_kg, 0)
+  const precioPromAlim = totalKgStock > 0
+    ? stockConPrecio.reduce((s, i) => s + i.precio_referencia * i.cantidad_kg, 0) / totalKgStock
+    : null
+
   const raciones30 = raciones.filter(r => new Date(r.creado_en) >= hace30)
 
   const costoAlimPorCorral = {}
@@ -106,7 +113,8 @@ export default function Reportes({ usuario }) {
     const num = r.corrales?.numero
     if (!num) return
     if (!costoAlimPorCorral[num]) costoAlimPorCorral[num] = { totalCosto: 0, totalKg: 0, dias: new Set() }
-    costoAlimPorCorral[num].totalCosto += r.costo_estimado || 0
+    const costo = precioPromAlim ? (r.kg_total || 0) * precioPromAlim : 0
+    costoAlimPorCorral[num].totalCosto += costo
     costoAlimPorCorral[num].totalKg += r.kg_total || 0
     costoAlimPorCorral[num].dias.add(new Date(r.creado_en).toDateString())
   })
@@ -256,7 +264,7 @@ export default function Reportes({ usuario }) {
               const costoPorAnimal = totalAnimales > 0 && totalCostoAlim > 0 ? totalCostoAlim / totalAnimales : null
               const costoPorKgProd = gdpGlobal && costoPorAnimal ? costoPorAnimal / gdpGlobal : null
               return [
-                { label: 'Costo alim. total (30d)', val: totalCostoAlim > 0 ? `$${Math.round(totalCostoAlim).toLocaleString('es-AR')}` : '—', sub: 'suma de todos los corrales' },
+                { label: 'Costo alim. total (30d)', val: totalCostoAlim > 0 ? `$${Math.round(totalCostoAlim).toLocaleString('es-AR')}` : '—', sub: precioPromAlim ? `$${Math.round(precioPromAlim).toLocaleString('es-AR')}/kg prom. ponderado` : 'sin precio de referencia en stock' },
                 { label: 'Costo por animal/día', val: costoPorAnimal ? `$${Math.round(costoPorAnimal / 30).toLocaleString('es-AR')}` : '—', sub: 'promedio últimos 30 días' },
                 { label: 'Kg alimento total', val: totalKgAlim > 0 ? totalKgAlim.toLocaleString('es-AR') + ' kg' : '—', sub: 'últimos 30 días' },
                 { label: 'Costo por kg producido', val: costoPorKgProd ? `$${Math.round(costoPorKgProd).toLocaleString('es-AR')}` : '—', sub: 'costo alim. / GDP promedio' },
