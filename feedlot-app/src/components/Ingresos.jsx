@@ -1056,4 +1056,4 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
       })}
     </div>
   )
-} 
+}   
