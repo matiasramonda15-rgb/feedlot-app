@@ -83,10 +83,24 @@ export default function Contactos({ usuario }) {
   async function guardarContacto() {
     if (!formContacto.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
+    const datos = {
+      nombre: formContacto.nombre,
+      tipo: formContacto.tipo || 'otro',
+      telefono: formContacto.telefono || null,
+      email: formContacto.email || null,
+      cuit: formContacto.cuit || null,
+      direccion: formContacto.direccion || null,
+      localidad: formContacto.localidad || null,
+      iva: formContacto.iva || null,
+      cbu: formContacto.cbu || null,
+      observaciones: formContacto.observaciones || null,
+    }
     if (formContacto.id) {
-      await supabase.from('contactos').update({ ...formContacto }).eq('id', formContacto.id)
+      const { error } = await supabase.from('contactos').update(datos).eq('id', formContacto.id)
+      if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     } else {
-      await supabase.from('contactos').insert({ ...formContacto, activo: true })
+      const { error } = await supabase.from('contactos').insert({ ...datos, activo: true })
+      if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     }
     await cargar()
     setShowForm(false)
