@@ -29,6 +29,7 @@ export default function Ingresos({ usuario }) {
   const [tab, setTab] = useState('lista')
   const [lotes, setLotes] = useState([])
   const [corrales, setCorrales] = useState([])
+  const [contactos, setContactos] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('lista') // 'lista' | 'nuevo' | 'editar'
   const [editandoLote, setEditandoLote] = useState(null)
@@ -56,19 +57,35 @@ export default function Ingresos({ usuario }) {
 
   async function cargarDatos() {
     setLoading(true)
-    const [{ data: lotesDB }, { data: corralesDB }] = await Promise.all([
+    const [{ data: lotesDB }, { data: corralesDB }, { data: ctDB }] = await Promise.all([
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('corrales').select('id, numero, rol, sub, animales').order('numero'),
+      supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
     ])
     setLotes(lotesDB || [])
     setCorrales(corralesDB || [])
+    setContactos(ctDB || [])
     setLoading(false)
   }
 
   async function guardarIngreso() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completá cantidad y kg báscula'); return }
     setGuardando(true)
-    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || null) : (form.procedencia || null)
+    // Resolver procedencia — si es nuevo, crear contacto
+    let procFinal = null
+    if (form.procedencia === 'Nuevo') {
+      const nombre = form.otraProcedencia?.trim()
+      if (nombre) {
+        const existente = contactos.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())
+        if (!existente) {
+          await supabase.from('contactos').insert({ nombre, tipo: 'proveedor_hacienda', activo: true })
+          await cargarDatos()
+        }
+        procFinal = nombre
+      }
+    } else {
+      procFinal = form.procedencia || null
+    }
     const { data: nuevoLote } = await supabase.from('lotes').insert({
       procedencia: procFinal, categoria: form.categoria,
       cantidad: parseInt(form.cantidad), kg_bascula: parseFloat(form.kg_bascula),
@@ -181,18 +198,17 @@ export default function Ingresos({ usuario }) {
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.5rem', maxWidth: 700 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
-              <Lbl>Procedencia</Lbl>
+              <Lbl>Procedencia / Vendedor</Lbl>
               <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value, otraProcedencia: ''})} style={inp}>
                 <option value="">— Seleccioná —</option>
-                {PROCEDENCIAS_DEFAULT.map(p => <option key={p}>{p}</option>)}
-                {compradores.filter(c => !PROCEDENCIAS_DEFAULT.includes(c)).map(c => <option key={c}>{c}</option>)}
-                <option value="Otro">+ Otro...</option>
+                {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                <option value="Nuevo">+ Nuevo contacto...</option>
               </select>
             </div>
-            {form.procedencia === 'Otro' && (
+            {form.procedencia === 'Nuevo' && (
               <div>
-                <Lbl>Especificá procedencia</Lbl>
-                <input type="text" value={form.otraProcedencia} onChange={e => setForm({...form, otraProcedencia: e.target.value})} style={inp} />
+                <Lbl>Nombre del vendedor *</Lbl>
+                <input type="text" value={form.otraProcedencia} onChange={e => setForm({...form, otraProcedencia: e.target.value})} style={inp} placeholder="Se guardará como contacto" />
               </div>
             )}
             <div>

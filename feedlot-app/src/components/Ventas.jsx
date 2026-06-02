@@ -81,8 +81,8 @@ export default function Ventas({ usuario }) {
     setVentas(v || [])
     setLotes(l || [])
     setCorrales(c || [])
-    // Cargar compradores desde contactos + ventas anteriores
-    const { data: contactosData } = await supabase.from('contactos').select('nombre').eq('activo', true).in('tipo', ['comprador_hacienda', 'otro'])
+    // Cargar compradores desde todos los contactos activos + ventas anteriores
+    const { data: contactosData } = await supabase.from('contactos').select('nombre').eq('activo', true)
     const nombresContactos = (contactosData || []).map(c => c.nombre)
     const nombresVentas = [...new Set((v || []).map(x => x.comprador).filter(Boolean))]
     const comps = [...new Set([...nombresContactos, ...nombresVentas])].sort()
