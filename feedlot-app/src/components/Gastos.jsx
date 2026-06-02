@@ -249,13 +249,13 @@ export default function Gastos({ usuario }) {
           </div>
 
           {/* E-cheq */}
-          {((form.forma_pago === 'e-cheq' && !form.es_paralelo) || form.es_paralelo) && (
+          {form.forma_pago === 'e-cheq' && (
             <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: '1rem' }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>
-                {form.es_paralelo ? 'Cheque de tercero (paralelo)' : 'Tipo de e-cheq'}
+                Tipo de e-cheq
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: form.subtipo_cheque ? 12 : 0 }}>
-                {(!form.es_paralelo ? ['propio', 'tercero'] : ['tercero']).map(t => (
+                {(form.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
                   <button key={t} onClick={() => setForm({...form, subtipo_cheque: form.subtipo_cheque === t ? '' : t})}
                     style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", border: `1px solid ${form.subtipo_cheque === t ? S.accent : S.border}`, background: form.subtipo_cheque === t ? S.accentLight : 'transparent', color: form.subtipo_cheque === t ? S.accent : S.muted }}>
                     {t === 'propio' ? '📤 E-cheq propio' : '📥 E-cheq de tercero'}

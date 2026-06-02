@@ -796,12 +796,12 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
                   </div>
                 </div>
 
-                {/* E-cheq: selección propio / tercero — solo cuando no es paralelo y forma_pago es e-cheq, O cuando es paralelo (solo tercero) */}
-                {((ep.forma_pago === 'e-cheq' && !ep.es_paralelo) || ep.es_paralelo) && (
+                {/* E-cheq */}
+                {ep.forma_pago === 'e-cheq' && (
                   <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>{ep.es_paralelo ? 'Cheque de tercero (paralelo)' : 'Tipo de e-cheq'}</div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Tipo de e-cheq</div>
                     <div style={{ display: 'flex', gap: 8, marginBottom: esCheque ? 10 : 0 }}>
-                      {(!ep.es_paralelo ? ['propio', 'tercero'] : ['tercero']).map(t => (
+                      {(ep.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
                         <button key={t} onClick={() => setEditando({ ...editando, [ing.id]: { ...ep, subtipo_cheque: ep.subtipo_cheque === t ? '' : t } })}
                           style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", border: `1px solid ${ep.subtipo_cheque === t ? S.accent : S.border}`, background: ep.subtipo_cheque === t ? S.accentLight : 'transparent', color: ep.subtipo_cheque === t ? S.accent : S.muted }}>
                           {t === 'propio' ? '📤 E-cheq propio' : '📥 E-cheq de tercero'}
