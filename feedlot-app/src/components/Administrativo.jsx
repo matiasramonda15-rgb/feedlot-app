@@ -31,7 +31,12 @@ function SectionTitle({ children }) {
 }
 
 const CATEGORIAS_GASTO_CAMPANA = ['Semilla', 'Fertilizante', 'Herbicida', 'Fungicida', 'Insecticida', 'Laboreo', 'Siembra', 'Cosecha', 'Flete', 'Seguro', 'Otro']
-const CATEGORIAS_GASTO_GENERAL = ['Combustible', 'Electricidad', 'Impuestos', 'Reparaciones', 'Seguros', 'Honorarios', 'Veterinario', 'Comunicaciones', 'Rodados', 'Otro']
+const CATEGORIAS_GASTO = {
+  Feedlot:    ['Combustible', 'Ferretería', 'Taller / Reparaciones', 'Veterinario', 'Flete', 'Electricidad', 'Agua', 'Rodados', 'Otro feedlot'],
+  Agricultura:['Combustible', 'Agroquímicos', 'Semillas', 'Fertilizantes', 'Flete granos', 'Reparaciones', 'Laboreo', 'Otro agricultura'],
+  Servicios:  ['Contratista siembra', 'Contratista cosecha', 'Laboreo', 'Pulverización', 'Otro servicio'],
+  General:    ['Contabilidad', 'Impuestos', 'Monotributo', 'Seguros', 'Honorarios', 'Comunicaciones', 'Servicios públicos', 'Otro general'],
+}
 const CULTIVOS = ['Soja', 'Maiz', 'Trigo', 'Alfalfa', 'Girasol', 'Sorgo', 'Otro']
 const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Roturación', 'Rastreo', 'Transporte', 'Otro']
 
@@ -67,7 +72,8 @@ export default function Administrativo({ usuario }) {
   // Gastos generales
   const [gastosGenerales, setGastosGenerales] = useState([])
   const [showFormGasto, setShowFormGasto] = useState(false)
-  const [formGasto, setFormGasto] = useState({ categoria: 'Combustible', descripcion: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', comprobante: '' })
+  const [chequesCartera, setChequesCartera] = useState([])
+  const [formGasto, setFormGasto] = useState({ actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', comprobante: '', forma_pago: 'transferencia', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' })
 
   const [guardando, setGuardando] = useState(false)
 
@@ -76,7 +82,7 @@ export default function Administrativo({ usuario }) {
   async function cargar() {
     const [
       { data: emp }, { data: pag }, { data: pot }, { data: cam },
-      { data: gc }, { data: vg }, { data: maq }, { data: trab }, { data: gg }
+      { data: gc }, { data: vg }, { data: maq }, { data: trab }, { data: gg }, { data: ch }
     ] = await Promise.all([
       supabase.from('empleados').select('*').eq('activo', true).order('nombre'),
       supabase.from('pagos_empleados').select('*, empleados(nombre)').order('fecha', { ascending: false }).limit(50),
@@ -87,6 +93,7 @@ export default function Administrativo({ usuario }) {
       supabase.from('maquinaria').select('*').eq('activo', true).order('nombre'),
       supabase.from('trabajos_maquinaria').select('*, maquinaria(nombre), potreros(nombre)').order('fecha', { ascending: false }).limit(50),
       supabase.from('gastos_generales').select('*').order('fecha', { ascending: false }).limit(100),
+      supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
     ])
     setEmpleados(emp || [])
     setPagos(pag || [])
@@ -97,6 +104,7 @@ export default function Administrativo({ usuario }) {
     setMaquinaria(maq || [])
     setTrabajos(trab || [])
     setGastosGenerales(gg || [])
+    setChequesCartera(ch || [])
     setLoading(false)
   }
 
@@ -180,15 +188,69 @@ export default function Administrativo({ usuario }) {
   async function guardarGasto() {
     if (!formGasto.categoria || !formGasto.monto) { alert('Completá categoría y monto'); return }
     setGuardando(true)
-    await supabase.from('gastos_generales').insert({ ...formGasto, monto: parseFloat(formGasto.monto), registrado_por: usuario?.id })
+    const monto = parseFloat(formGasto.monto)
+    const desc = `${formGasto.actividad} — ${formGasto.categoria}${formGasto.descripcion ? ': ' + formGasto.descripcion : ''}${formGasto.proveedor ? ' (' + formGasto.proveedor + ')' : ''}`
+
+    // 1. Registrar en caja
+    let caja_oficial_id = null
+    let caja_paralela_id = null
+    const formaPago = formGasto.subtipo_cheque ? 'e-cheq' : (formGasto.forma_pago || 'transferencia')
+
+    if (formGasto.es_paralelo) {
+      const { data: cp } = await supabase.from('caja_paralela').insert({
+        fecha: formGasto.fecha, tipo: 'egreso', descripcion: desc, monto,
+      }).select().single()
+      caja_paralela_id = cp?.id || null
+    } else {
+      const { data: co } = await supabase.from('caja_oficial').insert({
+        fecha: formGasto.fecha, tipo: 'egreso',
+        categoria: `Gastos ${formGasto.actividad}`,
+        descripcion: desc, monto, forma_pago: formaPago,
+      }).select().single()
+      caja_oficial_id = co?.id || null
+    }
+
+    // 2. Cheques
+    if (!formGasto.es_paralelo && formGasto.subtipo_cheque === 'propio') {
+      await supabase.from('cheques').insert({
+        tipo: 'emitido', numero: formGasto.cheque_propio.numero || null,
+        banco: formGasto.cheque_propio.banco || null,
+        fecha_cobro: formGasto.fecha,
+        fecha_vencimiento: formGasto.cheque_propio.fecha_vencimiento,
+        monto, beneficiario: formGasto.proveedor || null,
+        estado: 'en_cartera', caja_oficial_id,
+        registrado_por: usuario?.id,
+      })
+    } else if (formGasto.subtipo_cheque === 'tercero' && formGasto.cheque_tercero_id) {
+      await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(formGasto.cheque_tercero_id))
+    }
+
+    // 3. Guardar gasto con refs a caja
+    await supabase.from('gastos_generales').insert({
+      actividad: formGasto.actividad,
+      categoria: formGasto.categoria,
+      descripcion: formGasto.descripcion || null,
+      monto,
+      fecha: formGasto.fecha,
+      proveedor: formGasto.proveedor || null,
+      comprobante: formGasto.comprobante || null,
+      forma_pago: formaPago,
+      es_paralelo: formGasto.es_paralelo,
+      caja_oficial_id,
+      caja_paralela_id,
+      registrado_por: usuario?.id,
+    })
+
     await cargar()
     setShowFormGasto(false)
-    setFormGasto({ categoria: 'Combustible', descripcion: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', comprobante: '' })
+    setFormGasto({ actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', comprobante: '', forma_pago: 'transferencia', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' })
     setGuardando(false)
   }
 
-  async function eliminarGasto(tabla, id) {
-    if (!confirm('¿Eliminar este registro?')) return
+  async function eliminarGasto(tabla, id, caja_oficial_id, caja_paralela_id) {
+    if (!confirm('¿Eliminar este registro? Se eliminará también de la caja.')) return
+    if (caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', caja_oficial_id)
+    if (caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', caja_paralela_id)
     await supabase.from(tabla).delete().eq('id', id)
     await cargar()
   }
@@ -764,7 +826,7 @@ export default function Administrativo({ usuario }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Gastos generales</div>
-              <div style={{ fontSize: 12, color: S.muted }}>Total este año: <strong style={{ color: S.red }}>${totalGastosGeneralesAnio.toLocaleString('es-AR')}</strong></div>
+              <div style={{ fontSize: 12, color: S.muted }}>Total este año: <strong style={{ color: S.red }}>${gastosGenerales.filter(g => new Date(g.fecha).getFullYear() === new Date().getFullYear()).reduce((s, g) => s + (g.monto || 0), 0).toLocaleString('es-AR')}</strong></div>
             </div>
             <button onClick={() => setShowFormGasto(!showFormGasto)}
               style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -772,28 +834,33 @@ export default function Administrativo({ usuario }) {
             </button>
           </div>
 
-          {/* Resumen por categoría */}
+          {/* Resumen por actividad */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
-            {CATEGORIAS_GASTO_GENERAL.slice(0, 8).map(cat => {
-              const total = gastosGenerales.filter(g => g.categoria === cat && new Date(g.fecha).getFullYear() === new Date().getFullYear()).reduce((s, g) => s + (g.monto || 0), 0)
-              if (total === 0) return null
+            {Object.keys(CATEGORIAS_GASTO).map(act => {
+              const total = gastosGenerales.filter(g => g.actividad === act && new Date(g.fecha).getFullYear() === new Date().getFullYear()).reduce((s, g) => s + (g.monto || 0), 0)
               return (
-                <div key={cat} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem' }}>
-                  <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{cat}</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.red }}>${total.toLocaleString('es-AR')}</div>
+                <div key={act} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem' }}>
+                  <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{act}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: total > 0 ? S.red : S.hint }}>{total > 0 ? `$${total.toLocaleString('es-AR')}` : '—'}</div>
                 </div>
               )
-            }).filter(Boolean)}
+            })}
           </div>
 
           {showFormGasto && (
             <Card>
-              <SectionTitle>Nuevo gasto general</SectionTitle>
+              <SectionTitle>Nuevo gasto</SectionTitle>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
+                <div>
+                  <Label>Actividad</Label>
+                  <select value={formGasto.actividad} onChange={e => setFormGasto({...formGasto, actividad: e.target.value, categoria: CATEGORIAS_GASTO[e.target.value][0]})} style={inputStyle}>
+                    {Object.keys(CATEGORIAS_GASTO).map(a => <option key={a}>{a}</option>)}
+                  </select>
+                </div>
                 <div>
                   <Label>Categoría</Label>
                   <select value={formGasto.categoria} onChange={e => setFormGasto({...formGasto, categoria: e.target.value})} style={inputStyle}>
-                    {CATEGORIAS_GASTO_GENERAL.map(c => <option key={c}>{c}</option>)}
+                    {(CATEGORIAS_GASTO[formGasto.actividad] || []).map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
@@ -816,11 +883,75 @@ export default function Administrativo({ usuario }) {
                   <Label>N° comprobante</Label>
                   <input type="text" value={formGasto.comprobante} onChange={e => setFormGasto({...formGasto, comprobante: e.target.value})} style={inputStyle} />
                 </div>
+                <div>
+                  <Label>Forma de pago</Label>
+                  <select value={formGasto.forma_pago} onChange={e => setFormGasto({...formGasto, forma_pago: e.target.value, subtipo_cheque: ''})} style={inputStyle}>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="e-cheq">E-cheq</option>
+                    <option value="cuenta_corriente">Cuenta corriente</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: S.purple, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={formGasto.es_paralelo} onChange={e => setFormGasto({...formGasto, es_paralelo: e.target.checked})} />
+                    Pago paralelo
+                  </label>
+                </div>
               </div>
+
+              {((formGasto.forma_pago === 'e-cheq' && !formGasto.es_paralelo) || formGasto.es_paralelo) && (
+                <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>
+                    {formGasto.es_paralelo ? 'Cheque de tercero (paralelo)' : 'Tipo de e-cheq'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: formGasto.subtipo_cheque ? 12 : 0 }}>
+                    {(!formGasto.es_paralelo ? ['propio', 'tercero'] : ['tercero']).map(t => (
+                      <button key={t} onClick={() => setFormGasto({...formGasto, subtipo_cheque: formGasto.subtipo_cheque === t ? '' : t})}
+                        style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", border: `1px solid ${formGasto.subtipo_cheque === t ? S.accent : S.border}`, background: formGasto.subtipo_cheque === t ? S.accentLight : 'transparent', color: formGasto.subtipo_cheque === t ? S.accent : S.muted }}>
+                        {t === 'propio' ? '📤 E-cheq propio' : '📥 E-cheq de tercero'}
+                      </button>
+                    ))}
+                  </div>
+                  {formGasto.subtipo_cheque === 'propio' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 10 }}>
+                      <div>
+                        <Label>N° cheque</Label>
+                        <input type="text" value={formGasto.cheque_propio.numero} onChange={e => setFormGasto({...formGasto, cheque_propio: {...formGasto.cheque_propio, numero: e.target.value}})} style={inputStyle} />
+                      </div>
+                      <div>
+                        <Label>Banco</Label>
+                        <input type="text" value={formGasto.cheque_propio.banco} onChange={e => setFormGasto({...formGasto, cheque_propio: {...formGasto.cheque_propio, banco: e.target.value}})} style={inputStyle} />
+                      </div>
+                      <div>
+                        <Label>Fecha vencimiento *</Label>
+                        <input type="date" value={formGasto.cheque_propio.fecha_vencimiento} onChange={e => setFormGasto({...formGasto, cheque_propio: {...formGasto.cheque_propio, fecha_vencimiento: e.target.value}})} style={{ ...inputStyle, borderColor: S.amber }} />
+                      </div>
+                    </div>
+                  )}
+                  {formGasto.subtipo_cheque === 'tercero' && (
+                    <div style={{ marginTop: 10 }}>
+                      {chequesCartera.length === 0
+                        ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques de terceros en cartera.</div>
+                        : chequesCartera.map(ch => (
+                          <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${formGasto.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: formGasto.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 6 }}>
+                            <input type="radio" name="cheque_gasto" value={ch.id} checked={formGasto.cheque_tercero_id === String(ch.id)} onChange={() => setFormGasto({...formGasto, cheque_tercero_id: String(ch.id)})} />
+                            <div style={{ fontSize: 13 }}>
+                              <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
+                              <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span>
+                            </div>
+                          </label>
+                        ))
+                      }
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowFormGasto(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                 <button onClick={guardarGasto} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                  {guardando ? 'Guardando...' : 'Guardar'}
+                  {guardando ? 'Guardando...' : 'Guardar y registrar en caja'}
                 </button>
               </div>
             </Card>
@@ -828,26 +959,32 @@ export default function Administrativo({ usuario }) {
 
           <Card>
             <SectionTitle>Historial</SectionTitle>
-            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
                 <thead>
                   <tr style={{ background: S.bg }}>
-                    {['Fecha', 'Categoría', 'Descripción', 'Proveedor', 'Comprobante', 'Monto', ''].map(h => (
-                      <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                    {['Fecha', 'Actividad', 'Categoría', 'Descripción', 'Proveedor', 'Pago', 'Monto', ''].map(h => (
+                      <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {gastosGenerales.length === 0 && <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay gastos registrados.</td></tr>}
+                  {gastosGenerales.length === 0 && <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay gastos registrados.</td></tr>}
                   {gastosGenerales.map(g => (
                     <tr key={g.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(g.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(g.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{g.actividad || '—'}</span></td>
                       <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber }}>{g.categoria}</span></td>
                       <td style={{ padding: '9px 12px', color: S.muted }}>{g.descripcion || '—'}</td>
                       <td style={{ padding: '9px 12px', color: S.muted }}>{g.proveedor || '—'}</td>
-                      <td style={{ padding: '9px 12px', color: S.muted, fontFamily: 'monospace', fontSize: 12 }}>{g.comprobante || '—'}</td>
+                      <td style={{ padding: '9px 12px', fontSize: 11 }}>{g.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Paralelo</span> : g.forma_pago || '—'}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${g.monto?.toLocaleString('es-AR')}</td>
-                      <td style={{ padding: '9px 12px' }}><button onClick={() => eliminarGasto('gastos_generales', g.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <button onClick={() => eliminarGasto('gastos_generales', g.id, g.caja_oficial_id, g.caja_paralela_id)}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                          Eliminar
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
