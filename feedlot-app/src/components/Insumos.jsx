@@ -801,7 +801,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
                   <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
                     <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Tipo de e-cheq</div>
                     <div style={{ display: 'flex', gap: 8, marginBottom: esCheque ? 10 : 0 }}>
-                      {(ep.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
+                      {(ep.es_paralelo ? ['tercero'] : ['propio']).map(t => (
                         <button key={t} onClick={() => setEditando({ ...editando, [ing.id]: { ...ep, subtipo_cheque: ep.subtipo_cheque === t ? '' : t } })}
                           style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", border: `1px solid ${ep.subtipo_cheque === t ? S.accent : S.border}`, background: ep.subtipo_cheque === t ? S.accentLight : 'transparent', color: ep.subtipo_cheque === t ? S.accent : S.muted }}>
                           {t === 'propio' ? '📤 E-cheq propio' : '📥 E-cheq de tercero'}
@@ -836,27 +836,29 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
                     {/* Cheq tercero: lista cheques en cartera */}
                     {ep.subtipo_cheque === 'tercero' && (
                       <div style={{ marginTop: 10 }}>
-                        {chequesCartera.length === 0
-                          ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques de terceros en cartera.</div>
-                          : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {chequesCartera.map(ch => (
-                                <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${ep.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: ep.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer' }}>
-                                  <input type="radio" name={`cheque_${ing.id}`} value={ch.id}
-                                    checked={ep.cheque_tercero_id === String(ch.id)}
-                                    onChange={() => setEditando({ ...editando, [ing.id]: { ...ep, cheque_tercero_id: String(ch.id) } })} />
-                                  <div style={{ fontSize: 13 }}>
-                                    <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
-                                    <span style={{ color: S.muted, marginLeft: 8 }}>
-                                      #{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
-                                      {ch.librador ? ` · ${ch.librador}` : ''}
-                                    </span>
-                                  </div>
-                                </label>
-                              ))}
-                            </div>
-                          )
-                        }
+                        {(() => {
+                          const lista = chequesCartera.filter(ch => ep.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
+                          return lista.length === 0
+                            ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {ep.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
+                            : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {lista.map(ch => (
+                                  <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${ep.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: ep.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer' }}>
+                                    <input type="radio" name={`cheque_${ing.id}`} value={ch.id}
+                                      checked={ep.cheque_tercero_id === String(ch.id)}
+                                      onChange={() => setEditando({ ...editando, [ing.id]: { ...ep, cheque_tercero_id: String(ch.id) } })} />
+                                    <div style={{ fontSize: 13 }}>
+                                      <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
+                                      <span style={{ color: S.muted, marginLeft: 8 }}>
+                                        #{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                                        {ch.librador ? ` · ${ch.librador}` : ''}
+                                      </span>
+                                    </div>
+                                  </label>
+                                ))}
+                              </div>
+                            )
+                        })()}
                       </div>
                     )}
                   </div>

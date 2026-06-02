@@ -255,7 +255,7 @@ export default function Gastos({ usuario }) {
                 Tipo de e-cheq
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: form.subtipo_cheque ? 12 : 0 }}>
-                {(form.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
+                {(form.es_paralelo ? ['tercero'] : ['propio']).map(t => (
                   <button key={t} onClick={() => setForm({...form, subtipo_cheque: form.subtipo_cheque === t ? '' : t})}
                     style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", border: `1px solid ${form.subtipo_cheque === t ? S.accent : S.border}`, background: form.subtipo_cheque === t ? S.accentLight : 'transparent', color: form.subtipo_cheque === t ? S.accent : S.muted }}>
                     {t === 'propio' ? '📤 E-cheq propio' : '📥 E-cheq de tercero'}
@@ -280,9 +280,11 @@ export default function Gastos({ usuario }) {
               )}
               {form.subtipo_cheque === 'tercero' && (
                 <div style={{ marginTop: 10 }}>
-                  {chequesCartera.length === 0
-                    ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques de terceros en cartera.</div>
-                    : chequesCartera.map(ch => (
+                  {(() => {
+                    const lista = chequesCartera.filter(ch => form.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
+                    return lista.length === 0
+                      ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques de terceros en cartera {form.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
+                      : lista.map(ch => (
                       <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${form.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: form.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 6 }}>
                         <input type="radio" name="cheque_gasto" value={ch.id} checked={form.cheque_tercero_id === String(ch.id)} onChange={() => setForm({...form, cheque_tercero_id: String(ch.id)})} />
                         <div style={{ fontSize: 13 }}>
@@ -291,7 +293,7 @@ export default function Gastos({ usuario }) {
                         </div>
                       </label>
                     ))
-                  }
+                  })()}
                 </div>
               )}
             </div>
