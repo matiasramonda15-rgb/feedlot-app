@@ -64,7 +64,7 @@ export default function Agricultura({ usuario }) {
       supabase.from('campos').select('*, lotes_agricolas(*)').order('nombre'),
       supabase.from('campanas').select('*').order('año_inicio', { ascending: false }),
       supabase.from('plan_cultivos').select('*, campos(nombre), lotes_agricolas(numero), campanas(nombre)').order('creado_en', { ascending: false }),
-      supabase.from('ordenes_trabajo').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
+      supabase.from('ordenes_trabajo').select('*, campos(nombre, superficie_ha, lotes_agricolas(*)), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('cosechas').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('ventas_granos').select('*').order('fecha', { ascending: false }),
       supabase.from('gastos_agro').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
@@ -538,7 +538,7 @@ const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, su
 
 function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
-  const superficie = lote?.superficie_ha || campo?.superficie_ha || '—'
+  const superficie = orden.superficie_ha_real || lote?.superficie_ha || campo?.superficie_ha || '—'
   const productos = orden.productos || []
 
   const filasProductos = productos.map(p => {
@@ -592,14 +592,6 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
         <tbody>${filasProductos}</tbody>
       </table>` : '<div style="color:#999;font-size:13px;">Sin productos asignados.</div>'}
       ${orden.observaciones ? `<div style="margin-top:16px;padding:10px 14px;background:#f9f9f9;border-radius:6px;font-size:13px;color:#555;">${orden.observaciones}</div>` : ''}
-      <div style="margin-top:30px;display:flex;justify-content:space-between;padding-top:16px;border-top:1px solid #ddd;">
-        <div style="text-align:center;width:45%;">
-          <div style="border-top:1px solid #333;padding-top:6px;font-size:12px;color:#555;">Firma operario</div>
-        </div>
-        <div style="text-align:center;width:45%;">
-          <div style="border-top:1px solid #333;padding-top:6px;font-size:12px;color:#555;">Firma Ramonda</div>
-        </div>
-      </div>
     </div>
     <!-- Footer -->
     <div style="text-align:right;font-size:10px;color:#aaa;margin-top:8px;">RAMONDA HNOS S.A. · Pedro Barciocco 1221 · TEL: 3574-442656</div>
@@ -814,7 +806,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0],
-    descripcion: '', proveedor: '', es_propia: false, lote_id: '',
+    descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '',
     productos: [], gastos_propios: [],
     costo_total: '', costo_ha: '', observaciones: '',
   })
@@ -836,7 +828,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
   const campo = campos.find(c => c.id === parseInt(form.campo_id))
   const loteSeleccionado = campo?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
-  const superficie = loteSeleccionado?.superficie_ha || campo?.superficie_ha || 0
+  const superficieBase = loteSeleccionado?.superficie_ha || campo?.superficie_ha || 0
+  const superficie = parseFloat(form.superficie_ha) || superficieBase || 0
 
   function addProducto() { setForm({...form, productos: [...form.productos, { id: '', dosis: '', unidad: '' }]}) }
   function updProducto(idx, key, val) { setForm({...form, productos: form.productos.map((p, i) => i === idx ? {...p, [key]: val} : p)}) }
@@ -860,19 +853,20 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       caja_oficial_id = co?.id || null
     }
 
-    // Descontar stock de productos usados
+    // Descontar stock de productos usados — query fresco para tener cantidad actual
     for (const p of form.productos) {
       if (!p.id || !p.dosis || !superficie) continue
-      const item = stockAgro.find(s => s.id === parseInt(p.id))
-      if (item) {
+      const { data: itemFresh } = await supabase.from('stock_agro').select('id, cantidad').eq('id', parseInt(p.id)).single()
+      if (itemFresh) {
         const usado = parseFloat(p.dosis) * superficie
-        await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - usado), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+        await supabase.from('stock_agro').update({ cantidad: Math.max(0, (itemFresh.cantidad || 0) - usado), actualizado_en: new Date().toISOString() }).eq('id', itemFresh.id)
       }
     }
 
     await supabase.from('ordenes_trabajo').insert({
       campo_id: parseInt(form.campo_id), campana_id: parseInt(form.campana_id) || null,
       lote_id: form.lote_id ? parseInt(form.lote_id) : null,
+      superficie_ha_real: superficie || null,
       tipo: form.tipo, fecha: form.fecha, descripcion: form.descripcion || null,
       proveedor: form.proveedor || null, es_propia: form.es_propia,
       productos: form.productos.length ? form.productos : null,
@@ -885,7 +879,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
     await cargar()
     setShowForm(false)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -943,7 +937,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (filtroCampo && o.campo_id !== parseInt(filtroCampo)) return false
     return true
   })
-  const pendientes = ordenes.filter(o => !o.es_propia && o.estado_pago === 'pendiente' && o.costo_total)
+  const pendientes = ordenes.filter(o => !o.es_propia && o.estado_pago === 'pendiente')
   const totalSelec = seleccionadas.reduce((s, id) => { const o = pendientes.find(x => x.id === id); return s + (o?.costo_total || 0) }, 0)
   const totalPagoGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
 
@@ -985,12 +979,16 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           {showForm && (
             <Card titulo="Nueva orden de trabajo">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
-                <div><Label>Campo *</Label><select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value, lote_id: ''})} style={inputStyle}><option value="">— Seleccioná —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.superficie_ha} ha)</option>)}</select></div>
+                <div><Label>Campo *</Label><select value={form.campo_id} onChange={e => { const c = campos.find(x => x.id === parseInt(e.target.value)); setForm({...form, campo_id: e.target.value, lote_id: '', superficie_ha: c?.superficie_ha ? String(c.superficie_ha) : ''}) }} style={inputStyle}><option value="">— Seleccioná —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.superficie_ha} ha)</option>)}</select></div>
                 <div><Label>Lote</Label>
-                  <select value={form.lote_id} onChange={e => setForm({...form, lote_id: e.target.value})} style={inputStyle}>
+                  <select value={form.lote_id} onChange={e => { const l = campo?.lotes_agricolas?.find(x => x.id === parseInt(e.target.value)); setForm({...form, lote_id: e.target.value, superficie_ha: l?.superficie_ha ? String(l.superficie_ha) : (campo?.superficie_ha ? String(campo.superficie_ha) : '')}) }} style={inputStyle}>
                     <option value="">— Todo el campo —</option>
-                    {(campos.find(c => c.id === parseInt(form.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
+                    {(campo?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
                   </select>
+                </div>
+                <div>
+                  <Label>Hectáreas a trabajar</Label>
+                  <input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} placeholder={String(superficieBase || '')} />
                 </div>
                 <div><Label>Campaña</Label><select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
                 <div><Label>Tipo de trabajo *</Label><select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS_ORDEN.map(t => <option key={t}>{t}</option>)}</select></div>
@@ -1086,7 +1084,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 {ordenesFiltradas.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay órdenes registradas.</td></tr>}
                 {ordenesFiltradas.map(o => {
                   const campoO = campos.find(c => c.id === o.campo_id)
-                  const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+                  const loteO = (o.campos?.lotes_agricolas || campoO?.lotes_agricolas || []).find(l => l.id === o.lote_id)
                   return (
                     <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
@@ -1143,7 +1141,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: '1.5rem' }}>
                 {pendientes.map(o => {
                   const campoO = campos.find(c => c.id === o.campo_id)
-                  const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+                  const loteO = (o.campos?.lotes_agricolas || campoO?.lotes_agricolas || []).find(l => l.id === o.lote_id)
                   return (
                     <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', border: `1px solid ${seleccionadas.includes(o.id) ? S.accent : S.border}`, borderRadius: 8, background: seleccionadas.includes(o.id) ? S.accentLight : S.surface, cursor: 'pointer' }}>
                       <input type="checkbox" checked={seleccionadas.includes(o.id)} onChange={e => setSeleccionadas(e.target.checked ? [...seleccionadas, o.id] : seleccionadas.filter(id => id !== o.id))} />
