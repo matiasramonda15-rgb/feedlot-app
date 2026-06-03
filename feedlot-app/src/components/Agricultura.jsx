@@ -695,9 +695,6 @@ function generarReciboOrden(orden, campo, lote, campana, stockAgro) {
 }
 
 
-const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
-const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
-
 function generarRemitoOrden(orden, campo, campana, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const superficie = campo?.superficie_ha || '—'
