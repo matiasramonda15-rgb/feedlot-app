@@ -81,8 +81,8 @@ export default function Ventas({ usuario }) {
     setVentas(v || [])
     setLotes(l || [])
     setCorrales(c || [])
-    // Cargar compradores desde todos los contactos activos + ventas anteriores
-    const { data: contactosData } = await supabase.from('contactos').select('nombre').eq('activo', true)
+    // Cargar compradores desde contactos + ventas anteriores
+    const { data: contactosData } = await supabase.from('contactos').select('nombre').eq('activo', true).in('tipo', ['comprador_hacienda', 'otro'])
     const nombresContactos = (contactosData || []).map(c => c.nombre)
     const nombresVentas = [...new Set((v || []).map(x => x.comprador).filter(Boolean))]
     const comps = [...new Set([...nombresContactos, ...nombresVentas])].sort()
@@ -1091,7 +1091,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_total_con_iva: v0.monto_total_con_iva || '', comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), monto_facturado: v0.monto_facturado_grupo ? String(v0.monto_facturado_grupo) : (v0.monto_facturado ? String(v0.monto_facturado) : ''), monto_total_con_iva: v0.monto_total_grupo ? String(v0.monto_total_grupo) : (v0.monto_total_con_iva || ''), iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comision_pct: v0.comision_pct || '', comision_monto_input: v0.comision_monto ? String(v0.comision_monto) : '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false })}
+                              <button onClick={() => setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_total_con_iva: v0.monto_total_grupo ? String(v0.monto_total_grupo) : (v0.monto_total_con_iva || ''), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), monto_facturado: v0.monto_facturado_grupo ? String(v0.monto_facturado_grupo) : (v0.monto_facturado ? String(v0.monto_facturado) : ''), iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comision_pct: v0.comision_pct || '', comision_monto_input: v0.comision_monto ? String(v0.comision_monto) : '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 Editar
                               </button>

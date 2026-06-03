@@ -517,10 +517,6 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
                     <td style={{ padding: '8px 12px', color: S.muted }}>{p.variedad || '—'}</td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        {i.pagos_detalle && i.estado_pago === 'pagado' && (
-                          <button onClick={() => generarReciboAgro(i, i.pagos_detalle, stock)}
-                            style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>
-                        )}
                         <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('plan_cultivos').delete().eq('id', p.id); cargarPlanes(campanaVista) }}
                         style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                     </td>
