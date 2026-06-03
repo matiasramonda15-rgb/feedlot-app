@@ -2425,18 +2425,23 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
                       : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
-                    <button onClick={async () => {
-                      if (!confirm('¿Eliminar esta compra? Se eliminará de la caja.')) return
-                      if (i.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
-                      if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
-                      const item = stock.find(s => s.id === i.agroquimico_id)
-                      if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - (i.cantidad || 0)), actualizado_en: new Date().toISOString() }).eq('id', item.id)
-                      await supabase.from('ingresos_agroquimicos').delete().eq('id', i.id)
-                      await cargar()
-                    }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
-                      Eliminar
-                    </button>
-                  </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {i.pagos_detalle && i.estado_pago === 'pagado' && (
+                        <button onClick={() => generarReciboAgro(i, i.pagos_detalle, stock)}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>
+                      )}
+                      <button onClick={async () => {
+                        if (!confirm('¿Eliminar esta compra? Se eliminará de la caja.')) return
+                        if (i.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
+                        if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
+                        const item = stock.find(s => s.id === i.agroquimico_id)
+                        if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - (i.cantidad || 0)), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                        await supabase.from('ingresos_agroquimicos').delete().eq('id', i.id)
+                        await cargar()
+                      }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                        Eliminar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
