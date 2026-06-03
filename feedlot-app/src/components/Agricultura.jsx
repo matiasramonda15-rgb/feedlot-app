@@ -43,6 +43,8 @@ export default function Agricultura({ usuario }) {
   const [ventasGranos, setVentasGranos] = useState([])
   const [gastosAgro, setGastosAgro] = useState([])
   const [stockAgro, setStockAgro] = useState([])
+  const [ingresosAgro, setIngresosAgro] = useState([])
+  const [contactos, setContactos] = useState([])
 
   // UI states
   const [showForm, setShowForm] = useState(false)
@@ -56,7 +58,8 @@ export default function Agricultura({ usuario }) {
     setLoading(true)
     const [
       { data: c }, { data: ca }, { data: pl }, { data: or },
-      { data: co }, { data: vg }, { data: ga }, { data: sa }
+      { data: co }, { data: vg }, { data: ga }, { data: sa },
+      { data: ia }, { data: ct }
     ] = await Promise.all([
       supabase.from('campos').select('*, lotes_agricolas(*)').order('nombre'),
       supabase.from('campanas').select('*').order('año_inicio', { ascending: false }),
@@ -66,6 +69,8 @@ export default function Agricultura({ usuario }) {
       supabase.from('ventas_granos').select('*').order('fecha', { ascending: false }),
       supabase.from('gastos_agro').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('stock_agro').select('*').order('insumo'),
+      supabase.from('ingresos_agroquimicos').select('*, stock_agro(insumo, unidad)').order('fecha', { ascending: false }).limit(200),
+      supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
     ])
     setCampos(c || [])
     setCampanas(ca || [])
@@ -75,6 +80,8 @@ export default function Agricultura({ usuario }) {
     setVentasGranos(vg || [])
     setGastosAgro(ga || [])
     setStockAgro(sa || [])
+    setIngresosAgro(ia || [])
+    setContactos(ct || [])
     const activa = (ca || []).find(c => c.activa)
     if (activa) setCampanaActiva(activa)
     setLoading(false)
@@ -145,7 +152,7 @@ export default function Agricultura({ usuario }) {
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} />}
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
-      {tab === 'stock' && <TabStockAgro stock={stockAgro} cargar={cargar} />}
+      {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} />}
     </div>
   )
 }
@@ -1224,43 +1231,131 @@ function TabArriendos({ campos, cargar }) {
     </div>
   )
 }
-function TabStockAgro({ stock, cargar }) {
+const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+
+function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
+  const [tab, setTab] = useState('stock')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', precio_referencia: '', minimo_stock: '' })
-  const [editando, setEditando] = useState(null)
+  const [editandoStock, setEditandoStock] = useState(null)
+  const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '' })
+  const [showFormCompra, setShowFormCompra] = useState(false)
   const [guardando, setGuardando] = useState(false)
+  const [chequesCartera, setChequesCartera] = useState([])
+  const [formCompra, setFormCompra] = useState({
+    agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '',
+    fecha: new Date().toISOString().split('T')[0], proveedor: '',
+    domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
+    numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }],
+  })
 
   const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Otro']
   const UNIDADES = ['litros', 'kg', 'bolsas', 'unidades']
 
-  async function guardar() {
-    if (!form.insumo) { alert('Ingresá el nombre del insumo'); return }
+  useEffect(() => {
+    supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true })
+      .then(({ data }) => setChequesCartera(data || []))
+  }, [])
+
+  async function guardarStock() {
+    if (!formStock.insumo) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    const data = { insumo: form.insumo, tipo: form.tipo || null, cantidad: parseFloat(form.cantidad) || 0, unidad: form.unidad, precio_referencia: parseFloat(form.precio_referencia) || null, minimo_stock: parseFloat(form.minimo_stock) || 0, actualizado_en: new Date().toISOString() }
-    if (editando) {
-      await supabase.from('stock_agro').update(data).eq('id', editando)
-    } else {
-      await supabase.from('stock_agro').insert(data)
-    }
+    const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, actualizado_en: new Date().toISOString() }
+    if (editandoStock) await supabase.from('stock_agro').update(data).eq('id', editandoStock)
+    else await supabase.from('stock_agro').insert(data)
     await cargar()
-    setShowForm(false)
-    setEditando(null)
-    setForm({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', precio_referencia: '', minimo_stock: '' })
+    setShowForm(false); setEditandoStock(null)
+    setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '' })
     setGuardando(false)
   }
 
+  async function guardarCompra() {
+    if (!formCompra.agroquimico_id || !formCompra.cantidad || !formCompra.precio_unitario) { alert('Completá insumo, cantidad y precio'); return }
+    const cantidad = parseFloat(formCompra.cantidad)
+    const precioUnit = parseFloat(formCompra.precio_unitario)
+    const total = formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit)
+    const totalPagos = formCompra.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+    if (Math.abs(total - totalPagos) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`); return }
+    setGuardando(true)
+
+    let caja_oficial_id = null, caja_paralela_id = null
+    const desc = `Compra ${formCompra.insumo_nombre}${formCompra.proveedor ? ` — ${formCompra.proveedor}` : ''}`
+
+    for (const pago of formCompra.pagos) {
+      const monto = parseFloat(pago.monto) || 0
+      if (!monto) continue
+      const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      if (pago.es_paralelo) {
+        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formCompra.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+        if (!caja_paralela_id) caja_paralela_id = cp?.id || null
+      } else {
+        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formCompra.fecha, tipo: 'egreso', categoria: 'Compra agroquímicos', descripcion: desc, monto, forma_pago: formaPago }).select().single()
+        if (!caja_oficial_id) caja_oficial_id = co?.id || null
+      }
+      if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
+        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formCompra.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: formCompra.proveedor || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
+        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+      }
+    }
+
+    await supabase.from('ingresos_agroquimicos').insert({
+      agroquimico_id: parseInt(formCompra.agroquimico_id), cantidad, precio_unitario: precioUnit, total,
+      proveedor: formCompra.proveedor || null, domicilio: formCompra.domicilio || null, localidad: formCompra.localidad || null,
+      cuit: formCompra.cuit || null, iva: formCompra.iva || null, cbu: formCompra.cbu || null,
+      numero_factura: formCompra.numero_factura || null, observaciones: formCompra.observaciones || null,
+      forma_pago: formCompra.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
+      es_paralelo: formCompra.pagos.some(p => p.es_paralelo),
+      pagos_detalle: formCompra.pagos, fecha: formCompra.fecha,
+      caja_oficial_id, caja_paralela_id, registrado_por: usuario?.id,
+    })
+
+    // Actualizar stock
+    const item = stock.find(s => s.id === parseInt(formCompra.agroquimico_id))
+    if (item) {
+      await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + cantidad, precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+    }
+
+    setShowFormCompra(false)
+    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }] })
+    setGuardando(false)
+    await cargar()
+  }
+
+  const sinPrecio = ingresos.filter(i => !i.precio_unitario || i.precio_unitario === 0)
   const stockBajo = stock.filter(s => s.minimo_stock > 0 && s.cantidad <= s.minimo_stock)
 
   return (
     <div>
+      {/* Tabs internos */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Stock agroquímicos e insumos</div>
-        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', precio_referencia: '', minimo_stock: '' }) }}
-          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-          + Agregar insumo
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[{ key: 'stock', label: 'Stock' }, { key: 'historial', label: 'Historial de compras' }].map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              style={{ padding: '7px 14px', fontSize: 13, fontWeight: tab === t.key ? 600 : 400, cursor: 'pointer', color: tab === t.key ? S.accent : S.muted, background: tab === t.key ? S.accentLight : 'transparent', border: `1px solid ${tab === t.key ? S.accent : S.border}`, borderRadius: 6, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => { setShowFormCompra(!showFormCompra); setShowForm(false) }}
+            style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            + Registrar compra
+          </button>
+          <button onClick={() => { setShowForm(!showForm); setShowFormCompra(false); setEditandoStock(null); setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '' }) }}
+            style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            + Nuevo insumo
+          </button>
+        </div>
       </div>
 
+      {/* Banner sin precio */}
+      {sinPrecio.length > 0 && (
+        <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '1rem', marginBottom: '1rem', fontSize: 13, color: S.amber }}>
+          ⚠ {sinPrecio.length} ingreso{sinPrecio.length !== 1 ? 's' : ''} sin precio — registrá la compra para asignarlo
+        </div>
+      )}
+
+      {/* Stock bajo */}
       {stockBajo.length > 0 && (
         <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: S.red, marginBottom: 4 }}>⚠ Stock bajo</div>
@@ -1268,54 +1363,235 @@ function TabStockAgro({ stock, cargar }) {
         </div>
       )}
 
+      {/* Form nuevo insumo */}
       {showForm && (
-        <Card titulo={editando ? 'Editar insumo' : 'Nuevo insumo'}>
+        <Card titulo={editandoStock ? 'Editar insumo' : 'Nuevo insumo'}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
-            <div><Label>Nombre *</Label><input type="text" value={form.insumo} onChange={e => setForm({...form, insumo: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Tipo</Label><select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select></div>
-            <div><Label>Unidad</Label><select value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})} style={inputStyle}>{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
-            <div><Label>Cantidad en stock</Label><input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Precio referencia</Label><input type="number" value={form.precio_referencia} onChange={e => setForm({...form, precio_referencia: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Stock mínimo alerta</Label><input type="number" value={form.minimo_stock} onChange={e => setForm({...form, minimo_stock: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Nombre *</Label><input type="text" value={formStock.insumo} onChange={e => setFormStock({...formStock, insumo: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Tipo</Label><select value={formStock.tipo} onChange={e => setFormStock({...formStock, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select></div>
+            <div><Label>Unidad</Label><select value={formStock.unidad} onChange={e => setFormStock({...formStock, unidad: e.target.value})} style={inputStyle}>{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
+            <div><Label>Cantidad inicial</Label><input type="number" value={formStock.cantidad} onChange={e => setFormStock({...formStock, cantidad: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Stock mínimo alerta</Label><input type="number" value={formStock.minimo_stock} onChange={e => setFormStock({...formStock, minimo_stock: e.target.value})} style={inputStyle} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
-            <button onClick={() => { setShowForm(false); setEditando(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={guardarStock} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => { setShowForm(false); setEditandoStock(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
           </div>
         </Card>
       )}
 
-      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead><tr style={{ background: S.bg }}>
-            {['Insumo', 'Tipo', 'Stock', 'Unidad', 'Precio ref.', 'Mínimo', ''].map(h => (
-              <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+      {/* Form registrar compra */}
+      {showFormCompra && (
+        <Card titulo="Registrar compra">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <Label>Insumo *</Label>
+              <select value={formCompra.agroquimico_id} onChange={e => {
+                const item = stock.find(s => s.id === parseInt(e.target.value))
+                setFormCompra({...formCompra, agroquimico_id: e.target.value, insumo_nombre: item?.insumo || ''})
+              }} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {stock.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
+              </select>
+            </div>
+            <div><Label>Cantidad</Label><input type="number" value={formCompra.cantidad} onChange={e => { const c = e.target.value; const t = c && formCompra.precio_unitario ? String(Math.round(parseFloat(c) * parseFloat(formCompra.precio_unitario))) : formCompra.total; setFormCompra({...formCompra, cantidad: c, total: t}) }} style={inputStyle} /></div>
+            <div><Label>Precio unitario $</Label><input type="number" value={formCompra.precio_unitario} onChange={e => { const p = e.target.value; const t = p && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(p))) : formCompra.total; setFormCompra({...formCompra, precio_unitario: p, total: t}) }} style={inputStyle} /></div>
+            <div><Label>Total $</Label><input type="number" value={formCompra.total} onChange={e => setFormCompra({...formCompra, total: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Fecha</Label><input type="date" value={formCompra.fecha} onChange={e => setFormCompra({...formCompra, fecha: e.target.value})} style={inputStyle} /></div>
+            <div><Label>N° Factura</Label><input type="text" value={formCompra.numero_factura} onChange={e => setFormCompra({...formCompra, numero_factura: e.target.value})} style={inputStyle} /></div>
+          </div>
+
+          {/* Datos proveedor */}
+          <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Proveedor (para el recibo)</div>
+            <div style={{ marginBottom: 10 }}>
+              <Label>Seleccionar de contactos</Label>
+              <select onChange={e => { const ct = contactos.find(c => String(c.id) === e.target.value); if (ct) setFormCompra({...formCompra, proveedor: ct.nombre, cuit: ct.cuit || '', localidad: ct.localidad || '', iva: ct.iva || '', cbu: ct.cbu || ''}) }} style={inputStyle} defaultValue="">
+                <option value="">— Seleccionar contacto —</option>
+                {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              <div><Label>Nombre</Label><input type="text" value={formCompra.proveedor} onChange={e => setFormCompra({...formCompra, proveedor: e.target.value})} style={inputStyle} /></div>
+              <div><Label>Localidad</Label><input type="text" value={formCompra.localidad} onChange={e => setFormCompra({...formCompra, localidad: e.target.value})} style={inputStyle} /></div>
+              <div><Label>CUIT</Label><input type="text" value={formCompra.cuit} onChange={e => setFormCompra({...formCompra, cuit: e.target.value})} style={inputStyle} /></div>
+              <div><Label>Condición IVA</Label><input type="text" value={formCompra.iva} onChange={e => setFormCompra({...formCompra, iva: e.target.value})} style={inputStyle} /></div>
+              <div><Label>CBU</Label><input type="text" value={formCompra.cbu} onChange={e => setFormCompra({...formCompra, cbu: e.target.value})} style={inputStyle} /></div>
+            </div>
+          </div>
+
+          {/* Formas de pago */}
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
+              <button onClick={() => setFormCompra({...formCompra, pagos: [...formCompra.pagos, { ...PAGO_INIT_AGRO }]})}
+                style={{ padding: '4px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>+ Agregar</button>
+            </div>
+            {formCompra.pagos.map((pago, idx) => (
+              <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px', marginBottom: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 8 : 0 }}>
+                  <div>
+                    <Label>Forma de pago</Label>
+                    <select value={pago.tipo} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle}>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="efectivo">Efectivo</option>
+                      <option value="e-cheq">E-cheq</option>
+                      <option value="cuenta_corriente">Cuenta corriente</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Monto $</Label>
+                    <input type="number" value={pago.monto} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <input type="checkbox" checked={pago.es_paralelo} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormCompra({...formCompra, pagos: n}) }} />
+                      Paralelo
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                    {formCompra.pagos.length > 1 && (
+                      <button onClick={() => setFormCompra({...formCompra, pagos: formCompra.pagos.filter((_,i) => i!==idx)})}
+                        style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
+                    )}
+                  </div>
+                </div>
+                {pago.tipo === 'e-cheq' && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
+                      {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
+                        <button key={t} onClick={() => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque===t ? '' : t} : p); setFormCompra({...formCompra, pagos: n}) }}
+                          style={{ padding: '4px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque===t ? S.accent : S.border}`, background: pago.subtipo_cheque===t ? S.accentLight : 'transparent', color: pago.subtipo_cheque===t ? S.accent : S.muted }}>
+                          {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
+                        </button>
+                      ))}
+                    </div>
+                    {pago.subtipo_cheque === 'propio' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                        <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, numero: e.target.value}} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle} /></div>
+                        <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, banco: e.target.value}} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle} /></div>
+                        <div><Label>Vencimiento *</Label><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, fecha_vencimiento: e.target.value}} : p); setFormCompra({...formCompra, pagos: n}) }} style={{ ...inputStyle, borderColor: S.amber }} /></div>
+                      </div>
+                    )}
+                    {pago.subtipo_cheque === 'tercero' && (
+                      <div style={{ marginTop: 8 }}>
+                        {(() => {
+                          const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
+                          return lista.length === 0
+                            ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
+                            : lista.map(ch => (
+                              <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
+                                <input type="radio" name={`cheq_agro_${idx}`} value={ch.id} checked={pago.cheque_tercero_id === String(ch.id)} onChange={() => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: String(ch.id)} : p); setFormCompra({...formCompra, pagos: n}) }} />
+                                <div style={{ fontSize: 13 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong><span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span></div>
+                              </label>
+                            ))
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
-          </tr></thead>
-          <tbody>
-            {stock.length === 0 && <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay insumos cargados.</td></tr>}
-            {stock.map(s => {
-              const bajo = s.minimo_stock > 0 && s.cantidad <= s.minimo_stock
+            {formCompra.total && (() => {
+              const tp = formCompra.pagos.reduce((s,p) => s + (parseFloat(p.monto)||0), 0)
+              const t = parseFloat(formCompra.total) || 0
+              const dif = t - tp
               return (
-                <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}`, background: bajo ? '#FFF5F5' : 'transparent' }}>
-                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{s.insumo}</td>
-                  <td style={{ padding: '8px 12px' }}>{s.tipo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11 }}>{s.tipo}</span> : '—'}</td>
-                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: bajo ? S.red : S.text }}>{s.cantidad?.toLocaleString('es-AR')}</td>
-                  <td style={{ padding: '8px 12px', color: S.muted }}>{s.unidad}</td>
-                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}` : '—'}</td>
-                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{s.minimo_stock || '—'}</td>
-                  <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
-                    <button onClick={() => { setEditando(s.id); setForm({ insumo: s.insumo, tipo: s.tipo || '', cantidad: s.cantidad || '', unidad: s.unidad || 'litros', precio_referencia: s.precio_referencia || '', minimo_stock: s.minimo_stock || '' }); setShowForm(true) }}
-                      style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
-                    <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('stock_agro').delete().eq('id', s.id); cargar() }}
-                      style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                <div style={{ background: Math.abs(dif) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(dif) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13 }}>
+                  Total: <strong>${t.toLocaleString('es-AR')}</strong> · Pagos: <strong>${tp.toLocaleString('es-AR')}</strong>
+                  {Math.abs(dif) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${dif.toLocaleString('es-AR')}</span>}
+                </div>
+              )
+            })()}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardarCompra} disabled={guardando} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : '💾 Guardar compra'}</button>
+            <button onClick={() => setShowFormCompra(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      {/* TAB STOCK */}
+      {tab === 'stock' && (
+        <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ background: S.bg }}>
+              {['Insumo', 'Tipo', 'Stock', 'Unidad', 'Precio ref.', 'Mínimo', 'Estado', ''].map(h => (
+                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {stock.length === 0 && <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay insumos cargados.</td></tr>}
+              {stock.map(s => {
+                const bajo = s.minimo_stock > 0 && s.cantidad <= s.minimo_stock
+                return (
+                  <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}`, background: bajo ? S.redLight : 'transparent' }}>
+                    <td style={{ padding: '8px 12px', fontWeight: 600 }}>{s.insumo}</td>
+                    <td style={{ padding: '8px 12px' }}>{s.tipo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11 }}>{s.tipo}</span> : '—'}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: bajo ? S.red : S.green }}>{s.cantidad?.toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '8px 12px', color: S.muted }}>{s.unidad}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}` : '—'}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{s.minimo_stock || '—'}</td>
+                    <td style={{ padding: '8px 12px' }}>
+                      {bajo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.redLight, color: S.red, fontSize: 11, fontWeight: 600 }}>⚠ Stock bajo</span>
+                        : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11 }}>OK</span>}
+                    </td>
+                    <td style={{ padding: '8px 12px' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'' }); setShowForm(true); setShowFormCompra(false) }}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
+                        <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('stock_agro').delete().eq('id', s.id); cargar() }}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* TAB HISTORIAL */}
+      {tab === 'historial' && (
+        <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
+            <thead><tr style={{ background: S.bg }}>
+              {['Fecha', 'Insumo', 'Cantidad', 'Precio unit.', 'Total', 'Proveedor', 'Pago', ''].map(h => (
+                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {ingresos.length === 0 && <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay compras registradas.</td></tr>}
+              {ingresos.map(i => (
+                <tr key={i.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(i.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{i.stock_agro?.insumo || '—'}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{i.cantidad?.toLocaleString('es-AR')} {i.stock_agro?.unidad || ''}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{i.precio_unitario ? `$${i.precio_unitario.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{i.total ? `$${i.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}</td>
+                  <td style={{ padding: '8px 12px', color: S.muted }}>{i.proveedor || '—'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 11 }}>{i.es_paralelo ? <span style={{ color: '#3D1A6B', fontWeight: 600 }}>Paralelo</span> : i.forma_pago || '—'}</td>
+                  <td style={{ padding: '8px 12px' }}>
+                    <button onClick={async () => {
+                      if (!confirm('¿Eliminar esta compra? Se eliminará de la caja.')) return
+                      if (i.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
+                      if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
+                      const item = stock.find(s => s.id === i.agroquimico_id)
+                      if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - (i.cantidad || 0)), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                      await supabase.from('ingresos_agroquimicos').delete().eq('id', i.id)
+                      await cargar()
+                    }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                      Eliminar
+                    </button>
                   </td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
