@@ -160,6 +160,11 @@ export default function Agricultura({ usuario }) {
 // ── TAB CAMPOS ──
 function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   const [showForm, setShowForm] = useState(false)
+  const [pagarAhora, setPagarAhora] = useState(true)
+  const [showPagos, setShowPagos] = useState(false)
+  const [seleccionadas, setSeleccionadas] = useState([])
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', ubicacion: '' })
   const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
@@ -337,6 +342,11 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
 // ── TAB CAMPAÑAS ──
 function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar }) {
   const [showForm, setShowForm] = useState(false)
+  const [pagarAhora, setPagarAhora] = useState(true)
+  const [showPagos, setShowPagos] = useState(false)
+  const [seleccionadas, setSeleccionadas] = useState([])
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ nombre: '', año_inicio: new Date().getFullYear(), año_fin: new Date().getFullYear() + 1 })
   const [guardando, setGuardando] = useState(false)
   const [showPlanForm, setShowPlanForm] = useState(false)
@@ -592,6 +602,11 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 // ── TAB ÓRDENES DE TRABAJO ──
 function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario }) {
   const [showForm, setShowForm] = useState(false)
+  const [pagarAhora, setPagarAhora] = useState(true)
+  const [showPagos, setShowPagos] = useState(false)
+  const [seleccionadas, setSeleccionadas] = useState([])
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({
     campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0],
     descripcion: '', proveedor: '', es_propia: false,
@@ -648,7 +663,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     let caja_oficial_id = null, caja_paralela_id = null
     const desc = `${form.tipo} — ${campo?.nombre || ''}`
 
-    if (!form.es_propia && costoFinal) {
+    if (!form.es_propia && costoFinal && pagarAhora) {
       for (const pago of form.pagos) {
         const monto = parseFloat(pago.monto) || 0
         if (!monto) continue
@@ -696,11 +711,13 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       domicilio: form.domicilio || null, localidad: form.localidad || null,
       cuit: form.cuit || null, iva: form.iva || null, cbu: form.cbu || null,
       caja_oficial_id, caja_paralela_id, registrado_por: usuario?.id,
+      estado_pago: pagarAhora ? 'pagado' : 'pendiente',
     })
 
     await cargar()
     setShowForm(false)
     setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', pagos: [{ ...PAGO_INIT_ORDEN }] })
+    setPagarAhora(true)
     setGuardando(false)
   }
 
@@ -800,6 +817,19 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             </div>
           )}
 
+          {/* Toggle pagar ahora / pendiente */}
+          {!form.es_propia && (
+            <div style={{ display: 'flex', gap: 10, marginBottom: '1rem', alignItems: 'center' }}>
+              <div style={{ fontSize: 13, color: S.muted }}>Pago:</div>
+              {[{ v: true, l: '💳 Pagar ahora' }, { v: false, l: '⏳ Dejar pendiente' }].map(opt => (
+                <button key={String(opt.v)} onClick={() => setPagarAhora(opt.v)}
+                  style={{ padding: '7px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pagarAhora === opt.v ? S.accent : S.border}`, background: pagarAhora === opt.v ? S.accentLight : 'transparent', color: pagarAhora === opt.v ? S.accent : S.muted }}>
+                  {opt.l}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Costo y pago (contratista) */}
           {!form.es_propia && (
             <>
@@ -828,7 +858,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               </div>
 
               {/* Formas de pago */}
-              <div style={{ marginBottom: '1rem' }}>
+              {pagarAhora && <div style={{ marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
                   <button onClick={() => setForm({...form, pagos: [...form.pagos, { ...PAGO_INIT_ORDEN }]})} style={{ padding: '4px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>+ Agregar</button>
@@ -897,7 +927,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     {Math.abs(costoNum-totalPagos) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${(costoNum-totalPagos).toLocaleString('es-AR')}</span>}
                   </div>
                 )}
-              </div>
+              </div>}
             </>
           )}
 
@@ -907,6 +937,165 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           </div>
         </Card>
       )}
+
+      {/* Pagos pendientes */}
+      {(() => {
+        const pendientes = ordenesFiltradas.filter(o => !o.es_propia && o.estado_pago === 'pendiente' && o.costo_total)
+        if (pendientes.length === 0) return null
+        const totalSelec = seleccionadas.reduce((s, id) => {
+          const o = pendientes.find(x => x.id === id)
+          return s + (o?.costo_total || 0)
+        }, 0)
+        const totalPagoGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+
+        async function pagarSeleccionadas() {
+          if (seleccionadas.length === 0) { alert('Seleccioná al menos una orden'); return }
+          if (Math.abs(totalSelec - totalPagoGrupal) > 0.5) { alert(`El total de pagos ($${totalPagoGrupal.toLocaleString('es-AR')}) no coincide con el total seleccionado ($${totalSelec.toLocaleString('es-AR')})`); return }
+          setGuardandoPago(true)
+          let caja_oficial_id = null, caja_paralela_id = null
+          const provs = [...new Set(seleccionadas.map(id => pendientes.find(o => o.id === id)?.proveedor).filter(Boolean))].join(', ')
+          const desc = `Pago órdenes agricultura — ${provs || 'varios'}`
+          for (const pago of formPagoGrupal.pagos) {
+            const monto = parseFloat(pago.monto) || 0
+            if (!monto) continue
+            const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+            if (pago.es_paralelo) {
+              const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+              if (!caja_paralela_id) caja_paralela_id = cp?.id || null
+            } else {
+              const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Orden de trabajo agricultura', descripcion: desc, monto, forma_pago: formaPago }).select().single()
+              if (!caja_oficial_id) caja_oficial_id = co?.id || null
+            }
+            if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
+              await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+            } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
+              await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+            }
+          }
+          // Marcar órdenes como pagadas
+          for (const id of seleccionadas) {
+            await supabase.from('ordenes_trabajo').update({ estado_pago: 'pagado', caja_oficial_id, caja_paralela_id }).eq('id', id)
+          }
+          setSeleccionadas([])
+          setShowPagos(false)
+          setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+          setGuardandoPago(false)
+          await cargar()
+        }
+
+        return (
+          <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
+                ⏳ {pendientes.length} orden{pendientes.length !== 1 ? 'es' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} de pago · ${pendientes.reduce((s,o)=>s+(o.costo_total||0),0).toLocaleString('es-AR')} total
+              </div>
+              <button onClick={() => setShowPagos(!showPagos)}
+                style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.amber, border: `1px solid ${S.amber}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                {showPagos ? 'Cerrar' : 'Registrar pago'}
+              </button>
+            </div>
+
+            {/* Lista de pendientes con checkboxes */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: showPagos ? '1rem' : 0 }}>
+              {pendientes.map(o => (
+                <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${seleccionadas.includes(o.id) ? '#EF9F27' : S.border}`, borderRadius: 6, background: seleccionadas.includes(o.id) ? '#FFF8EC' : S.surface, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={seleccionadas.includes(o.id)} onChange={e => setSeleccionadas(e.target.checked ? [...seleccionadas, o.id] : seleccionadas.filter(id => id !== o.id))} />
+                  <div style={{ flex: 1, fontSize: 13 }}>
+                    <strong>{o.tipo}</strong>
+                    <span style={{ color: S.muted, marginLeft: 8 }}>{o.campos?.nombre} · {o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                    {o.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {o.proveedor}</span>}
+                  </div>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${o.costo_total?.toLocaleString('es-AR')}</span>
+                </label>
+              ))}
+            </div>
+
+            {showPagos && seleccionadas.length > 0 && (
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>
+                  Pagar {seleccionadas.length} orden{seleccionadas.length !== 1 ? 'es' : ''} · Total: <span style={{ fontFamily: 'monospace', color: S.red }}>${totalSelec.toLocaleString('es-AR')}</span>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <Label>Fecha de pago</Label>
+                  <input type="date" value={formPagoGrupal.fecha} onChange={e => setFormPagoGrupal({...formPagoGrupal, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
+                  <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: [...formPagoGrupal.pagos, { ...PAGO_INIT_ORDEN }]})} style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
+                </div>
+                {formPagoGrupal.pagos.map((pago, idx) => (
+                  <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: '8px', marginBottom: 6 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end' }}>
+                      <div><Label>Forma</Label>
+                        <select value={pago.tipo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle}>
+                          <option value="transferencia">Transferencia</option>
+                          <option value="efectivo">Efectivo</option>
+                          <option value="e-cheq">E-cheq</option>
+                          <option value="cuenta_corriente">Cuenta corriente</option>
+                        </select>
+                      </div>
+                      <div><Label>Monto $</Label>
+                        <input type="number" value={pago.monto} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={pago.es_paralelo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
+                          Paralelo
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                        {formPagoGrupal.pagos.length > 1 && <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: formPagoGrupal.pagos.filter((_,i)=>i!==idx)})} style={{ padding: '5px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
+                      </div>
+                    </div>
+                    {pago.tipo === 'e-cheq' && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
+                          {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
+                            <button key={t} onClick={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque===t?'':t} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
+                              style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque===t ? S.accent : S.border}`, background: pago.subtipo_cheque===t ? S.accentLight : 'transparent', color: pago.subtipo_cheque===t ? S.accent : S.muted }}>
+                              {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
+                            </button>
+                          ))}
+                        </div>
+                        {pago.subtipo_cheque === 'propio' && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                            <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, numero: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} /></div>
+                            <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, banco: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} /></div>
+                            <div><Label>Vencimiento</Label><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, fecha_vencimiento: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={{ ...inputStyle, borderColor: S.amber }} /></div>
+                          </div>
+                        )}
+                        {pago.subtipo_cheque === 'tercero' && (
+                          <div style={{ marginTop: 8 }}>
+                            {(() => {
+                              const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
+                              return lista.length === 0
+                                ? <div style={{ fontSize: 12, color: S.hint }}>No hay cheques en cartera.</div>
+                                : lista.map(ch => (
+                                  <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: `1px solid ${pago.cheque_tercero_id===String(ch.id) ? S.accent : S.border}`, borderRadius: 5, background: pago.cheque_tercero_id===String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 4 }}>
+                                    <input type="radio" name={`cheq_grp_${idx}`} value={ch.id} checked={pago.cheque_tercero_id===String(ch.id)} onChange={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: String(ch.id)} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
+                                    <span style={{ fontSize: 12 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong> · #{ch.numero||'sin nro'} · {ch.banco||'—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                                  </label>
+                                ))
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div style={{ background: Math.abs(totalSelec-totalPagoGrupal) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalSelec-totalPagoGrupal) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
+                  Total órdenes: <strong>${totalSelec.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagoGrupal.toLocaleString('es-AR')}</strong>
+                  {Math.abs(totalSelec-totalPagoGrupal) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${(totalSelec-totalPagoGrupal).toLocaleString('es-AR')}</span>}
+                </div>
+                <button onClick={pagarSeleccionadas} disabled={guardandoPago}
+                  style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                  {guardandoPago ? 'Registrando...' : `💾 Pagar ${seleccionadas.length} orden${seleccionadas.length !== 1 ? 'es' : ''}`}
+                </button>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 10, marginBottom: '1rem' }}>
@@ -927,7 +1116,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Campo', 'Tipo', 'Ejecución', 'Proveedor', 'Productos', 'Costo total', '$/ha', ''].map(h => (
+            {['Fecha', 'Campo', 'Tipo', 'Ejecución', 'Proveedor', 'Productos', 'Costo total', '$/ha', 'Pago', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr></thead>
@@ -946,6 +1135,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{o.productos?.length ? `${o.productos.length} prod.` : '—'}</td>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.red }}>{o.costo_total ? `$${o.costo_total.toLocaleString('es-AR')}` : '—'}</td>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{o.costo_ha ? `$${o.costo_ha.toLocaleString('es-AR')}` : '—'}</td>
+                  <td style={{ padding: '8px 12px' }}>
+                    {o.es_propia ? <span style={{ fontSize: 11, color: S.muted }}>Interno</span>
+                      : o.estado_pago === 'pagado' ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Pagado</span>
+                      : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
+                  </td>
                   <td style={{ padding: '8px 12px' }}>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button onClick={() => generarRemitoOrden(o, campoO, campanaO, stockAgro)}
@@ -972,6 +1166,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
 function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar }) {
   const [showForm, setShowForm] = useState(false)
+  const [pagarAhora, setPagarAhora] = useState(true)
+  const [showPagos, setShowPagos] = useState(false)
+  const [seleccionadas, setSeleccionadas] = useState([])
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
@@ -1100,6 +1299,11 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
 // ── TAB VENTAS DE GRANOS ──
 function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar }) {
   const [showForm, setShowForm] = useState(false)
+  const [pagarAhora, setPagarAhora] = useState(true)
+  const [showPagos, setShowPagos] = useState(false)
+  const [seleccionadas, setSeleccionadas] = useState([])
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
@@ -1272,6 +1476,11 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
 // ── TAB GASTOS ──
 function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
   const [showForm, setShowForm] = useState(false)
+  const [pagarAhora, setPagarAhora] = useState(true)
+  const [showPagos, setShowPagos] = useState(false)
+  const [seleccionadas, setSeleccionadas] = useState([])
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
