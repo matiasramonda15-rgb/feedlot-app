@@ -2436,8 +2436,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
                     }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
                       Eliminar
                     </button>
-                      </div>
-                    </td>
+                  </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
