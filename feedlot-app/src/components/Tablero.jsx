@@ -77,14 +77,14 @@ export default function Tablero({ usuario }) {
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
-      supabase.from('ventas').select('*').order('creado_en', { ascending: false }),
+      supabase.from('ventas').select('cantidad, kg_vivo_total, kg_neto, total, precio_kg, comprador, creado_en, corral_id').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
       supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }).limit(5),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('stock_insumos').select('*'),
-      supabase.from('lotes').select('cantidad, kg_bascula, desbaste_pct').limit(200),
-      supabase.from('raciones_app').select('kg_total').limit(500),
+      supabase.from('lotes').select('cantidad, kg_bascula, fecha_ingreso, estado').limit(500),
+      supabase.from('raciones_app').select('kg_total, creado_en').limit(1000),
     ])
 
     // Calcular GDP por corral desde pesadas
@@ -147,30 +147,62 @@ export default function Tablero({ usuario }) {
   const corralesActivos = corrales.filter(c => c.rol !== 'libre')
   const totalAnimales = corralesActivos.reduce((s, c) => s + (c.animales || 0), 0)
 
-  // GDP global ponderado
+  // GDP y conversión — metodología mensual (mismo cálculo que Reportes)
+  const hoy = new Date()
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+  const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1)
+
+  // Stock inicial del mes
+  const lotesAntesInicio = lotes.filter(l => l.fecha_ingreso && new Date(l.fecha_ingreso + 'T12:00:00') < inicioMes)
+  const ventasAntesInicio = ventas.filter(v => new Date(v.creado_en) < inicioMes)
+  const stockInicialMes = Math.max(0, lotesAntesInicio.reduce((s,l)=>s+(l.cantidad||0),0) - ventasAntesInicio.reduce((s,v)=>s+(v.cantidad||0),0))
+
+  // Ingresos del mes
+  const lotesMes = lotes.filter(l => l.fecha_ingreso && new Date(l.fecha_ingreso+'T12:00:00') >= inicioMes && new Date(l.fecha_ingreso+'T12:00:00') < finMes)
+  const cabIngMes = lotesMes.reduce((s,l)=>s+(l.cantidad||0),0)
+  const kgIngMes = lotesMes.reduce((s,l)=>s+(l.kg_bascula||0),0)
+
+  // Ventas del mes
+  const ventasMes = ventas.filter(v => new Date(v.creado_en) >= inicioMes && new Date(v.creado_en) < finMes)
+  const cabVendMes = ventasMes.reduce((s,v)=>s+(v.cantidad||0),0)
+  const kgVendMes = ventasMes.reduce((s,v)=>s+(v.kg_vivo_total||0),0)
+
+  const stockFinalMes = Math.max(0, stockInicialMes + cabIngMes - cabVendMes)
+  const existPromMes = (stockInicialMes + stockFinalMes) / 2
+  const diasMes = Math.round((hoy - inicioMes) / 86400000) || 1
+
+  const pesoProm_ingMes = cabIngMes > 0 ? kgIngMes / cabIngMes : null
+  const pesoProm_ventMes = cabVendMes > 0 ? kgVendMes / cabVendMes : null
+  const permanenciaMes = cabVendMes > 0 && existPromMes > 0 ? (existPromMes * diasMes) / cabVendMes : null
+  const gdpGlobal = pesoProm_ingMes && pesoProm_ventMes && permanenciaMes
+    ? (pesoProm_ventMes - pesoProm_ingMes) / permanenciaMes
+    : null
+
+  // Conversión: kg alimento consumido / kg producidos estimados
+  const kgAlimMes = raciones.reduce((s,r)=>s+(r.kg_total||0),0)
+  const kgProducidosMes = gdpGlobal && existPromMes ? gdpGlobal * existPromMes * diasMes : null
+  const conversionMF = kgAlimMes > 0 && kgProducidosMes > 0 ? (kgAlimMes / kgProducidosMes).toFixed(1) : null
+
+  // GDP global para display (corral-level basado en pesadas — fallback)
   const corralesConGDP = corralesActivos.filter(c => gdpPorCorral[c.numero])
   const totalAnimGDP = corralesConGDP.reduce((s, c) => s + (c.animales || 0), 0)
-  const gdpGlobal = totalAnimGDP > 0
+  const gdpPesadas = totalAnimGDP > 0
     ? corralesConGDP.reduce((s, c) => s + (gdpPorCorral[c.numero].gdp * (c.animales || 0)), 0) / totalAnimGDP
     : null
 
-  // Días prom para 400 kg
+  // Días prom para 400 kg (usando GDP del mes o de pesadas)
+  const gdpRef = gdpGlobal || gdpPesadas
   const corralesConPeso = corralesActivos.filter(c => gdpPorCorral[c.numero]?.pesoActual && gdpPorCorral[c.numero]?.gdp > 0)
   const diasProm = corralesConPeso.length
     ? Math.round(corralesConPeso.reduce((s, c) => s + Math.max(0, (400 - gdpPorCorral[c.numero].pesoActual) / gdpPorCorral[c.numero].gdp), 0) / corralesConPeso.length)
     : null
 
-  // Aumento de peso promedio (kg entrada vs kg salida)
+  // Aumento de peso promedio
   const lotesConKg = lotes.filter(l => l.kg_bascula && l.cantidad)
   const kgPromedioEntrada = lotesConKg.length > 0 ? lotesConKg.reduce((s, l) => s + (l.kg_bascula / l.cantidad), 0) / lotesConKg.length : null
-  const ventasConKg = ventas.filter(v => v.kg_neto && v.cantidad)
-  const kgPromedioSalida = ventasConKg.length > 0 ? ventasConKg.reduce((s, v) => s + (v.kg_neto / v.cantidad), 0) / ventasConKg.length : null
+  const ventasConKg = ventas.filter(v => v.kg_vivo_total && v.cantidad)
+  const kgPromedioSalida = ventasConKg.length > 0 ? ventasConKg.reduce((s, v) => s + (v.kg_vivo_total / v.cantidad), 0) / ventasConKg.length : null
   const aumentoPromedio = kgPromedioEntrada && kgPromedioSalida ? Math.round(kgPromedioSalida - kgPromedioEntrada) : null
-
-  // Conversión alimentaria (kg alimento / kg carne producida)
-  const totalAlimentoConsumir = raciones.reduce((s, r) => s + (r.kg_total || 0), 0)
-  const totalCarneProducida = ventasConKg.reduce((s, v) => s + (v.kg_neto || 0), 0) - lotes.reduce((s, l) => s + (l.kg_bascula ? l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) : 0), 0)
-  const conversionMF = totalAlimentoConsumir > 0 && totalCarneProducida > 0 ? (totalAlimentoConsumir / totalCarneProducida).toFixed(1) : null
 
   // Ventas este mes
   const ventasTotal = ventas.reduce((s, v) => s + (v.total || 0), 0)
