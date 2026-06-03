@@ -533,6 +533,8 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
 }
 
 const PAGO_INIT_ORDEN = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 
 function generarRemitoOrden(orden, campo, campana, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
@@ -1624,7 +1626,6 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
 }
 
 // ── TAB ARRIENDOS ──
-const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 
 function TabArriendos({ campos, cargar, contactos, usuario }) {
   const [vencimientos, setVencimientos] = useState([])
