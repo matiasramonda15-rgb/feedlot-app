@@ -536,6 +536,168 @@ const PAGO_INIT_ORDEN = { tipo: 'transferencia', monto: '', es_paralelo: false, 
 const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 
+function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
+  const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+  const superficie = lote?.superficie_ha || campo?.superficie_ha || '—'
+  const productos = orden.productos || []
+
+  const filasProductos = productos.map(p => {
+    const item = stockAgro.find(s => s.id === parseInt(p.id))
+    const totalUso = p.dosis && superficie !== '—' ? parseFloat(p.dosis) * parseFloat(superficie) : null
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${p.dosis || '—'} ${p.unidad || item?.unidad || ''}/ha</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:right;font-weight:700;color:#1E5C2E;">${totalUso ? totalUso.toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' ' + (item?.unidad || '') : '—'}</td>
+    </tr>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Orden de trabajo — ${orden.tipo}</title>
+  <style>
+    @media print { .no-print { display: none; } body { margin: 0; } }
+    body { font-family: Arial, sans-serif; background: #fff; margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="padding:10px;text-align:right;background:#f5f5f5;border-bottom:1px solid #ddd;">
+    <button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;margin-right:8px;">🖨️ Imprimir / Guardar PDF</button>
+    <button onclick="window.close()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:#fff;border:1px solid #ccc;border-radius:6px;">Cerrar</button>
+  </div>
+  <div style="max-width:680px;margin:0 auto;padding:24px;">
+    <!-- Header verde -->
+    <div style="background:#1E5C2E;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">
+      <div style="font-size:18px;font-weight:900;letter-spacing:1px;margin-bottom:4px;">ORDEN DE TRABAJO — ${orden.tipo.toUpperCase()}</div>
+      <div style="font-size:13px;opacity:0.9;">${campo?.nombre || '—'} ${lote ? `· Lote ${lote.numero}` : ''} · ${superficie} ha · ${fecha}</div>
+    </div>
+    <!-- Cuerpo -->
+    <div style="border:2px solid #1E5C2E;border-top:none;border-radius:0 0 8px 8px;padding:20px;">
+      ${orden.proveedor ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Operario / Equipo:</span> <strong>${orden.proveedor}</strong></div>` : ''}
+      ${orden.descripcion ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Descripción:</span> ${orden.descripcion}</div>` : ''}
+      ${productos.length > 0 ? `
+      <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos aplicados</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f0f7f1;">
+            <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Producto</th>
+            <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Tipo</th>
+            <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Dosis/ha</th>
+            <th style="padding:8px 12px;text-align:right;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Total (${superficie} ha)</th>
+          </tr>
+        </thead>
+        <tbody>${filasProductos}</tbody>
+      </table>` : '<div style="color:#999;font-size:13px;">Sin productos asignados.</div>'}
+      ${orden.observaciones ? `<div style="margin-top:16px;padding:10px 14px;background:#f9f9f9;border-radius:6px;font-size:13px;color:#555;">${orden.observaciones}</div>` : ''}
+      <div style="margin-top:30px;display:flex;justify-content:space-between;padding-top:16px;border-top:1px solid #ddd;">
+        <div style="text-align:center;width:45%;">
+          <div style="border-top:1px solid #333;padding-top:6px;font-size:12px;color:#555;">Firma operario</div>
+        </div>
+        <div style="text-align:center;width:45%;">
+          <div style="border-top:1px solid #333;padding-top:6px;font-size:12px;color:#555;">Firma Ramonda</div>
+        </div>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div style="text-align:right;font-size:10px;color:#aaa;margin-top:8px;">RAMONDA HNOS S.A. · Pedro Barciocco 1221 · TEL: 3574-442656</div>
+  </div>
+</body>
+</html>`
+
+  const win = window.open('', '_blank')
+  win.document.write(html)
+  win.document.close()
+}
+
+function generarReciboOrden(orden, campo, lote, campana, stockAgro) {
+  const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+  const superficie = lote?.superficie_ha || campo?.superficie_ha || '—'
+  const pagos = orden.pagos_detalle || []
+  const totalMonto = orden.costo_total || 0
+
+  const unidades = ['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE']
+  const decenas = ['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA']
+  const centenas = ['','CIEN','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS']
+  function nAL(n) {
+    if (n === 0) return 'CERO'; let r = ''
+    if (n >= 1000000) { const m = Math.floor(n/1000000); r += (m===1?'UN MILLÓN ':nAL(m)+' MILLONES '); n %= 1000000 }
+    if (n >= 1000) { const m = Math.floor(n/1000); r += (m===1?'MIL ':nAL(m)+' MIL '); n %= 1000 }
+    if (n >= 100) { r += (n===100?'CIEN ':centenas[Math.floor(n/100)]+' '); n %= 100 }
+    if (n >= 20) { r += decenas[Math.floor(n/10)]; if (n%10>0) r += ' Y '+unidades[n%10]; r += ' ' }
+    else if (n > 0) r += unidades[n]+' '
+    return r.trim()
+  }
+  const entero = Math.floor(totalMonto)
+  const centavos = Math.round((totalMonto - entero) * 100)
+  const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
+
+  const filasPago = pagos.map(p => {
+    let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : 'E-CHEQ TERCERO'
+    if (p.es_paralelo) desc += ' (PARALELO)'
+    const nro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.numero || '') : ''
+    const fechaCobro = p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''
+    return `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${nro}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${fechaCobro}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${parseFloat(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+    </tr>`
+  }).join('')
+
+  const bloque = `<div style="border:1px solid #333;padding:20px;font-family:Arial,sans-serif;font-size:12px;width:100%;box-sizing:border-box;">
+    <table style="width:100%;margin-bottom:10px;"><tr>
+      <td style="width:33%;vertical-align:top;"><div style="font-weight:bold;">Pedro Barciocco 1221</div><div>TEL: 3574-442656</div><div style="margin-top:8px;border:1px solid #333;display:inline-block;padding:2px 6px;font-weight:bold;">X &nbsp; NO VALIDO COMO FACTURA</div><div style="font-size:11px;margin-top:2px;">Orden de pago</div></td>
+      <td style="width:34%;text-align:center;vertical-align:middle;"><div style="font-size:22px;font-weight:900;">RAMONDA</div><div style="font-size:14px;font-weight:600;">HNOS S.A.</div></td>
+      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: &nbsp;30-71682182-6</div><div>I.V.A. &nbsp;Responsable inscripto</div></td>
+    </tr></table>
+    <hr style="border:1px solid #333;margin:8px 0;">
+    <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;">Entrego a:</td></tr>
+      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${orden.proveedor || ''}</strong></td><td style="padding:4px 8px;">I.V.A.: ${orden.iva || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">Localidad: ${orden.localidad || ''}</td><td style="padding:4px 8px;">CUIT/DNI: ${orden.cuit || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">C.B.U: ${orden.cbu || ''}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
+    </table>
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
+      <tr><td colspan="2" style="padding:6px 8px;">${orden.tipo} — ${campo?.nombre || ''}${lote ? ` Lote ${lote.numero}` : ''} · ${superficie} ha${campana ? ` · ${campana.nombre}` : ''}</td></tr>
+    </table>
+    ${pagos.length > 0 ? `
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td colspan="4" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Medio de pago</td></tr>
+      <tr style="background:#eee;">
+        <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #333;font-size:11px;">DESCRIPCIÓN</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">NRO/CHEQUE</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">FECHA DE COBRO</th>
+        <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #333;font-size:11px;">IMPORTE</th>
+      </tr>
+      ${filasPago}
+      <tr style="border-top:1px solid #333;"><td colspan="3" style="padding:8px;text-align:right;font-weight:bold;">IMPORTE TOTAL &nbsp; $</td><td style="padding:8px;text-align:right;font-weight:bold;">${totalMonto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>
+    </table>` : `
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td style="padding:7px 10px;text-align:right;font-weight:bold;">COSTO TOTAL: $${totalMonto.toLocaleString('es-AR')}</td></tr>
+    </table>`}
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td style="padding:6px 8px;">Cantidad de pesos: &nbsp;${enLetras}</td></tr>
+      <tr><td style="padding:20px 8px 30px 8px;">&nbsp;</td></tr>
+      <tr><td style="padding:8px;"><table style="width:100%;"><tr><td style="width:40%;text-align:center;border-top:1px solid #333;">Firma</td><td style="width:20%;"></td><td style="width:40%;text-align:center;border-top:1px solid #333;">DNI</td></tr></table></td></tr>
+    </table>
+  </div>`
+
+  const win = window.open('', '_blank')
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo — ${orden.tipo}</title><style>@media print{.no-print{display:none;}}body{font-family:Arial,sans-serif;background:#fff;padding:10px;}</style></head><body>
+    <div style="text-align:right;margin-bottom:10px;" class="no-print"><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;">🖨️ Imprimir / Guardar PDF</button></div>
+    ${bloque}<div style="border-top:2px dashed #999;margin:16px 0;text-align:center;font-size:11px;color:#999;padding:4px 0;">✂ &nbsp;&nbsp; CORTAR AQUÍ &nbsp;&nbsp; ✂</div>${bloque}
+  </body></html>`)
+  win.document.close()
+}
+
+
+const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+
 function generarRemitoOrden(orden, campo, campana, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const superficie = campo?.superficie_ha || '—'
@@ -659,7 +821,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({
     campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0],
-    descripcion: '', proveedor: '', es_propia: false,
+    descripcion: '', proveedor: '', es_propia: false, lote_id: '',
     productos: [], gastos_propios: [],
     costo_total: '', costo_ha: '', observaciones: '',
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
@@ -677,7 +839,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   }, [])
 
   const campo = campos.find(c => c.id === parseInt(form.campo_id))
-  const superficie = campo?.superficie_ha || 0
+  const loteSeleccionado = campo?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
+  const superficie = loteSeleccionado?.superficie_ha || campo?.superficie_ha || 0
 
   function addProducto() {
     setForm({...form, productos: [...form.productos, { id: '', dosis: '', unidad: '' }]})
@@ -749,6 +912,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
     await supabase.from('ordenes_trabajo').insert({
       campo_id: parseInt(form.campo_id), campana_id: parseInt(form.campana_id) || null,
+      lote_id: form.lote_id ? parseInt(form.lote_id) : null,
       tipo: form.tipo, fecha: form.fecha, descripcion: form.descripcion || null,
       proveedor: form.proveedor || null, es_propia: form.es_propia,
       productos: form.productos.length ? form.productos : null,
@@ -766,7 +930,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
     await cargar()
     setShowForm(false)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', pagos: [{ ...PAGO_INIT_ORDEN }] })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', pagos: [{ ...PAGO_INIT_ORDEN }] })
     setPagarAhora(true)
     setGuardando(false)
   }
@@ -792,7 +956,13 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         <Card titulo="Nueva orden de trabajo">
           {/* Datos básicos */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
-            <div><Label>Campo *</Label><select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.superficie_ha} ha)</option>)}</select></div>
+            <div><Label>Campo *</Label><select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value, lote_id: ''})} style={inputStyle}><option value="">— Seleccioná —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.superficie_ha} ha)</option>)}</select></div>
+            <div><Label>Lote</Label>
+              <select value={form.lote_id} onChange={e => setForm({...form, lote_id: e.target.value})} style={inputStyle}>
+                <option value="">— Todo el campo —</option>
+                {(campos.find(c => c.id === parseInt(form.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
+              </select>
+            </div>
             <div><Label>Campaña</Label><select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
             <div><Label>Tipo de trabajo *</Label><select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS_ORDEN.map(t => <option key={t}>{t}</option>)}</select></div>
             <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
@@ -1037,8 +1207,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           // Generar recibo para cada orden pagada
           ordenesPagadas.forEach(o => {
             const campoO = campos.find(c => c.id === o.campo_id)
+            const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
             const campanaO = campanas.find(c => c.id === o.campana_id)
-            generarRemitoOrden({ ...o, fecha: fechaPago }, campoO, campanaO, stockAgro)
+            generarReciboOrden({ ...o, fecha: fechaPago }, campoO, loteO, campanaO, stockAgro)
           })
         }
 
@@ -1175,7 +1346,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Campo', 'Tipo', 'Ejecución', 'Proveedor', 'Productos', 'Costo total', '$/ha', 'Pago', ''].map(h => (
+            {['Fecha', 'Campo', 'Lote', 'Tipo', 'Ejecución', 'Proveedor', 'Productos', 'Costo total', '$/ha', 'Pago', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr></thead>
@@ -1184,10 +1355,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             {ordenesFiltradas.map(o => {
               const campoO = campos.find(c => c.id === o.campo_id)
               const campanaO = campanas.find(c => c.id === o.campana_id)
+              const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
               return (
                 <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
                   <td style={{ padding: '8px 12px', fontWeight: 600 }}>{o.campos?.nombre}</td>
+                  <td style={{ padding: '8px 12px', color: S.muted }}>{loteO ? `Lote ${loteO.numero}` : '—'}</td>
                   <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11, fontWeight: 600 }}>{o.tipo}</span></td>
                   <td style={{ padding: '8px 12px' }}>{o.es_propia ? <span style={{ fontSize: 11, color: S.green, fontWeight: 600 }}>🚜 Propio</span> : <span style={{ fontSize: 11, color: S.muted }}>🤝 Contratista</span>}</td>
                   <td style={{ padding: '8px 12px', color: S.muted }}>{o.proveedor || '—'}</td>
@@ -1201,8 +1374,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      <button onClick={() => generarRemitoOrden(o, campoO, campanaO, stockAgro)}
-                        style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Remito</button>
+                      <button onClick={() => generarOrdenTrabajo(o, campoO, loteO, stockAgro)}
+                        style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>📋 Orden</button>
+                      {o.costo_total && <button onClick={() => generarReciboOrden(o, campoO, loteO, campanaO, stockAgro)}
+                        style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>}
                       <button onClick={async () => {
                         if (!confirm('¿Eliminar esta orden?')) return
                         if (o.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', o.caja_oficial_id)
