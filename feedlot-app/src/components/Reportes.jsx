@@ -119,53 +119,118 @@ export default function Reportes({ usuario }) {
     costoAlimPorCorral[num].dias.add(new Date(r.creado_en).toDateString())
   })
 
-  // ── GDP global feedlot — estimación por inventario (PEPS implícito) ──
+  // ── GDP GLOBAL FEEDLOT — Metodología por movimientos mensuales ──
   const hoy = new Date()
+  // Calcula por mes calendario usando lotes y ventas
 
-  // Peso promedio entrada (todos los lotes)
-  const totalAnimIngresados = lotes.reduce((s, l) => s + (l.cantidad || 0), 0)
-  const totalKgIngresados = lotes.reduce((s, l) => s + (l.kg_bascula || 0), 0)
-  const pesoProm_entrada = totalAnimIngresados > 0 ? totalKgIngresados / totalAnimIngresados : null
+  function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fechaFin) {
+    const dias = Math.round((fechaFin - fechaInicio) / 86400000)
+    if (dias <= 0) return null
 
-  // Peso promedio salida (todas las ventas)
-  const totalAnimVendidos = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
-  const totalKgVendidos = ventas.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
-  const pesoProm_salida = totalAnimVendidos > 0 ? totalKgVendidos / totalAnimVendidos : null
+    // Lotes activos al inicio del período
+    const lotesAntesInicio = lotesData.filter(l => new Date(l.fecha_ingreso + 'T12:00:00') < fechaInicio)
+    const ventasAntesInicio = ventasData.filter(v => new Date(v.creado_en) < fechaInicio)
+    const animalesVendidosAntes = ventasAntesInicio.reduce((s, v) => s + (v.cantidad || 0), 0)
+    const animalesIngresadosAntes = lotesAntesInicio.reduce((s, l) => s + (l.cantidad || 0), 0)
+    const stockInicial = Math.max(0, animalesIngresadosAntes - animalesVendidosAntes)
 
-  // Permanencia promedio — ponderada por animales
-  // Salidos: días entre fecha_ingreso del lote y fecha_venta
-  let diasPonderadosSalidos = 0
-  let animalesSalidos = 0
-  ventas.forEach(v => {
-    const lote = lotes.find(l => l.corral_cuarentena_id === v.corral_id)
-    if (!lote?.fecha_ingreso || !v.cantidad) return
-    const dias = Math.round((new Date(v.creado_en) - new Date(lote.fecha_ingreso + 'T12:00:00')) / 86400000)
-    if (dias > 0) { diasPonderadosSalidos += dias * v.cantidad; animalesSalidos += v.cantidad }
-  })
-  // Activos: días desde fecha_ingreso hasta hoy
-  let diasPonderadosActivos = 0
-  let animalesActivos = 0
-  lotes.filter(l => l.estado === 'activo').forEach(l => {
-    if (!l.fecha_ingreso || !l.cantidad) return
-    const dias = Math.round((hoy - new Date(l.fecha_ingreso + 'T12:00:00')) / 86400000)
-    if (dias > 0) { diasPonderadosActivos += dias * l.cantidad; animalesActivos += l.cantidad }
-  })
-  const totalAnimPerm = animalesSalidos + animalesActivos
-  const permanenciaPromedio = totalAnimPerm > 0
-    ? Math.round((diasPonderadosSalidos + diasPonderadosActivos) / totalAnimPerm)
-    : null
+    // Ingresos del período
+    const lotesPeriodo = lotesData.filter(l => {
+      const f = new Date(l.fecha_ingreso + 'T12:00:00')
+      return f >= fechaInicio && f < fechaFin
+    })
+    const cabIngresadas = lotesPeriodo.reduce((s, l) => s + (l.cantidad || 0), 0)
+    const kgIngresados = lotesPeriodo.reduce((s, l) => s + (l.kg_bascula || 0), 0)
 
-  // GDP estimado
-  const kgGanadosPorAnimal = pesoProm_entrada && pesoProm_salida ? pesoProm_salida - pesoProm_entrada : null
-  const gdpFeedlotGlobal = kgGanadosPorAnimal && permanenciaPromedio ? kgGanadosPorAnimal / permanenciaPromedio : null
+    // Ventas del período
+    const ventasPeriodo = ventasData.filter(v => {
+      const f = new Date(v.creado_en)
+      return f >= fechaInicio && f < fechaFin
+    })
+    const cabVendidas = ventasPeriodo.reduce((s, v) => s + (v.cantidad || 0), 0)
+    const kgVendidos = ventasPeriodo.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
 
-  // Conversión: kg alimento (30d) / kg ganados estimados (30d)
+    const stockFinal = Math.max(0, stockInicial + cabIngresadas - cabVendidas)
+
+    if (cabIngresadas === 0 || cabVendidas === 0 || kgIngresados === 0 || kgVendidos === 0) return null
+
+    // Paso 1: Pesos promedio
+    const pesoProm_ingreso = kgIngresados / cabIngresadas
+    const pesoProm_venta = kgVendidos / cabVendidas
+
+    // Paso 2: Existencia promedio
+    const existenciaPromedio = (stockInicial + stockFinal) / 2
+    if (existenciaPromedio <= 0) return null
+
+    // Paso 3 y 4: Permanencia
+    const permanencia = (existenciaPromedio * dias) / cabVendidas
+
+    // Corrección por variación de stock
+    const variacionStock = stockInicial > 0 ? ((stockFinal - stockInicial) / stockInicial) * 100 : 0
+    const existenciaCorregida = existenciaPromedio - ((stockFinal - stockInicial) / 2)
+    const permanenciaCorregida = existenciaCorregida > 0 ? (existenciaCorregida * dias) / cabVendidas : permanencia
+
+    // Paso 5: GDP
+    const gdp = permanencia > 0 ? (pesoProm_venta - pesoProm_ingreso) / permanencia : null
+    const gdpCorregido = permanenciaCorregida > 0 ? (pesoProm_venta - pesoProm_ingreso) / permanenciaCorregida : null
+
+    // Paso 6: Consumo diario
+    const kgAlimento = racionesData
+      .filter(r => { const f = new Date(r.creado_en); return f >= fechaInicio && f < fechaFin })
+      .reduce((s, r) => s + (r.kg_total || 0), 0)
+    const consumoDiario = existenciaPromedio > 0 && dias > 0 ? kgAlimento / (existenciaPromedio * dias) : null
+
+    // Paso 7: Conversión
+    const conversion = gdp && consumoDiario ? consumoDiario / gdp : null
+    const conversionCorregida = gdpCorregido && consumoDiario ? consumoDiario / gdpCorregido : null
+    const kgProducidos = gdp && existenciaPromedio ? gdp * existenciaPromedio * dias : null
+
+    return {
+      dias, stockInicial, stockFinal, cabIngresadas, kgIngresados, cabVendidas, kgVendidos,
+      pesoProm_ingreso, pesoProm_venta, existenciaPromedio, existenciaCorregida,
+      permanencia, permanenciaCorregida, gdp, gdpCorregido,
+      consumoDiario, conversion, conversionCorregida, kgProducidos, kgAlimento,
+      variacionStock,
+    }
+  }
+
+  // Calcular por mes (últimos 12 meses)
+  const mesesGDP = []
+  for (let i = 0; i < 12; i++) {
+    const inicio = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)
+    const fin = new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 1)
+    const resultado = calcMesGDP(lotes, ventas, raciones, inicio, fin)
+    if (resultado) {
+      mesesGDP.unshift({ mes: inicio.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' }), fechaInicio: inicio, ...resultado })
+    }
+  }
+
+  // Mes actual
+  const mesActual = mesesGDP[mesesGDP.length - 1] || null
+
+  // Promedios móviles
+  function promMovil(meses, n) {
+    const ultimos = meses.slice(-n).filter(m => m.gdp)
+    if (ultimos.length === 0) return null
+    const totalAnim = ultimos.reduce((s, m) => s + m.existenciaPromedio * m.dias, 0)
+    return {
+      gdp: ultimos.reduce((s, m) => s + m.gdp * m.existenciaPromedio * m.dias, 0) / totalAnim,
+      conversion: ultimos.filter(m => m.conversion).length > 0
+        ? ultimos.reduce((s, m) => s + (m.conversion || 0) * m.existenciaPromedio * m.dias, 0) / totalAnim
+        : null,
+      permanencia: Math.round(ultimos.reduce((s, m) => s + m.permanencia * m.existenciaPromedio * m.dias, 0) / totalAnim),
+    }
+  }
+  const prom3 = promMovil(mesesGDP, 3)
+  const prom6 = promMovil(mesesGDP, 6)
+  const prom12 = promMovil(mesesGDP, 12)
+
+  // GDP para display (usa mes actual o prom3 como fallback)
+  const gdpFeedlotGlobal = mesActual?.gdp || prom3?.gdp || null
+  const permanenciaPromedio = mesActual?.permanencia || prom3?.permanencia || null
+  const kgGanadosPorAnimal = mesActual ? mesActual.pesoProm_venta - mesActual.pesoProm_ingreso : null
+  const conversionGlobal = mesActual?.conversion || prom3?.conversion || null
   const totalKgAlimConsumido = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
-  const totalAnimActivos = lotes.filter(l => l.estado === 'activo').reduce((s, l) => s + (l.cantidad || 0), 0)
-  const kgGanadosEstim30d = gdpFeedlotGlobal && totalAnimActivos ? gdpFeedlotGlobal * 30 * totalAnimActivos : null
-  const conversionGlobal = kgGanadosEstim30d && totalKgAlimConsumido > 0
-    ? totalKgAlimConsumido / kgGanadosEstim30d
-    : null
 
   // Rentabilidad por venta
   const rentabilidadVentas = ventas.map(v => {
@@ -214,22 +279,102 @@ export default function Reportes({ usuario }) {
         <div>
           <SectionHeader title="GDP y conversión" sub="Ganancia diaria de peso · basado en ventas reales e historial de raciones" />
 
-          {/* GDP Global Feedlot — estimación por inventario */}
-          {gdpFeedlotGlobal ? (
-            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
-                Rendimiento estimado del feedlot · método inventario (entradas, salidas y stock actual)
+          {/* GDP Global — metodología por movimientos mensuales */}
+          {mesActual ? (
+            <>
+              {/* Tarjetas resumen mes actual */}
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Mes actual — {mesActual.mes}</div>
+                  {Math.abs(mesActual.variacionStock) > 20 && (
+                    <span style={{ fontSize: 11, padding: '3px 10px', background: S.redLight, color: S.red, borderRadius: 4, fontWeight: 600 }}>⚠ Variación stock {mesActual.variacionStock.toFixed(0)}% — resultado puede tener sesgo</span>
+                  )}
+                  {Math.abs(mesActual.variacionStock) > 10 && Math.abs(mesActual.variacionStock) <= 20 && (
+                    <span style={{ fontSize: 11, padding: '3px 10px', background: S.amberLight, color: S.amber, borderRadius: 4, fontWeight: 600 }}>⚠ Variación stock {mesActual.variacionStock.toFixed(0)}% — precaución</span>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+                  <Stat label="GDP estimado" val={mesActual.gdp ? `${mesActual.gdp.toFixed(3)} kg/d` : '—'} sub="normal" color={mesActual.gdp >= 1.1 ? S.green : mesActual.gdp >= 0.9 ? S.amber : S.red} />
+                  {Math.abs(mesActual.variacionStock) > 10 && <Stat label="GDP corregido" val={mesActual.gdpCorregido ? `${mesActual.gdpCorregido.toFixed(3)} kg/d` : '—'} sub="por variación stock" color={S.purple} />}
+                  <Stat label="Permanencia" val={`${Math.round(mesActual.permanencia)} días`} sub={`corregida: ${Math.round(mesActual.permanenciaCorregida)} días`} />
+                  <Stat label="Conversión" val={mesActual.conversion ? mesActual.conversion.toFixed(2) : '—'} sub="kg alimento / kg ganado" color={mesActual.conversion <= 7 ? S.green : mesActual.conversion <= 9 ? S.amber : S.red} />
+                  <Stat label="Consumo diario" val={mesActual.consumoDiario ? `${mesActual.consumoDiario.toFixed(1)} kg/cab/d` : '—'} sub="alimento por cabeza" />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                  <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
+                  <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`${mesActual.cabVendidas} animales`} />
+                  <Stat label="Existencia promedio" val={Math.round(mesActual.existenciaPromedio)} sub={`inicio: ${mesActual.stockInicial} → fin: ${mesActual.stockFinal}`} />
+                  <Stat label="Kg producidos estim." val={mesActual.kgProducidos ? `${Math.round(mesActual.kgProducidos).toLocaleString('es-AR')} kg` : '—'} sub="GDP × exist. × días" color={S.green} />
+                </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                <Stat label="GDP estimado" val={`${gdpFeedlotGlobal.toFixed(2)} kg/d`} sub={`${Math.round(pesoProm_entrada)} kg entrada → ${Math.round(pesoProm_salida)} kg salida`} color={gdpFeedlotGlobal >= 1.1 ? S.green : gdpFeedlotGlobal >= 0.9 ? S.amber : S.red} />
-                <Stat label="Permanencia promedio" val={`${permanenciaPromedio} días`} sub={`${animalesSalidos} vendidos · ${animalesActivos} activos`} />
-                <Stat label="Kg ganados por animal" val={`${Math.round(kgGanadosPorAnimal)} kg`} sub="peso salida − peso entrada" color={S.green} />
-                <Stat label="Conversión alimenticia" val={conversionGlobal ? `${conversionGlobal.toFixed(2)}` : '—'} sub="kg alimento / kg ganado (30d)" color={conversionGlobal ? (conversionGlobal <= 7 ? S.green : conversionGlobal <= 9 ? S.amber : S.red) : S.hint} />
+
+              {/* Promedios móviles */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+                {[
+                  { label: 'Prom. móvil 3 meses', data: prom3 },
+                  { label: 'Prom. móvil 6 meses', data: prom6 },
+                  { label: 'Prom. móvil 12 meses ★', data: prom12 },
+                ].map(({ label, data }) => (
+                  <div key={label} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>{label}</div>
+                    {data ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 12, color: S.muted }}>GDP</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: data.gdp >= 1.1 ? S.green : data.gdp >= 0.9 ? S.amber : S.red }}>{data.gdp.toFixed(3)} kg/d</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 12, color: S.muted }}>Conversión</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: data.conversion <= 7 ? S.green : data.conversion <= 9 ? S.amber : S.red }}>{data.conversion ? data.conversion.toFixed(2) : '—'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 12, color: S.muted }}>Permanencia</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace' }}>{data.permanencia} días</span>
+                        </div>
+                      </div>
+                    ) : <div style={{ fontSize: 13, color: S.hint }}>Sin datos suficientes</div>}
+                  </div>
+                ))}
               </div>
-            </div>
+
+              {/* Tabla historial mensual */}
+              {mesesGDP.length > 1 && (
+                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>Historial mensual</div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: S.bg }}>
+                          {['Mes', 'Exist. prom.', 'Ingr.', 'Vend.', 'P. ingreso', 'P. venta', 'Permanencia', 'GDP', 'GDP corr.', 'Conversión', 'Var. stock'].map(h => (
+                            <th key={h} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...mesesGDP].reverse().map((m, i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: i === 0 ? S.accentLight : 'transparent' }}>
+                            <td style={{ padding: '7px 10px', fontWeight: 600 }}>{m.mes}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.existenciaPromedio)}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{m.cabIngresadas}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{m.cabVendidas}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.pesoProm_ingreso)} kg</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.pesoProm_venta)} kg</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.permanencia)} d</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.gdp >= 1.1 ? S.green : m.gdp >= 0.9 ? S.amber : S.red }}>{m.gdp?.toFixed(3)}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.purple }}>{Math.abs(m.variacionStock) > 10 ? m.gdpCorregido?.toFixed(3) : '—'}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.conversion <= 7 ? S.green : m.conversion <= 9 ? S.amber : S.red }}>{m.conversion?.toFixed(2) || '—'}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: Math.abs(m.variacionStock) > 20 ? S.red : Math.abs(m.variacionStock) > 10 ? S.amber : S.muted }}>{m.variacionStock.toFixed(0)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div style={{ background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', fontSize: 13, color: S.amber }}>
-              ⚠ Sin datos suficientes — se necesitan lotes con kg de ingreso y ventas con kg para estimar GDP.
+              ⚠ Sin datos suficientes — se necesitan ingresos y ventas en el mismo mes para calcular GDP.
             </div>
           )}
 
