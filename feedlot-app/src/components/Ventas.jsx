@@ -52,6 +52,8 @@ export default function Ventas({ usuario }) {
   const [registrandoPago, setRegistrandoPago] = useState(null)
   const [filtroCuentas, setFiltroCuentas] = useState('')
   const [showDetalleMeses, setShowDetalleMeses] = useState(false)
+  const [showDetalleKg, setShowDetalleKg] = useState(false)
+  const [showDetallePrecio, setShowDetallePrecio] = useState(false)
   const [editandoComercial, setEditandoComercial] = useState(null)
   const [formComercial, setFormComercial] = useState({})
   const [formPagoVto, setFormPagoVto] = useState('')
@@ -192,6 +194,18 @@ export default function Ventas({ usuario }) {
     ventasPorMes[key].ops += 1
   })
   const mesesOrdenados = Object.entries(ventasPorMes).sort((a, b) => b[0].localeCompare(a[0]))
+
+  // Detalle kg prom y precio prom por mes
+  const kgPreciosPorMes = {}
+  ventas.forEach(v => {
+    const fecha = new Date(v.creado_en)
+    const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
+    if (!kgPreciosPorMes[key]) kgPreciosPorMes[key] = { totalKg: 0, cantidad: 0, precioSum: 0, precioCount: 0 }
+    kgPreciosPorMes[key].totalKg += v.kg_vivo_total || 0
+    kgPreciosPorMes[key].cantidad += v.cantidad || 0
+    if (v.precio_kg) { kgPreciosPorMes[key].precioSum += v.precio_kg; kgPreciosPorMes[key].precioCount += 1 }
+  })
+  const kgPreciosMeses = Object.entries(kgPreciosPorMes).sort((a, b) => b[0].localeCompare(a[0]))
 
   // Métricas compras (lotes)
   const totalGastado = lotes.reduce((s, l) => s + ((l.kg_bascula || 0) * (l.precio_compra || 0)), 0)
@@ -409,8 +423,6 @@ export default function Ventas({ usuario }) {
               </button>
             </div>
             {[
-              { label: 'Kg prom. por animal', val: kgPromAnimal ? `${kgPromAnimal.toLocaleString('es-AR')} kg` : '—', sub: totalKgVendidos > 0 ? `${(totalKgVendidos/1000).toFixed(1)} tn totales vendidas` : '', ok: false },
-              { label: 'Precio prom. obtenido', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg vivo neto (con desbaste)', ok: false },
               { label: 'Listos para vender', val: corralesListos.reduce((s, c) => s + (c.animales || 0), 0), sub: corralesListos.length > 0 ? `animales ≥ 400 kg · ${corralesListos.map(c => `C-${c.numero}`).join(', ')}` : 'ningún corral llegó a 400 kg', ok: corralesListos.length > 0 },
             ].map((m, i) => (
               <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
@@ -419,6 +431,26 @@ export default function Ventas({ usuario }) {
                 <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{m.sub}</div>
               </div>
             ))}
+            {/* Kg prom por animal — expandible */}
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Kg prom. por animal</div>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: S.text }}>{kgPromAnimal ? `${kgPromAnimal.toLocaleString('es-AR')} kg` : '—'}</div>
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>{totalKgVendidos > 0 ? `${(totalKgVendidos/1000).toFixed(1)} tn totales vendidas` : ''}</div>
+              <button onClick={() => setShowDetalleKg(!showDetalleKg)}
+                style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                {showDetalleKg ? '▴ Ocultar detalle' : '▾ Ver por mes'}
+              </button>
+            </div>
+            {/* Precio prom — expandible */}
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Precio prom. obtenido</div>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: S.text }}>{precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—'}</div>
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>$/kg vivo neto (con desbaste)</div>
+              <button onClick={() => setShowDetallePrecio(!showDetallePrecio)}
+                style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                {showDetallePrecio ? '▴ Ocultar detalle' : '▾ Ver por mes'}
+              </button>
+            </div>
           </div>
 
           {/* Detalle por mes */}
@@ -455,7 +487,64 @@ export default function Ventas({ usuario }) {
             </div>
           )}
 
-                    {/* Alerta animales listos */}
+                    {/* Detalle kg por mes */}
+          {showDetalleKg && kgPreciosMeses.length > 0 && (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, marginBottom: '1.5rem', overflow: 'hidden' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>Kg promedio por animal — por mes</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr style={{ background: S.bg }}>
+                  {['Mes', 'Animales', 'Kg totales', 'Kg prom./animal'].map(h => (
+                    <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Kg prom./animal' ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {kgPreciosMeses.map(([key, data]) => {
+                    const [anio, mes] = key.split('-')
+                    const nombreMes = new Date(parseInt(anio), parseInt(mes) - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                    const kgProm = data.cantidad > 0 ? Math.round(data.totalKg / data.cantidad) : null
+                    return (
+                      <tr key={key} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '9px 14px', fontWeight: 600, textTransform: 'capitalize' }}>{nombreMes}</td>
+                        <td style={{ padding: '9px 14px', fontFamily: 'monospace' }}>{data.cantidad.toLocaleString('es-AR')}</td>
+                        <td style={{ padding: '9px 14px', fontFamily: 'monospace', color: S.muted }}>{(data.totalKg/1000).toFixed(1)} tn</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{kgProm ? `${kgProm.toLocaleString('es-AR')} kg` : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Detalle precio por mes */}
+          {showDetallePrecio && kgPreciosMeses.length > 0 && (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, marginBottom: '1.5rem', overflow: 'hidden' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>Precio promedio obtenido — por mes</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr style={{ background: S.bg }}>
+                  {['Mes', 'Operaciones con precio', 'Precio prom. $/kg'].map(h => (
+                    <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Precio prom. $/kg' ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {kgPreciosMeses.map(([key, data]) => {
+                    const [anio, mes] = key.split('-')
+                    const nombreMes = new Date(parseInt(anio), parseInt(mes) - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                    const precioProm = data.precioCount > 0 ? Math.round(data.precioSum / data.precioCount) : null
+                    return (
+                      <tr key={key} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '9px 14px', fontWeight: 600, textTransform: 'capitalize' }}>{nombreMes}</td>
+                        <td style={{ padding: '9px 14px', color: S.muted }}>{data.precioCount} venta{data.precioCount !== 1 ? 's' : ''}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: precioProm ? S.green : S.hint }}>{precioProm ? `$${precioProm.toLocaleString('es-AR')}` : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Alerta animales listos */}
           {corralesListos.map(c => {
             const g = gdpPorCorral[c.numero]
             return (
