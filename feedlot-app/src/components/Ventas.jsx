@@ -51,6 +51,7 @@ export default function Ventas({ usuario }) {
   const [pagosVenta, setPagosVenta] = useState({})
   const [registrandoPago, setRegistrandoPago] = useState(null)
   const [filtroCuentas, setFiltroCuentas] = useState('')
+  const [showDetalleMeses, setShowDetalleMeses] = useState(false)
   const [editandoComercial, setEditandoComercial] = useState(null)
   const [formComercial, setFormComercial] = useState({})
   const [formPagoVto, setFormPagoVto] = useState('')
@@ -174,9 +175,23 @@ export default function Ventas({ usuario }) {
   // Métricas ventas
   const totalVentasAnio = ventas.reduce((s, v) => s + (v.total || 0), 0)
   const totalAnimVendidos = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
+  const totalKgVendidos = ventas.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
+  const kgPromAnimal = totalAnimVendidos > 0 && totalKgVendidos > 0 ? Math.round(totalKgVendidos / totalAnimVendidos) : null
   const precioPromedio = ventas.filter(v => v.precio_kg).length > 0
     ? Math.round(ventas.filter(v => v.precio_kg).reduce((s, v) => s + v.precio_kg, 0) / ventas.filter(v => v.precio_kg).length)
     : null
+
+  // Detalle por mes
+  const ventasPorMes = {}
+  ventas.forEach(v => {
+    const fecha = new Date(v.creado_en)
+    const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
+    if (!ventasPorMes[key]) ventasPorMes[key] = { total: 0, cantidad: 0, ops: 0 }
+    ventasPorMes[key].total += v.total || 0
+    ventasPorMes[key].cantidad += v.cantidad || 0
+    ventasPorMes[key].ops += 1
+  })
+  const mesesOrdenados = Object.entries(ventasPorMes).sort((a, b) => b[0].localeCompare(a[0]))
 
   // Métricas compras (lotes)
   const totalGastado = lotes.reduce((s, l) => s + ((l.kg_bascula || 0) * (l.precio_compra || 0)), 0)
@@ -382,11 +397,20 @@ export default function Ventas({ usuario }) {
       {tab === 'ventas' && (
         <div>
           {/* Métricas */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1rem' }}>
+            {/* Vendido este año con detalle por mes */}
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Vendido este año</div>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: S.green }}>{totalVentasAnio > 0 ? `$${totalVentasAnio.toLocaleString('es-AR')}` : '$0'}</div>
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>{ventas.length} operaciones · {totalAnimVendidos} animales</div>
+              <button onClick={() => setShowDetalleMeses(!showDetalleMeses)}
+                style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                {showDetalleMeses ? '▴ Ocultar detalle' : '▾ Ver por mes'}
+              </button>
+            </div>
             {[
-             { label: 'Vendido este año', val: totalVentasAnio > 0 ? `$${totalVentasAnio.toLocaleString('es-AR')}` : '$0', sub: `${ventas.length} operaciones · ${totalAnimVendidos} animales`, ok: true },
+              { label: 'Kg prom. por animal', val: kgPromAnimal ? `${kgPromAnimal.toLocaleString('es-AR')} kg` : '—', sub: totalKgVendidos > 0 ? `${(totalKgVendidos/1000).toFixed(1)} tn totales vendidas` : '', ok: false },
               { label: 'Precio prom. obtenido', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg vivo neto (con desbaste)', ok: false },
-              { label: 'Margen prom. bruto', val: '—', sub: 'sin costo de alimentación aún', ok: false },
               { label: 'Listos para vender', val: corralesListos.reduce((s, c) => s + (c.animales || 0), 0), sub: corralesListos.length > 0 ? `animales ≥ 400 kg · ${corralesListos.map(c => `C-${c.numero}`).join(', ')}` : 'ningún corral llegó a 400 kg', ok: corralesListos.length > 0 },
             ].map((m, i) => (
               <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
@@ -397,7 +421,41 @@ export default function Ventas({ usuario }) {
             ))}
           </div>
 
-          {/* Alerta animales listos */}
+          {/* Detalle por mes */}
+          {showDetalleMeses && mesesOrdenados.length > 0 && (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, marginBottom: '1.5rem', overflow: 'hidden' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>Detalle de ventas por mes</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr style={{ background: S.bg }}>
+                  {['Mes', 'Operaciones', 'Animales', 'Total'].map(h => (
+                    <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Total' ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {mesesOrdenados.map(([key, data]) => {
+                    const [anio, mes] = key.split('-')
+                    const nombreMes = new Date(parseInt(anio), parseInt(mes) - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                    return (
+                      <tr key={key} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '9px 14px', fontWeight: 600, textTransform: 'capitalize' }}>{nombreMes}</td>
+                        <td style={{ padding: '9px 14px', color: S.muted }}>{data.ops} venta{data.ops !== 1 ? 's' : ''}</td>
+                        <td style={{ padding: '9px 14px', fontFamily: 'monospace' }}>{data.cantidad.toLocaleString('es-AR')}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>${data.total.toLocaleString('es-AR')}</td>
+                      </tr>
+                    )
+                  })}
+                  <tr style={{ background: S.bg, borderTop: `2px solid ${S.border}` }}>
+                    <td style={{ padding: '9px 14px', fontWeight: 700 }}>Total</td>
+                    <td style={{ padding: '9px 14px', color: S.muted }}>{ventas.length} ventas</td>
+                    <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontWeight: 700 }}>{totalAnimVendidos.toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>${totalVentasAnio.toLocaleString('es-AR')}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+                    {/* Alerta animales listos */}
           {corralesListos.map(c => {
             const g = gdpPorCorral[c.numero]
             return (
