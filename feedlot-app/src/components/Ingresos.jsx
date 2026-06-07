@@ -122,15 +122,17 @@ export default function Ingresos({ usuario }) {
   }
 
   async function guardarPrecio(lote) {
-    if (!editandoPrecio?.precio_compra && !editandoPrecio?.monto_total) { alert('Ingresá el precio o el monto total'); return }
+    if (!editandoPrecio?.monto_total && !editandoPrecio?.precio_compra) { alert('Ingresá el monto total o el precio'); return }
     const kgFac = editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null
     const precio = editandoPrecio.precio_compra ? parseFloat(editandoPrecio.precio_compra) : null
     const montoTotal = editandoPrecio.monto_total ? parseFloat(editandoPrecio.monto_total) : (kgFac && precio ? Math.round(kgFac * precio) : null)
+    const montoFac = editandoPrecio.monto_facturado ? parseFloat(editandoPrecio.monto_facturado) : null
+    const paralelo = montoTotal && montoFac ? Math.max(0, montoTotal - montoFac) : null
     const plazo = editandoPrecio.plazo_dias ? parseInt(editandoPrecio.plazo_dias) : null
     const fechaVto = plazo ? new Date(new Date(lote.fecha_ingreso + 'T12:00:00').getTime() + plazo * 86400000).toISOString().split('T')[0] : null
     const comMonto = editandoPrecio.comision_monto ? parseFloat(editandoPrecio.comision_monto) : 0
 
-    // Resolver procedencia — si es nuevo, crear contacto
+    // Resolver procedencia
     let procFinal = editandoPrecio.procedencia !== 'Nuevo' ? (editandoPrecio.procedencia || lote.procedencia) : lote.procedencia
     if (editandoPrecio.procedencia === 'Nuevo' && editandoPrecio.nuevaProcedencia?.trim()) {
       const nombre = editandoPrecio.nuevaProcedencia.trim()
@@ -143,6 +145,8 @@ export default function Ingresos({ usuario }) {
       kg_factura: kgFac,
       precio_compra: precio || (montoTotal && kgFac ? Math.round(montoTotal / kgFac) : null),
       monto_total_con_iva: montoTotal,
+      monto_facturado: montoFac,
+      monto_negro: paralelo,
       plazo_dias: plazo,
       fecha_vencimiento_pago: fechaVto,
       comision_monto: comMonto || null,
@@ -324,11 +328,14 @@ export default function Ingresos({ usuario }) {
                       kg_factura: l.kg_factura ? String(l.kg_factura) : '',
                       precio_compra: l.precio_compra ? String(l.precio_compra) : '',
                       monto_total: l.monto_total_con_iva ? String(l.monto_total_con_iva) : '',
+                      monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '',
+                      paralelo: (l.monto_total_con_iva && l.monto_facturado) ? String(Math.max(0, l.monto_total_con_iva - l.monto_facturado)) : '',
                       plazo_dias: l.plazo_dias ? String(l.plazo_dias) : '',
                       comision_monto: l.comision_monto ? String(l.comision_monto) : '',
                       comision_a_quien: l.comision_a_quien || '',
                       comision_es_paralela: l.comision_es_paralela || false,
                       procedencia: l.procedencia || '',
+                      nuevaProcedencia: '',
                     })} style={{ fontSize: 12, padding: '5px 12px' }}>
                       Completar datos
                     </Btn>
@@ -340,90 +347,7 @@ export default function Ingresos({ usuario }) {
 
                 {isEdit && (
                   <div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                      {/* Kg factura */}
-                      <div>
-                        <Lbl c={S.accent}>Kg factura</Lbl>
-                        <input type="number" value={editandoPrecio.kg_factura} onChange={e => setEditandoPrecio({...editandoPrecio, kg_factura: e.target.value})}
-                          placeholder="Kg según factura" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} />
-                      </div>
-                      {/* Precio $/kg */}
-                      <div>
-                        <Lbl>Precio $/kg</Lbl>
-                        <input type="number" value={editandoPrecio.precio_compra} onChange={e => {
-                          const precio = e.target.value
-                          const kgF = parseFloat(editandoPrecio.kg_factura) || 0
-                          const monto = precio && kgF ? String(Math.round(kgF * parseFloat(precio))) : ''
-                          setEditandoPrecio({...editandoPrecio, precio_compra: precio, monto_total: monto})
-                        }} placeholder="ej. 2800" style={inpMono} />
-                      </div>
-                      {/* Monto total */}
-                      <div>
-                        <Lbl>Monto total operación $</Lbl>
-                        <input type="number" value={editandoPrecio.monto_total} onChange={e => {
-                          const monto = e.target.value
-                          const kgF = parseFloat(editandoPrecio.kg_factura) || 0
-                          const precio = monto && kgF ? String(Math.round(parseFloat(monto) / kgF)) : ''
-                          setEditandoPrecio({...editandoPrecio, monto_total: monto, precio_compra: precio})
-                        }} placeholder="Total a pagar" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} />
-                      </div>
-                    </div>
-
-                    {/* Alerta diferencia kg */}
-                    {diffKg !== null && (
-                      <div style={{ background: alertaDiff ? S.redLight : S.greenLight, border: `1px solid ${alertaDiff ? '#F09595' : '#97C459'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12 }}>
-                        {alertaDiff ? '⚠ ' : '✓ '}
-                        Báscula: {kgBas.toLocaleString('es-AR')} kg · Factura: {kgFac.toLocaleString('es-AR')} kg · Diferencia: {diffKg > 0 ? '+' : ''}{diffKg.toLocaleString('es-AR')} kg ({diffPct > 0 ? '+' : ''}{diffPct?.toFixed(1)}%)
-                        {alertaDiff && ' — más del 3%, verificar'}
-                      </div>
-                    )}
-
-                    {/* Resumen total */}
-                    {editandoPrecio.monto_total && (
-                      <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13 }}>
-                        Total a pagar: <strong style={{ fontFamily: 'monospace' }}>${parseFloat(editandoPrecio.monto_total).toLocaleString('es-AR')}</strong>
-                        {editandoPrecio.kg_factura && editandoPrecio.precio_compra && (
-                          <span style={{ fontSize: 11, color: S.muted, marginLeft: 8 }}>
-                            ({parseFloat(editandoPrecio.kg_factura).toLocaleString('es-AR')} kg × ${parseFloat(editandoPrecio.precio_compra).toLocaleString('es-AR')}/kg)
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                      {/* Plazo */}
-                      <div>
-                        <Lbl>Plazo (días corridos)</Lbl>
-                        <input type="number" value={editandoPrecio.plazo_dias} onChange={e => setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value})}
-                          placeholder="ej. 30" style={inpMono} />
-                        {editandoPrecio.plazo_dias && l.fecha_ingreso && (
-                          <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>
-                            Vence: {new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(editandoPrecio.plazo_dias) * 86400000).toLocaleDateString('es-AR')}
-                          </div>
-                        )}
-                      </div>
-                      {/* Comisión monto */}
-                      <div>
-                        <Lbl>Comisión $</Lbl>
-                        <input type="number" value={editandoPrecio.comision_monto} onChange={e => setEditandoPrecio({...editandoPrecio, comision_monto: e.target.value})}
-                          placeholder="0" style={inpMono} />
-                      </div>
-                      {/* Comisión a quién */}
-                      <div>
-                        <Lbl>Comisión a quién</Lbl>
-                        <input type="text" value={editandoPrecio.comision_a_quien} onChange={e => setEditandoPrecio({...editandoPrecio, comision_a_quien: e.target.value})}
-                          placeholder="Nombre" style={inp} />
-                      </div>
-                    </div>
-
-                    <div style={{ marginBottom: 12 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: S.purple, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={editandoPrecio.comision_es_paralela || false} onChange={e => setEditandoPrecio({...editandoPrecio, comision_es_paralela: e.target.checked})} />
-                        Comisión se paga por cuenta paralela
-                      </label>
-                    </div>
-
-                    {/* Procedencia / Vendedor */}
+                    {/* Fila 1: Procedencia/Vendedor */}
                     <div style={{ marginBottom: 12 }}>
                       <Lbl>Procedencia / Vendedor</Lbl>
                       <select value={editandoPrecio.procedencia || ''} onChange={e => setEditandoPrecio({...editandoPrecio, procedencia: e.target.value, nuevaProcedencia: ''})}
@@ -433,10 +357,103 @@ export default function Ingresos({ usuario }) {
                         <option value="Nuevo">+ Nuevo contacto...</option>
                       </select>
                       {editandoPrecio.procedencia === 'Nuevo' && (
-                        <input type="text" placeholder="Nombre del vendedor" value={editandoPrecio.nuevaProcedencia || ''}
-                          onChange={e => setEditandoPrecio({...editandoPrecio, nuevaProcedencia: e.target.value})}
-                          style={inp} />
+                        <input type="text" placeholder="Nombre del vendedor (se guardará como contacto)" value={editandoPrecio.nuevaProcedencia || ''}
+                          onChange={e => setEditandoPrecio({...editandoPrecio, nuevaProcedencia: e.target.value})} style={inp} />
                       )}
+                    </div>
+
+                    {/* Fila 2: Kg Factura / Kg Campo / % dif */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                      <div>
+                        <Lbl c={S.accent}>Kg Factura</Lbl>
+                        <input type="number" value={editandoPrecio.kg_factura} onChange={e => {
+                          const kgF = e.target.value
+                          const monto = editandoPrecio.monto_total
+                          const precio = monto && kgF ? String(Math.round(parseFloat(monto) / parseFloat(kgF))) : editandoPrecio.precio_compra
+                          setEditandoPrecio({...editandoPrecio, kg_factura: kgF, precio_compra: precio})
+                        }} placeholder="Kg según factura" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} />
+                      </div>
+                      <div>
+                        <Lbl>Kg Campo (báscula)</Lbl>
+                        <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.muted, fontWeight: 600 }}>
+                          {kgBas ? kgBas.toLocaleString('es-AR') : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <Lbl>% Diferencia</Lbl>
+                        <div style={{ padding: '9px 12px', border: `1px solid ${alertaDiff ? '#F09595' : (diffPct !== null ? '#97C459' : S.border)}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: alertaDiff ? S.redLight : (diffPct !== null ? S.greenLight : S.bg), fontWeight: 700, color: alertaDiff ? S.red : (diffPct !== null ? S.green : S.hint) }}>
+                          {diffPct !== null ? `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(1)}%${alertaDiff ? ' ⚠' : ' ✓'}` : '—'}
+                        </div>
+                        {alertaDiff && <div style={{ fontSize: 10, color: S.red, marginTop: 2 }}>Diferencia mayor al 3% — verificar</div>}
+                      </div>
+                    </div>
+
+                    {/* Fila 3: Monto Total / Monto Factura / Paralelo */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                      <div>
+                        <Lbl c={S.accent}>Monto Total Compra $</Lbl>
+                        <input type="number" value={editandoPrecio.monto_total} onChange={e => {
+                          const monto = e.target.value
+                          const kgF = parseFloat(editandoPrecio.kg_factura) || 0
+                          const precio = monto && kgF ? String(Math.round(parseFloat(monto) / kgF)) : editandoPrecio.precio_compra
+                          const montoFac = editandoPrecio.monto_facturado || ''
+                          const paralelo = monto && montoFac ? String(Math.max(0, parseFloat(monto) - parseFloat(montoFac))) : ''
+                          setEditandoPrecio({...editandoPrecio, monto_total: monto, precio_compra: precio, paralelo})
+                        }} placeholder="Total a pagar" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} />
+                      </div>
+                      <div>
+                        <Lbl>Monto Factura $</Lbl>
+                        <input type="number" value={editandoPrecio.monto_facturado || ''} onChange={e => {
+                          const montoFac = e.target.value
+                          const total = parseFloat(editandoPrecio.monto_total) || 0
+                          const paralelo = total && montoFac ? String(Math.max(0, total - parseFloat(montoFac))) : ''
+                          setEditandoPrecio({...editandoPrecio, monto_facturado: montoFac, paralelo})
+                        }} placeholder="Monto facturado" style={inpMono} />
+                      </div>
+                      <div>
+                        <Lbl>Paralelo (calculado)</Lbl>
+                        <div style={{ padding: '9px 12px', border: `1px solid ${editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? '#9B59B6' : S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? '#F3E8FF' : S.bg, fontWeight: 700, color: editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? S.purple : S.hint }}>
+                          {editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? `$${parseFloat(editandoPrecio.paralelo).toLocaleString('es-AR')}` : '—'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fila 4: Plazo */}
+                    <div style={{ marginBottom: 12 }}>
+                      <Lbl>Plazo (días corridos)</Lbl>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <input type="number" value={editandoPrecio.plazo_dias} onChange={e => setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value})}
+                          placeholder="ej. 30" style={{...inpMono, maxWidth: 120}} />
+                        {[30, 60, 90].map(d => (
+                          <button key={d} onClick={() => setEditandoPrecio({...editandoPrecio, plazo_dias: String(d)})}
+                            style={{ padding: '6px 12px', fontSize: 12, fontWeight: editandoPrecio.plazo_dias === String(d) ? 700 : 400, borderRadius: 6, cursor: 'pointer', border: `1px solid ${editandoPrecio.plazo_dias === String(d) ? S.accent : S.border}`, background: editandoPrecio.plazo_dias === String(d) ? S.accentLight : 'transparent', color: editandoPrecio.plazo_dias === String(d) ? S.accent : S.muted }}>
+                            {d}d
+                          </button>
+                        ))}
+                        {editandoPrecio.plazo_dias && l.fecha_ingreso && (
+                          <span style={{ fontSize: 11, color: S.muted }}>
+                            Vence: {new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(editandoPrecio.plazo_dias) * 86400000).toLocaleDateString('es-AR')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Comisión */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div>
+                        <Lbl>Comisión $</Lbl>
+                        <input type="number" value={editandoPrecio.comision_monto} onChange={e => setEditandoPrecio({...editandoPrecio, comision_monto: e.target.value})} placeholder="0" style={inpMono} />
+                      </div>
+                      <div>
+                        <Lbl>Comisión a quién</Lbl>
+                        <input type="text" value={editandoPrecio.comision_a_quien} onChange={e => setEditandoPrecio({...editandoPrecio, comision_a_quien: e.target.value})} placeholder="Nombre" style={inp} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 4 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: S.purple, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={editandoPrecio.comision_es_paralela || false} onChange={e => setEditandoPrecio({...editandoPrecio, comision_es_paralela: e.target.checked})} />
+                          Comisión por cuenta paralela
+                        </label>
+                      </div>
                     </div>
 
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -534,7 +551,7 @@ export default function Ingresos({ usuario }) {
 
       {/* ── TAB GESTIÓN COMERCIAL ── */}
       {tab === 'gestion' && (
-        <GestionComercial lotes={lotes} corrales={corrales} esDueno={esDueno} cargarDatos={cargarDatos} />
+        <GestionComercial lotes={lotes} corrales={corrales} esDueno={esDueno} cargarDatos={cargarDatos} contactos={contactos} />
       )}
 
       {/* ── TAB CALCULADORA ── */}
@@ -726,11 +743,10 @@ export default function Ingresos({ usuario }) {
 }
 
 // ── GESTIÓN COMERCIAL (componente separado) ──
-function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
+function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
   const [editandoFactura, setEditandoFactura] = useState(null)
-  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '' })
-  const [pagosMap, setPagosMap] = useState({})
-  const [chequesCartera, setChequesCartera] = useState([])
+  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
+  const [pagosMap, setPagosMap] = useState({})\n  const [chequesCartera, setChequesCartera] = useState([])
   const [formPago, setFormPago] = useState({ monto: '', tipo: 'transferencia', fecha: new Date().toISOString().split('T')[0], es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' })
   const [pagoAbierto, setPagoAbierto] = useState(null)
   const [guardando, setGuardando] = useState(false)
@@ -768,6 +784,11 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
       iva_monto: ivaMonto,
       monto_negro: montoNegro,
       observaciones_pago: formFactura.observaciones_pago || null,
+      domicilio: formFactura.proveedor || null,
+      localidad: formFactura.localidad || null,
+      cuit: formFactura.cuit || null,
+      iva: formFactura.iva || null,
+      cbu: formFactura.cbu || null,
     }).eq('id', lote.id)
     setEditandoFactura(null)
     await cargarDatos()
@@ -896,7 +917,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
 
               {/* Botón editar factura */}
               {!isEditFactura && (
-                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '' }) }}
+                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.domicilio || '', localidad: l.localidad || '', cuit: l.cuit || '', iva: l.iva || '', cbu: l.cbu || '' }) }}
                   style={{ padding: '5px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginBottom: '1rem' }}>
                   ✏ Completar factura
                 </button>
@@ -905,33 +926,33 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos }) {
               {/* Form factura */}
               {isEditFactura && (
                 <div style={{ background: S.accentLight, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: S.accent, marginBottom: '0.75rem' }}>Datos de factura</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: S.accent, marginBottom: '0.75rem' }}>Gestión comercial</div>
+
+                  {/* N° Factura + Fecha */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                     <div><Lbl>N° Factura</Lbl><input type="text" value={formFactura.numero_factura} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})} style={inp} /></div>
-                    <div><Lbl>Fecha factura</Lbl><input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} /></div>
-                    <div><Lbl>% IVA</Lbl>
-                      <select value={formFactura.iva_pct} onChange={e => setFormFactura({...formFactura, iva_pct: e.target.value})} style={inp}>
-                        <option value="0">Sin IVA</option>
-                        <option value="10.5">10.5%</option>
-                        <option value="21">21%</option>
-                      </select>
-                    </div>
-                    <div><Lbl>Neto facturado $</Lbl><input type="number" value={formFactura.monto_facturado} onChange={e => setFormFactura({...formFactura, monto_facturado: e.target.value})} style={inpMono} /></div>
-                    {formFactura.monto_facturado && (
-                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                        <div style={{ fontSize: 11, color: S.muted }}>
-                          IVA: ${Math.round(parseFloat(formFactura.monto_facturado) * parseFloat(formFactura.iva_pct || 10.5) / 100).toLocaleString('es-AR')}
-                          {' · '}Total factura: ${(parseFloat(formFactura.monto_facturado) + Math.round(parseFloat(formFactura.monto_facturado) * parseFloat(formFactura.iva_pct || 10.5) / 100)).toLocaleString('es-AR')}
-                        </div>
-                        {total && (
-                          <div style={{ fontSize: 11, color: S.purple, fontWeight: 600 }}>
-                            Paralelo: ${Math.max(0, total - parseFloat(formFactura.monto_facturado) - Math.round(parseFloat(formFactura.monto_facturado) * parseFloat(formFactura.iva_pct || 10.5) / 100)).toLocaleString('es-AR')}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div><Lbl>Observaciones</Lbl><input type="text" value={formFactura.observaciones_pago} onChange={e => setFormFactura({...formFactura, observaciones_pago: e.target.value})} style={inp} /></div>
+                    <div><Lbl>Fecha Factura</Lbl><input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} /></div>
                   </div>
+
+                  {/* Selector de contacto */}
+                  <div style={{ background: 'white', border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Seleccionar de contactos</div>
+                    <select onChange={e => {
+                      const ct = (contactos || []).find(c => String(c.id) === e.target.value)
+                      if (ct) setFormFactura({...formFactura, proveedor: ct.nombre, cuit: ct.cuit || '', localidad: ct.localidad || '', iva: ct.iva || '', cbu: ct.cbu || ''})
+                    }} style={inp} defaultValue="">
+                      <option value="">— Seleccionar contacto —</option>
+                      {(contactos || []).map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                    </select>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                      <div><Lbl>Nombre</Lbl><input type="text" value={formFactura.proveedor || ''} onChange={e => setFormFactura({...formFactura, proveedor: e.target.value})} style={inp} /></div>
+                      <div><Lbl>Localidad</Lbl><input type="text" value={formFactura.localidad || ''} onChange={e => setFormFactura({...formFactura, localidad: e.target.value})} style={inp} /></div>
+                      <div><Lbl>CUIT</Lbl><input type="text" value={formFactura.cuit || ''} onChange={e => setFormFactura({...formFactura, cuit: e.target.value})} style={inp} /></div>
+                      <div><Lbl>IVA</Lbl><input type="text" value={formFactura.iva || ''} onChange={e => setFormFactura({...formFactura, iva: e.target.value})} style={inp} /></div>
+                      <div><Lbl>CBU</Lbl><input type="text" value={formFactura.cbu || ''} onChange={e => setFormFactura({...formFactura, cbu: e.target.value})} style={inp} /></div>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => guardarFactura(l)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
                     <button onClick={() => setEditandoFactura(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
