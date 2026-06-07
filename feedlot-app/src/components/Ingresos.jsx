@@ -27,6 +27,9 @@ const PROCEDENCIAS_DEFAULT = ['La Pampa', 'Córdoba', 'Buenos Aires', 'Santa Fe'
 
 export default function Ingresos({ usuario }) {
   const [tab, setTab] = useState('lista')
+  const [showDetalleMeses, setShowDetalleMeses] = useState(false)
+  const [showDetallePrecio, setShowDetallePrecio] = useState(false)
+  const [showDetalleKg, setShowDetalleKg] = useState(false)
   const [lotes, setLotes] = useState([])
   const [corrales, setCorrales] = useState([])
   const [contactos, setContactos] = useState([])
@@ -194,6 +197,19 @@ export default function Ingresos({ usuario }) {
     ? Math.round(lotesConKg.reduce((s, l) => s + (l.kg_bascula / l.cantidad), 0) / lotesConKg.length)
     : null
 
+  // Detalle por mes
+  const ingresosPorMes = {}
+  lotes.forEach(l => {
+    const fecha = new Date(l.created_at || l.fecha_ingreso)
+    const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
+    if (!ingresosPorMes[key]) ingresosPorMes[key] = { cantidad: 0, ingresos: 0, kgTotal: 0, precioSum: 0, precioCount: 0 }
+    ingresosPorMes[key].cantidad += l.cantidad || 0
+    ingresosPorMes[key].ingresos += 1
+    ingresosPorMes[key].kgTotal += l.kg_bascula || 0
+    if (l.precio_compra) { ingresosPorMes[key].precioSum += l.precio_compra; ingresosPorMes[key].precioCount += 1 }
+  })
+  const mesesOrdenados = Object.entries(ingresosPorMes).sort((a, b) => b[0].localeCompare(a[0]))
+
   const TABS = [
     { key: 'lista', label: 'Ingresos' },
     { key: 'gestion', label: 'Gestión comercial' },
@@ -279,20 +295,133 @@ export default function Ingresos({ usuario }) {
       </div>
 
       {/* Métricas */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
-        {[
-          { label: 'Comprados este año', val: totalAnimAnio.toLocaleString('es-AR'), sub: `${lotesAnio.length} ingreso${lotesAnio.length !== 1 ? 's' : ''}`, ok: totalAnimAnio > 0 },
-          { label: 'Comprados este mes', val: totalAnimMes.toLocaleString('es-AR'), sub: `${lotesMes.length} ingreso${lotesMes.length !== 1 ? 's' : ''}`, ok: totalAnimMes > 0 },
-          { label: 'Precio prom. compra', val: precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—', sub: '$/kg · promedio histórico', ok: false },
-          { label: 'Kg prom. por animal', val: kgPromedio ? `${kgPromedio.toLocaleString('es-AR')} kg` : '—', sub: 'kg báscula / cantidad', ok: false },
-        ].map((m, i) => (
-          <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
-            <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>{m.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: m.ok ? S.green : S.text }}>{m.val}</div>
-            <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{m.sub}</div>
-          </div>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1rem' }}>
+        {/* Comprados este año — expandible */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Comprado este año</div>
+          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: totalAnimAnio > 0 ? S.green : S.text }}>{totalAnimAnio.toLocaleString('es-AR')}</div>
+          <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>{lotesAnio.length} ingreso{lotesAnio.length !== 1 ? 's' : ''} · este año</div>
+          <button onClick={() => setShowDetalleMeses(!showDetalleMeses)}
+            style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+            {showDetalleMeses ? '▴ Ocultar detalle' : '▾ Ver por mes'}
+          </button>
+        </div>
+        {/* Comprados este mes */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Comprado este mes</div>
+          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: totalAnimMes > 0 ? S.green : S.text }}>{totalAnimMes.toLocaleString('es-AR')}</div>
+          <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>{lotesMes.length} ingreso{lotesMes.length !== 1 ? 's' : ''}</div>
+        </div>
+        {/* Precio prom — expandible */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Precio prom. compra</div>
+          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: S.text }}>{precioPromedio ? `$${precioPromedio.toLocaleString('es-AR')}` : '—'}</div>
+          <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>$/kg · promedio histórico</div>
+          <button onClick={() => setShowDetallePrecio(!showDetallePrecio)}
+            style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+            {showDetallePrecio ? '▴ Ocultar detalle' : '▾ Ver por mes'}
+          </button>
+        </div>
+        {/* Kg prom — expandible */}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
+          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Kg prom. por animal</div>
+          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: S.text }}>{kgPromedio ? `${kgPromedio.toLocaleString('es-AR')} kg` : '—'}</div>
+          <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>kg báscula / cantidad</div>
+          <button onClick={() => setShowDetalleKg(!showDetalleKg)}
+            style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+            {showDetalleKg ? '▴ Ocultar detalle' : '▾ Ver por mes'}
+          </button>
+        </div>
       </div>
+
+      {/* Detalle comprados por mes */}
+      {showDetalleMeses && mesesOrdenados.length > 0 && (
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, marginBottom: '1rem', overflow: 'hidden' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>Compras por mes</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ background: S.bg }}>
+              {['Mes', 'Ingresos', 'Animales'].map(h => (
+                <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Animales' ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {mesesOrdenados.map(([key, data]) => {
+                const [anio, mes] = key.split('-')
+                const nombreMes = new Date(parseInt(anio), parseInt(mes) - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                return (
+                  <tr key={key} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '9px 14px', fontWeight: 600, textTransform: 'capitalize' }}>{nombreMes}</td>
+                    <td style={{ padding: '9px 14px', color: S.muted }}>{data.ingresos} ingreso{data.ingresos !== 1 ? 's' : ''}</td>
+                    <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{data.cantidad.toLocaleString('es-AR')}</td>
+                  </tr>
+                )
+              })}
+              <tr style={{ background: S.bg, borderTop: `2px solid ${S.border}` }}>
+                <td style={{ padding: '9px 14px', fontWeight: 700 }}>Total</td>
+                <td style={{ padding: '9px 14px', color: S.muted }}>{lotes.length} ingresos</td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{lotes.reduce((s,l)=>s+(l.cantidad||0),0).toLocaleString('es-AR')}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Detalle precio por mes */}
+      {showDetallePrecio && mesesOrdenados.length > 0 && (
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, marginBottom: '1rem', overflow: 'hidden' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>Precio promedio de compra por mes</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ background: S.bg }}>
+              {['Mes', 'Ingresos con precio', 'Precio prom. $/kg'].map(h => (
+                <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Precio prom. $/kg' ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {mesesOrdenados.map(([key, data]) => {
+                const [anio, mes] = key.split('-')
+                const nombreMes = new Date(parseInt(anio), parseInt(mes) - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                const precioProm = data.precioCount > 0 ? Math.round(data.precioSum / data.precioCount) : null
+                return (
+                  <tr key={key} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '9px 14px', fontWeight: 600, textTransform: 'capitalize' }}>{nombreMes}</td>
+                    <td style={{ padding: '9px 14px', color: S.muted }}>{data.precioCount} ingreso{data.precioCount !== 1 ? 's' : ''}</td>
+                    <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: precioProm ? S.green : S.hint }}>{precioProm ? `$${precioProm.toLocaleString('es-AR')}` : '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Detalle kg por mes */}
+      {showDetalleKg && mesesOrdenados.length > 0 && (
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, marginBottom: '1rem', overflow: 'hidden' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>Kg promedio por animal — por mes</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ background: S.bg }}>
+              {['Mes', 'Animales', 'Kg totales', 'Kg prom./animal'].map(h => (
+                <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Kg prom./animal' ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {mesesOrdenados.map(([key, data]) => {
+                const [anio, mes] = key.split('-')
+                const nombreMes = new Date(parseInt(anio), parseInt(mes) - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                const kgProm = data.cantidad > 0 && data.kgTotal > 0 ? Math.round(data.kgTotal / data.cantidad) : null
+                return (
+                  <tr key={key} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '9px 14px', fontWeight: 600, textTransform: 'capitalize' }}>{nombreMes}</td>
+                    <td style={{ padding: '9px 14px', fontFamily: 'monospace' }}>{data.cantidad.toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '9px 14px', fontFamily: 'monospace', color: S.muted }}>{(data.kgTotal/1000).toFixed(1)} tn</td>
+                    <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{kgProm ? `${kgProm.toLocaleString('es-AR')} kg` : '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Banner lotes sin precio */}
       {lotesSinPrecio.length > 0 && (
@@ -746,7 +875,8 @@ export default function Ingresos({ usuario }) {
 function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
   const [editandoFactura, setEditandoFactura] = useState(null)
   const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
-  const [pagosMap, setPagosMap] = useState({})\n  const [chequesCartera, setChequesCartera] = useState([])
+  const [pagosMap, setPagosMap] = useState({})
+  const [chequesCartera, setChequesCartera] = useState([])
   const [formPago, setFormPago] = useState({ monto: '', tipo: 'transferencia', fecha: new Date().toISOString().split('T')[0], es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' })
   const [pagoAbierto, setPagoAbierto] = useState(null)
   const [guardando, setGuardando] = useState(false)
