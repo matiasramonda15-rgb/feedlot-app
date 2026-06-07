@@ -542,7 +542,7 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   const productos = orden.productos || []
 
   const filasProductos = productos.map(p => {
-    const item = stockAgro.find(s => s.id === parseInt(p.id))
+    const item = stockAgro.find(s => String(s.id) === String(p.id))
     const totalUso = p.dosis && superficie !== '—' ? parseFloat(p.dosis) * parseFloat(superficie) : null
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}</td>
@@ -564,7 +564,7 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   </style>
 </head>
 <body>
-  <div class="no-print" style="padding:10px;text-align:right;background:#f5f5f5;border-bottom:1px solid #ddd;">
+  <div class="no-print" style="position:fixed;top:10px;right:10px;z-index:999;">
     <button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;margin-right:8px;">🖨️ Imprimir / Guardar PDF</button>
     <button onclick="window.close()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:#fff;border:1px solid #ccc;border-radius:6px;">Cerrar</button>
   </div>
@@ -1685,7 +1685,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pagoAbierto, setPagoAbierto] = useState(null) // id del vencimiento
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ARR }] })
+  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
 
@@ -1723,9 +1723,12 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 
   async function pagarArriendo(v) {
     const totalPagos = formPago.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-    const monto = v.monto_calculado || totalPagos
     if (!totalPagos) { alert('Ingresá el monto del pago'); return }
     setGuardandoPago(true)
+    const precio = parseFloat(formPago.precio_pizarra) || null
+    const qq = v.qq_ha || v.campos?.arrendamiento_qq_ha || null
+    const sup = v.campos?.superficie_ha || null
+    const montoCalc = precio && qq && sup ? Math.round(precio * qq * sup) : null
 
     const desc = `Arriendo ${v.campos?.nombre || ''} — ${v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
@@ -1750,13 +1753,15 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 
     await supabase.from('vencimientos_arriendo').update({
       estado: 'pagado', pagado_en: formPago.fecha,
+      precio_pizarra: precio || null,
+      monto_calculado: montoCalc || totalPagos,
       caja_oficial_id, caja_paralela_id,
       pagos_detalle: formPago.pagos,
       forma_pago: formPago.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
     }).eq('id', v.id)
 
     setPagoAbierto(null)
-    setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ARR }] })
+    setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR }] })
     setGuardandoPago(false)
     await cargarVencimientos()
     await cargar()
@@ -1801,20 +1806,11 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 
             {showForm === campo.id && (
               <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div><Label>Fecha vencimiento *</Label><input type="date" value={formVenc.fecha_vencimiento} onChange={e => setFormVenc({...formVenc, fecha_vencimiento: e.target.value})} style={inputStyle} /></div>
                   <div><Label>qq/ha</Label><input type="number" value={formVenc.qq_ha} onChange={e => setFormVenc({...formVenc, qq_ha: e.target.value})} style={inputStyle} placeholder={String(campo.arrendamiento_qq_ha || '')} /></div>
-                  <div><Label>Precio pizarra Rosario $</Label><input type="number" value={formVenc.precio_pizarra} onChange={e => setFormVenc({...formVenc, precio_pizarra: e.target.value})} style={inputStyle} /></div>
-                  <div>
-                    <Label>Monto calculado</Label>
-                    <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.green }}>
-                      {formVenc.qq_ha && formVenc.precio_pizarra && campo.superficie_ha
-                        ? `$${Math.round(parseFloat(formVenc.qq_ha) * parseFloat(formVenc.precio_pizarra) * campo.superficie_ha).toLocaleString('es-AR')}`
-                        : '—'}
-                    </div>
-                  </div>
+                  <div><Label>Observaciones</Label><input type="text" value={formVenc.observaciones} onChange={e => setFormVenc({...formVenc, observaciones: e.target.value})} style={inputStyle} /></div>
                 </div>
-                <div style={{ marginBottom: 10 }}><Label>Observaciones</Label><input type="text" value={formVenc.observaciones} onChange={e => setFormVenc({...formVenc, observaciones: e.target.value})} style={inputStyle} /></div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => guardarVencimiento(campo.id)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
                   <button onClick={() => setShowForm(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -1843,7 +1839,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         {v.estado === 'pagado'
                           ? <span style={{ padding: '3px 10px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 12, fontWeight: 600 }}>✓ Pagado {v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR') : ''}</span>
-                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ARR, monto: v.monto_calculado ? String(v.monto_calculado) : '' }] }) }}
+                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
                               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                               💳 Registrar pago
                             </button>
@@ -1857,7 +1853,28 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                     {isPagoAbierto && (
                       <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 8, padding: '1rem', marginTop: '1rem' }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: '1rem' }}>
-                          Pago arriendo — {campo.nombre} · {v.monto_calculado ? `$${v.monto_calculado.toLocaleString('es-AR')}` : ''}
+                          Pago arriendo — {campo.nombre}{v.qq_ha ? ` · ${v.qq_ha} qq/ha · ${campo.superficie_ha} ha` : ''}
+                        </div>
+                        {/* Precio pizarra */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                          <div>
+                            <Label>Precio pizarra Rosario $/qq</Label>
+                            <input type="number" value={formPago.precio_pizarra} onChange={e => {
+                              const pp = e.target.value
+                              const qq = v.qq_ha || campo.arrendamiento_qq_ha || 0
+                              const sup = campo.superficie_ha || 0
+                              const monto = pp && qq && sup ? String(Math.round(parseFloat(pp) * qq * sup)) : ''
+                              setFormPago({...formPago, precio_pizarra: pp, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
+                            }} style={inputStyle} placeholder="ej. 380000" />
+                          </div>
+                          <div>
+                            <Label>Monto calculado</Label>
+                            <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700, background: S.surface, color: S.green }}>
+                              {formPago.precio_pizarra && v.qq_ha && campo.superficie_ha
+                                ? `$${Math.round(parseFloat(formPago.precio_pizarra) * v.qq_ha * campo.superficie_ha).toLocaleString('es-AR')}`
+                                : '—'}
+                            </div>
+                          </div>
                         </div>
                         <div style={{ marginBottom: 10 }}>
                           <Label>Fecha de pago</Label>
