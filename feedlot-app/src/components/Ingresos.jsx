@@ -567,24 +567,6 @@ export default function Ingresos({ usuario }) {
                       </div>
                     </div>
 
-                    {/* Comisión */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-                      <div>
-                        <Lbl>Comisión $</Lbl>
-                        <input type="number" value={editandoPrecio.comision_monto} onChange={e => setEditandoPrecio({...editandoPrecio, comision_monto: e.target.value})} placeholder="0" style={inpMono} />
-                      </div>
-                      <div>
-                        <Lbl>Comisión a quién</Lbl>
-                        <input type="text" value={editandoPrecio.comision_a_quien} onChange={e => setEditandoPrecio({...editandoPrecio, comision_a_quien: e.target.value})} placeholder="Nombre" style={inp} />
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 4 }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: S.purple, cursor: 'pointer' }}>
-                          <input type="checkbox" checked={editandoPrecio.comision_es_paralela || false} onChange={e => setEditandoPrecio({...editandoPrecio, comision_es_paralela: e.target.checked})} />
-                          Comisión por cuenta paralela
-                        </label>
-                      </div>
-                    </div>
-
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Btn onClick={() => guardarPrecio(l)} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</Btn>
                       <Btn ghost onClick={() => setEditandoPrecio(null)}>Cancelar</Btn>
