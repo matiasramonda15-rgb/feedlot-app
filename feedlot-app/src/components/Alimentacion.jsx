@@ -147,7 +147,15 @@ export default function Alimentacion({ usuario }) {
 
   async function cargarArchivo() {
     setCargandoArchivo(true)
-    const { data } = await supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).range(100, 999)
+    // Fecha de corte: inicio del día de hace 7 días
+    const hace7dias = new Date()
+    hace7dias.setDate(hace7dias.getDate() - 7)
+    hace7dias.setHours(0, 0, 0, 0)
+    const { data } = await supabase.from('raciones_app')
+      .select('*, corrales(numero)')
+      .lt('creado_en', hace7dias.toISOString())
+      .order('creado_en', { ascending: false })
+      .limit(2000)
     setHistorialArchivo(data || [])
     setCargandoArchivo(false)
   }
@@ -188,7 +196,7 @@ export default function Alimentacion({ usuario }) {
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100).range(200, 299),
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion']),
-      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100),
+      supabase.from('raciones_app').select('*, corrales(numero)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
@@ -967,65 +975,76 @@ export default function Alimentacion({ usuario }) {
           {/* ARCHIVO */}
           <button onClick={() => { if (!verArchivo && historialArchivo.length === 0) cargarArchivo(); setVerArchivo(!verArchivo) }}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: '1rem' }}>
-            {verArchivo ? '▾' : '▸'} {cargandoArchivo ? 'Cargando...' : `Archivo (registros anteriores a los últimos 100)`}
+            {verArchivo ? '▾' : '▸'} {cargandoArchivo ? 'Cargando...' : `Archivo (días anteriores a los últimos 7 días)`}
           </button>
           {verArchivo && (
-            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-              {/* Filtros de fecha */}
-              <div style={{ padding: '12px 16px', background: S.bg, borderBottom: `1px solid ${S.border}`, display: 'flex', gap: 12, alignItems: 'center' }}>
-                <div style={{ fontSize: 11, color: S.muted, fontWeight: 600 }}>Filtrar por fecha:</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, color: S.muted }}>Desde</span>
-                  <input type="date" value={archivoFechaDesde} onChange={e => setArchivoFechaDesde(e.target.value)}
-                    style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '4px 8px', fontSize: 12, background: S.surface }} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, color: S.muted }}>Hasta</span>
-                  <input type="date" value={archivoFechaHasta} onChange={e => setArchivoFechaHasta(e.target.value)}
-                    style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '4px 8px', fontSize: 12, background: S.surface }} />
-                </div>
-                {(archivoFechaDesde || archivoFechaHasta) && (
-                  <button onClick={() => { setArchivoFechaDesde(''); setArchivoFechaHasta('') }}
-                    style={{ fontSize: 11, background: 'transparent', border: 'none', color: S.muted, cursor: 'pointer', textDecoration: 'underline' }}>
-                    Limpiar
-                  </button>
-                )}
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr>
-                    {['Fecha', 'Corral', 'Mixer', 'Formula', 'Kg total', 'Costo est.', 'Por'].map(h => (
-                      <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {historialArchivo.length === 0 && !cargandoArchivo && (
-                    <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones archivadas.</td></tr>
-                  )}
-                  {cargandoArchivo && (
-                    <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.muted, fontSize: 13 }}>Cargando archivo...</td></tr>
-                  )}
-                  {historialArchivo.filter(h => {
-                    const fecha = h.creado_en?.split('T')[0]
-                    if (archivoFechaDesde && fecha < archivoFechaDesde) return false
-                    if (archivoFechaHasta && fecha > archivoFechaHasta) return false
-                    return true
-                  }).map(h => (
-                    <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: 0.75 }}>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(h.creado_en || h.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                      <td style={{ padding: '9px 12px' }}>{h.corrales?.numero ? `C-${h.corrales.numero}` : '-'}</td>
-                      <td style={{ padding: '9px 12px' }}>{h.mixer}</td>
-                      <td style={{ padding: '9px 12px' }}>{h.formula}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{(h.kg_total || 0).toLocaleString('es-AR')}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.green, fontWeight: 600 }}>
-                        {h.costo_estimado ? `$${h.costo_estimado.toLocaleString('es-AR')}` : <span style={{ color: S.hint, fontWeight: 400 }}>—</span>}
-                      </td>
-                      <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{h.usuarios?.nombre || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              {cargandoArchivo && (
+                <div style={{ padding: '2rem', textAlign: 'center', color: S.muted, fontSize: 13 }}>Cargando archivo...</div>
+              )}
+              {!cargandoArchivo && historialArchivo.length === 0 && (
+                <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay raciones archivadas.</div>
+              )}
+              {!cargandoArchivo && historialArchivo.length > 0 && (() => {
+                const porFecha = {}
+                historialArchivo.forEach(h => {
+                  const fecha = h.fecha || h.creado_en?.split('T')[0]
+                  if (!porFecha[fecha]) porFecha[fecha] = []
+                  porFecha[fecha].push(h)
+                })
+                return (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                      <button onClick={() => {
+                        generarArchivoRaciones(porFecha, 'Archivo completo')
+                      }} style={{ padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
+                        📄 Exportar archivo completo
+                      </button>
+                    </div>
+                    {Object.entries(porFecha).sort((a, b) => b[0].localeCompare(a[0])).map(([fecha, items]) => {
+                      const totalKg = items.reduce((s, h) => s + (h.kg_total || 0), 0)
+                      return (
+                        <div key={fecha} style={{ marginBottom: '1.25rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: S.accent }}>
+                              {new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
+                                Total: {totalKg.toLocaleString('es-AR')} kg
+                              </div>
+                              <button onClick={() => generarArchivoRaciones({ [fecha]: items }, fecha)}
+                                style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                                📄 Exportar día
+                              </button>
+                            </div>
+                          </div>
+                          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                              <thead>
+                                <tr style={{ background: S.bg }}>
+                                  {['Corral', 'Etapa', 'Kg cargados'].map(h => (
+                                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => (
+                                  <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                    <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
+                                    <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
+                                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>
