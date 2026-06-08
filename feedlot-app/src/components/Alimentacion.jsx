@@ -957,13 +957,6 @@ export default function Alimentacion({ usuario }) {
               )
             })
           })()}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )
-            })
-          })()}
 
           {historial.length === 0 && (
             <div style={{ padding: '3rem', textAlign: 'center', color: S.hint, background: S.surface, borderRadius: 10, border: `1px solid ${S.border}` }}>
