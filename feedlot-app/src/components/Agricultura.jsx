@@ -1669,6 +1669,69 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
 
 // ── TAB ARRIENDOS ──
 
+function generarReciboArriendo(v, campo, pagos) {
+  const fecha = v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
+  const totalMonto = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+  const entero = Math.floor(totalMonto)
+  const unidades = ['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE']
+  const decenas = ['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA']
+  const centenas = ['','CIEN','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS']
+  function nAL(n) {
+    if (n === 0) return 'CERO'; let r = ''
+    if (n >= 1000000) { const m = Math.floor(n/1000000); r += (m===1?'UN MILLÓN ':nAL(m)+' MILLONES '); n %= 1000000 }
+    if (n >= 1000) { const m = Math.floor(n/1000); r += (m===1?'MIL ':nAL(m)+' MIL '); n %= 1000 }
+    if (n >= 100) { r += (n===100?'CIEN ':centenas[Math.floor(n/100)]+' '); n %= 100 }
+    if (n >= 20) { r += decenas[Math.floor(n/10)]; if (n%10>0) r += ' Y '+unidades[n%10]; r += ' ' }
+    else if (n > 0) r += unidades[n]+' '
+    return r.trim()
+  }
+  const centavos = Math.round((totalMonto - entero) * 100)
+  const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
+  const fechaVenc = v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
+  const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.qq_ha || ''} qq/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/qq` : ''}`
+  const filasPago = pagos.map(p => {
+    let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : 'E-CHEQ TERCERO'
+    if (p.es_paralelo) desc += ' (PARALELO)'
+    const nro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.numero || '') : ''
+    const fechaCobro = p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''
+    return `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${nro}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${fechaCobro}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${parseFloat(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>`
+  }).join('')
+  const bloque = `<div style="border:1px solid #333;padding:20px;font-family:Arial,sans-serif;font-size:12px;width:100%;box-sizing:border-box;">
+    <table style="width:100%;margin-bottom:10px;"><tr>
+      <td style="width:33%;vertical-align:top;"><div style="font-weight:bold;">Pedro Barciocco 1221</div><div>TEL: 3574-442656</div><div style="margin-top:8px;border:1px solid #333;display:inline-block;padding:2px 6px;font-weight:bold;">X NO VALIDO COMO FACTURA</div></td>
+      <td style="width:34%;text-align:center;vertical-align:middle;"><div style="font-size:22px;font-weight:900;">RAMONDA</div><div style="font-size:14px;font-weight:600;">HNOS S.A.</div></td>
+      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: 30-71682182-6</div><div>FECHA <strong>${fecha}</strong></div></td>
+    </tr></table>
+    <hr style="border:1px solid #333;margin:8px 0;">
+    <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;">Entrego a:</td></tr>
+      <tr><td colspan="2" style="padding:4px 8px;">Nombre: <strong>${campo?.propietario || ''}</strong></td></tr>
+    </table>
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
+      <tr><td colspan="2" style="padding:6px 8px;">${concepto}</td></tr>
+    </table>
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td colspan="4" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Medio de pago</td></tr>
+      <tr style="background:#eee;"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #333;font-size:11px;">DESCRIPCIÓN</th><th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">NRO/CHEQUE</th><th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">FECHA COBRO</th><th style="padding:6px 8px;text-align:right;border-bottom:1px solid #333;font-size:11px;">IMPORTE</th></tr>
+      ${filasPago}
+      <tr style="border-top:1px solid #333;"><td colspan="3" style="padding:8px;text-align:right;font-weight:bold;">IMPORTE TOTAL $</td><td style="padding:8px;text-align:right;font-weight:bold;">${totalMonto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>
+    </table>
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td style="padding:6px 8px;">Cantidad de pesos: ${enLetras}</td></tr>
+      <tr><td style="padding:20px 8px 30px 8px;">&nbsp;</td></tr>
+      <tr><td style="padding:8px;"><table style="width:100%;"><tr><td style="width:40%;text-align:center;border-top:1px solid #333;">Firma</td><td style="width:20%;"></td><td style="width:40%;text-align:center;border-top:1px solid #333;">DNI</td></tr></table></td></tr>
+    </table>
+  </div>`
+  const win = window.open('', '_blank')
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo arriendo</title><style>@media print{.no-print{display:none;}}body{font-family:Arial,sans-serif;background:#fff;padding:10px;}</style></head><body>
+    <div style="text-align:right;margin-bottom:10px;" class="no-print"><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;">🖨️ Imprimir</button></div>
+    ${bloque}<div style="border-top:2px dashed #999;margin:16px 0;text-align:center;font-size:11px;color:#999;padding:4px 0;">✂ CORTAR AQUÍ ✂</div>${bloque}
+  </body></html>`)
+  win.document.close()
+}
+
+
 function TabArriendos({ campos, cargar, contactos, usuario }) {
   const [vencimientos, setVencimientos] = useState([])
   const [showForm, setShowForm] = useState(null)
@@ -1717,7 +1780,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     if (!totalPagos) { alert('Ingresá el monto del pago'); return }
     setGuardandoPago(true)
     const precio = parseFloat(formPago.precio_pizarra) || null
-    const qq = v.qq_ha || v.campos?.arrendamiento_qq_ha || null
+    const qq = v.qq_ha || null  // solo qq del vencimiento, no el anual
     const sup = v.campos?.superficie_ha || null
     const montoCalc = precio && qq && sup ? Math.round(precio * qq * sup) : null
 
@@ -1751,11 +1814,14 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
       forma_pago: formPago.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
     }).eq('id', v.id)
 
+    const pagosFinal = [...formPago.pagos]
+    const fechaPago = formPago.fecha
     setPagoAbierto(null)
     setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR }] })
     setGuardandoPago(false)
     await cargarVencimientos()
     await cargar()
+    generarReciboArriendo({ ...v, pagado_en: fechaPago, pagos_detalle: pagosFinal }, campo, pagosFinal)
   }
 
   if (loading) return <div style={{ padding: '2rem', color: S.hint }}>Cargando...</div>
@@ -1881,7 +1947,11 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         {v.estado === 'pagado'
-                          ? <span style={{ padding: '3px 10px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 12, fontWeight: 600 }}>✓ Pagado {v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR') : ''}</span>
+                          ? <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ padding: '3px 10px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 12, fontWeight: 600 }}>✓ Pagado {v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR') : ''}</span>
+                              {v.pagos_detalle && <button onClick={() => generarReciboArriendo(v, campo, v.pagos_detalle)}
+                                style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo</button>}
+                            </div>
                           : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
                               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                               💳 Registrar pago
