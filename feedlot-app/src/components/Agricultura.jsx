@@ -1780,7 +1780,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     if (!totalPagos) { alert('Ingresá el monto del pago'); return }
     setGuardandoPago(true)
     const precio = parseFloat(formPago.precio_pizarra) || null
-    const qq = v.qq_ha || null  // solo qq del vencimiento, no el anual
+    const qq = parseFloat(v.qq_ha) || null  // solo qq del vencimiento, no el anual
     const sup = v.campos?.superficie_ha || null
     const montoCalc = precio && qq && sup ? Math.round(precio * qq * sup) : null
 
@@ -1967,6 +1967,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                       <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 8, padding: '1rem', marginTop: '1rem' }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: '1rem' }}>
                           Pago arriendo — {campo.nombre}{v.qq_ha ? ` · ${v.qq_ha} qq/ha · ${campo.superficie_ha} ha` : ''}
+                          {!v.qq_ha && <span style={{ fontSize: 11, color: S.amber, marginLeft: 8 }}>⚠ Sin qq/ha — el monto no se calcula automáticamente</span>}
                         </div>
                         {/* Precio pizarra */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -1974,7 +1975,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                             <Label>Precio pizarra Rosario $/qq</Label>
                             <input type="number" value={formPago.precio_pizarra} onChange={e => {
                               const pp = e.target.value
-                              const qq = v.qq_ha || campo.arrendamiento_qq_ha || 0
+                              const qq = parseFloat(v.qq_ha) || 0
                               const sup = campo.superficie_ha || 0
                               const monto = pp && qq && sup ? String(Math.round(parseFloat(pp) * qq * sup)) : ''
                               setFormPago({...formPago, precio_pizarra: pp, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
