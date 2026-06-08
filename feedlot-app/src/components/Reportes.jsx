@@ -47,7 +47,7 @@ export default function Reportes({ usuario }) {
     const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
-      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(500),
       supabase.from('stock_insumos').select('*'),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -175,22 +175,40 @@ export default function Reportes({ usuario }) {
     const gdpCorregido = permanenciaCorregida > 0 ? (pesoProm_venta - pesoProm_ingreso) / permanenciaCorregida : null
 
     // Paso 6: Consumo diario
-    const kgAlimento = racionesData
-      .filter(r => { const f = new Date(r.creado_en); return f >= fechaInicio && f < fechaFin })
-      .reduce((s, r) => s + (r.kg_total || 0), 0)
-    const consumoDiarioCalc = existenciaPromedio >= 5 && dias > 0 ? kgAlimento / (existenciaPromedio * dias) : null
-    const consumoDiario = consumoDiarioCalc && consumoDiarioCalc <= 30 ? consumoDiarioCalc : null
+    // Consumo diario: promedio de (kg_dia / animales_ese_dia) para cada día con raciones
+    const racionesPeriodo = racionesData.filter(r => {
+      const f = new Date(r.creado_en)
+      return f >= fechaInicio && f < fechaFin
+    })
+    // Agrupar por día
+    const porDia = {}
+    racionesPeriodo.forEach(r => {
+      const dia = r.creado_en.split('T')[0]
+      if (!porDia[dia]) porDia[dia] = { kgTotal: 0, animales: 0, corralesVistos: new Set() }
+      porDia[dia].kgTotal += r.kg_total || 0
+      // Sumar animales del corral solo una vez por día
+      if (r.corral_id && !porDia[dia].corralesVistos.has(r.corral_id)) {
+        porDia[dia].animales += r.corrales?.animales || 0
+        porDia[dia].corralesVistos.add(r.corral_id)
+      }
+    })
+    const diasConDatos = Object.values(porDia).filter(d => d.animales > 0 && d.kgTotal > 0)
+    const consumoDiario = diasConDatos.length > 0
+      ? diasConDatos.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatos.length
+      : null
+    const consumoDiarioCalc = consumoDiario && consumoDiario <= 30 ? consumoDiario : null
+    const kgAlimento = racionesPeriodo.reduce((s, r) => s + (r.kg_total || 0), 0)
 
     // Paso 7: Conversión
-    const conversion = gdp && consumoDiario ? consumoDiario / gdp : null
-    const conversionCorregida = gdpCorregido && consumoDiario ? consumoDiario / gdpCorregido : null
+    const conversion = gdp && consumoDiarioCalc ? consumoDiarioCalc / gdp : null
+    const conversionCorregida = gdpCorregido && consumoDiarioCalc ? consumoDiarioCalc / gdpCorregido : null
     const kgProducidos = gdp && existenciaPromedio ? gdp * existenciaPromedio * dias : null
 
     return {
       dias, stockInicial, stockFinal, cabIngresadas, kgIngresados, cabVendidas, kgVendidos,
       pesoProm_ingreso, pesoProm_venta, existenciaPromedio, existenciaCorregida,
       permanencia, permanenciaCorregida, gdp, gdpCorregido,
-      consumoDiario, conversion, conversionCorregida, kgProducidos, kgAlimento,
+      consumoDiario: consumoDiarioCalc, conversion, conversionCorregida, kgProducidos, kgAlimento,
       variacionStock,
     }
   }
