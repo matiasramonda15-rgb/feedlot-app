@@ -2062,7 +2062,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
     const precioUnit = parseFloat(formCompra.precio_unitario)
     const total = formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit)
     const totalPagos = formCompra.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-    if (Math.abs(total - totalPagos) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`); return }
+    if (pagarAhora && Math.abs(total - totalPagos) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`); return }
     setGuardando(true)
 
     let caja_oficial_id = null, caja_paralela_id = null
