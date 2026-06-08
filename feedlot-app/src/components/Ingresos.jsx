@@ -1003,7 +1003,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     const totalLote = lote.monto_total_con_iva || (lote.precio_compra && kgBase ? Math.round(kgBase * lote.precio_compra) : null)
     const pagosActuales = pagosMap[lote.id] || []
     const totalPagado = pagosActuales.reduce((s, p) => s + (p.monto || 0), 0) + monto
-    const nuevoEstado = totalLote && totalPagado >= totalLote * 0.99 ? 'pagado' : 'pendiente'
+    const nuevoEstado = totalLote && totalPagado > 0 && totalPagado >= totalLote * 0.99 ? 'pagado' : 'pendiente'
     await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', lote.id)
 
     let caja_oficial_id = null
@@ -1178,11 +1178,12 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         await supabase.from('pagos_compras').delete().eq('id', p.id)
                         const pagosRest = pagos.filter(pp => pp.id !== p.id)
                         const totalPagadoRest = pagosRest.reduce((s, pp) => s + (pp.monto || 0), 0)
-                        const nuevoEstado = total && totalPagadoRest >= total * 0.99 ? 'pagado' : 'pendiente'
+                        const nuevoEstado = total && totalPagadoRest > 0 && totalPagadoRest >= total * 0.99 ? 'pagado' : 'pendiente'
                         await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', l.id)
                         await cargarDatos()
                         await cargarPagos()
                       }} style={{ padding: '2px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Eliminar</button>
+                      </div>
                     </div>
                   ))}
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', fontSize: 12, fontWeight: 600 }}>
