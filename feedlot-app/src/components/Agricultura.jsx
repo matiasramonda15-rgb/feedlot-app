@@ -1780,14 +1780,18 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
   async function guardarVencimiento(campo_id) {
     if (!formVenc.fecha_vencimiento) { alert('Ingresá la fecha de vencimiento'); return }
     setGuardando(true)
-    const qq = parseFloat(formVenc.qq_ha) || 0
-    const precio = parseFloat(formVenc.precio_pizarra) || 0
     const campo = campos.find(c => c.id === campo_id)
     const sup = campo?.superficie_ha || 0
-    const monto = qq && precio && sup ? Math.round(qq * precio * sup) : null
+    const freq = campo?.forma_pago_arriendo || 'semestral'
+    const qqAnual = parseFloat(campo?.arrendamiento_qq_ha) || 0
+    // Calcular qq/ha según frecuencia si no se ingresó manualmente
+    const divisor = freq === 'mensual' ? 12 : freq === 'semestral' ? 2 : 1
+    const qqPorVenc = parseFloat(formVenc.qq_ha) || (qqAnual > 0 ? +(qqAnual / divisor).toFixed(4) : 0)
+    const precio = parseFloat(formVenc.precio_pizarra) || 0
+    const monto = qqPorVenc && precio && sup ? Math.round(qqPorVenc * precio * sup) : null
     await supabase.from('vencimientos_arriendo').insert({
       campo_id, fecha_vencimiento: formVenc.fecha_vencimiento,
-      qq_ha: qq || null, precio_pizarra: precio || null,
+      qq_ha: qqPorVenc || null, precio_pizarra: precio || null,
       monto_total: monto, estado: 'pendiente',
       observaciones: formVenc.observaciones || null,
     })
@@ -1802,7 +1806,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     if (!totalPagos) { alert('Ingresá el monto del pago'); return }
     setGuardandoPago(true)
     const precio = parseFloat(formPago.precio_pizarra) || null
-    const qq = v.qq_ha || v.campos?.arrendamiento_qq_ha || null
+    const qq = v.qq_ha || null
     const sup = v.campos?.superficie_ha || null
     const montoCalc = precio && qq && sup ? Math.round(precio * qq * sup) : null
 
@@ -1938,9 +1942,20 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
               <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div><Label>Fecha vencimiento *</Label><input type="date" value={formVenc.fecha_vencimiento} onChange={e => setFormVenc({...formVenc, fecha_vencimiento: e.target.value})} style={inputStyle} /></div>
-                  <div><Label>qq/ha</Label><input type="number" value={formVenc.qq_ha} onChange={e => setFormVenc({...formVenc, qq_ha: e.target.value})} style={inputStyle} placeholder={String(campo.arrendamiento_qq_ha || '')} /></div>
+                  <div>
+                    <Label>qq/ha ({campo.forma_pago_arriendo === 'mensual' ? 'mensual' : campo.forma_pago_arriendo === 'semestral' ? 'semestral' : 'anual'})</Label>
+                    <input type="number" value={formVenc.qq_ha} onChange={e => setFormVenc({...formVenc, qq_ha: e.target.value})} style={inputStyle}
+                      placeholder={campo.arrendamiento_qq_ha ? String(+(campo.arrendamiento_qq_ha / (campo.forma_pago_arriendo === 'mensual' ? 12 : campo.forma_pago_arriendo === 'semestral' ? 2 : 1)).toFixed(4)) : ''} />
+                  </div>
                   <div><Label>Observaciones</Label><input type="text" value={formVenc.observaciones} onChange={e => setFormVenc({...formVenc, observaciones: e.target.value})} style={inputStyle} /></div>
                 </div>
+                {campo.arrendamiento_qq_ha && (
+                  <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>
+                    qq/ha por vencimiento: <strong style={{ color: S.accent }}>
+                      {(+(campo.arrendamiento_qq_ha / (campo.forma_pago_arriendo === 'mensual' ? 12 : campo.forma_pago_arriendo === 'semestral' ? 2 : 1)).toFixed(4)).toLocaleString('es-AR')} qq/ha
+                    </strong> · {campo.arrendamiento_qq_ha} qq/ha/año ÷ {campo.forma_pago_arriendo === 'mensual' ? '12' : campo.forma_pago_arriendo === 'semestral' ? '2' : '1'}
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => guardarVencimiento(campo.id)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
                   <button onClick={() => setShowForm(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -1995,7 +2010,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                             <Label>Precio pizarra Rosario $/qq</Label>
                             <input type="number" value={formPago.precio_pizarra} onChange={e => {
                               const pp = e.target.value
-                              const qq = v.qq_ha || campo.arrendamiento_qq_ha || 0
+                              const qq = v.qq_ha || 0
                               const sup = campo.superficie_ha || 0
                               const monto = pp && qq && sup ? String(Math.round(parseFloat(pp) * qq * sup)) : ''
                               setFormPago({...formPago, precio_pizarra: pp, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
