@@ -193,9 +193,9 @@ export default function Ingresos({ usuario }) {
     ? Math.round(lotesConPrecio.reduce((s, l) => s + l.precio_compra, 0) / lotesConPrecio.length)
     : null
   const lotesConKg = lotes.filter(l => l.cantidad && l.kg_bascula)
-  const kgPromedio = lotesConKg.length > 0
-    ? Math.round(lotesConKg.reduce((s, l) => s + (l.kg_bascula / l.cantidad), 0) / lotesConKg.length)
-    : null
+  const totalKgIngresados = lotesConKg.reduce((s, l) => s + l.kg_bascula, 0)
+  const totalAnimIngresados = lotesConKg.reduce((s, l) => s + l.cantidad, 0)
+  const kgPromedio = totalAnimIngresados > 0 ? Math.round(totalKgIngresados / totalAnimIngresados) : null
 
   // Detalle por mes
   const ingresosPorMes = {}

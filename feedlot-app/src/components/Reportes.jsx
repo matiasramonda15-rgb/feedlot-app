@@ -178,7 +178,8 @@ export default function Reportes({ usuario }) {
     const kgAlimento = racionesData
       .filter(r => { const f = new Date(r.creado_en); return f >= fechaInicio && f < fechaFin })
       .reduce((s, r) => s + (r.kg_total || 0), 0)
-    const consumoDiario = existenciaPromedio > 0 && dias > 0 ? kgAlimento / (existenciaPromedio * dias) : null
+    const consumoDiarioCalc = existenciaPromedio >= 5 && dias > 0 ? kgAlimento / (existenciaPromedio * dias) : null
+    const consumoDiario = consumoDiarioCalc && consumoDiarioCalc <= 30 ? consumoDiarioCalc : null
 
     // Paso 7: Conversión
     const conversion = gdp && consumoDiario ? consumoDiario / gdp : null
