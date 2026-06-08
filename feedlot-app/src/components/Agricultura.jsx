@@ -1712,7 +1712,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     await supabase.from('vencimientos_arriendo').insert({
       campo_id, fecha_vencimiento: formVenc.fecha_vencimiento,
       qq_ha: qq || null, precio_pizarra: precio || null,
-      monto_calculado: monto, estado: 'pendiente',
+      monto_total: monto, estado: 'pendiente',
       observaciones: formVenc.observaciones || null,
     })
     await cargarVencimientos()
@@ -1754,7 +1754,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     await supabase.from('vencimientos_arriendo').update({
       estado: 'pagado', pagado_en: formPago.fecha,
       precio_pizarra: precio || null,
-      monto_calculado: montoCalc || totalPagos,
+      monto_total: montoCalc || totalPagos,
       caja_oficial_id, caja_paralela_id,
       pagos_detalle: formPago.pagos,
       forma_pago: formPago.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
@@ -1781,7 +1781,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
           {proximos.map(v => (
             <div key={v.id} style={{ fontSize: 12, color: S.amber }}>
               {v.campos?.nombre} — {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')}
-              {v.monto_calculado ? ` · $${v.monto_calculado.toLocaleString('es-AR')}` : ''}
+              {v.monto_total ? ` · $${v.monto_total.toLocaleString('es-AR')}` : ''}
             </div>
           ))}
         </div>
@@ -1832,7 +1832,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                         </div>
                         <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                           {v.qq_ha} qq/ha · ${v.precio_pizarra?.toLocaleString('es-AR')}/qq
-                          {v.monto_calculado ? ` · Total: $${v.monto_calculado.toLocaleString('es-AR')}` : ''}
+                          {v.monto_total ? ` · Total: $${v.monto_total.toLocaleString('es-AR')}` : ''}
                           {v.observaciones ? ` · ${v.observaciones}` : ''}
                         </div>
                       </div>
@@ -1944,10 +1944,10 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                             )}
                           </div>
                         ))}
-                        {v.monto_calculado && (
-                          <div style={{ background: Math.abs(v.monto_calculado - totalPagos) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(v.monto_calculado - totalPagos) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
-                            Total arriendo: <strong>${v.monto_calculado.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong>
-                            {Math.abs(v.monto_calculado - totalPagos) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${(v.monto_calculado - totalPagos).toLocaleString('es-AR')}</span>}
+                        {v.monto_total && (
+                          <div style={{ background: Math.abs(v.monto_total - totalPagos) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(v.monto_total - totalPagos) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
+                            Total arriendo: <strong>${v.monto_total.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong>
+                            {Math.abs(v.monto_total - totalPagos) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${(v.monto_total - totalPagos).toLocaleString('es-AR')}</span>}
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: 8 }}>
