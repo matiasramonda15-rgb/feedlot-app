@@ -609,7 +609,7 @@ function generarReciboArriendo(v, campo, pagos) {
   win.document.close()
 }
 
- = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 
 function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
@@ -618,7 +618,7 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   const productos = orden.productos || []
 
   const filasProductos = productos.map(p => {
-    const item = stockAgro.find(s => String(s.id) === String(p.id))
+    const item = stockAgro.find(s => String(s.id) === String(p.id) || s.insumo === p.nombre)
     const totalUso = p.dosis && superficie !== '—' ? parseFloat(p.dosis) * parseFloat(superficie) : null
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}</td>
@@ -1123,23 +1123,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 </div>
               )}
 
-              {/* Gastos propios */}
-              {form.es_propia && (
-                <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Gastos del trabajo</div>
-                    <button onClick={addGasto} style={{ padding: '4px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>+ Agregar gasto</button>
-                  </div>
-                  {form.gastos_propios.map((g, idx) => (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, marginBottom: 8 }}>
-                      <div><Label>Descripción</Label><input type="text" value={g.descripcion} onChange={e => updGasto(idx, 'descripcion', e.target.value)} placeholder="ej. Gasoil tractor" style={inputStyle} /></div>
-                      <div><Label>Monto $</Label><input type="number" value={g.monto} onChange={e => { const nuevos = form.gastos_propios.map((x,i) => i===idx ? {...x, monto: e.target.value} : x); const t = nuevos.reduce((s,x)=>s+(parseFloat(x.monto)||0),0); setForm({...form, gastos_propios: nuevos, costo_total: String(t)}) }} style={inputStyle} /></div>
-                      <button onClick={() => setForm(f => ({...f, gastos_propios: f.gastos_propios.filter((_,i)=>i!==idx)}))} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginTop: 18 }}>✕</button>
-                    </div>
-                  ))}
-                  {totalGastosPropios > 0 && <div style={{ fontSize: 13, fontWeight: 600, color: S.red, textAlign: 'right' }}>Total: ${totalGastosPropios.toLocaleString('es-AR')}</div>}
-                </div>
-              )}
+
 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={guardar} disabled={guardando} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : '💾 Guardar orden'}</button>
@@ -1524,7 +1508,17 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
     if (editando) {
       await supabase.from('ventas_granos').update(data).eq('id', editando)
     } else {
-      await supabase.from('ventas_granos').insert(data)
+      const { data: vg } = await supabase.from('ventas_granos').insert(data).select().single()
+      // Registrar en caja
+      if (total && total > 0) {
+        const desc = `Venta ${form.cultivo} — ${form.comprador || 'sin comprador'} · ${kg?.toLocaleString('es-AR')} kg`
+        if (montoFact && montoFact > 0) {
+          await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: montoFact, forma_pago: 'transferencia', venta_grano_id: vg?.id || null })
+        }
+        if (montoNegro && montoNegro > 0) {
+          await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: montoNegro, venta_grano_id: vg?.id || null })
+        }
+      }
     }
     await cargar()
     setShowForm(false)
