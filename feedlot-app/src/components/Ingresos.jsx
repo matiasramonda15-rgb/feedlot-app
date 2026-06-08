@@ -854,6 +854,83 @@ export default function Ingresos({ usuario }) {
 }
 
 // ── GESTIÓN COMERCIAL (componente separado) ──
+
+function generarReciboCompra(lote, pagos, corrales) {
+  const fecha = pagos[0]?.fecha ? new Date(pagos[0].fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
+  const proveedor = lote.domicilio || lote.procedencia || ''
+  const totalMonto = pagos.reduce((s, p) => s + (p.monto || 0), 0)
+  const entero = Math.floor(totalMonto)
+  const unidades = ['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE']
+  const decenas = ['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA']
+  const centenas = ['','CIEN','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS']
+  function nAL(n) {
+    if (n === 0) return 'CERO'; let r = ''
+    if (n >= 1000000) { const m = Math.floor(n/1000000); r += (m===1?'UN MILLÓN ':nAL(m)+' MILLONES '); n %= 1000000 }
+    if (n >= 1000) { const m = Math.floor(n/1000); r += (m===1?'MIL ':nAL(m)+' MIL '); n %= 1000 }
+    if (n >= 100) { r += (n===100?'CIEN ':centenas[Math.floor(n/100)]+' '); n %= 100 }
+    if (n >= 20) { r += decenas[Math.floor(n/10)]; if (n%10>0) r += ' Y '+unidades[n%10]; r += ' ' }
+    else if (n > 0) r += unidades[n]+' '
+    return r.trim()
+  }
+  const centavos = Math.round((totalMonto - entero) * 100)
+  const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
+  const corralNum = corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || ''
+  const concepto = `Compra hacienda — ${lote.procedencia || ''} ${lote.categoria || ''} · ${lote.cantidad || ''} cabezas · C-${corralNum}`
+
+  const filasPago = pagos.map(p => {
+    let desc = p.forma_pago === 'transferencia' ? 'TRANSFERENCIA' : p.forma_pago === 'efectivo' ? 'EFECTIVO' : p.forma_pago === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.forma_pago === 'e-cheq' ? 'E-CHEQ' : (p.forma_pago || '').toUpperCase()
+    if (p.es_negro) desc += ' (PARALELO)'
+    return `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.numero_cheque || ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.fecha_vencimiento_cheque ? new Date(p.fecha_vencimiento_cheque+'T12:00:00').toLocaleDateString('es-AR') : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+    </tr>`
+  }).join('')
+
+  const bloque = `<div style="border:1px solid #333;padding:20px;font-family:Arial,sans-serif;font-size:12px;width:100%;box-sizing:border-box;">
+    <table style="width:100%;margin-bottom:10px;"><tr>
+      <td style="width:33%;vertical-align:top;"><div style="font-weight:bold;">Pedro Barciocco 1221</div><div>TEL: 3574-442656</div><div style="margin-top:8px;border:1px solid #333;display:inline-block;padding:2px 6px;font-weight:bold;">X &nbsp; NO VALIDO COMO FACTURA</div><div style="font-size:11px;margin-top:2px;">Orden de pago</div></td>
+      <td style="width:34%;text-align:center;vertical-align:middle;"><div style="font-size:22px;font-weight:900;">RAMONDA</div><div style="font-size:14px;font-weight:600;">HNOS S.A.</div></td>
+      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: &nbsp;30-71682182-6</div><div>I.V.A. &nbsp;Responsable inscripto</div></td>
+    </tr></table>
+    <hr style="border:1px solid #333;margin:8px 0;">
+    <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;">Entrego a:</td></tr>
+      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${proveedor}</strong></td><td style="padding:4px 8px;">I.V.A.: ${lote.iva || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">Localidad: ${lote.localidad || ''}</td><td style="padding:4px 8px;">CUIT/DNI: ${lote.cuit || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">C.B.U: ${lote.cbu || ''}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
+    </table>
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
+      <tr><td colspan="2" style="padding:6px 8px;">${concepto}</td></tr>
+    </table>
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td colspan="4" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Medio de pago</td></tr>
+      <tr style="background:#eee;">
+        <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #333;font-size:11px;">DESCRIPCIÓN</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">NRO/CHEQUE</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">FECHA COBRO</th>
+        <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #333;font-size:11px;">IMPORTE</th>
+      </tr>
+      ${filasPago}
+      <tr style="border-top:1px solid #333;"><td colspan="3" style="padding:8px;text-align:right;font-weight:bold;">IMPORTE TOTAL &nbsp; $</td><td style="padding:8px;text-align:right;font-weight:bold;">${totalMonto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>
+    </table>
+    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
+      <tr><td style="padding:6px 8px;">Cantidad de pesos: &nbsp;${enLetras}</td></tr>
+      <tr><td style="padding:20px 8px 30px 8px;">&nbsp;</td></tr>
+      <tr><td style="padding:8px;"><table style="width:100%;"><tr><td style="width:40%;text-align:center;border-top:1px solid #333;">Firma</td><td style="width:20%;"></td><td style="width:40%;text-align:center;border-top:1px solid #333;">DNI</td></tr></table></td></tr>
+    </table>
+  </div>`
+
+  const win = window.open('', '_blank')
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo pago hacienda</title><style>@media print{.no-print{display:none;}}body{font-family:Arial,sans-serif;background:#fff;padding:10px;}</style></head><body>
+    <div style="text-align:right;margin-bottom:10px;" class="no-print"><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;">🖨️ Imprimir / Guardar PDF</button></div>
+    ${bloque}<div style="border-top:2px dashed #999;margin:16px 0;text-align:center;font-size:11px;color:#999;padding:4px 0;">✂ &nbsp;&nbsp; CORTAR AQUÍ &nbsp;&nbsp; ✂</div>${bloque}
+  </body></html>`)
+  win.document.close()
+}
+
 function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
   const [editandoFactura, setEditandoFactura] = useState(null)
   const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
@@ -1076,7 +1153,13 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               {/* Pagos */}
               {pagos.length > 0 && (
                 <div style={{ marginBottom: '1rem' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 6 }}>Pagos registrados</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Pagos registrados</div>
+                    {pagos.length > 1 && (
+                      <button onClick={() => generarReciboCompra(l, pagos, corrales)}
+                        style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo todos</button>
+                    )}
+                  </div>
                   {pagos.map(p => (
                     <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: p.es_negro ? S.purpleLight : S.bg, borderRadius: 5, marginBottom: 4, fontSize: 12 }}>
                       <div style={{ display: 'flex', gap: 10 }}>
@@ -1086,7 +1169,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         {p.numero_cheque && <span style={{ color: S.muted }}>#{p.numero_cheque}</span>}
                         {p.es_negro && <span style={{ color: S.purple, fontWeight: 600 }}>PARALELO</span>}
                       </div>
-                      <button onClick={async () => {
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => generarReciboCompra(l, [p], corrales)}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️</button>
+                        <button onClick={async () => {
                         const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).single().catch(() => ({ data: null }))
                         if (chAsoc) await supabase.from('cheques').delete().eq('id', chAsoc.id)
                         await supabase.from('pagos_compras').delete().eq('id', p.id)
