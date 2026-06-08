@@ -197,6 +197,12 @@ export default function Ingresos({ usuario }) {
   const totalAnimIngresados = lotesConKg.reduce((s, l) => s + l.cantidad, 0)
   const kgPromedio = totalAnimIngresados > 0 ? Math.round(totalKgIngresados / totalAnimIngresados) : null
 
+  // Kg promedio del mes actual
+  const lotesMesConKg = lotesMes.filter(l => l.cantidad && l.kg_bascula)
+  const kgPromedioMes = lotesMesConKg.length > 0
+    ? Math.round(lotesMesConKg.reduce((s, l) => s + l.kg_bascula, 0) / lotesMesConKg.reduce((s, l) => s + l.cantidad, 0))
+    : null
+
   // Detalle por mes
   const ingresosPorMes = {}
   lotes.forEach(l => {
@@ -326,9 +332,10 @@ export default function Ingresos({ usuario }) {
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
           <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Kg prom. por animal</div>
           <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: S.text }}>{kgPromedio ? `${kgPromedio.toLocaleString('es-AR')} kg` : '—'}</div>
-          <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>kg báscula / cantidad</div>
+          <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: kgPromedioMes ? 4 : 6 }}>histórico ponderado</div>
+          {kgPromedioMes && <div style={{ fontSize: 12, color: S.accent, fontFamily: 'monospace', fontWeight: 600 }}>{kgPromedioMes.toLocaleString('es-AR')} kg <span style={{ fontSize: 10, fontWeight: 400, color: S.muted }}>este mes</span></div>}
           <button onClick={() => setShowDetalleKg(!showDetalleKg)}
-            style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+            style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', marginTop: 4 }}>
             {showDetalleKg ? '▴ Ocultar detalle' : '▾ Ver por mes'}
           </button>
         </div>
