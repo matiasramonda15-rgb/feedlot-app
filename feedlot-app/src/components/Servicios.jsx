@@ -28,22 +28,25 @@ export default function Servicios({ usuario }) {
   const [servicios, setServicios] = useState([])
   const [maquinaria, setMaquinaria] = useState([])
   const [clientes, setClientes] = useState([])
+  const [contactos, setContactos] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [form, setForm] = useState({
-    cliente: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0],
+    cliente: '', clienteNuevo: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0],
     hectareas: '', maquina_id: '', precio_ha: '', observaciones: ''
   })
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: s }, { data: m }] = await Promise.all([
+    const [{ data: s }, { data: m }, { data: ct }] = await Promise.all([
       supabase.from('servicios_terceros').select('*, maquinaria(nombre)').order('fecha', { ascending: false }),
       supabase.from('maquinaria').select('*').eq('activo', true).order('nombre'),
+      supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
     ])
     setServicios(s || [])
     setMaquinaria(m || [])
+    setContactos(ct || [])
     const cls = [...new Set((s || []).map(x => x.cliente).filter(Boolean))].sort()
     setClientes(cls)
     setLoading(false)
@@ -55,8 +58,14 @@ export default function Servicios({ usuario }) {
     const ha = parseFloat(form.hectareas)
     const precio = form.precio_ha ? parseFloat(form.precio_ha) : null
     const total = ha && precio ? ha * precio : null
+    // Auto-crear contacto si es nuevo
+    const nombreCliente = form.clienteNuevo?.trim() || form.cliente
+    if (form.cliente === '__nuevo__' && form.clienteNuevo?.trim()) {
+      const existe = contactos.find(c => c.nombre.toLowerCase() === form.clienteNuevo.trim().toLowerCase())
+      if (!existe) await supabase.from('contactos').insert({ nombre: form.clienteNuevo.trim(), tipo: 'otro', activo: true })
+    }
     await supabase.from('servicios_terceros').insert({
-      cliente: form.cliente,
+      cliente: nombreCliente,
       labor: form.labor,
       fecha: form.fecha,
       hectareas: ha,
@@ -68,7 +77,7 @@ export default function Servicios({ usuario }) {
     })
     await cargar()
     setShowForm(false)
-    setForm({ cliente: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0], hectareas: '', maquina_id: '', precio_ha: '', observaciones: '' })
+    setForm({ cliente: '', clienteNuevo: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0], hectareas: '', maquina_id: '', precio_ha: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -141,14 +150,15 @@ export default function Servicios({ usuario }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
             <div>
               <Label>Cliente</Label>
-              <select value={form.cliente} onChange={e => setForm({...form, cliente: e.target.value})} style={inputStyle}>
-                <option value="">— Seleccioná o escribí nuevo —</option>
-                {clientes.map(c => <option key={c} value={c}>{c}</option>)}
+              <select value={form.cliente} onChange={e => setForm({...form, cliente: e.target.value, clienteNuevo: ''})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
                 <option value="__nuevo__">+ Nuevo cliente...</option>
               </select>
               {form.cliente === '__nuevo__' && (
-                <input type="text" placeholder="Nombre del cliente" onChange={e => setForm({...form, cliente: e.target.value})}
-                  style={{ ...inputStyle, marginTop: 6, border: `1px solid ${S.accent}` }} />
+                <input type="text" placeholder="Nombre (se guardará en contactos)" value={form.clienteNuevo}
+                  onChange={e => setForm({...form, clienteNuevo: e.target.value})}
+                  style={{ ...inputStyle, marginTop: 6, border: `1px solid ${S.accent}` }} autoFocus />
               )}
             </div>
             <div>
