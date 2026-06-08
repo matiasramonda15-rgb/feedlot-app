@@ -165,7 +165,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', ubicacion: '' })
+  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '' })
   const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [selectedCampo, setSelectedCampo] = useState(null)
@@ -175,7 +175,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
     setGuardando(true)
-    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_qq_ha: parseFloat(form.arrendamiento_qq_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', ubicacion: form.ubicacion || null }
+    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_qq_ha: parseFloat(form.arrendamiento_qq_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, ubicacion: form.ubicacion || null }
     if (editando) {
       await supabase.from('campos').update(campoData).eq('id', editando)
     } else {
@@ -184,7 +184,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', ubicacion: '' })
+    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '' })
     setGuardando(false)
   }
 
@@ -271,7 +271,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                     <div style={{ fontSize: 10, color: S.muted }}>{c.forma_pago_arriendo}</div>
                   </div>
                 )}
-                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_qq_ha: c.arrendamiento_qq_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', ubicacion: c.ubicacion || '' }); setShowForm(true); setSelectedCampo(null) }}
+                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_qq_ha: c.arrendamiento_qq_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', ubicacion: c.ubicacion || '' }); setShowForm(true); setSelectedCampo(null) }}
                   style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                   Editar
                 </button>
@@ -1771,14 +1771,65 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 
   const hoy = new Date()
   const en7dias = new Date(hoy.getTime() + 7 * 86400000)
-  const proximos = vencimientos.filter(v => v.estado === 'pendiente' && new Date(v.fecha_vencimiento) <= en7dias)
+
+  // Calcular próximos vencimientos automáticos por campo
+  const proximosAutomaticos = campos.filter(c => c.arrendamiento_qq_ha && c.dia_vencimiento_arriendo).map(c => {
+    const dia = c.dia_vencimiento_arriendo
+    const freq = c.forma_pago_arriendo || 'mensual'
+    const proximas = []
+
+    if (freq === 'mensual') {
+      // Próximos 2 meses
+      for (let i = 0; i <= 1; i++) {
+        const fecha = new Date(hoy.getFullYear(), hoy.getMonth() + i, dia)
+        if (fecha >= hoy) proximas.push(fecha)
+      }
+    } else if (freq === 'semestral') {
+      for (let i = 0; i <= 6; i++) {
+        const fecha = new Date(hoy.getFullYear(), hoy.getMonth() + i, dia)
+        if (fecha >= hoy) { proximas.push(fecha); break }
+      }
+    } else if (freq === 'anual') {
+      const fecha = new Date(hoy.getFullYear(), hoy.getMonth(), dia)
+      if (fecha < hoy) fecha.setFullYear(fecha.getFullYear() + 1)
+      proximas.push(fecha)
+    }
+
+    return proximas.map(fecha => ({
+      campo: c,
+      fecha,
+      diasHasta: Math.round((fecha - hoy) / 86400000),
+      yaRegistrado: vencimientos.some(v => v.campo_id === c.id && v.fecha_vencimiento === fecha.toISOString().split('T')[0])
+    }))
+  }).flat().filter(v => v.diasHasta <= 30 && !v.yaRegistrado).sort((a, b) => a.diasHasta - b.diasHasta)
+
+  const proximosManual = vencimientos.filter(v => v.estado === 'pendiente' && new Date(v.fecha_vencimiento) <= en7dias)
 
   return (
     <div>
-      {proximos.length > 0 && (
+      {/* Banner vencimientos automáticos próximos */}
+      {proximosAutomaticos.length > 0 && (
         <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: 6 }}>⚠ {proximos.length} arriendo{proximos.length !== 1 ? 's' : ''} vence{proximos.length === 1 ? '' : 'n'} en los próximos 7 días</div>
-          {proximos.map(v => (
+          <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: 8 }}>
+            🔔 {proximosAutomaticos.length} vencimiento{proximosAutomaticos.length !== 1 ? 's' : ''} próximo{proximosAutomaticos.length !== 1 ? 's' : ''} (próximos 30 días)
+          </div>
+          {proximosAutomaticos.map((v, i) => (
+            <div key={i} style={{ fontSize: 12, color: S.amber, marginBottom: 3 }}>
+              <strong>{v.campo.nombre}</strong> — {v.fecha.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+              {v.diasHasta === 0 ? ' · ¡Hoy!' : v.diasHasta === 1 ? ' · Mañana' : ` · en ${v.diasHasta} días`}
+              {' · '}<span style={{ opacity: 0.8 }}>{v.campo.forma_pago_arriendo}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Banner vencimientos manuales próximos */}
+      {proximosManual.length > 0 && (
+        <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: 6 }}>
+            ⚠ {proximosManual.length} arriendo{proximosManual.length !== 1 ? 's' : ''} vence{proximosManual.length === 1 ? '' : 'n'} en los próximos 7 días
+          </div>
+          {proximosManual.map(v => (
             <div key={v.id} style={{ fontSize: 12, color: S.amber }}>
               {v.campos?.nombre} — {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')}
               {v.monto_total ? ` · $${v.monto_total.toLocaleString('es-AR')}` : ''}
@@ -1796,6 +1847,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{campo.nombre}</div>
                 <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                   {campo.propietario} · {campo.superficie_ha} ha · {campo.arrendamiento_qq_ha} qq soja/ha/año
+                  {campo.dia_vencimiento_arriendo ? ` · vence día ${campo.dia_vencimiento_arriendo} · ${campo.forma_pago_arriendo}` : ` · ${campo.forma_pago_arriendo}`}
                 </div>
               </div>
               <button onClick={() => setShowForm(showForm === campo.id ? null : campo.id)}
