@@ -533,82 +533,6 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
 }
 
 const PAGO_INIT_ORDEN = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
-function generarReciboArriendo(v, campo, pagos) {
-  const fecha = v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
-  const totalMonto = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-  const entero = Math.floor(totalMonto)
-  const unidades = ['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE']
-  const decenas = ['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA']
-  const centenas = ['','CIEN','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS']
-  function nAL(n) {
-    if (n === 0) return 'CERO'; let r = ''
-    if (n >= 1000000) { const m = Math.floor(n/1000000); r += (m===1?'UN MILLÓN ':nAL(m)+' MILLONES '); n %= 1000000 }
-    if (n >= 1000) { const m = Math.floor(n/1000); r += (m===1?'MIL ':nAL(m)+' MIL '); n %= 1000 }
-    if (n >= 100) { r += (n===100?'CIEN ':centenas[Math.floor(n/100)]+' '); n %= 100 }
-    if (n >= 20) { r += decenas[Math.floor(n/10)]; if (n%10>0) r += ' Y '+unidades[n%10]; r += ' ' }
-    else if (n > 0) r += unidades[n]+' '
-    return r.trim()
-  }
-  const centavos = Math.round((totalMonto - entero) * 100)
-  const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
-  const fechaVenc = v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
-  const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.qq_ha || campo?.arrendamiento_qq_ha || ''} qq/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/qq` : ''}`
-  const propietario = campo?.propietario || ''
-
-  const filasPago = pagos.map(p => {
-    let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : 'E-CHEQ TERCERO'
-    if (p.es_paralelo) desc += ' (PARALELO)'
-    const nro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.numero || '') : ''
-    const fechaCobro = p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''
-    return `<tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${nro}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${fechaCobro}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${parseFloat(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-    </tr>`
-  }).join('')
-
-  const bloque = `<div style="border:1px solid #333;padding:20px;font-family:Arial,sans-serif;font-size:12px;width:100%;box-sizing:border-box;">
-    <table style="width:100%;margin-bottom:10px;"><tr>
-      <td style="width:33%;vertical-align:top;"><div style="font-weight:bold;">Pedro Barciocco 1221</div><div>TEL: 3574-442656</div><div style="margin-top:8px;border:1px solid #333;display:inline-block;padding:2px 6px;font-weight:bold;">X &nbsp; NO VALIDO COMO FACTURA</div><div style="font-size:11px;margin-top:2px;">Orden de pago</div></td>
-      <td style="width:34%;text-align:center;vertical-align:middle;"><div style="font-size:22px;font-weight:900;">RAMONDA</div><div style="font-size:14px;font-weight:600;">HNOS S.A.</div></td>
-      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: &nbsp;30-71682182-6</div><div>I.V.A. &nbsp;Responsable inscripto</div></td>
-    </tr></table>
-    <hr style="border:1px solid #333;margin:8px 0;">
-    <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
-      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;">Entrego a:</td></tr>
-      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${propietario}</strong></td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
-    </table>
-    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
-      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
-      <tr><td colspan="2" style="padding:6px 8px;">${concepto}</td></tr>
-    </table>
-    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
-      <tr><td colspan="4" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Medio de pago</td></tr>
-      <tr style="background:#eee;">
-        <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #333;font-size:11px;">DESCRIPCIÓN</th>
-        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">NRO/CHEQUE</th>
-        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #333;font-size:11px;">FECHA COBRO</th>
-        <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #333;font-size:11px;">IMPORTE</th>
-      </tr>
-      ${filasPago}
-      <tr style="border-top:1px solid #333;"><td colspan="3" style="padding:8px;text-align:right;font-weight:bold;">IMPORTE TOTAL &nbsp; $</td><td style="padding:8px;text-align:right;font-weight:bold;">${totalMonto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>
-    </table>
-    <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
-      <tr><td style="padding:6px 8px;">Cantidad de pesos: &nbsp;${enLetras}</td></tr>
-      <tr><td style="padding:20px 8px 30px 8px;">&nbsp;</td></tr>
-      <tr><td style="padding:8px;"><table style="width:100%;"><tr><td style="width:40%;text-align:center;border-top:1px solid #333;">Firma</td><td style="width:20%;"></td><td style="width:40%;text-align:center;border-top:1px solid #333;">DNI</td></tr></table></td></tr>
-    </table>
-  </div>`
-
-  const win = window.open('', '_blank')
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo arriendo — ${campo?.nombre || ''}</title><style>@media print{.no-print{display:none;}}body{font-family:Arial,sans-serif;background:#fff;padding:10px;}</style></head><body>
-    <div style="text-align:right;margin-bottom:10px;" class="no-print"><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;">🖨️ Imprimir / Guardar PDF</button></div>
-    ${bloque}<div style="border-top:2px dashed #999;margin:16px 0;text-align:center;font-size:11px;color:#999;padding:4px 0;">✂ &nbsp;&nbsp; CORTAR AQUÍ &nbsp;&nbsp; ✂</div>${bloque}
-  </body></html>`)
-  win.document.close()
-}
-
 const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 
@@ -618,7 +542,7 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   const productos = orden.productos || []
 
   const filasProductos = productos.map(p => {
-    const item = stockAgro.find(s => String(s.id) === String(p.id) || s.insumo === p.nombre)
+    const item = stockAgro.find(s => String(s.id) === String(p.id))
     const totalUso = p.dosis && superficie !== '—' ? parseFloat(p.dosis) * parseFloat(superficie) : null
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}</td>
@@ -770,7 +694,7 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
   const pagos = orden.pagos_detalle || []
 
   const filasProductos = productos.map(p => {
-    const item = stockAgro.find(s => s.id === parseInt(p.id))
+    const item = stockAgro.find(s => String(s.id) === String(p.id) || s.insumo === p.nombre)
     const totalKg = p.dosis && superficie !== '—' ? (parseFloat(p.dosis) * parseFloat(superficie)).toLocaleString('es-AR', { maximumFractionDigits: 1 }) : '—'
     return `<tr>
       <td style="padding:7px 10px;border-bottom:1px solid #eee;">${item?.insumo || p.nombre || '—'}</td>
@@ -1122,8 +1046,6 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <div><Label>Costo $/ha</Label><input type="number" value={form.costo_ha} onChange={e => setForm({...form, costo_ha: e.target.value})} style={inputStyle} /></div>
                 </div>
               )}
-
-
 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={guardar} disabled={guardando} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : '💾 Guardar orden'}</button>
@@ -1509,14 +1431,13 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       await supabase.from('ventas_granos').update(data).eq('id', editando)
     } else {
       const { data: vg } = await supabase.from('ventas_granos').insert(data).select().single()
-      // Registrar en caja
       if (total && total > 0) {
         const desc = `Venta ${form.cultivo} — ${form.comprador || 'sin comprador'} · ${kg?.toLocaleString('es-AR')} kg`
         if (montoFact && montoFact > 0) {
-          await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: montoFact, forma_pago: 'transferencia', venta_grano_id: vg?.id || null })
+          await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: montoFact, forma_pago: 'transferencia' })
         }
         if (montoNegro && montoNegro > 0) {
-          await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: montoNegro, venta_grano_id: vg?.id || null })
+          await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: montoNegro })
         }
       }
     }
@@ -1774,18 +1695,14 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
   async function guardarVencimiento(campo_id) {
     if (!formVenc.fecha_vencimiento) { alert('Ingresá la fecha de vencimiento'); return }
     setGuardando(true)
+    const qq = parseFloat(formVenc.qq_ha) || 0
+    const precio = parseFloat(formVenc.precio_pizarra) || 0
     const campo = campos.find(c => c.id === campo_id)
     const sup = campo?.superficie_ha || 0
-    const freq = campo?.forma_pago_arriendo || 'semestral'
-    const qqAnual = parseFloat(campo?.arrendamiento_qq_ha) || 0
-    // Calcular qq/ha según frecuencia si no se ingresó manualmente
-    const divisor = freq === 'mensual' ? 12 : freq === 'semestral' ? 2 : 1
-    const qqPorVenc = parseFloat(formVenc.qq_ha) || (qqAnual > 0 ? +(qqAnual / divisor).toFixed(4) : 0)
-    const precio = parseFloat(formVenc.precio_pizarra) || 0
-    const monto = qqPorVenc && precio && sup ? Math.round(qqPorVenc * precio * sup) : null
+    const monto = qq && precio && sup ? Math.round(qq * precio * sup) : null
     await supabase.from('vencimientos_arriendo').insert({
       campo_id, fecha_vencimiento: formVenc.fecha_vencimiento,
-      qq_ha: qqPorVenc || null, precio_pizarra: precio || null,
+      qq_ha: qq || null, precio_pizarra: precio || null,
       monto_total: monto, estado: 'pendiente',
       observaciones: formVenc.observaciones || null,
     })
@@ -1800,7 +1717,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     if (!totalPagos) { alert('Ingresá el monto del pago'); return }
     setGuardandoPago(true)
     const precio = parseFloat(formPago.precio_pizarra) || null
-    const qq = v.qq_ha || null
+    const qq = v.qq_ha || v.campos?.arrendamiento_qq_ha || null
     const sup = v.campos?.superficie_ha || null
     const montoCalc = precio && qq && sup ? Math.round(precio * qq * sup) : null
 
@@ -1834,14 +1751,12 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
       forma_pago: formPago.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
     }).eq('id', v.id)
 
-    const pagosFinal = [...formPago.pagos]
-    const fechaPago = formPago.fecha
     setPagoAbierto(null)
     setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR }] })
     setGuardandoPago(false)
     await cargarVencimientos()
     await cargar()
-    generarReciboArriendo({ ...v, pagado_en: fechaPago, pagos_detalle: pagosFinal }, campo, pagosFinal)
+  }
 
   if (loading) return <div style={{ padding: '2rem', color: S.hint }}>Cargando...</div>
 
@@ -1936,20 +1851,9 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
               <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div><Label>Fecha vencimiento *</Label><input type="date" value={formVenc.fecha_vencimiento} onChange={e => setFormVenc({...formVenc, fecha_vencimiento: e.target.value})} style={inputStyle} /></div>
-                  <div>
-                    <Label>qq/ha ({campo.forma_pago_arriendo === 'mensual' ? 'mensual' : campo.forma_pago_arriendo === 'semestral' ? 'semestral' : 'anual'})</Label>
-                    <input type="number" value={formVenc.qq_ha} onChange={e => setFormVenc({...formVenc, qq_ha: e.target.value})} style={inputStyle}
-                      placeholder={campo.arrendamiento_qq_ha ? String(+(campo.arrendamiento_qq_ha / (campo.forma_pago_arriendo === 'mensual' ? 12 : campo.forma_pago_arriendo === 'semestral' ? 2 : 1)).toFixed(4)) : ''} />
-                  </div>
+                  <div><Label>qq/ha</Label><input type="number" value={formVenc.qq_ha} onChange={e => setFormVenc({...formVenc, qq_ha: e.target.value})} style={inputStyle} placeholder={String(campo.arrendamiento_qq_ha || '')} /></div>
                   <div><Label>Observaciones</Label><input type="text" value={formVenc.observaciones} onChange={e => setFormVenc({...formVenc, observaciones: e.target.value})} style={inputStyle} /></div>
                 </div>
-                {campo.arrendamiento_qq_ha && (
-                  <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>
-                    qq/ha por vencimiento: <strong style={{ color: S.accent }}>
-                      {(+(campo.arrendamiento_qq_ha / (campo.forma_pago_arriendo === 'mensual' ? 12 : campo.forma_pago_arriendo === 'semestral' ? 2 : 1)).toFixed(4)).toLocaleString('es-AR')} qq/ha
-                    </strong> · {campo.arrendamiento_qq_ha} qq/ha/año ÷ {campo.forma_pago_arriendo === 'mensual' ? '12' : campo.forma_pago_arriendo === 'semestral' ? '2' : '1'}
-                  </div>
-                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => guardarVencimiento(campo.id)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
                   <button onClick={() => setShowForm(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -1977,11 +1881,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         {v.estado === 'pagado'
-                          ? <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                              <span style={{ padding: '3px 10px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 12, fontWeight: 600 }}>✓ Pagado {v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR') : ''}</span>
-                              {v.pagos_detalle && <button onClick={() => generarReciboArriendo(v, campo, v.pagos_detalle)}
-                                style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo</button>}
-                            </div>
+                          ? <span style={{ padding: '3px 10px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 12, fontWeight: 600 }}>✓ Pagado {v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR') : ''}</span>
                           : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
                               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                               💳 Registrar pago
@@ -2004,7 +1904,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                             <Label>Precio pizarra Rosario $/qq</Label>
                             <input type="number" value={formPago.precio_pizarra} onChange={e => {
                               const pp = e.target.value
-                              const qq = v.qq_ha || 0
+                              const qq = v.qq_ha || campo.arrendamiento_qq_ha || 0
                               const sup = campo.superficie_ha || 0
                               const monto = pp && qq && sup ? String(Math.round(parseFloat(pp) * qq * sup)) : ''
                               setFormPago({...formPago, precio_pizarra: pp, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
