@@ -77,6 +77,64 @@ const ETAPA_INFO = [
   { key: 'terminacion',      label: 'Mixer 3 - Terminacion - 291 kg hasta venta', badge: 'ok' },
 ]
 
+function generarArchivoRaciones(porFecha, titulo) {
+  const fechasOrdenadas = Object.entries(porFecha).sort((a, b) => a[0].localeCompare(b[0]))
+  const totalGeneral = fechasOrdenadas.reduce((s, [, items]) => s + items.reduce((ss, h) => ss + (h.kg_total || 0), 0), 0)
+
+  const bloquesDias = fechasOrdenadas.map(([fecha, items]) => {
+    const totalDia = items.reduce((s, h) => s + (h.kg_total || 0), 0)
+    const filas = items
+      .sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99))
+      .map(h => `<tr>
+        <td style="padding:7px 12px;border-bottom:1px solid #eee;font-weight:600;">C-${h.corrales?.numero || '—'}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eee;color:#666;">${h.mezclador || h.mixer || '—'}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eee;text-align:right;font-weight:700;font-family:monospace;color:#1A6B3C;">${(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
+      </tr>`).join('')
+    const nombreFecha = new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+    return `
+      <div style="margin-bottom:28px;page-break-inside:avoid;">
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#1A3D6B;color:#fff;padding:10px 14px;border-radius:6px 6px 0 0;">
+          <div style="font-size:14px;font-weight:700;text-transform:capitalize;">${nombreFecha}</div>
+          <div style="font-size:13px;font-family:monospace;font-weight:700;">Total: ${totalDia.toLocaleString('es-AR')} kg</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #ddd;border-top:none;">
+          <thead><tr style="background:#f5f5f5;">
+            <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #ddd;">Corral</th>
+            <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #ddd;">Etapa</th>
+            <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #ddd;">Kg cargados</th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+          <tfoot><tr style="background:#f0f7f1;">
+            <td colspan="2" style="padding:7px 12px;font-weight:700;font-size:12px;">Total del día</td>
+            <td style="padding:7px 12px;text-align:right;font-weight:700;font-family:monospace;color:#1A6B3C;">${totalDia.toLocaleString('es-AR')} kg</td>
+          </tr></tfoot>
+        </table>
+      </div>`
+  }).join('')
+
+  const win = window.open('', '_blank')
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Raciones — ${titulo}</title>
+  <style>@media print{.no-print{display:none;}body{margin:0;}}body{font-family:Arial,sans-serif;background:#fff;padding:20px;color:#222;}*{box-sizing:border-box;}@page{margin:15mm;}</style>
+  </head><body>
+  <div class="no-print" style="position:fixed;top:10px;right:10px;z-index:999;">
+    <button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;margin-right:6px;">🖨️ Imprimir / PDF</button>
+    <button onclick="window.close()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:#fff;border:1px solid #ccc;border-radius:6px;">Cerrar</button>
+  </div>
+  <div style="max-width:720px;margin:0 auto;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;padding-bottom:12px;border-bottom:2px solid #1A3D6B;">
+      <div>
+        <div style="font-size:22px;font-weight:900;color:#1A3D6B;">RAMONDA HNOS S.A.</div>
+        <div style="font-size:14px;font-weight:600;color:#444;margin-top:2px;">Registro de alimentación — ${titulo}</div>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#666;">
+        <div>${fechasOrdenadas.length} día${fechasOrdenadas.length !== 1 ? 's' : ''} · Total: <strong style="color:#1A6B3C;font-family:monospace;">${totalGeneral.toLocaleString('es-AR')} kg</strong></div>
+      </div>
+    </div>
+    ${bloquesDias}
+  </div></body></html>`)
+  win.document.close()
+}
+
 export default function Alimentacion({ usuario }) {
   const [tab, setTab] = useState('registro')
   const [loading, setLoading] = useState(true)
@@ -818,12 +876,29 @@ export default function Alimentacion({ usuario }) {
               <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Historial de raciones</div>
               <div style={{ fontSize: 12, color: S.muted }}>{historial.length} registros · cargados desde la app móvil</div>
             </div>
-            {historial.length > 0 && (
-              <button onClick={eliminarTodasRaciones}
-                style={{ padding: '8px 14px', fontSize: 12, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>
-                Eliminar últimos 7 días
-              </button>
-            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {historial.length > 0 && (
+                <button onClick={() => {
+                  // Exportar todo el historial visible
+                  const porFecha = {}
+                  historial.forEach(h => {
+                    const fecha = h.fecha || h.creado_en?.split('T')[0]
+                    if (!porFecha[fecha]) porFecha[fecha] = []
+                    porFecha[fecha].push(h)
+                  })
+                  generarArchivoRaciones(porFecha, 'Historial completo')
+                }}
+                  style={{ padding: '8px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>
+                  📄 Exportar todo
+                </button>
+              )}
+              {historial.length > 0 && (
+                <button onClick={eliminarTodasRaciones}
+                  style={{ padding: '8px 14px', fontSize: 12, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>
+                  Eliminar últimos 7 días
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Agrupar por fecha */}
@@ -842,8 +917,14 @@ export default function Alimentacion({ usuario }) {
                     <div style={{ fontSize: 13, fontWeight: 700, color: S.accent }}>
                       {new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
                     </div>
-                    <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
-                      Total: {totalKg.toLocaleString('es-AR')} kg
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
+                        Total: {totalKg.toLocaleString('es-AR')} kg
+                      </div>
+                      <button onClick={() => generarArchivoRaciones({ [fecha]: items }, fecha)}
+                        style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                        📄 Exportar día
+                      </button>
                     </div>
                   </div>
                   <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
@@ -869,6 +950,13 @@ export default function Alimentacion({ usuario }) {
                             </td>
                           </tr>
                         ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })
+          })()}
                       </tbody>
                     </table>
                   </div>
