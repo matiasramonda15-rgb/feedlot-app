@@ -1739,7 +1739,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pagoAbierto, setPagoAbierto] = useState(null) // id del vencimiento
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR }] })
+  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
 
@@ -1780,9 +1780,11 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     if (!totalPagos) { alert('Ingresá el monto del pago'); return }
     setGuardandoPago(true)
     const precio = parseFloat(formPago.precio_pizarra) || null
-    const qq = parseFloat(v.qq_ha) || null  // solo qq del vencimiento, no el anual
-    const sup = v.campos?.superficie_ha || null
-    const montoCalc = precio && qq && sup ? Math.round(precio * qq * sup) : null
+    const meses = formPago.meses || 1
+    const qqMes = (campo?.arrendamiento_qq_ha || 0) / 12
+    const sup = campo?.superficie_ha || null
+    const montoCalc = precio && qqMes && sup ? Math.round(precio * qqMes * meses * sup) : null
+    const qqPagado = qqMes * meses
 
     const desc = `Arriendo ${v.campos?.nombre || ''} — ${v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
@@ -1808,6 +1810,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     await supabase.from('vencimientos_arriendo').update({
       estado: 'pagado', pagado_en: formPago.fecha,
       precio_pizarra: precio || null,
+      qq_ha: qqPagado || null,
       monto_total: montoCalc || totalPagos,
       caja_oficial_id, caja_paralela_id,
       pagos_detalle: formPago.pagos,
@@ -1817,7 +1820,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     const pagosFinal = [...formPago.pagos]
     const fechaPago = formPago.fecha
     setPagoAbierto(null)
-    setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR }] })
+    setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
     setGuardandoPago(false)
     await cargarVencimientos()
     await cargar()
@@ -1952,7 +1955,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                               {v.pagos_detalle && <button onClick={() => generarReciboArriendo(v, campo, v.pagos_detalle)}
                                 style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo</button>}
                             </div>
-                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
+                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
                               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                               💳 Registrar pago
                             </button>
@@ -1966,28 +1969,50 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                     {isPagoAbierto && (
                       <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 8, padding: '1rem', marginTop: '1rem' }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: '1rem' }}>
-                          Pago arriendo — {campo.nombre}{v.qq_ha ? ` · ${v.qq_ha} qq/ha · ${campo.superficie_ha} ha` : ''}
-                          {!v.qq_ha && <span style={{ fontSize: 11, color: S.amber, marginLeft: 8 }}>⚠ Sin qq/ha — el monto no se calcula automáticamente</span>}
+                          Pago arriendo — {campo.nombre} · {campo.arrendamiento_qq_ha} qq/ha/año · {campo.superficie_ha} ha
                         </div>
-                        {/* Precio pizarra */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        {/* Meses + Precio pizarra */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                          <div>
+                            <Label>Meses a pagar</Label>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                              {[1,2,3,6,12].map(m => (
+                                <button key={m} onClick={() => {
+                                  const pp = parseFloat(formPago.precio_pizarra) || 0
+                                  const qqMes = (campo.arrendamiento_qq_ha || 0) / 12
+                                  const sup = campo.superficie_ha || 0
+                                  const monto = pp && qqMes && sup ? String(Math.round(pp * qqMes * m * sup)) : ''
+                                  setFormPago({...formPago, meses: m, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
+                                }}
+                                  style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${formPago.meses === m ? S.accent : S.border}`, background: formPago.meses === m ? S.accentLight : S.surface, color: formPago.meses === m ? S.accent : S.muted }}>
+                                  {m === 1 ? '1 mes' : m === 12 ? '1 año' : `${m} meses`}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                           <div>
                             <Label>Precio pizarra Rosario $/qq</Label>
                             <input type="number" value={formPago.precio_pizarra} onChange={e => {
                               const pp = e.target.value
-                              const qq = parseFloat(v.qq_ha) || 0
+                              const meses = formPago.meses || 1
+                              const qqMes = (campo.arrendamiento_qq_ha || 0) / 12
                               const sup = campo.superficie_ha || 0
-                              const monto = pp && qq && sup ? String(Math.round(parseFloat(pp) * qq * sup)) : ''
+                              const monto = pp && qqMes && sup ? String(Math.round(parseFloat(pp) * qqMes * meses * sup)) : ''
                               setFormPago({...formPago, precio_pizarra: pp, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
                             }} style={inputStyle} placeholder="ej. 380000" />
                           </div>
                           <div>
                             <Label>Monto calculado</Label>
                             <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700, background: S.surface, color: S.green }}>
-                              {formPago.precio_pizarra && v.qq_ha && campo.superficie_ha
-                                ? `$${Math.round(parseFloat(formPago.precio_pizarra) * v.qq_ha * campo.superficie_ha).toLocaleString('es-AR')}`
+                              {formPago.precio_pizarra && formPago.meses && campo.arrendamiento_qq_ha && campo.superficie_ha
+                                ? `$${Math.round(parseFloat(formPago.precio_pizarra) * (campo.arrendamiento_qq_ha / 12) * formPago.meses * campo.superficie_ha).toLocaleString('es-AR')}`
                                 : '—'}
                             </div>
+                            {formPago.meses && campo.arrendamiento_qq_ha && (
+                              <div style={{ fontSize: 10, color: S.muted, marginTop: 3 }}>
+                                {(campo.arrendamiento_qq_ha / 12 * formPago.meses).toFixed(2)} qq/ha × {campo.superficie_ha} ha
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div style={{ marginBottom: 10 }}>
