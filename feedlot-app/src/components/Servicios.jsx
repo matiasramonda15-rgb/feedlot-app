@@ -32,7 +32,7 @@ export default function Servicios({ usuario }) {
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [cobrando, setCobrando] = useState(null)
-  const [formCobro, setFormCobro] = useState({ precio_ha: '', total: '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false })
+  const [formCobro, setFormCobro] = useState({ precio_ha: '', total: '', total_sin_iva: '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false, cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
   const [guardandoCobro, setGuardandoCobro] = useState(false)
   const [form, setForm] = useState({
     cliente: '', clienteNuevo: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0],
@@ -57,20 +57,42 @@ export default function Servicios({ usuario }) {
 
   async function guardarCobro(s) {
     if (!formCobro.precio_ha && !formCobro.total) { alert('Ingresá el precio/ha o el total'); return }
+    if (formCobro.forma_pago === 'cheque' && !formCobro.cheque_vencimiento) { alert('Ingresá la fecha de vencimiento del cheque'); return }
     setGuardandoCobro(true)
     const precio = formCobro.precio_ha ? parseFloat(formCobro.precio_ha) : null
     const totalSinIva = formCobro.total_sin_iva ? parseFloat(formCobro.total_sin_iva) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
     const ivaPct = parseFloat(formCobro.iva_pct) || 0
     const total = formCobro.total ? parseFloat(formCobro.total) : (totalSinIva ? Math.round(totalSinIva * (1 + ivaPct/100)) : null)
     const desc = `Servicio ${s.labor} — ${s.cliente} · ${s.hectareas} ha`
+
+    let caja_id = null
     if (formCobro.es_paralelo) {
-      await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', descripcion: desc, monto: total })
+      const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', descripcion: desc, monto: total }).select().single()
+      caja_id = cp?.id
     } else {
-      await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto: total, forma_pago: formCobro.forma_pago })
+      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto: total, forma_pago: formCobro.forma_pago }).select().single()
+      caja_id = co?.id
     }
+
+    // Registrar cheque en cartera si corresponde
+    if (formCobro.forma_pago === 'cheque') {
+      await supabase.from('cheques').insert({
+        tipo: 'recibido',
+        numero: formCobro.cheque_numero || null,
+        banco: formCobro.cheque_banco || null,
+        fecha_cobro: formCobro.fecha_cobro,
+        fecha_vencimiento: formCobro.cheque_vencimiento,
+        monto: total,
+        emisor: s.cliente || null,
+        estado: 'en_cartera',
+        es_paralelo: formCobro.es_paralelo || false,
+        caja_oficial_id: formCobro.es_paralelo ? null : caja_id,
+      })
+    }
+
     await supabase.from('servicios_terceros').update({ precio_ha: precio, total, iva_pct: ivaPct || null, estado_pago: 'cobrado', fecha_cobro: formCobro.fecha_cobro }).eq('id', s.id)
     setCobrando(null)
-    setFormCobro({ precio_ha: '', total: '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false })
+    setFormCobro({ precio_ha: '', total: '', total_sin_iva: '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false, cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
     setGuardandoCobro(false)
     await cargar()
   }
@@ -272,7 +294,7 @@ export default function Servicios({ usuario }) {
                     <td style={{ padding: '9px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
                         {(s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)) && (
-                          <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', total_sin_iva: s.total ? String(s.total) : '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false }) }}
+                          <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', total_sin_iva: s.total ? String(s.total) : '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false, cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' }) }}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                             💰 Cobrar
                           </button>
@@ -328,9 +350,16 @@ export default function Servicios({ usuario }) {
                             <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
                               <option value="transferencia">Transferencia</option>
                               <option value="efectivo">Efectivo</option>
-                              <option value="cheque">Cheque</option>
+                              <option value="cheque">E-cheq / Cheque</option>
                             </select>
                           </div>
+                          {formCobro.forma_pago === 'cheque' && (
+                            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                              <div><Label>N° cheque</Label><input type="text" value={formCobro.cheque_numero} onChange={e => setFormCobro({...formCobro, cheque_numero: e.target.value})} style={inputStyle} placeholder="Número" /></div>
+                              <div><Label>Banco</Label><input type="text" value={formCobro.cheque_banco} onChange={e => setFormCobro({...formCobro, cheque_banco: e.target.value})} style={inputStyle} placeholder="Banco emisor" /></div>
+                              <div><Label>Vencimiento *</Label><input type="date" value={formCobro.cheque_vencimiento} onChange={e => setFormCobro({...formCobro, cheque_vencimiento: e.target.value})} style={{ ...inputStyle, borderColor: S.amber }} /></div>
+                            </div>
+                          )}
                           <div>
                             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', marginBottom: 8 }}>
                               <input type="checkbox" checked={formCobro.es_paralelo} onChange={e => setFormCobro({...formCobro, es_paralelo: e.target.checked})} />
