@@ -325,7 +325,6 @@ export default function Servicios({ usuario }) {
                   </tr>
                 </>
               ))}
-              ))}
             </tbody>
           </table>
         </div>
