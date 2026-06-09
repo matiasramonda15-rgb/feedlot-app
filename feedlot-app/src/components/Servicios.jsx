@@ -253,7 +253,8 @@ export default function Servicios({ usuario }) {
                 <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay servicios registrados.</td></tr>
               )}
               {servicios.map(s => (
-                <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                <>
+                  <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                   <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(s.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                   <td style={{ padding: '9px 12px', fontWeight: 600 }}>{s.cliente}</td>
                   <td style={{ padding: '9px 12px' }}>{s.labor}</td>
@@ -322,7 +323,8 @@ export default function Servicios({ usuario }) {
                       </div>
                     </td>
                   </tr>
-                )}
+                </>
+              ))}
               ))}
             </tbody>
           </table>
