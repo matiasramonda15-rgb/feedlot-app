@@ -254,74 +254,76 @@ export default function Servicios({ usuario }) {
               )}
               {servicios.map(s => (
                 <React.Fragment key={s.id}>
-                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(s.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                  <td style={{ padding: '9px 12px', fontWeight: 600 }}>{s.cliente}</td>
-                  <td style={{ padding: '9px 12px' }}>{s.labor}</td>
-                  <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{s.maquinaria?.nombre || '—'}</td>
-                  <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{s.hectareas?.toLocaleString('es-AR')} ha</td>
-                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
-                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{s.total ? `$${s.total.toLocaleString('es-AR')}` : '—'}</td>
-                  <td style={{ padding: '9px 12px' }}>
-                    {s.estado_pago === 'cobrado' || (s.total && !s.estado_pago)
-                      ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Cobrado</span>
-                      : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
-                  </td>
-                  <td style={{ padding: '9px 12px' }}>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {(s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)) && (
-                        <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false }) }}
-                          style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
-                          💰 Cobrar
-                        </button>
-                      )}
-                      <button onClick={() => eliminar(s.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
-                    </div>
-                  </td>
-                </tr>
-                {cobrando === s.id && (
-                  <tr>
-                    <td colSpan={9} style={{ padding: '1rem', background: S.greenLight, borderBottom: `1px solid ${S.border}` }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: 10 }}>
-                        Registrar cobro — {s.cliente} · {s.labor} · {s.hectareas} ha
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
-                        <div>
-                          <Label>Precio $/ha</Label>
-                          <input type="number" value={formCobro.precio_ha} onChange={e => {
-                            const p = e.target.value
-                            const t = p && s.hectareas ? String(Math.round(parseFloat(p) * s.hectareas)) : formCobro.total
-                            setFormCobro({...formCobro, precio_ha: p, total: t})
-                          }} style={inputStyle} placeholder="ej. 15000" />
-                        </div>
-                        <div>
-                          <Label>Total $</Label>
-                          <input type="number" value={formCobro.total} onChange={e => setFormCobro({...formCobro, total: e.target.value})} style={inputStyle} />
-                        </div>
-                        <div>
-                          <Label>Fecha cobro</Label>
-                          <input type="date" value={formCobro.fecha_cobro} onChange={e => setFormCobro({...formCobro, fecha_cobro: e.target.value})} style={inputStyle} />
-                        </div>
-                        <div>
-                          <Label>Forma de pago</Label>
-                          <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
-                            <option value="transferencia">Transferencia</option>
-                            <option value="efectivo">Efectivo</option>
-                            <option value="cheque">Cheque</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', marginBottom: 8 }}>
-                            <input type="checkbox" checked={formCobro.es_paralelo} onChange={e => setFormCobro({...formCobro, es_paralelo: e.target.checked})} />
-                            Paralelo
-                          </label>
-                          <button onClick={() => guardarCobro(s)} disabled={guardandoCobro}
-                            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                            {guardandoCobro ? 'Guardando...' : '💾 Confirmar cobro'}
+                  <tr style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(s.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                    <td style={{ padding: '9px 12px', fontWeight: 600 }}>{s.cliente}</td>
+                    <td style={{ padding: '9px 12px' }}>{s.labor}</td>
+                    <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{s.maquinaria?.nombre || '—'}</td>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{s.hectareas?.toLocaleString('es-AR')} ha</td>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{s.total ? `$${s.total.toLocaleString('es-AR')}` : '—'}</td>
+                    <td style={{ padding: '9px 12px' }}>
+                      {s.estado_pago === 'cobrado' || (s.total && !s.estado_pago)
+                        ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Cobrado</span>
+                        : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
+                    </td>
+                    <td style={{ padding: '9px 12px' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {(s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)) && (
+                          <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false }) }}
+                            style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                            💰 Cobrar
                           </button>
-                        </div>
+                        )}
+                        <button onClick={() => eliminar(s.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                       </div>
                     </td>
                   </tr>
+                  {cobrando === s.id && (
+                    <tr>
+                      <td colSpan={9} style={{ padding: '1rem', background: S.greenLight, borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: 10 }}>
+                          Registrar cobro — {s.cliente} · {s.labor} · {s.hectareas} ha
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                          <div>
+                            <Label>Precio $/ha</Label>
+                            <input type="number" value={formCobro.precio_ha} onChange={e => {
+                              const p = e.target.value
+                              const t = p && s.hectareas ? String(Math.round(parseFloat(p) * s.hectareas)) : formCobro.total
+                              setFormCobro({...formCobro, precio_ha: p, total: t})
+                            }} style={inputStyle} placeholder="ej. 15000" />
+                          </div>
+                          <div>
+                            <Label>Total $</Label>
+                            <input type="number" value={formCobro.total} onChange={e => setFormCobro({...formCobro, total: e.target.value})} style={inputStyle} />
+                          </div>
+                          <div>
+                            <Label>Fecha cobro</Label>
+                            <input type="date" value={formCobro.fecha_cobro} onChange={e => setFormCobro({...formCobro, fecha_cobro: e.target.value})} style={inputStyle} />
+                          </div>
+                          <div>
+                            <Label>Forma de pago</Label>
+                            <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
+                              <option value="transferencia">Transferencia</option>
+                              <option value="efectivo">Efectivo</option>
+                              <option value="cheque">Cheque</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', marginBottom: 8 }}>
+                              <input type="checkbox" checked={formCobro.es_paralelo} onChange={e => setFormCobro({...formCobro, es_paralelo: e.target.checked})} />
+                              Paralelo
+                            </label>
+                            <button onClick={() => guardarCobro(s)} disabled={guardandoCobro}
+                              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              {guardandoCobro ? 'Guardando...' : '💾 Confirmar cobro'}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </React.Fragment>
               ))}
             </tbody>
