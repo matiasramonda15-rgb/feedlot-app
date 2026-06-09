@@ -435,7 +435,7 @@ export default function Insumos({ usuario }) {
 
       {/* Banner ingresos sin precio */}
       {sinPrecio.length > 0 && (
-        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} usuario={usuario} onCargar={cargar} chequesCartera={chequesCartera} S={S} />
+        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} usuario={usuario} onCargar={cargar} chequesCartera={chequesCartera} S={S} contactos={contactos} />
       )}
 
       {/* Tabs */}
@@ -940,237 +940,191 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
   )
 }
 
-function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCartera = [], S }) {
+function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCartera = [], S, contactos = [] }) {
   const [editando, setEditando] = useState({})
+  const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 
-  function initEp() {
-    return { precio: '', proveedor: '', forma_pago: 'transferencia', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+  function initEp(ing) {
+    return {
+      precio: '', proveedor: '', localidad: '', cuit: '', iva: '', cbu: '',
+      numero_factura: '', fecha: new Date().toISOString().split('T')[0],
+      pagarAhora: false, pagos: [{ ...PAGO_INIT }]
+    }
   }
 
   async function guardarPrecio(ing) {
     const ep = editando[ing.id]
-    if (!ep?.precio) { alert('Ingresá el precio'); return }
-    const precioNum = parseFloat(ep.precio)
-    const total = Math.round(ing.cantidad_kg * precioNum)
-    const fecha = new Date().toISOString().split('T')[0]
+    const fecha = ep.fecha || new Date().toISOString().split('T')[0]
+    const precioNum = parseFloat(ep.precio) || null
+    const total = precioNum ? Math.round(ing.cantidad_kg * precioNum) : null
 
-    // 1. Actualizar ingresos_stock
+    // Registrar en ingresos_stock
     await supabase.from('ingresos_stock').update({
       precio_por_kg: precioNum,
       total,
       proveedor: ep.proveedor || null,
-      precio_cargado_por: usuario?.nombre || usuario?.email,
-      precio_cargado_en: new Date().toISOString(),
+      localidad: ep.localidad || null,
+      cuit: ep.cuit || null,
+      numero_factura: ep.numero_factura || null,
+      estado_pago: ep.pagarAhora ? 'pagado' : 'pendiente',
     }).eq('id', ing.id)
 
-    // 2. Recalcular precio_referencia (promedio ponderado)
-    const { data: todos } = await supabase.from('ingresos_stock')
-      .select('cantidad_kg, precio_por_kg')
-      .eq('insumo_id', ing.insumo_id)
-      .not('precio_por_kg', 'is', null)
-    const lista = todos || []
-    const yaIncluido = lista.some(i => i.precio_por_kg === precioNum && i.cantidad_kg === ing.cantidad_kg)
-    if (!yaIncluido) lista.push({ cantidad_kg: ing.cantidad_kg, precio_por_kg: precioNum })
-    const totalKg = lista.reduce((s, i) => s + (i.cantidad_kg || 0), 0)
-    if (totalKg > 0) {
-      const prom = Math.round(lista.reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0) / totalKg)
-      const item = stockAlim.find(s => s.id === ing.insumo_id)
-      if (item) {
-        await supabase.from('stock_insumos').update({
-          precio_referencia: prom,
-          actualizado_en: new Date().toISOString(),
-        }).eq('id', item.id)
+    // Registrar en compras_insumos
+    let caja_oficial_id = null, caja_paralela_id = null
+    const desc = `Compra ${ing.insumo_nombre}${ep.proveedor ? ` — ${ep.proveedor}` : ''}`
+
+    if (ep.pagarAhora && total) {
+      for (const pago of ep.pagos) {
+        const monto = parseFloat(pago.monto) || 0
+        if (!monto) continue
+        const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+        if (pago.es_paralelo) {
+          const { data: cp } = await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+          if (!caja_paralela_id) caja_paralela_id = cp?.id
+        } else {
+          const { data: co } = await supabase.from('caja_oficial').insert({ fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
+          if (!caja_oficial_id) caja_oficial_id = co?.id
+        }
+        if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio.fecha_vencimiento) {
+          await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+        } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
+          await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+        }
       }
     }
 
-    // 3. Registrar en caja
-    const desc = `Compra ${ing.insumo_nombre}${ep.proveedor ? ` — ${ep.proveedor}` : ''} (${ing.cantidad_kg?.toLocaleString('es-AR')} kg)`
-    const formaPago = ep.subtipo_cheque ? `e-cheq` : (ep.forma_pago || 'transferencia')
+    // Insertar en compras_insumos para historial
+    const insumo = stockAlim.find(s => s.id === ing.insumo_id)
+    await supabase.from('compras_insumos').insert({
+      fecha, insumo_id: ing.insumo_id,
+      insumo_tipo: insumo?.tipo || 'alimentacion',
+      insumo_nombre: ing.insumo_nombre,
+      cantidad: ing.cantidad_kg, unidad: 'kg',
+      precio_unitario: precioNum, total,
+      proveedor: ep.proveedor || null,
+      localidad: ep.localidad || null,
+      cuit: ep.cuit || null,
+      iva: ep.iva || null,
+      cbu: ep.cbu || null,
+      numero_factura: ep.numero_factura || null,
+      forma_pago: ep.pagarAhora ? ep.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
+      es_paralelo: ep.pagarAhora ? ep.pagos.some(p => p.es_paralelo) : false,
+      pagos_detalle: ep.pagarAhora ? ep.pagos : null,
+      estado_pago: ep.pagarAhora ? 'pagado' : 'pendiente',
+      registrado_por: usuario?.id,
+      caja_oficial_id, caja_paralela_id,
+    })
 
-    if (ep.es_paralelo) {
-      await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion: desc, monto: total })
-      // Si entregó cheque de tercero como pago paralelo, marcarlo como depositado
-      if (ep.subtipo_cheque === 'tercero' && ep.cheque_tercero_id) {
-        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(ep.cheque_tercero_id))
-      }
-    } else {
-      const { data: mov } = await supabase.from('caja_oficial').insert({
-        fecha, tipo: 'egreso', categoria: 'Insumos alimentación',
-        descripcion: desc, monto: total, forma_pago: formaPago,
-      }).select().single()
-
-      // 4. Manejo de cheques
-      if (ep.subtipo_cheque === 'propio') {
-        // Crear cheque emitido
-        await supabase.from('cheques').insert({
-          tipo: 'emitido',
-          numero: ep.cheque_propio.numero || null,
-          banco: ep.cheque_propio.banco || null,
-          fecha_cobro: fecha,
-          fecha_vencimiento: ep.cheque_propio.fecha_vencimiento,
-          monto: total,
-          beneficiario: ep.proveedor || null,
-          estado: 'en_cartera',
-          caja_oficial_id: mov?.id || null,
-          registrado_por: usuario?.id,
-        })
-      } else if (ep.subtipo_cheque === 'tercero' && ep.cheque_tercero_id) {
-        // Marcar cheque de tercero como entregado
-        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(ep.cheque_tercero_id))
-      }
-    }
-
-    const nuevo = { ...editando }
-    delete nuevo[ing.id]
-    setEditando(nuevo)
+    setEditando(prev => { const n = {...prev}; delete n[ing.id]; return n })
     await onCargar()
   }
 
+  const inp = { width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }
+  const Lbl = ({ children }) => <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{children}</div>
+
   return (
     <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '.85rem' }}>
-        ⚠ {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} de stock sin precio cargado
+      <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
+        📦 {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} de Jesús sin precio — completar datos
       </div>
       {ingresos.map(ing => {
         const ep = editando[ing.id]
+        const totalPagos = ep ? ep.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0) : 0
         const totalCalc = ep?.precio ? Math.round(ing.cantidad_kg * parseFloat(ep.precio)) : null
-        const esCheque = ep?.subtipo_cheque
         return (
-          <div key={ing.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '.65rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: ep ? 12 : 0 }}>
+          <div key={ing.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: ep ? '1rem' : 0 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{ing.insumo_nombre}</div>
-                <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
-                  {ing.cantidad_kg?.toLocaleString('es-AR')} kg · registrado por {ing.registrado_por} · {new Date(ing.creado_en).toLocaleDateString('es-AR')}
-                </div>
+                <div style={{ fontSize: 12, color: S.muted }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg · {ing.creado_en ? new Date(ing.creado_en).toLocaleDateString('es-AR') : '—'}</div>
               </div>
-              {!ep && (
-                <button onClick={() => setEditando({ ...editando, [ing.id]: initEp() })}
-                  style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", flexShrink: 0, marginLeft: 12 }}>
-                  Cargar precio
-                </button>
-              )}
+              <button onClick={() => setEditando(prev => ({ ...prev, [ing.id]: prev[ing.id] ? undefined : initEp(ing) }))}
+                style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: ep ? S.redLight : S.accentLight, border: `1px solid ${ep ? '#F09595' : S.accent}`, color: ep ? S.red : S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                {ep ? 'Cancelar' : 'Completar datos'}
+              </button>
             </div>
             {ep && (
               <div>
-                {/* Fila 1: precio, proveedor, forma pago, paralelo */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio por kg ($) *</div>
-                    <input type="number" placeholder="ej. 130" value={ep.precio}
-                      onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, precio: e.target.value } })}
-                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Proveedor</div>
-                    <input type="text" placeholder="ej. Agrosol" value={ep.proveedor}
-                      onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, proveedor: e.target.value } })}
-                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Forma de pago</div>
-                    <select value={ep.forma_pago} onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, forma_pago: e.target.value, subtipo_cheque: '' } })}
-                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="efectivo">Efectivo</option>
-                      <option value="e-cheq">E-cheq</option>
-                      <option value="cuenta_corriente">Cuenta corriente</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: S.purple, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={ep.es_paralelo} onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, es_paralelo: e.target.checked } })} />
-                      Pago paralelo
-                    </label>
-                  </div>
+                {/* Proveedor desde contactos */}
+                <div style={{ marginBottom: 10 }}>
+                  <Lbl>Proveedor</Lbl>
+                  <select onChange={e => {
+                    const ct = contactos.find(c => String(c.id) === e.target.value)
+                    if (ct) setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: ct.nombre, localidad: ct.localidad||'', cuit: ct.cuit||'', iva: ct.iva||'', cbu: ct.cbu||''}}))
+                  }} style={inp} defaultValue="">
+                    <option value="">— Seleccionar de contactos —</option>
+                    {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                  </select>
                 </div>
-
-                {/* E-cheq */}
-                {ep.forma_pago === 'e-cheq' && (
-                  <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Tipo de e-cheq</div>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: esCheque ? 10 : 0 }}>
-                      {(ep.es_paralelo ? ['tercero'] : ['propio']).map(t => (
-                        <button key={t} onClick={() => setEditando({ ...editando, [ing.id]: { ...ep, subtipo_cheque: ep.subtipo_cheque === t ? '' : t } })}
-                          style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", border: `1px solid ${ep.subtipo_cheque === t ? S.accent : S.border}`, background: ep.subtipo_cheque === t ? S.accentLight : 'transparent', color: ep.subtipo_cheque === t ? S.accent : S.muted }}>
-                          {t === 'propio' ? '📤 E-cheq propio' : '📥 E-cheq de tercero'}
-                        </button>
-                      ))}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <div><Lbl>Nombre proveedor</Lbl><input type="text" value={ep.proveedor} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: e.target.value}}))} style={inp} /></div>
+                  <div><Lbl>Localidad</Lbl><input type="text" value={ep.localidad} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], localidad: e.target.value}}))} style={inp} /></div>
+                  <div><Lbl>CUIT</Lbl><input type="text" value={ep.cuit} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], cuit: e.target.value}}))} style={inp} /></div>
+                  <div><Lbl>N° Factura</Lbl><input type="text" value={ep.numero_factura} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], numero_factura: e.target.value}}))} style={inp} /></div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <div><Lbl>Precio $/kg</Lbl><input type="number" value={ep.precio} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], precio: e.target.value}}))} style={inp} placeholder="ej. 1500" /></div>
+                  <div><Lbl>Total calculado</Lbl>
+                    <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: totalCalc ? S.green : S.hint }}>
+                      {totalCalc ? `$${totalCalc.toLocaleString('es-AR')}` : '—'}
                     </div>
-
-                    {/* Cheq propio: campos */}
-                    {ep.subtipo_cheque === 'propio' && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 10 }}>
-                        <div>
-                          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° cheque</div>
-                          <input type="text" value={ep.cheque_propio.numero}
-                            onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, cheque_propio: { ...ep.cheque_propio, numero: e.target.value } } })}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Banco</div>
-                          <input type="text" value={ep.cheque_propio.banco}
-                            onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, cheque_propio: { ...ep.cheque_propio, banco: e.target.value } } })}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 3 }}>Fecha vencimiento *</div>
-                          <input type="date" value={ep.cheque_propio.fecha_vencimiento}
-                            onChange={e => setEditando({ ...editando, [ing.id]: { ...ep, cheque_propio: { ...ep.cheque_propio, fecha_vencimiento: e.target.value } } })}
-                            style={{ width: '100%', border: `1px solid ${S.amber}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Cheq tercero: lista cheques en cartera */}
-                    {ep.subtipo_cheque === 'tercero' && (
-                      <div style={{ marginTop: 10 }}>
-                        {(() => {
-                          const lista = chequesCartera.filter(ch => ep.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
-                          return lista.length === 0
-                            ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {ep.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
-                            : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                {lista.map(ch => (
-                                  <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${ep.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: ep.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer' }}>
-                                    <input type="radio" name={`cheque_${ing.id}`} value={ch.id}
-                                      checked={ep.cheque_tercero_id === String(ch.id)}
-                                      onChange={() => setEditando({ ...editando, [ing.id]: { ...ep, cheque_tercero_id: String(ch.id) } })} />
-                                    <div style={{ fontSize: 13 }}>
-                                      <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
-                                      <span style={{ color: S.muted, marginLeft: 8 }}>
-                                        #{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
-                                        {ch.librador ? ` · ${ch.librador}` : ''}
-                                      </span>
-                                    </div>
-                                  </label>
-                                ))}
-                              </div>
-                            )
-                        })()}
-                      </div>
-                    )}
                   </div>
-                )}
-
-                {/* Resumen */}
-                {totalCalc && (
-                  <div style={{ background: ep.es_paralelo ? S.purpleLight : S.greenLight, border: `1px solid ${ep.es_paralelo ? '#C4A8F0' : '#97C459'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: ep.es_paralelo ? S.purple : S.green }}>
-                    Total: <strong>${totalCalc.toLocaleString('es-AR')}</strong>
-                    {' '}({ing.cantidad_kg?.toLocaleString('es-AR')} kg × ${parseFloat(ep.precio).toLocaleString('es-AR')}/kg)
-                    {' · '}{ep.es_paralelo ? `💜 Paralelo${ep.subtipo_cheque === 'tercero' ? ' · 📥 cheq tercero' : ''}` : ep.subtipo_cheque === 'propio' ? '📤 E-cheq propio' : ep.subtipo_cheque === 'tercero' ? '📥 E-cheq tercero' : `🏦 ${ep.forma_pago}`}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => guardarPrecio(ing)}
-                    style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                    Guardar y registrar en caja
-                  </button>
-                  <button onClick={() => { const n = { ...editando }; delete n[ing.id]; setEditando(n) }}
-                    style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                    Cancelar
-                  </button>
+                  <div><Lbl>Fecha</Lbl><input type="date" value={ep.fecha} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], fecha: e.target.value}}))} style={inp} /></div>
                 </div>
+
+                {/* Toggle pagar ahora / pendiente */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
+                  {[{ v: false, l: '⏳ Dejar pendiente' }, { v: true, l: '💳 Pagar ahora' }].map(opt => (
+                    <button key={String(opt.v)} onClick={() => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagarAhora: opt.v}}))}
+                      style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${ep.pagarAhora === opt.v ? S.accent : S.border}`, background: ep.pagarAhora === opt.v ? S.accentLight : 'transparent', color: ep.pagarAhora === opt.v ? S.accent : S.muted }}>
+                      {opt.l}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Formas de pago */}
+                {ep.pagarAhora && (
+                  <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Lbl>Formas de pago</Lbl>
+                      <button onClick={() => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: [...prev[ing.id].pagos, { ...PAGO_INIT }]}}))} style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
+                    </div>
+                    {ep.pagos.map((pago, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: 6 }}>
+                        <div><Lbl>Forma</Lbl>
+                          <select value={pago.tipo} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p)}}))} style={inp}>
+                            <option value="transferencia">Transferencia</option>
+                            <option value="efectivo">Efectivo</option>
+                            <option value="e-cheq">E-cheq</option>
+                            <option value="cuenta_corriente">Cta. corriente</option>
+                          </select>
+                        </div>
+                        <div><Lbl>Monto $</Lbl>
+                          <input type="number" value={pago.monto} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p)}}))} style={inp} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={pago.es_paralelo} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p)}}))} />
+                            Paralelo
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                          {ep.pagos.length > 1 && <button onClick={() => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.filter((_,i)=>i!==idx)}}))} style={{ padding: '4px 7px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
+                        </div>
+                      </div>
+                    ))}
+                    {totalCalc > 0 && (
+                      <div style={{ background: Math.abs(totalCalc-totalPagos) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalCalc-totalPagos) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 5, padding: '6px 10px', fontSize: 12 }}>
+                        Total: <strong>${totalCalc.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button onClick={() => guardarPrecio(ing)}
+                  style={{ padding: '7px 16px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                  💾 Guardar
+                </button>
               </div>
             )}
           </div>
@@ -1179,3 +1133,5 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
     </div>
   )
 }
+
+
