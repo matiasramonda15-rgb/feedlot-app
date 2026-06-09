@@ -165,6 +165,8 @@ export default function Alimentacion({ usuario }) {
 
 
   const [cfgCapState, setCfgCapState] = useState([])
+  const [formulaActiva, setFormulaActiva] = useState('seco')
+  const [formulaDieta, setFormulaDieta] = useState('seco')
   const [formulaDieta, setFormulaDieta] = useState('seco')
   const [formulas, setFormulas] = useState(JSON.parse(JSON.stringify(FORMULAS)))
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
