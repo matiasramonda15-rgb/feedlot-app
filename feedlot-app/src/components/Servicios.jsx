@@ -59,14 +59,16 @@ export default function Servicios({ usuario }) {
     if (!formCobro.precio_ha && !formCobro.total) { alert('Ingresá el precio/ha o el total'); return }
     setGuardandoCobro(true)
     const precio = formCobro.precio_ha ? parseFloat(formCobro.precio_ha) : null
-    const total = formCobro.total ? parseFloat(formCobro.total) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
+    const totalSinIva = formCobro.total_sin_iva ? parseFloat(formCobro.total_sin_iva) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
+    const ivaPct = parseFloat(formCobro.iva_pct) || 0
+    const total = formCobro.total ? parseFloat(formCobro.total) : (totalSinIva ? Math.round(totalSinIva * (1 + ivaPct/100)) : null)
     const desc = `Servicio ${s.labor} — ${s.cliente} · ${s.hectareas} ha`
     if (formCobro.es_paralelo) {
       await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', descripcion: desc, monto: total })
     } else {
       await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto: total, forma_pago: formCobro.forma_pago })
     }
-    await supabase.from('servicios_terceros').update({ precio_ha: precio, total, estado_pago: 'cobrado', fecha_cobro: formCobro.fecha_cobro }).eq('id', s.id)
+    await supabase.from('servicios_terceros').update({ precio_ha: precio, total, iva_pct: ivaPct || null, estado_pago: 'cobrado', fecha_cobro: formCobro.fecha_cobro }).eq('id', s.id)
     setCobrando(null)
     setFormCobro({ precio_ha: '', total: '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false })
     setGuardandoCobro(false)
@@ -270,7 +272,7 @@ export default function Servicios({ usuario }) {
                     <td style={{ padding: '9px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
                         {(s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)) && (
-                          <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false }) }}
+                          <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', total_sin_iva: s.total ? String(s.total) : '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false }) }}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                             💰 Cobrar
                           </button>
@@ -290,8 +292,10 @@ export default function Servicios({ usuario }) {
                             <Label>Precio $/ha</Label>
                             <input type="number" value={formCobro.precio_ha} onChange={e => {
                               const p = e.target.value
-                              const t = p && s.hectareas ? String(Math.round(parseFloat(p) * s.hectareas)) : formCobro.total
-                              setFormCobro({...formCobro, precio_ha: p, total: t})
+                              const base = p && s.hectareas ? Math.round(parseFloat(p) * s.hectareas) : null
+                              const iva = parseFloat(formCobro.iva_pct) || 0
+                              const t = base ? String(Math.round(base * (1 + iva/100))) : formCobro.total
+                              setFormCobro({...formCobro, precio_ha: p, total_sin_iva: base ? String(base) : '', total: t})
                             }} style={inputStyle} placeholder="ej. 15000" />
                           </div>
                           <div>
@@ -299,12 +303,30 @@ export default function Servicios({ usuario }) {
                             <input type="number" value={formCobro.total} onChange={e => setFormCobro({...formCobro, total: e.target.value})} style={inputStyle} />
                           </div>
                           <div>
+                            <Label>Forma de pago</Label>
+                            <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
+                              <option value="transferencia">Transferencia</option>
+                              <option value="efectivo">Efectivo</option>
+                              <option value="cheque">Cheque</option>
+                            </select>
+                          </div>
+                          <div>
                             <Label>Fecha cobro</Label>
                             <input type="date" value={formCobro.fecha_cobro} onChange={e => setFormCobro({...formCobro, fecha_cobro: e.target.value})} style={inputStyle} />
                           </div>
                           <div>
-                            <Label>Forma de pago</Label>
-                            <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
+                            <Label>IVA %</Label>
+                            <select value={formCobro.iva_pct} onChange={e => {
+                              const iva = parseFloat(e.target.value) || 0
+                              const base = parseFloat(formCobro.total_sin_iva || formCobro.total) || 0
+                              const totalConIva = base > 0 ? String(Math.round(base * (1 + iva/100))) : formCobro.total
+                              setFormCobro({...formCobro, iva_pct: e.target.value, total: totalConIva})
+                            }} style={inputStyle}>
+                              <option value="0">Sin IVA</option>
+                              <option value="10.5">10.5%</option>
+                              <option value="21">21%</option>
+                            </select>
+                          </div>
                               <option value="transferencia">Transferencia</option>
                               <option value="efectivo">Efectivo</option>
                               <option value="cheque">Cheque</option>
