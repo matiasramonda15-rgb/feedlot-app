@@ -499,6 +499,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   const hoyStr = new Date().toISOString().split('T')[0]
   const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
   const RANGOS_RECRIA = cEnTerminacion ? ['A','B'] : ['A','B','C']
+  const RANGOS_TERM_MOV = cEnTerminacion ? ['C','D','E','F','G','H'] : ['D','E','F','G','H']
   function getEtapa(c) {
     if (c.rol === 'cuarentena') return 'acostumbramiento'
     if (c.rol === 'acumulacion' || c.rol === 'enfermeria') return 'recria'

@@ -406,7 +406,7 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ fontSize: 11, color: '#6B6760', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase' }}>Rango</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
-                      {['A','B','C','D','E','F','G'].map(r => (
+                      {['A','B','C','D','E','F','G','H'].map(r => (
                         <button key={r} onClick={() => setSubNuevo(r)}
                           style={{ border: `1px solid ${subNuevo === r ? '#3D1A6B' : '#E2DDD6'}`, background: subNuevo === r ? '#F0EAFB' : '#fff', borderRadius: 6, padding: '6px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: subNuevo === r ? '#3D1A6B' : '#6B6760', fontFamily: 'monospace' }}>
                           {r}
@@ -487,7 +487,7 @@ function PanelMover({ corral, corrales, form, setForm, onGuardar, onCancelar, gu
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.purple, textTransform: 'uppercase', marginBottom: 6 }}>Rango</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
-                {['A','B','C','D','E','F','G'].map(r => (
+                {['A','B','C','D','E','F','G','H'].map(r => (
                   <button key={r} onClick={() => setForm({...form, subDestino: r})}
                     style={{ border: `1px solid ${form.subDestino === r ? S.purple : S.border}`, background: form.subDestino === r ? S.purpleLight : S.surface, borderRadius: 6, padding: '7px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: form.subDestino === r ? S.purple : S.muted, fontFamily: 'monospace' }}>
                     {r}

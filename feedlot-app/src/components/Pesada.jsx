@@ -19,10 +19,11 @@ const RANGOS = [
   { min: 291, max: 320, letra: 'D', label: '291–320 kg', color: S.amber,   bg: S.amberLight },
   { min: 321, max: 350, letra: 'E', label: '321–350 kg', color: '#5A2A00', bg: '#FDE8D0' },
   { min: 351, max: 380, letra: 'F', label: '351–380 kg', color: S.red,     bg: S.redLight },
-  { min: 381, max: 999, letra: 'G', label: '381+ kg',    color: '#2C2C2A', bg: '#E8E8E4' },
+  { min: 381, max: 410, letra: 'G', label: '381–410 kg', color: '#2C2C2A', bg: '#E8E8E4' },
+  { min: 411, max: 999, letra: 'H', label: '411+ kg',    color: '#6B0E0E', bg: '#F5E0E0' },
 ]
 
-const ORDEN_RANGOS = ['A','B','C','D','E','F','G']
+const ORDEN_RANGOS = ['A','B','C','D','E','F','G','H']
 
 const RANGO_COLORS = {
   A: { color: S.green,   bg: S.greenLight },
@@ -32,6 +33,7 @@ const RANGO_COLORS = {
   E: { color: '#5A2A00', bg: '#FDE8D0' },
   F: { color: S.red,     bg: S.redLight },
   G: { color: '#2C2C2A', bg: '#E8E8E4' },
+  H: { color: '#6B0E0E', bg: '#F5E0E0' },
 }
 
 function getRango(kg) {

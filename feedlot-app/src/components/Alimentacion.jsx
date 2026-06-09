@@ -232,7 +232,7 @@ export default function Alimentacion({ usuario }) {
   const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
 
   const RANGOS_RECRIA = cEnTerminacion ? ['A','B'] : ['A','B','C']
-  const RANGOS_TERM = cEnTerminacion ? ['C','D','E','F','G'] : ['D','E','F','G']
+  const RANGOS_TERM = cEnTerminacion ? ['C','D','E','F','G','H'] : ['D','E','F','G','H']
   const corralesMixer = [
     corrales.filter(c => c.rol === 'cuarentena'),
     corrales.filter(c => c.rol === 'acumulacion' || c.rol === 'enfermeria' || (c.rol === 'clasificado' && RANGOS_RECRIA.includes(c.sub))),
@@ -1245,4 +1245,4 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
       })}
     </div>
   )
-} 
+}
