@@ -236,6 +236,17 @@ export default function Pesada({ usuario }) {
     nuevaProxima.setDate(nuevaProxima.getDate() + 40)
     await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
 
+    // 9b. Registrar fecha en que rango C pasa a terminación (+20 días)
+    const fechaTermC = new Date()
+    fechaTermC.setDate(fechaTermC.getDate() + 20)
+    const fechaTermCStr = fechaTermC.toISOString().split('T')[0]
+    const { data: cfgExistente } = await supabase.from('configuracion').select('clave').eq('clave', 'fecha_term_c').single().catch(() => ({ data: null }))
+    if (cfgExistente) {
+      await supabase.from('configuracion').update({ valor: fechaTermCStr }).eq('clave', 'fecha_term_c')
+    } else {
+      await supabase.from('configuracion').insert({ clave: 'fecha_term_c', valor: fechaTermCStr })
+    }
+
     setPesadaConfirmada({
       clasificables: clasificables.length,
       menores: menores.length,

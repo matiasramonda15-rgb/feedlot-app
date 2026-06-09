@@ -195,7 +195,7 @@ export default function Alimentacion({ usuario }) {
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100).range(200, 299),
       supabase.from('formulas_mixer').select('*').order('orden'),
-      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion']),
+      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion', 'fecha_term_c']),
       supabase.from('raciones_app').select('*, corrales(numero)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
     ])
     setCorrales(c || [])
@@ -225,8 +225,12 @@ export default function Alimentacion({ usuario }) {
     setLoading(false)
   }
 
-  const RANGOS_RECRIA = ['A','B','C']
-  const RANGOS_TERM = ['D','E','F','G']
+  const fechaTermC = cfgCap.find(c => c.clave === 'fecha_term_c')?.valor || null
+  const hoyStr = new Date().toISOString().split('T')[0]
+  const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
+
+  const RANGOS_RECRIA = cEnTerminacion ? ['A','B'] : ['A','B','C']
+  const RANGOS_TERM = cEnTerminacion ? ['C','D','E','F','G'] : ['D','E','F','G']
   const corralesMixer = [
     corrales.filter(c => c.rol === 'cuarentena'),
     corrales.filter(c => c.rol === 'acumulacion' || c.rol === 'enfermeria' || (c.rol === 'clasificado' && RANGOS_RECRIA.includes(c.sub))),
