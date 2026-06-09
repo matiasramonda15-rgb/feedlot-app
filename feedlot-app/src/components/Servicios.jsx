@@ -83,7 +83,7 @@ export default function Servicios({ usuario }) {
         fecha_cobro: formCobro.fecha_cobro,
         fecha_vencimiento: formCobro.cheque_vencimiento,
         monto: total,
-        emisor: s.cliente || null,
+        librador: s.cliente || null,
         estado: 'en_cartera',
         es_paralelo: formCobro.es_paralelo || false,
         caja_oficial_id: formCobro.es_paralelo ? null : caja_id,
