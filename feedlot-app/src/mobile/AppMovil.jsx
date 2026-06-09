@@ -28,7 +28,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const ayerStr = ayer.toISOString().split('T')[0]
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
-      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento']),
+      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento', 'fecha_term_c']),
       supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
     ])
     // Construir formulas desde BD
@@ -49,6 +49,7 @@ export default function AppMovil({ usuario, onLogout }) {
       recria: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_recria')?.valor || '2500'),
       terminacion: parseInt((cfgMixer || []).find(c => c.clave === 'capacidad_mixer_terminacion')?.valor || '4200'),
     }
+    const fechaTermC = (cfgMixer || []).find(c => c.clave === 'fecha_term_c')?.valor || null
     // Usar el kg_total mas reciente por corral
     const kgsAyer = {}
     ;(racionesAyer || []).forEach(r => {
@@ -62,7 +63,7 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, kgsAyer, lotes: lotes || [], movimientos: movimientos || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, fechaTermC, kgsAyer, lotes: lotes || [], movimientos: movimientos || [] })
   }
 
   const pantallas = {
@@ -70,7 +71,7 @@ export default function AppMovil({ usuario, onLogout }) {
     corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
-    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} onDone={cargarDatos} />,
+    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
@@ -492,10 +493,12 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
     </div>
   )
 }
-function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, onDone }) {
+function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, fechaTermC, onDone }) {
   const [dieta, setDieta] = useState('seco')
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
-  const RANGOS_RECRIA = ['A','B','C']
+  const hoyStr = new Date().toISOString().split('T')[0]
+  const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
+  const RANGOS_RECRIA = cEnTerminacion ? ['A','B'] : ['A','B','C']
   function getEtapa(c) {
     if (c.rol === 'cuarentena') return 'acostumbramiento'
     if (c.rol === 'acumulacion' || c.rol === 'enfermeria') return 'recria'
