@@ -164,7 +164,7 @@ export default function Alimentacion({ usuario }) {
   const [archivoFechaHasta, setArchivoFechaHasta] = useState('')
 
 
-  const [formulaActiva, setFormulaActiva] = useState('seco')
+  const [cfgCapState, setCfgCapState] = useState([])
   const [formulaDieta, setFormulaDieta] = useState('seco')
   const [formulas, setFormulas] = useState(JSON.parse(JSON.stringify(FORMULAS)))
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
@@ -205,6 +205,7 @@ export default function Alimentacion({ usuario }) {
     setArchivoOffset(100)
     // Cargar capacidades desde BD
     if (cfgCap && cfgCap.length > 0) {
+      setCfgCapState(cfgCap)
       const capAcost = parseInt(cfgCap.find(c => c.clave === 'capacidad_mixer_acostumbramiento')?.valor || '2000')
       const capRecria = parseInt(cfgCap.find(c => c.clave === 'capacidad_mixer_recria')?.valor || '2500')
       const capTerm = parseInt(cfgCap.find(c => c.clave === 'capacidad_mixer_terminacion')?.valor || '4200')
@@ -225,7 +226,7 @@ export default function Alimentacion({ usuario }) {
     setLoading(false)
   }
 
-  const fechaTermC = cfgCap.find(c => c.clave === 'fecha_term_c')?.valor || null
+  const fechaTermC = cfgCapState.find(c => c.clave === 'fecha_term_c')?.valor || null
   const hoyStr = new Date().toISOString().split('T')[0]
   const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
 
