@@ -34,7 +34,7 @@ const MENU = [
   {
     section: 'SERVICIOS',
     items: [
-      { id: 'servicios', label: 'Servicios', roles: ['dueno', 'secretaria'], emails: ['matias_eu@hotmail.com', 'martin@campo.com'] },
+      { id: 'servicios', label: 'Servicios', roles: ['dueno', 'secretaria'], emails: ['matias_eu@hotmail.com', 'martin@campo.com', 'paula@oficina.com'] },
     ]
   },
   {
