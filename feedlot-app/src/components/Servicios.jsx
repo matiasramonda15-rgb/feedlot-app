@@ -287,7 +287,7 @@ export default function Servicios({ usuario }) {
                         <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: 10 }}>
                           Registrar cobro — {s.cliente} · {s.labor} · {s.hectareas} ha
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
                           <div>
                             <Label>Precio $/ha</Label>
                             <input type="number" value={formCobro.precio_ha} onChange={e => {
@@ -327,6 +327,9 @@ export default function Servicios({ usuario }) {
                               <option value="21">21%</option>
                             </select>
                           </div>
+                          <div>
+                            <Label>Forma de pago</Label>
+                            <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
                               <option value="transferencia">Transferencia</option>
                               <option value="efectivo">Efectivo</option>
                               <option value="cheque">Cheque</option>
