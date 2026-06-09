@@ -31,6 +31,9 @@ export default function Servicios({ usuario }) {
   const [contactos, setContactos] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
+  const [cobrando, setCobrando] = useState(null)
+  const [formCobro, setFormCobro] = useState({ precio_ha: '', total: '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false })
+  const [guardandoCobro, setGuardandoCobro] = useState(false)
   const [form, setForm] = useState({
     cliente: '', clienteNuevo: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0],
     hectareas: '', maquina_id: '', precio_ha: '', observaciones: ''
@@ -52,8 +55,27 @@ export default function Servicios({ usuario }) {
     setLoading(false)
   }
 
+  async function guardarCobro(s) {
+    if (!formCobro.precio_ha && !formCobro.total) { alert('Ingresá el precio/ha o el total'); return }
+    setGuardandoCobro(true)
+    const precio = formCobro.precio_ha ? parseFloat(formCobro.precio_ha) : null
+    const total = formCobro.total ? parseFloat(formCobro.total) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
+    const desc = `Servicio ${s.labor} — ${s.cliente} · ${s.hectareas} ha`
+    if (formCobro.es_paralelo) {
+      await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', descripcion: desc, monto: total })
+    } else {
+      await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto: total, forma_pago: formCobro.forma_pago })
+    }
+    await supabase.from('servicios_terceros').update({ precio_ha: precio, total, estado_pago: 'cobrado', fecha_cobro: formCobro.fecha_cobro }).eq('id', s.id)
+    setCobrando(null)
+    setFormCobro({ precio_ha: '', total: '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false })
+    setGuardandoCobro(false)
+    await cargar()
+  }
+
   async function guardar() {
     if (!form.cliente || !form.labor || !form.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
+    if (form.cliente === '__nuevo__' && !form.clienteNuevo?.trim()) { alert('Ingresá el nombre del cliente'); return }
     setGuardando(true)
     const ha = parseFloat(form.hectareas)
     const precio = form.precio_ha ? parseFloat(form.precio_ha) : null
@@ -74,6 +96,7 @@ export default function Servicios({ usuario }) {
       total,
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id,
+      estado_pago: (ha && precio) ? 'cobrado' : 'pendiente',
     })
     await cargar()
     setShowForm(false)
@@ -144,6 +167,15 @@ export default function Servicios({ usuario }) {
         </button>
       </div>
 
+      {/* Banner pendientes de cobro */}
+      {servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length > 0 && (
+        <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
+            ⏳ {servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length} servicio{servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length !== 1 ? 's' : ''} pendiente{servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length !== 1 ? 's' : ''} de cobro
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <Card>
           <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Nuevo trabajo para tercero</div>
@@ -211,7 +243,7 @@ export default function Servicios({ usuario }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: S.bg }}>
-                {['Fecha', 'Cliente', 'Labor', 'Máquina', 'Ha', '$/ha', 'Total', ''].map(h => (
+                {['Fecha', 'Cliente', 'Labor', 'Máquina', 'Ha', '$/ha', 'Total', 'Estado', ''].map(h => (
                   <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -230,9 +262,67 @@ export default function Servicios({ usuario }) {
                   <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
                   <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{s.total ? `$${s.total.toLocaleString('es-AR')}` : '—'}</td>
                   <td style={{ padding: '9px 12px' }}>
-                    <button onClick={() => eliminar(s.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                    {s.estado_pago === 'cobrado' || (s.total && !s.estado_pago)
+                      ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Cobrado</span>
+                      : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {(s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)) && (
+                        <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false }) }}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                          💰 Cobrar
+                        </button>
+                      )}
+                      <button onClick={() => eliminar(s.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                    </div>
                   </td>
                 </tr>
+                {cobrando === s.id && (
+                  <tr>
+                    <td colSpan={9} style={{ padding: '1rem', background: S.greenLight, borderBottom: `1px solid ${S.border}` }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: 10 }}>
+                        Registrar cobro — {s.cliente} · {s.labor} · {s.hectareas} ha
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                        <div>
+                          <Label>Precio $/ha</Label>
+                          <input type="number" value={formCobro.precio_ha} onChange={e => {
+                            const p = e.target.value
+                            const t = p && s.hectareas ? String(Math.round(parseFloat(p) * s.hectareas)) : formCobro.total
+                            setFormCobro({...formCobro, precio_ha: p, total: t})
+                          }} style={inputStyle} placeholder="ej. 15000" />
+                        </div>
+                        <div>
+                          <Label>Total $</Label>
+                          <input type="number" value={formCobro.total} onChange={e => setFormCobro({...formCobro, total: e.target.value})} style={inputStyle} />
+                        </div>
+                        <div>
+                          <Label>Fecha cobro</Label>
+                          <input type="date" value={formCobro.fecha_cobro} onChange={e => setFormCobro({...formCobro, fecha_cobro: e.target.value})} style={inputStyle} />
+                        </div>
+                        <div>
+                          <Label>Forma de pago</Label>
+                          <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
+                            <option value="transferencia">Transferencia</option>
+                            <option value="efectivo">Efectivo</option>
+                            <option value="cheque">Cheque</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', marginBottom: 8 }}>
+                            <input type="checkbox" checked={formCobro.es_paralelo} onChange={e => setFormCobro({...formCobro, es_paralelo: e.target.checked})} />
+                            Paralelo
+                          </label>
+                          <button onClick={() => guardarCobro(s)} disabled={guardandoCobro}
+                            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            {guardandoCobro ? 'Guardando...' : '💾 Confirmar cobro'}
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               ))}
             </tbody>
           </table>
