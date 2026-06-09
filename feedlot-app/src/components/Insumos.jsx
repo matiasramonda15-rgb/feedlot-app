@@ -954,20 +954,25 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
 
   async function guardarPrecio(ing) {
     const ep = editando[ing.id]
+    if (!ep) { alert('Abrí el formulario primero'); return }
     const fecha = ep.fecha || new Date().toISOString().split('T')[0]
     const precioNum = parseFloat(ep.precio) || null
     const total = precioNum ? Math.round(ing.cantidad_kg * precioNum) : null
+    const estadoPago = ep.pagarAhora ? 'pagado' : 'pendiente'
+
+    console.log('guardando insumo pendiente:', ing.id, estadoPago, precioNum)
 
     // Registrar en ingresos_stock
-    await supabase.from('ingresos_stock').update({
+    const { error: errUpdate } = await supabase.from('ingresos_stock').update({
       precio_por_kg: precioNum,
       total,
       proveedor: ep.proveedor || null,
       localidad: ep.localidad || null,
       cuit: ep.cuit || null,
       numero_factura: ep.numero_factura || null,
-      estado_pago: ep.pagarAhora ? 'pagado' : 'pendiente',
+      estado_pago: estadoPago,
     }).eq('id', ing.id)
+    console.log('update ingresos_stock error:', errUpdate)
 
     // Registrar en compras_insumos
     let caja_oficial_id = null, caja_paralela_id = null
@@ -1010,7 +1015,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
       forma_pago: ep.pagarAhora ? ep.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
       es_paralelo: ep.pagarAhora ? ep.pagos.some(p => p.es_paralelo) : false,
       pagos_detalle: ep.pagarAhora ? ep.pagos : null,
-      estado_pago: ep.pagarAhora ? 'pagado' : 'pendiente',
+      estado_pago: estadoPago,
       registrado_por: usuario?.id,
       caja_oficial_id, caja_paralela_id,
     })
