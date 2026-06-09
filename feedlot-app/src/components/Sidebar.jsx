@@ -34,7 +34,7 @@ const MENU = [
   {
     section: 'SERVICIOS',
     items: [
-      { id: 'servicios',    label: 'Servicios',           roles: ['dueno', 'secretaria'] },
+      { id: 'servicios', label: 'Servicios', roles: ['dueno', 'secretaria'], emails: ['matias_eu@hotmail.com', 'martin@campo.com'] },
     ]
   },
   {
@@ -91,7 +91,11 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
       {/* Menú */}
       <nav style={{ flex: 1, padding: '1rem 0' }}>
         {MENU.map(grupo => {
-          const itemsFiltrados = grupo.items.filter(item => item.roles.includes(rol))
+          const itemsFiltrados = grupo.items.filter(item => {
+            if (!item.roles.includes(rol)) return false
+            if (item.emails && !item.emails.includes(usuario?.email)) return false
+            return true
+          })
           if (itemsFiltrados.length === 0) return null
           return (
             <div key={grupo.section} style={{ marginBottom: '1.25rem' }}>
