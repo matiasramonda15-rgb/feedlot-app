@@ -74,6 +74,7 @@ export default function AppMovil({ usuario, onLogout }) {
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
+    servicios:   <ServiciosMovil nav={nav} usuario={usuario} />,
   }
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: C.sans, color: C.text, position: 'relative', overflow: 'hidden' }}>
@@ -178,6 +179,7 @@ function Home({ usuario, nav, onLogout, datos }) {
             { icon: '🌾', label: 'Alimentacion', p: 'alimentacion' },
             { icon: '💊', label: 'Sanidad', p: 'sanidad' },
             { icon: '💰', label: 'Carga venta', p: 'venta' },
+            ...(['matias_eu@hotmail.com','martin@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
           ].map((a, i) => (
             <div key={i} onClick={() => nav(a.p)}
               style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.85rem', cursor: 'pointer', textAlign: 'center' }}>
@@ -1761,3 +1763,111 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
     </div>
   )
 } 
+
+const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Roturación', 'Rastreo', 'Flete', 'Otro']
+
+function ServiciosMovil({ nav, usuario }) {
+  const [guardando, setGuardando] = useState(false)
+  const [contactos, setContactos] = useState([])
+  const [maquinaria, setMaquinaria] = useState([])
+  const [form, setForm] = useState({
+    cliente: '', clienteNuevo: '', labor: 'Siembra',
+    fecha: new Date().toISOString().split('T')[0],
+    hectareas: '', maquina_id: '', precio_ha: '', observaciones: ''
+  })
+  const [ok, setOk] = useState(false)
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from('contactos').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('maquinaria').select('*').eq('activo', true).order('nombre'),
+    ]).then(([{ data: ct }, { data: m }]) => {
+      setContactos(ct || [])
+      setMaquinaria(m || [])
+    })
+  }, [])
+
+  async function guardar() {
+    const nombreCliente = form.cliente === '__nuevo__' ? form.clienteNuevo.trim() : form.cliente
+    if (!nombreCliente || !form.labor || !form.hectareas) {
+      alert('Completá cliente, labor y hectáreas')
+      return
+    }
+    setGuardando(true)
+    if (form.cliente === '__nuevo__' && form.clienteNuevo.trim()) {
+      const existe = contactos.find(c => c.nombre.toLowerCase() === form.clienteNuevo.trim().toLowerCase())
+      if (!existe) await supabase.from('contactos').insert({ nombre: form.clienteNuevo.trim(), tipo: 'otro', activo: true })
+    }
+    const ha = parseFloat(form.hectareas)
+    const precio = form.precio_ha ? parseFloat(form.precio_ha) : null
+    const total = ha && precio ? ha * precio : null
+    await supabase.from('servicios_terceros').insert({
+      cliente: nombreCliente, labor: form.labor, fecha: form.fecha,
+      hectareas: ha, maquina_id: form.maquina_id ? parseInt(form.maquina_id) : null,
+      precio_ha: precio, total,
+      observaciones: form.observaciones || null,
+      registrado_por: usuario?.id,
+      estado_pago: 'pendiente',
+    })
+    setGuardando(false)
+    setOk(true)
+    setTimeout(() => {
+      setOk(false)
+      setForm({ cliente: '', clienteNuevo: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0], hectareas: '', maquina_id: '', precio_ha: '', observaciones: '' })
+    }, 2000)
+  }
+
+  const C = { bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', text: '#1A1916', muted: '#6B6760', accent: '#1A3D6B', green: '#1E5C2E', greenLight: '#E8F4EB', amber: '#7A4500' }
+  const inp = { width: '100%', padding: '11px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 15, background: C.surface, boxSizing: 'border-box', fontFamily: 'inherit', color: C.text, marginBottom: 12 }
+  const lbl = { fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 4 }
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+      <Topbar titulo="Servicios" sub="Registrar trabajo" onBack={() => nav('home')} />
+      <Scroll>
+        {ok && (
+          <div style={{ background: C.greenLight, border: '1px solid #97C459', borderRadius: 10, padding: '1rem', marginBottom: '1rem', textAlign: 'center', fontSize: 14, fontWeight: 600, color: C.green }}>
+            ✓ Servicio registrado
+          </div>
+        )}
+        <label style={lbl}>Cliente</label>
+        <select value={form.cliente} onChange={e => setForm({...form, cliente: e.target.value, clienteNuevo: ''})} style={inp}>
+          <option value="">— Seleccioná —</option>
+          {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+          <option value="__nuevo__">+ Nuevo cliente...</option>
+        </select>
+        {form.cliente === '__nuevo__' && (
+          <input type="text" placeholder="Nombre del cliente" value={form.clienteNuevo}
+            onChange={e => setForm({...form, clienteNuevo: e.target.value})}
+            style={{ ...inp, borderColor: C.accent }} autoFocus />
+        )}
+        <label style={lbl}>Labor</label>
+        <select value={form.labor} onChange={e => setForm({...form, labor: e.target.value})} style={inp}>
+          {LABORES.map(l => <option key={l}>{l}</option>)}
+        </select>
+        <label style={lbl}>Fecha</label>
+        <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
+        <label style={lbl}>Hectáreas</label>
+        <input type="number" value={form.hectareas} onChange={e => setForm({...form, hectareas: e.target.value})} style={inp} placeholder="ej. 50" inputMode="decimal" />
+        <label style={lbl}>Precio $/ha (opcional)</label>
+        <input type="number" value={form.precio_ha} onChange={e => setForm({...form, precio_ha: e.target.value})} style={inp} placeholder="se puede completar después" inputMode="decimal" />
+        <label style={lbl}>Máquina</label>
+        <select value={form.maquina_id} onChange={e => setForm({...form, maquina_id: e.target.value})} style={inp}>
+          <option value="">— Sin especificar —</option>
+          {maquinaria.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+        </select>
+        <label style={lbl}>Observaciones</label>
+        <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inp} />
+        {form.hectareas && form.precio_ha && (
+          <div style={{ background: C.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 14, color: C.green, fontWeight: 600 }}>
+            Total: ${(parseFloat(form.hectareas) * parseFloat(form.precio_ha)).toLocaleString('es-AR')}
+          </div>
+        )}
+        <button onClick={guardar} disabled={guardando}
+          style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: C.green, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {guardando ? 'Guardando...' : '💾 Guardar servicio'}
+        </button>
+      </Scroll>
+    </div>
+  )
+}
