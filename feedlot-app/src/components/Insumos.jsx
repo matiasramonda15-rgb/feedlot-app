@@ -453,14 +453,15 @@ export default function Insumos({ usuario }) {
         <div>
           {/* Banner compras pendientes */}
           {(() => {
-            const pendientes = compras.filter(c => c.estado_pago === 'pendiente' && c.total)
+            const pendientes = compras.filter(c => c.estado_pago === 'pendiente')
             if (pendientes.length === 0) return null
             const totalSel = seleccionadas.reduce((s, id) => { const c = pendientes.find(x => x.id === id); return s + (c?.total || 0) }, 0)
             const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
 
             async function pagarSeleccionadas() {
               if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
-              if (Math.abs(totalSel - totalPagGrupal) > 0.5) { alert('El total de pagos no coincide'); return }
+              if (totalSel > 0 && Math.abs(totalSel - totalPagGrupal) > 0.5) { alert('El total de pagos no coincide'); return }
+              if (totalSel === 0 && totalPagGrupal === 0) { alert('Ingresá el monto a pagar'); return }
               setGuardandoPago(true)
               let caja_oficial_id = null, caja_paralela_id = null
               const desc = `Pago compras insumos feedlot`
