@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './Tablero'
 
@@ -95,6 +95,8 @@ export default function Insumos({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagosPend, setShowPagosPend] = useState(false)
+  const [pagarInline, setPagarInline] = useState(null)
+  const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', es_paralelo: false })
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
@@ -586,7 +588,8 @@ export default function Insumos({ usuario }) {
                   <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: S.hint }}>No hay compras registradas.</td></tr>
                 )}
                 {compras.map(c => (
-                  <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, background: c.es_paralelo ? S.purpleLight : 'transparent' }}>
+                  <React.Fragment key={c.id}>
+                  <tr style={{ borderBottom: `1px solid ${S.border}`, background: c.es_paralelo ? S.purpleLight : 'transparent' }}>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>
                       {c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
                     </td>
@@ -611,10 +614,16 @@ export default function Insumos({ usuario }) {
                     </td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => generarRecibo({ ...c, fecha: c.fecha }, c.pagos_detalle || [{ tipo: c.forma_pago || 'transferencia', monto: c.total, es_paralelo: c.es_paralelo, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }])}
-                          style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-                          🖨️ Recibo
-                        </button>
+                        {c.estado_pago === 'pagado'
+                          ? <button onClick={() => generarRecibo({ ...c, fecha: c.fecha }, c.pagos_detalle || [{ tipo: c.forma_pago || 'transferencia', monto: c.total, es_paralelo: c.es_paralelo, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }])}
+                              style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                              🖨️ Recibo
+                            </button>
+                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: c.total ? String(c.total) : '', es_paralelo: false }) }}
+                              style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                              💳 Pagar
+                            </button>
+                        }
                         <button onClick={async () => {
                           if (!confirm('¿Eliminar esta compra? Se eliminará también de la caja.')) return
                           if (c.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', c.caja_oficial_id)
@@ -631,6 +640,59 @@ export default function Insumos({ usuario }) {
                       </div>
                     </td>
                   </tr>
+                  {pagarInline === c.id && (
+                    <tr>
+                      <td colSpan={10} style={{ padding: '1rem', background: S.greenLight, borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: 10 }}>
+                          Pagar — {c.insumo_nombre} · {c.cantidad?.toLocaleString('es-AR')} kg{c.proveedor ? ` · ${c.proveedor}` : ''}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto $</div>
+                            <input type="number" value={formPagoInline.monto} onChange={e => setFormPagoInline({...formPagoInline, monto: e.target.value})} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} placeholder="Total a pagar" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Forma de pago</div>
+                            <select value={formPagoInline.tipo} onChange={e => setFormPagoInline({...formPagoInline, tipo: e.target.value})} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}>
+                              <option value="transferencia">Transferencia</option>
+                              <option value="efectivo">Efectivo</option>
+                              <option value="e-cheq">E-cheq</option>
+                              <option value="cuenta_corriente">Cta. corriente</option>
+                            </select>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Fecha</div>
+                            <input type="date" value={formPagoInline.fecha} onChange={e => setFormPagoInline({...formPagoInline, fecha: e.target.value})} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer', marginBottom: 8 }}>
+                              <input type="checkbox" checked={formPagoInline.es_paralelo} onChange={e => setFormPagoInline({...formPagoInline, es_paralelo: e.target.checked})} />
+                              Paralelo
+                            </label>
+                            <button onClick={async () => {
+                              const monto = parseFloat(formPagoInline.monto)
+                              if (!monto) { alert('Ingresá el monto'); return }
+                              const desc = `Pago compra ${c.insumo_nombre}${c.proveedor ? ` — ${c.proveedor}` : ''}`
+                              let caja_oficial_id = null, caja_paralela_id = null
+                              if (formPagoInline.es_paralelo) {
+                                const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+                                caja_paralela_id = cp?.id
+                              } else {
+                                const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: formPagoInline.tipo }).select().single()
+                                caja_oficial_id = co?.id
+                              }
+                              await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: monto, precio_unitario: c.cantidad ? Math.round(monto / c.cantidad * 100) / 100 : null, forma_pago: formPagoInline.tipo, es_paralelo: formPagoInline.es_paralelo, caja_oficial_id, caja_paralela_id }).eq('id', c.id)
+                              setPagarInline(null)
+                              await cargar()
+                            }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              💾 Confirmar pago
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
