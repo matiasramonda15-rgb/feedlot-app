@@ -122,7 +122,7 @@ export default function Insumos({ usuario }) {
       supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
-      supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).order('creado_en', { ascending: false }),
+      supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).is('estado_pago', null).order('creado_en', { ascending: false }),
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
       supabase.from('contactos').select('*').order('nombre'),
