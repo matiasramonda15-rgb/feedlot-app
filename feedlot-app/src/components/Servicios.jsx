@@ -287,7 +287,8 @@ export default function Servicios({ usuario }) {
                         <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: 10 }}>
                           Registrar cobro — {s.cliente} · {s.labor} · {s.hectareas} ha
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                        {/* Fila 1: precio, IVA, total */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 8 }}>
                           <div>
                             <Label>Precio $/ha</Label>
                             <input type="number" value={formCobro.precio_ha} onChange={e => {
@@ -297,22 +298,6 @@ export default function Servicios({ usuario }) {
                               const t = base ? String(Math.round(base * (1 + iva/100))) : formCobro.total
                               setFormCobro({...formCobro, precio_ha: p, total_sin_iva: base ? String(base) : '', total: t})
                             }} style={inputStyle} placeholder="ej. 15000" />
-                          </div>
-                          <div>
-                            <Label>Total $</Label>
-                            <input type="number" value={formCobro.total} onChange={e => setFormCobro({...formCobro, total: e.target.value})} style={inputStyle} />
-                          </div>
-                          <div>
-                            <Label>Forma de pago</Label>
-                            <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
-                              <option value="transferencia">Transferencia</option>
-                              <option value="efectivo">Efectivo</option>
-                              <option value="cheque">Cheque</option>
-                            </select>
-                          </div>
-                          <div>
-                            <Label>Fecha cobro</Label>
-                            <input type="date" value={formCobro.fecha_cobro} onChange={e => setFormCobro({...formCobro, fecha_cobro: e.target.value})} style={inputStyle} />
                           </div>
                           <div>
                             <Label>IVA %</Label>
@@ -326,6 +311,17 @@ export default function Servicios({ usuario }) {
                               <option value="10.5">10.5%</option>
                               <option value="21">21%</option>
                             </select>
+                          </div>
+                          <div>
+                            <Label>Total $</Label>
+                            <input type="number" value={formCobro.total} onChange={e => setFormCobro({...formCobro, total: e.target.value})} style={inputStyle} />
+                          </div>
+                        </div>
+                        {/* Fila 2: fecha, forma de pago, paralelo + botón */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                          <div>
+                            <Label>Fecha cobro</Label>
+                            <input type="date" value={formCobro.fecha_cobro} onChange={e => setFormCobro({...formCobro, fecha_cobro: e.target.value})} style={inputStyle} />
                           </div>
                           <div>
                             <Label>Forma de pago</Label>
