@@ -574,7 +574,18 @@ export default function Ventas({ usuario }) {
                 return (
                   <div>
                     <div style={{ fontSize: 12, color: S.muted, marginBottom: 12 }}>
-                      {v.grupo_venta_id ? 'Venta multi-corral' : `C-${v.corrales?.numero || v.corral_id}`} · {v.grupo_venta_id ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.cantidad || 0), 0) : v.cantidad} animales · {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR')}
+                      {v.grupo_venta_id ? 'Venta multi-corral' : `C-${v.corrales?.numero || v.corral_id}`} · {v.grupo_venta_id ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.cantidad || 0), 0) : v.cantidad} animales · {(() => {
+                        if (v.grupo_venta_id) {
+                          const grupo = todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id)
+                          const kgBrutoTotal = grupo.reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+                          const desb = parseFloat(editandoVenta.desbaste || 8) / 100
+                          const kgNetoTotal = Math.round(kgBrutoTotal * (1 - desb))
+                          return kgBrutoTotal > 0 ? `${kgBrutoTotal.toLocaleString('es-AR')} kg brutos · ${kgNetoTotal.toLocaleString('es-AR')} kg netos · ` : ''
+                        }
+                        const desb = parseFloat(editandoVenta.desbaste || 8) / 100
+                        const kgN = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desb)) : (v.kg_neto || 0)
+                        return v.kg_vivo_total ? `${v.kg_vivo_total.toLocaleString('es-AR')} kg brutos · ${kgN.toLocaleString('es-AR')} kg netos · ` : ''
+                      })()} {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR')} · {v.usuarios?.nombre || ''}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                       <div>
@@ -848,22 +859,30 @@ export default function Ventas({ usuario }) {
 
                         {(editandoVenta.precio_kg || editandoVenta.monto_total_con_iva) && (() => {
                           const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
-                          const kgNetoCalc = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPct / 100)) : (v.kg_neto || 0)
+                          // Para multicorral sumar kg de todos los corrales del grupo
+                          const kgBrutoCalc = v.grupo_venta_id
+                            ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+                            : (v.kg_vivo_total || 0)
+                          const kgNetoCalc = kgBrutoCalc ? Math.round(kgBrutoCalc * (1 - desbPct / 100)) : (v.kg_neto || 0)
                           const montoTotalCalc = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : (editandoVenta.precio_kg ? Math.round(kgNetoCalc * parseFloat(editandoVenta.precio_kg)) : 0)
-                          const montoFactCalc = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined ? parseFloat(editandoVenta.monto_facturado) : montoTotalCalc
+                          // Neto facturado: si no se ingresó, usar monto total (sin IVA por defecto)
                           const ivaPct = parseFloat(editandoVenta.iva_pct || 10.5)
+                          const montoFactCalc = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined
+                            ? parseFloat(editandoVenta.monto_facturado)
+                            : Math.round(montoTotalCalc / (1 + ivaPct / 100))
                           const ivaMCalc = Math.round(montoFactCalc * ivaPct / 100)
                           const totalFacturaCalc = montoFactCalc + ivaMCalc
                           const montoNegroCalc = Math.max(0, montoTotalCalc - totalFacturaCalc)
                           return (
                             <div style={{ marginBottom: 10 }}>
                               <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 8, fontSize: 13, color: S.green }}>
+                                {kgBrutoCalc > 0 && <span>KG bruto: <strong>{kgBrutoCalc.toLocaleString('es-AR')} kg</strong> · </span>}
                                 KG neto: <strong>{kgNetoCalc.toLocaleString('es-AR')} kg</strong> · Total: <strong>${montoTotalCalc.toLocaleString('es-AR')}</strong>
                               </div>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                                 <div>
                                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Neto facturado $ <span style={{ color: S.hint }}>(sin IVA)</span></label>
-                                  <input type="number" placeholder={montoTotalCalc} value={editandoVenta.monto_facturado || ''}
+                                  <input type="number" placeholder={montoFactCalc} value={editandoVenta.monto_facturado || ''}
                                     onChange={e => setEditandoVenta({ ...editandoVenta, monto_facturado: e.target.value })}
                                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                                 </div>
