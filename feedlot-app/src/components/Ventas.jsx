@@ -216,14 +216,12 @@ export default function Ventas({ usuario }) {
     if (!ep?.precio_kg && !ep?.monto_total_con_iva) { alert('Ingresá el precio por kg o el monto total de la operación'); return }
     const precioKg = ep.precio_kg ? parseFloat(ep.precio_kg) : null
     const desbastePct = ep.desbaste ? parseFloat(ep.desbaste) : (venta.desbaste_pct || 8)
-    const kgNeto = venta.kg_vivo_total ? Math.round(venta.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (venta.kg_neto || 0)
-    // Monto total: usar monto_total_con_iva si está disponible, sino calcular desde precio
+    // Para multicorral sumar kg de todos los corrales del grupo
+    const kgBrutoTotal = venta.grupo_venta_id
+      ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === venta.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+      : (venta.kg_vivo_total || 0)
+    const kgNeto = Math.round(kgBrutoTotal * (1 - desbastePct / 100))
     const montoTotal = ep.monto_total_con_iva ? Math.round(parseFloat(ep.monto_total_con_iva)) : (precioKg ? Math.round(kgNeto * precioKg) : null)
-    const montoFacturado = ep.monto_facturado !== '' && ep.monto_facturado !== null && ep.monto_facturado !== undefined ? parseFloat(ep.monto_facturado) : montoTotal
-    const ivaPct = parseFloat(ep.iva_pct || 10.5)
-    const ivaMonto = montoFacturado > 0 ? Math.round(montoFacturado * ivaPct / 100) : 0
-    const totalFactura = montoFacturado + ivaMonto
-    const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - totalFactura) : 0
     const plazo = parseInt(ep.plazo_dias || 0)
     const fechaBase = new Date(venta.creado_en)
     const fechaVto = plazo > 0 ? new Date(fechaBase.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
@@ -234,59 +232,35 @@ export default function Ventas({ usuario }) {
       await supabase.from('contactos').insert({ nombre: compradorFinal, tipo: 'comprador_hacienda', activo: true })
     }
 
-    // Comisión
-    const comisionPct = parseFloat(ep.comision_pct || 0)
-    const comisionMonto = ep.comision_monto_input ? Math.round(parseFloat(ep.comision_monto_input)) : (comisionPct > 0 && montoTotal ? Math.round(montoTotal * comisionPct / 100) : 0)
-    const comisionEsParalela = ep.comision_es_paralela || false
-
-    // Retención de ganancias: (monto facturado - 224000) * 2%
-    const tieneRetencion = ep.tiene_retencion || false
-    const retencionMonto = tieneRetencion ? Math.max(0, Math.round((montoFacturado - 224000) * 0.02)) : 0
-
     const updateData = {
-      precio_kg: precioKg, desbaste_pct: desbastePct, kg_neto: kgNeto,
-      total: montoTotal, monto_facturado: montoFacturado, monto_negro: montoNegro,
-      iva_pct: ivaPct, iva_monto: ivaMonto,
-      plazo_dias: plazo || null, fecha_vencimiento_cobro: fechaVto,
-      estado_comercial: 'precio_cargado',
+      precio_kg: precioKg,
+      desbaste_pct: desbastePct,
+      kg_neto: kgNeto,
+      total: montoTotal,
+      monto_total_con_iva: montoTotal,
+      plazo_dias: plazo || null,
+      fecha_vencimiento_cobro: fechaVto,
+      estado_comercial: 'pendiente_factura',
       comprador: compradorFinal,
       observaciones: ep.observaciones || venta.observaciones || null,
-      comision_pct: comisionPct || null,
-      comision_monto: comisionMonto || null,
-      comision_es_paralela: comisionEsParalela,
-      tiene_retencion: tieneRetencion,
-      retencion_monto: retencionMonto || null,
-      monto_total_con_iva: ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : null,
     }
 
-    const grupoId = ep.grupo_venta_id || venta.grupo_venta_id
+    const grupoId = venta.grupo_venta_id
     if (grupoId) {
+      // Para multicorral: guardar el total exacto en todos los registros del grupo
+      // sin dividir — todos tienen el mismo total y kg_neto proporcional
       const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', grupoId)
       const totalKgNetoGrupo = (grupo || []).reduce((s, v) => s + (v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100)) : (v.kg_neto || 0)), 0)
-      const montoFacturadoGrupo = ep.monto_facturado ? parseFloat(ep.monto_facturado) : null
-      const montoTotalGrupo = montoTotal
-      for (const v of (grupo || [])) {
-        const kgNetoV = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100) * 100) / 100 : (v.kg_neto || 0)
-        const montoTotalV = montoTotalGrupo && totalKgNetoGrupo > 0 ? Math.round(montoTotalGrupo * kgNetoV / totalKgNetoGrupo) : (precioKg ? Math.round(kgNetoV * precioKg) : null)
-        const montoFactV = montoFacturadoGrupo && totalKgNetoGrupo > 0 ? Math.round(montoFacturadoGrupo * kgNetoV / totalKgNetoGrupo) : montoTotalV
-        const ivaMV = montoFactV > 0 ? Math.round(montoFactV * ivaPct / 100) : 0
-        const montoNegroV = montoTotalV !== null ? Math.max(0, montoTotalV - (montoFactV + ivaMV)) : 0
-        const comMV = comisionPct > 0 && montoTotalV ? Math.round(montoTotalV * comisionPct / 100) : 0
-        const retMV = tieneRetencion && montoFactV ? Math.max(0, Math.round((montoFactV - 224000) * 0.02)) : 0
-        const isFirst = v.id === (grupo || [])[0]?.id
+      for (const gv of (grupo || [])) {
+        const kgNetoV = gv.kg_vivo_total ? Math.round(gv.kg_vivo_total * (1 - desbastePct / 100)) : (gv.kg_neto || 0)
+        // Asignar monto proporcional pero guardar también el total exacto en cada registro
+        const montoV = montoTotal && totalKgNetoGrupo > 0 ? Math.round(montoTotal * kgNetoV / totalKgNetoGrupo) : (precioKg ? Math.round(kgNetoV * precioKg) : null)
         await supabase.from('ventas').update({
           ...updateData,
           kg_neto: kgNetoV,
-          total: montoTotalV,
-          monto_facturado: montoFactV,
-          monto_negro: montoNegroV,
-          iva_monto: ivaMV,
-          comision_monto: comMV || null,
-          retencion_monto: retMV || null,
-          // Guardar totales exactos del grupo en el primer registro
-          monto_facturado_grupo: isFirst ? montoFacturadoGrupo : null,
-          monto_total_grupo: isFirst ? montoTotalGrupo : null,
-        }).eq('id', v.id)
+          total: montoV,
+          monto_total_grupo: montoTotal, // total exacto del grupo
+        }).eq('id', gv.id)
       }
     } else {
       await supabase.from('ventas').update(updateData).eq('id', venta.id)
@@ -808,181 +782,97 @@ export default function Ventas({ usuario }) {
                     </div>
                     {isEdit && (
                       <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto total operación $ <span style={{ color: S.accent }}>(IVA incluido)</span></label>
-                            <input type="number" placeholder="Total que paga el frigorífico" value={editandoVenta.monto_total_con_iva || ''}
-                              onChange={e => setEditandoVenta({ ...editandoVenta, monto_total_con_iva: e.target.value })}
-                              style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 600, fontFamily: 'monospace' }} />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg <span style={{ color: S.hint }}>(opcional)</span></label>
-                            <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
-                              onChange={e => setEditandoVenta({ ...editandoVenta, precio_kg: e.target.value })}
-                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Desbaste %</label>
-                            <input type="number" placeholder="8" value={editandoVenta.desbaste}
-                              onChange={e => setEditandoVenta({ ...editandoVenta, desbaste: e.target.value })}
-                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Plazo (días)</label>
-                            <input type="number" placeholder="0 = contado" value={editandoVenta.plazo_dias || ''}
-                              onChange={e => setEditandoVenta({ ...editandoVenta, plazo_dias: e.target.value })}
-                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comprador</label>
-                            <select value={editandoVenta.comprador} onChange={e => setEditandoVenta({ ...editandoVenta, comprador: e.target.value, compradorNuevo: '' })}
-                              style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
-                              <option value="">— Sin comprador —</option>
-                              {compradores.map(c => <option key={c} value={c}>{c}</option>)}
-                              <option value="Otro">+ Nuevo...</option>
-                            </select>
-                          </div>
-                          {editandoVenta.comprador === 'Otro' && (
-                            <div style={{ gridColumn: '2/-1' }}>
-                              <input type="text" placeholder="Nombre del comprador" value={editandoVenta.compradorNuevo || ''}
-                                onChange={e => setEditandoVenta({ ...editandoVenta, compradorNuevo: e.target.value })}
-                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                        {/* ── FORMULARIO VENTA ── */}
+                        <div style={{ background: S.bg, borderRadius: 8, padding: '12px', marginBottom: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 10 }}>Datos de la venta</div>
+                          {/* Fila 1: Kg Brutos / Desbaste / Precio $/kg */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Kg Brutos</label>
+                              <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700, background: S.bg, color: S.text }}>
+                                {(() => {
+                                  const kgB = v.grupo_venta_id
+                                    ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+                                    : (v.kg_vivo_total || 0)
+                                  return kgB > 0 ? `${kgB.toLocaleString('es-AR')} kg` : '—'
+                                })()}
+                              </div>
                             </div>
-                          )}
-                          <div style={{ gridColumn: '1/-1' }}>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Observaciones</label>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Desbaste %</label>
+                              <input type="number" placeholder="8" value={editandoVenta.desbaste}
+                                onChange={e => setEditandoVenta({ ...editandoVenta, desbaste: e.target.value })}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Precio $/kg final</label>
+                              <input type="number" placeholder="ej. 3100" value={editandoVenta.precio_kg}
+                                onChange={e => {
+                                  const precio = e.target.value
+                                  const kgB = v.grupo_venta_id
+                                    ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+                                    : (v.kg_vivo_total || 0)
+                                  const desbPct = parseFloat(editandoVenta.desbaste || 8) / 100
+                                  const kgN = Math.round(kgB * (1 - desbPct))
+                                  const mt = precio && kgN ? String(Math.round(parseFloat(precio) * kgN)) : ''
+                                  setEditandoVenta({ ...editandoVenta, precio_kg: precio, monto_total_con_iva: mt })
+                                }}
+                                style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
+                            </div>
+                          </div>
+                          {/* Fila 2: Monto Total / Comprador / Plazo */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Monto Total Operación $ (IVA incluido)</label>
+                              <input type="number" placeholder="Total que paga el frigorífico" value={editandoVenta.monto_total_con_iva || ''}
+                                onChange={e => setEditandoVenta({ ...editandoVenta, monto_total_con_iva: e.target.value })}
+                                style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontWeight: 700, fontFamily: 'monospace' }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comprador</label>
+                              <select value={editandoVenta.comprador} onChange={e => setEditandoVenta({ ...editandoVenta, comprador: e.target.value, compradorNuevo: '' })}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
+                                <option value="">— Sin comprador —</option>
+                                {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+                                <option value="Otro">+ Nuevo...</option>
+                              </select>
+                              {editandoVenta.comprador === 'Otro' && (
+                                <input type="text" placeholder="Nombre del comprador" value={editandoVenta.compradorNuevo || ''}
+                                  onChange={e => setEditandoVenta({ ...editandoVenta, compradorNuevo: e.target.value })}
+                                  style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', marginTop: 6 }} />
+                              )}
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Plazo (días)</label>
+                              <input type="number" placeholder="0 = contado" value={editandoVenta.plazo_dias || ''}
+                                onChange={e => setEditandoVenta({ ...editandoVenta, plazo_dias: e.target.value })}
+                                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                            </div>
+                          </div>
+                          {/* Observación */}
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Observación</label>
                             <input type="text" placeholder="remito, condiciones, etc." value={editandoVenta.observaciones}
                               onChange={e => setEditandoVenta({ ...editandoVenta, observaciones: e.target.value })}
                               style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                           </div>
+                          {/* Resumen */}
+                          {editandoVenta.monto_total_con_iva && (() => {
+                            const kgB = v.grupo_venta_id
+                              ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+                              : (v.kg_vivo_total || 0)
+                            const desbPct = parseFloat(editandoVenta.desbaste || 8) / 100
+                            const kgN = Math.round(kgB * (1 - desbPct))
+                            const total = parseFloat(editandoVenta.monto_total_con_iva) || 0
+                            return (
+                              <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 14px', fontSize: 13, color: S.green, display: 'flex', gap: 24 }}>
+                                <span>Kg brutos = <strong>{kgB.toLocaleString('es-AR')} kg</strong></span>
+                                <span>Kg netos = <strong>{kgN.toLocaleString('es-AR')} kg</strong></span>
+                                <span>Total = <strong>${total.toLocaleString('es-AR')}</strong></span>
+                              </div>
+                            )
+                          })()}
                         </div>
-
-                        {(editandoVenta.precio_kg || editandoVenta.monto_total_con_iva) && (() => {
-                          const desbPct = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
-                          // Para multicorral sumar kg de todos los corrales del grupo
-                          const kgBrutoCalc = v.grupo_venta_id
-                            ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
-                            : (v.kg_vivo_total || 0)
-                          const kgNetoCalc = kgBrutoCalc ? Math.round(kgBrutoCalc * (1 - desbPct / 100)) : (v.kg_neto || 0)
-                          const montoTotalCalc = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : (editandoVenta.precio_kg ? Math.round(kgNetoCalc * parseFloat(editandoVenta.precio_kg)) : 0)
-                          // Neto facturado: si no se ingresó, usar monto total (sin IVA por defecto)
-                          const ivaPct = parseFloat(editandoVenta.iva_pct || 10.5)
-                          const montoFactCalc = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined
-                            ? parseFloat(editandoVenta.monto_facturado)
-                            : Math.round(montoTotalCalc / (1 + ivaPct / 100))
-                          const ivaMCalc = Math.round(montoFactCalc * ivaPct / 100)
-                          const totalFacturaCalc = montoFactCalc + ivaMCalc
-                          const montoNegroCalc = Math.max(0, montoTotalCalc - totalFacturaCalc)
-                          return (
-                            <div style={{ marginBottom: 10 }}>
-                              <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 8, fontSize: 13, color: S.green }}>
-                                {kgBrutoCalc > 0 && <span>KG bruto: <strong>{kgBrutoCalc.toLocaleString('es-AR')} kg</strong> · </span>}
-                                KG neto: <strong>{kgNetoCalc.toLocaleString('es-AR')} kg</strong> · Total: <strong>${montoTotalCalc.toLocaleString('es-AR')}</strong>
-                              </div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Neto facturado $ <span style={{ color: S.hint }}>(sin IVA)</span></label>
-                                  <input type="number" placeholder={montoFactCalc} value={editandoVenta.monto_facturado || ''}
-                                    onChange={e => setEditandoVenta({ ...editandoVenta, monto_facturado: e.target.value })}
-                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                </div>
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>% IVA</label>
-                                  <select value={editandoVenta.iva_pct || '10.5'} onChange={e => setEditandoVenta({ ...editandoVenta, iva_pct: e.target.value })}
-                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
-                                    <option value="0">Sin IVA</option>
-                                    <option value="10.5">10.5%</option>
-                                    <option value="21">21%</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>IVA $</label>
-                                  <input type="text" value={`$${ivaMCalc.toLocaleString('es-AR')}`} readOnly
-                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                </div>
-                              </div>
-                              {/* Resumen factura vs paralelo */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-                                <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px' }}>
-                                  <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total factura (neto + IVA)</div>
-                                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${(montoFactCalc + ivaMCalc).toLocaleString('es-AR')}</div>
-                                  <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${montoFactCalc.toLocaleString('es-AR')} + IVA: ${ivaMCalc.toLocaleString('es-AR')}</div>
-                                </div>
-                                <div style={{ background: montoNegroCalc > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${montoNegroCalc > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '8px 12px' }}>
-                                  <div style={{ fontSize: 10, color: montoNegroCalc > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta paralela</div>
-                                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: montoNegroCalc > 0 ? '#3D1A6B' : S.hint }}>${montoNegroCalc.toLocaleString('es-AR')}</div>
-                                  {montoNegroCalc === 0 && <div style={{ fontSize: 11, color: S.hint, marginTop: 2 }}>Operación 100% facturada</div>}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })()}
-
-                        {/* Comisión y retención */}
-                        {(editandoVenta.precio_kg || editandoVenta.monto_total_con_iva) && (() => {
-                          const desbPctC = parseFloat(editandoVenta.desbaste) || (v.desbaste_pct || 8)
-                          const kgNetoC = v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbPctC / 100)) : (v.kg_neto || 0)
-                          const montoTotalC = editandoVenta.monto_total_con_iva ? Math.round(parseFloat(editandoVenta.monto_total_con_iva)) : (editandoVenta.precio_kg ? Math.round(kgNetoC * parseFloat(editandoVenta.precio_kg)) : 0)
-                          const montoFactC = editandoVenta.monto_facturado !== '' && editandoVenta.monto_facturado !== undefined ? parseFloat(editandoVenta.monto_facturado) : montoTotalC
-                          const comPct = parseFloat(editandoVenta.comision_pct || 0)
-                          const comMonto = comPct > 0 ? Math.round(montoTotalC * comPct / 100) : 0
-                          const retMonto = editandoVenta.tiene_retencion ? Math.max(0, Math.round((montoFactC - 224000) * 0.02)) : 0
-                          return (
-                            <div style={{ marginBottom: 10 }}>
-                              <div style={{ height: 1, background: S.border, margin: '10px 0' }} />
-                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Comisión y retenciones</div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión %</label>
-                                  <input type="number" value={editandoVenta.comision_pct || ''} onChange={e => {
-                                    const pct = e.target.value
-                                    const mt = editandoVenta.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoTotalC
-                                    const monto = pct && mt ? Math.round(mt * parseFloat(pct) / 100) : ''
-                                    setEditandoVenta({...editandoVenta, comision_pct: pct, comision_monto_input: String(monto)})
-                                  }} placeholder="0"
-                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                </div>
-                                <div>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Comisión $</label>
-                                  <input type="number" value={editandoVenta.comision_monto_input || (comMonto > 0 ? comMonto : '')} onChange={e => {
-                                    const monto = e.target.value
-                                    const mt = editandoVenta.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoTotalC
-                                    const pct = monto && mt ? ((parseFloat(monto) / mt) * 100).toFixed(2) : ''
-                                    setEditandoVenta({...editandoVenta, comision_monto_input: monto, comision_pct: pct})
-                                  }} placeholder="0"
-                                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={editandoVenta.comision_es_paralela || false} onChange={e => setEditandoVenta({...editandoVenta, comision_es_paralela: e.target.checked})} />
-                                    Comisión paralela
-                                  </label>
-                                </div>
-                              </div>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', marginBottom: retMonto > 0 ? 6 : 0 }}>
-                                <input type="checkbox" checked={editandoVenta.tiene_retencion || false} onChange={e => setEditandoVenta({...editandoVenta, tiene_retencion: e.target.checked})} />
-                                <span style={{ color: S.muted }}>Aplica retención de ganancias</span>
-                                {editandoVenta.tiene_retencion && (
-                                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>
-                                    -{retMonto > 0 ? `$${retMonto.toLocaleString('es-AR')}` : '$0'}
-                                  </span>
-                                )}
-                              </label>
-                              {(comMonto > 0 || retMonto > 0) && (
-                                <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
-                                  <div style={{ color: S.red, fontWeight: 600 }}>Neto a cobrar:</div>
-                                  <div style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: S.red }}>
-                                    ${(montoTotalC - (editandoVenta.comision_es_paralela ? 0 : comMonto) - retMonto).toLocaleString('es-AR')}
-                                  </div>
-                                  <div style={{ fontSize: 11, color: S.muted }}>
-                                    Total {montoTotalC.toLocaleString('es-AR')}{!editandoVenta.comision_es_paralela && comMonto > 0 ? ` - comisión ${comMonto.toLocaleString('es-AR')}` : ''} - retención {retMonto.toLocaleString('es-AR')}
-                                    {editandoVenta.comision_es_paralela && comMonto > 0 && <div style={{ color: '#3D1A6B', fontWeight: 600 }}>Comisión paralela: ${comMonto.toLocaleString('es-AR')} (se paga aparte)</div>}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })()}
 
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button onClick={() => guardarDatosVenta(v)}
@@ -1002,7 +892,7 @@ export default function Ventas({ usuario }) {
             </div>
           )}
 
-          {/* Historial */}
+          {/* Historial */}}
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Historial de ventas</div>
@@ -1092,128 +982,124 @@ export default function Ventas({ usuario }) {
                               </button>
                             </td>
                           </tr>
-                          {editandoComercial === v.id && (
+                          {editandoComercial === v.id && (() => {
+                            const gcId = v.id
+                            const isGroup = false
+                            const montoTotalGC = v.monto_total_con_iva || v.total || 0
+                            return (
                             <tr style={{ background: S.accentLight }}>
-                              <td colSpan={11} style={{ padding: '1rem 1.25rem' }}>
-                                <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Editar datos comerciales</div>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                              <td colSpan={11} style={{ padding: '1.25rem' }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — C-{v.corrales?.numero}</div>
+                                {/* Fila 1: Neto Facturado / IVA % / IVA $ */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comprador</div>
-                                    <select value={formComercial.comprador} onChange={e => setFormComercial({...formComercial, comprador: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
-                                      <option value="">— Sin comprador —</option>
-                                      {compradores.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto total operación $ (IVA inc.)</div>
-                                    <input type="number" value={formComercial.monto_total_con_iva || ''} onChange={e => setFormComercial({...formComercial, monto_total_con_iva: e.target.value})} placeholder="Total que paga el frigorífico"
-                                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio $/kg (opcional)</div>
-                                    <input type="number" value={formComercial.precio_kg} onChange={e => setFormComercial({...formComercial, precio_kg: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto facturado $ (sin IVA)</div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto Facturado $ (sin IVA)</div>
                                     <input type="number" value={formComercial.monto_facturado} onChange={e => setFormComercial({...formComercial, monto_facturado: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                      placeholder={montoTotalGC > 0 ? String(Math.round(montoTotalGC / (1 + parseFloat(formComercial.iva_pct || 10.5)/100))) : ''}
+                                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
                                   </div>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>% IVA</div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA %</div>
                                     <select value={formComercial.iva_pct} onChange={e => setFormComercial({...formComercial, iva_pct: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
                                       <option value="0">Sin IVA</option>
                                       <option value="10.5">10.5%</option>
                                       <option value="21">21%</option>
                                     </select>
                                   </div>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Plazo (días)</div>
-                                    <input type="number" value={formComercial.plazo_dias} onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value, fecha_vencimiento: ''})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>O fecha vencimiento</div>
-                                    <input type="date" value={formComercial.fecha_vencimiento || ''} onChange={e => setFormComercial({...formComercial, fecha_vencimiento: e.target.value, plazo_dias: ''})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
-                                  </div>
-                                  <div style={{ gridColumn: '2/-1' }}>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
-                                    <input type="text" value={formComercial.observaciones} onChange={e => setFormComercial({...formComercial, observaciones: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA $</div>
+                                    <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.green, fontWeight: 700 }}>
+                                      {formComercial.monto_facturado ? `$${Math.round(parseFloat(formComercial.monto_facturado) * parseFloat(formComercial.iva_pct || 10.5) / 100).toLocaleString('es-AR')}` : '—'}
+                                    </div>
                                   </div>
                                 </div>
-                                {/* Comisión y retención */}
-                                {formComercial.precio_kg && (() => {
-                                  const mt = parseFloat(formComercial.precio_kg) * (v.kg_neto || 0)
-                                  const comPct = parseFloat(formComercial.comision_pct || 0)
-                                  const comMonto = comPct > 0 ? Math.round(mt * comPct / 100) : 0
-                                  const montoFactCalcInline = formComercial.monto_facturado !== '' && formComercial.monto_facturado !== undefined ? parseFloat(formComercial.monto_facturado) : mt
-                                  const retMonto = formComercial.tiene_retencion ? Math.max(0, Math.round((montoFactCalcInline - 224000) * 0.02)) : 0
+                                {formComercial.monto_facturado && (() => {
+                                  const neto = parseFloat(formComercial.monto_facturado) || 0
+                                  const iva = parseFloat(formComercial.iva_pct || 10.5)
+                                  const ivaMonto = Math.round(neto * iva / 100)
+                                  const totalFact = neto + ivaMonto
+                                  const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
                                   return (
-                                    <div style={{ marginTop: 8 }}>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                                        <div>
-                                          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión %</div>
-                                          <input type="number" value={formComercial.comision_pct || ''} onChange={e => setFormComercial({...formComercial, comision_pct: e.target.value})} placeholder="0"
-                                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                        </div>
-                                        <div>
-                                          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto comisión</div>
-                                          <input type="text" value={comMonto > 0 ? `$${comMonto.toLocaleString('es-AR')}` : '—'} readOnly
-                                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.bg, fontFamily: 'monospace' }} />
-                                        </div>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'flex-end', paddingBottom: 2 }}>
-                                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
-                                            <input type="checkbox" checked={formComercial.comision_es_paralela || false} onChange={e => setFormComercial({...formComercial, comision_es_paralela: e.target.checked})} />
-                                            Paralela
-                                          </label>
-                                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: S.red, cursor: 'pointer' }}>
-                                            <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
-                                            Retención {retMonto > 0 ? `-$${retMonto.toLocaleString('es-AR')}` : ''}
-                                          </label>
-                                        </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                                      <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px' }}>
+                                        <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total Facturado (Neto + IVA)</div>
+                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${totalFact.toLocaleString('es-AR')}</div>
+                                        <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${neto.toLocaleString('es-AR')} + IVA: ${ivaMonto.toLocaleString('es-AR')}</div>
+                                      </div>
+                                      <div style={{ background: paralelo > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${paralelo > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '10px 12px' }}>
+                                        <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta Paralela</div>
+                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: paralelo > 0 ? '#3D1A6B' : S.hint }}>${paralelo.toLocaleString('es-AR')}</div>
+                                        {montoTotalGC > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Total Op: ${montoTotalGC.toLocaleString('es-AR')}</div>}
                                       </div>
                                     </div>
                                   )
                                 })()}
+                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Descuentos varios</div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
+                                    <div>
+                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión %</div>
+                                      <input type="number" value={formComercial.comision_pct || ''} onChange={e => setFormComercial({...formComercial, comision_pct: e.target.value})} placeholder="0"
+                                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión $</div>
+                                      <div style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 13, fontFamily: 'monospace', background: S.bg }}>
+                                        {formComercial.comision_pct && montoTotalGC ? `$${Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100).toLocaleString('es-AR')}` : '—'}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
+                                        <input type="checkbox" checked={formComercial.comision_es_paralela || false} onChange={e => setFormComercial({...formComercial, comision_es_paralela: e.target.checked})} />
+                                        Paralela
+                                      </label>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                                    <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
+                                    Retención de Ganancias
+                                  </label>
+                                  {formComercial.tiene_retencion && formComercial.monto_facturado && (() => {
+                                    const neto = parseFloat(formComercial.monto_facturado) || 0
+                                    const iva = parseFloat(formComercial.iva_pct || 10.5)
+                                    const ivaMonto = Math.round(neto * iva / 100)
+                                    const totalFact = neto + ivaMonto
+                                    const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
+                                    const retMonto = Math.max(0, Math.round((neto - 224000) * 0.02))
+                                    const comMonto = formComercial.comision_pct && montoTotalGC ? Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100) : 0
+                                    return (
+                                      <div style={{ marginTop: 10, background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+                                        <div style={{ marginBottom: 4 }}>Retención: <strong style={{ fontFamily: 'monospace', color: S.red }}>-${retMonto.toLocaleString('es-AR')}</strong></div>
+                                        <div style={{ fontWeight: 700, color: S.red, fontSize: 14 }}>
+                                          Neto a cobrar: ${(totalFact - retMonto - (formComercial.comision_es_paralela ? 0 : comMonto)).toLocaleString('es-AR')}
+                                          {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Paralelo: ${paralelo.toLocaleString('es-AR')}</span>}
+                                        </div>
+                                      </div>
+                                    )
+                                  })()}
+                                </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                   <button onClick={async () => {
-                                    const precio = parseFloat(formComercial.precio_kg) || 0
-                                    const kgNeto = v.kg_neto || 0
-                                    const montoTotal = formComercial.monto_total_con_iva ? Math.round(parseFloat(formComercial.monto_total_con_iva)) : (precio ? Math.round(kgNeto * precio) : (v.total || null))
-                                    const montoFactRaw = formComercial.monto_facturado
-                                    const tieneFacturadoSimple = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
-                                    const montoFact = tieneFacturadoSimple ? parseFloat(montoFactRaw) : montoTotal
-                                    const montoNegroDisplay = montoTotal && montoFact ? Math.max(0, montoTotal - montoFact - Math.round(montoFact * parseFloat(formComercial.iva_pct || 10.5) / 100)) : 0
-                                    const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - montoFact) : 0
+                                    const neto = parseFloat(formComercial.monto_facturado) || null
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
-                                    const plazo = parseInt(formComercial.plazo_dias || 0)
-                                    const fechaVto = formComercial.fecha_vencimiento || (plazo > 0 ? new Date(new Date(v.creado_en).getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
+                                    const ivaMonto = neto ? Math.round(neto * ivaPct / 100) : 0
+                                    const totalFact = neto ? neto + ivaMonto : null
+                                    const paralelo = montoTotalGC && totalFact ? Math.max(0, montoTotalGC - totalFact) : 0
                                     const comPct = parseFloat(formComercial.comision_pct || 0)
-                                    const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
-                                    const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 224000) * 0.02)) : 0
+                                    const comMonto = comPct > 0 && montoTotalGC ? Math.round(montoTotalGC * comPct / 100) : 0
+                                    const retMonto = formComercial.tiene_retencion && neto ? Math.max(0, Math.round((neto - 224000) * 0.02)) : 0
                                     await supabase.from('ventas').update({
-                                      precio_kg: precio || null,
-                                      total: montoTotal,
-                                      monto_facturado: montoFact,
-                                      monto_negro: montoNegro,
-                                      iva_pct: ivaPct,
-                                      iva_monto: montoFact > 0 ? Math.round(montoFact * ivaPct / 100) : 0,
-                                      plazo_dias: plazo || null,
-                                      fecha_vencimiento_cobro: fechaVto,
-                                      estado_comercial: precio ? 'precio_cargado' : 'pendiente',
-                                      comprador: formComercial.comprador || null,
-                                      observaciones: formComercial.observaciones || null,
-                                      comision_pct: comPct || null,
-                                      comision_monto: comMonto || null,
+                                      monto_facturado: neto, monto_negro: paralelo,
+                                      iva_pct: ivaPct, iva_monto: ivaMonto,
+                                      estado_comercial: neto ? 'facturado' : 'precio_cargado',
+                                      comision_pct: comPct || null, comision_monto: comMonto || null,
                                       comision_es_paralela: formComercial.comision_es_paralela || false,
                                       tiene_retencion: formComercial.tiene_retencion || false,
                                       retencion_monto: retMonto || null,
-                                      monto_total_con_iva: formComercial.monto_total_con_iva ? parseFloat(formComercial.monto_total_con_iva) : null,
-                                    }).eq('id', v.id)
+                                    }).eq('id', gcId)
                                     setEditandoComercial(null)
                                     await cargar()
                                   }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -1226,7 +1112,8 @@ export default function Ventas({ usuario }) {
                                 </div>
                               </td>
                             </tr>
-                          )}
+                            )
+                          })()}
                         </React.Fragment>
                         )
                       } else {
@@ -1277,112 +1164,129 @@ export default function Ventas({ usuario }) {
                               </div>
                             </td>
                           </tr>
-                          {editandoComercial === v0.grupo_venta_id && (
+                          {editandoComercial === v0.grupo_venta_id && (() => {
+                            const gcId = v0.grupo_venta_id
+                            const isGroup = true
+                            const montoTotalGC = v0.monto_total_grupo || g.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
+                            return (
                             <tr style={{ background: S.accentLight }}>
-                              <td colSpan={11} style={{ padding: '1rem 1.25rem' }}>
-                                <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Editar datos comerciales — venta multi-corral</div>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                              <td colSpan={11} style={{ padding: '1.25rem' }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — Venta multi-corral · {corralesNums}</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto total operación $ (IVA inc.)</div>
-                                    <input type="number" value={formComercial.monto_total_con_iva || ''} onChange={e => setFormComercial({...formComercial, monto_total_con_iva: e.target.value})} placeholder="Total que paga el frigorífico"
-                                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comprador</div>
-                                    <select value={formComercial.comprador} onChange={e => setFormComercial({...formComercial, comprador: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
-                                      <option value="">— Sin comprador —</option>
-                                      {compradores.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio $/kg (opcional)</div>
-                                    <input type="number" value={formComercial.precio_kg} onChange={e => setFormComercial({...formComercial, precio_kg: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto facturado total $ (sin IVA)</div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto Facturado $ (sin IVA)</div>
                                     <input type="number" value={formComercial.monto_facturado} onChange={e => setFormComercial({...formComercial, monto_facturado: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                      placeholder={montoTotalGC > 0 ? String(Math.round(montoTotalGC / (1 + parseFloat(formComercial.iva_pct || 10.5)/100))) : ''}
+                                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
                                   </div>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>% IVA</div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA %</div>
                                     <select value={formComercial.iva_pct} onChange={e => setFormComercial({...formComercial, iva_pct: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface }}>
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
                                       <option value="0">Sin IVA</option>
                                       <option value="10.5">10.5%</option>
                                       <option value="21">21%</option>
                                     </select>
                                   </div>
                                   <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Plazo (días)</div>
-                                    <input type="number" value={formComercial.plazo_dias} onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value, fecha_vencimiento: ''})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA $</div>
+                                    <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.green, fontWeight: 700 }}>
+                                      {formComercial.monto_facturado ? `$${Math.round(parseFloat(formComercial.monto_facturado) * parseFloat(formComercial.iva_pct || 10.5) / 100).toLocaleString('es-AR')}` : '—'}
+                                    </div>
                                   </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>O fecha vencimiento</div>
-                                    <input type="date" value={formComercial.fecha_vencimiento || ''} onChange={e => setFormComercial({...formComercial, fecha_vencimiento: e.target.value, plazo_dias: ''})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                                </div>
+                                {formComercial.monto_facturado && (() => {
+                                  const neto = parseFloat(formComercial.monto_facturado) || 0
+                                  const iva = parseFloat(formComercial.iva_pct || 10.5)
+                                  const ivaMonto = Math.round(neto * iva / 100)
+                                  const totalFact = neto + ivaMonto
+                                  const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
+                                  return (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                                      <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px' }}>
+                                        <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total Facturado (Neto + IVA)</div>
+                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${totalFact.toLocaleString('es-AR')}</div>
+                                        <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${neto.toLocaleString('es-AR')} + IVA: ${ivaMonto.toLocaleString('es-AR')}</div>
+                                      </div>
+                                      <div style={{ background: paralelo > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${paralelo > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '10px 12px' }}>
+                                        <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta Paralela</div>
+                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: paralelo > 0 ? '#3D1A6B' : S.hint }}>${paralelo.toLocaleString('es-AR')}</div>
+                                        {montoTotalGC > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Total Op: ${montoTotalGC.toLocaleString('es-AR')}</div>}
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Descuentos varios</div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
+                                    <div>
+                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión %</div>
+                                      <input type="number" value={formComercial.comision_pct || ''} onChange={e => setFormComercial({...formComercial, comision_pct: e.target.value})} placeholder="0"
+                                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión $</div>
+                                      <div style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 13, fontFamily: 'monospace', background: S.bg }}>
+                                        {formComercial.comision_pct && montoTotalGC ? `$${Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100).toLocaleString('es-AR')}` : '—'}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
+                                        <input type="checkbox" checked={formComercial.comision_es_paralela || false} onChange={e => setFormComercial({...formComercial, comision_es_paralela: e.target.checked})} />
+                                        Paralela
+                                      </label>
+                                    </div>
                                   </div>
-                                  <div style={{ gridColumn: '2/-1' }}>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
-                                    <input type="text" value={formComercial.observaciones} onChange={e => setFormComercial({...formComercial, observaciones: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
-                                  </div>
-                                  {/* Comisión y retención */}
-                                  <div>
-                                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión %</div>
-                                    <input type="number" value={formComercial.comision_pct || ''} onChange={e => setFormComercial({...formComercial, comision_pct: e.target.value})} placeholder="0"
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'flex-end' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
-                                      <input type="checkbox" checked={formComercial.comision_es_paralela || false} onChange={e => setFormComercial({...formComercial, comision_es_paralela: e.target.checked})} />
-                                      Comisión paralela
-                                    </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: S.red, cursor: 'pointer' }}>
-                                      <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
-                                      Retención de ganancias
-                                    </label>
-                                  </div>
+                                </div>
+                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                                    <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
+                                    Retención de Ganancias
+                                  </label>
+                                  {formComercial.tiene_retencion && formComercial.monto_facturado && (() => {
+                                    const neto = parseFloat(formComercial.monto_facturado) || 0
+                                    const iva = parseFloat(formComercial.iva_pct || 10.5)
+                                    const totalFact = neto + Math.round(neto * iva / 100)
+                                    const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
+                                    const retMonto = Math.max(0, Math.round((neto - 224000) * 0.02))
+                                    const comMonto = formComercial.comision_pct && montoTotalGC ? Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100) : 0
+                                    return (
+                                      <div style={{ marginTop: 10, background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+                                        <div style={{ marginBottom: 4 }}>Retención: <strong style={{ fontFamily: 'monospace', color: S.red }}>-${retMonto.toLocaleString('es-AR')}</strong></div>
+                                        <div style={{ fontWeight: 700, color: S.red, fontSize: 14 }}>
+                                          Neto a cobrar: ${(totalFact - retMonto - (formComercial.comision_es_paralela ? 0 : comMonto)).toLocaleString('es-AR')}
+                                          {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Paralelo: ${paralelo.toLocaleString('es-AR')}</span>}
+                                        </div>
+                                      </div>
+                                    )
+                                  })()}
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                   <button onClick={async () => {
-                                    const precio = parseFloat(formComercial.precio_kg) || 0
+                                    const neto = parseFloat(formComercial.monto_facturado) || null
                                     const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
-                                    const plazo = parseInt(formComercial.plazo_dias || 0)
-                                    const fechaVto = formComercial.fecha_vencimiento || (plazo > 0 ? new Date(new Date(v0.creado_en).getTime() + plazo * 86400000).toISOString().split('T')[0] : null)
-                                    const montoFactRaw = formComercial.monto_facturado
-                                    const tieneFacturado = montoFactRaw !== '' && montoFactRaw !== null && montoFactRaw !== undefined
-                                    const montoFactTotal = tieneFacturado ? parseFloat(montoFactRaw) : null
-                                    const montoTotalConIva = formComercial.monto_total_con_iva ? parseFloat(formComercial.monto_total_con_iva) : null
+                                    const ivaMonto = neto ? Math.round(neto * ivaPct / 100) : 0
+                                    const totalFact = neto ? neto + ivaMonto : null
+                                    const paralelo = montoTotalGC && totalFact ? Math.max(0, montoTotalGC - totalFact) : 0
                                     const comPct = parseFloat(formComercial.comision_pct || 0)
-                                    const { data: grupoCompleto } = await supabase.from('ventas').select('*').eq('grupo_venta_id', v0.grupo_venta_id)
-                                    const totalKgNetoG = (grupoCompleto || []).reduce((s, v) => s + (v.kg_neto || 0), 0)
-                                    for (const v of (grupoCompleto || [])) {
-                                      const kgNeto = v.kg_neto || 0
-                                      // Si hay monto total con IVA, distribuirlo proporcionalmente por kg
-                                      const montoTotal = montoTotalConIva && totalKgNetoG > 0 ? Math.round(montoTotalConIva * kgNeto / totalKgNetoG) : (precio ? Math.round(kgNeto * precio) : (v.total || null))
-                                      const montoFact = tieneFacturado && totalKgNetoG > 0 ? Math.round(montoFactTotal * kgNeto / totalKgNetoG) : montoTotal
-                                      const ivaMonto = montoFact > 0 ? Math.round(montoFact * ivaPct / 100) : 0
-                                      const montoNegro = montoTotal !== null ? Math.max(0, montoTotal - (montoFact + ivaMonto)) : 0
-                                      const comMonto = comPct > 0 && montoTotal ? Math.round(montoTotal * comPct / 100) : 0
-                                      const retMonto = formComercial.tiene_retencion && montoFact !== null ? Math.max(0, Math.round((montoFact - 224000) * 0.02)) : 0
+                                    const comMonto = comPct > 0 && montoTotalGC ? Math.round(montoTotalGC * comPct / 100) : 0
+                                    const retMonto = formComercial.tiene_retencion && neto ? Math.max(0, Math.round((neto - 224000) * 0.02)) : 0
+                                    const { data: grupoData } = await supabase.from('ventas').select('*').eq('grupo_venta_id', gcId)
+                                    const totalKgNetGrupo = (grupoData || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
+                                    for (const gv of (grupoData || [])) {
+                                      const prop = totalKgNetGrupo > 0 ? gv.kg_neto / totalKgNetGrupo : 1 / grupoData.length
+                                      const netoV = neto ? Math.round(neto * prop) : null
+                                      const ivaMV = netoV ? Math.round(netoV * ivaPct / 100) : 0
+                                      const paraleloV = montoTotalGC ? Math.max(0, Math.round(montoTotalGC * prop) - (netoV ? netoV + ivaMV : 0)) : 0
                                       await supabase.from('ventas').update({
-                                        precio_kg: precio || null, total: montoTotal,
-                                        monto_facturado: montoFact, monto_negro: montoNegro,
-                                        iva_pct: ivaPct, iva_monto: ivaMonto,
-                                        plazo_dias: plazo || null, fecha_vencimiento_cobro: fechaVto,
-                                        estado_comercial: precio ? 'precio_cargado' : 'pendiente',
-                                        comprador: formComercial.comprador || null,
-                                        observaciones: formComercial.observaciones || null,
-                                        comision_pct: comPct || null,
-                                        comision_monto: comMonto || null,
+                                        monto_facturado: netoV, monto_negro: paraleloV,
+                                        iva_pct: ivaPct, iva_monto: ivaMV,
+                                        estado_comercial: neto ? 'facturado' : 'precio_cargado',
+                                        comision_pct: comPct || null, comision_monto: comMonto || null,
                                         comision_es_paralela: formComercial.comision_es_paralela || false,
                                         tiene_retencion: formComercial.tiene_retencion || false,
                                         retencion_monto: retMonto || null,
-                                        monto_total_con_iva: formComercial.monto_total_con_iva ? parseFloat(formComercial.monto_total_con_iva) : null,
-                                      }).eq('id', v.id)
+                                      }).eq('id', gv.id)
                                     }
                                     setEditandoComercial(null)
                                     await cargar()
@@ -1396,7 +1300,8 @@ export default function Ventas({ usuario }) {
                                 </div>
                               </td>
                             </tr>
-                          )}
+                            )
+                          })()}
                           </React.Fragment>
                         )
                       }
