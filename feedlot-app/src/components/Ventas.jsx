@@ -55,7 +55,7 @@ export default function Ventas({ usuario }) {
   const [showDetalleKg, setShowDetalleKg] = useState(false)
   const [showDetallePrecio, setShowDetallePrecio] = useState(false)
   const [editandoComercial, setEditandoComercial] = useState(null)
-  const [formComercial, setFormComercial] = useState({})
+  const [formComercial, setFormComercial] = useState({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
   const [formPagoVto, setFormPagoVto] = useState('')
   const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '' })
   const [chequesParalelos, setChequesParalelos] = useState([])
@@ -363,6 +363,123 @@ export default function Ventas({ usuario }) {
     { key: 'gestion', label: 'Gestión comercial' },
     { key: 'nueva-venta', label: '+ Nueva venta' },
   ]
+
+  function renderFormGC(v, isGroup, grupo, gcKey, montoTotal) {
+    const neto = parseFloat(formComercial.monto_facturado) || 0
+    const iva = parseFloat(formComercial.iva_pct || 10.5)
+    const ivaMonto = neto ? Math.round(neto * iva / 100) : 0
+    const totalFact = neto + ivaMonto
+    const descuento = parseFloat(formComercial.descuento_monto) || 0
+    const netoFinal = totalFact - descuento
+    const paralelo = montoTotal > 0 ? Math.max(0, montoTotal - netoFinal) : 0
+    const retMonto = formComercial.tiene_retencion && neto ? Math.max(0, Math.round((neto - 224000) * 0.02)) : 0
+    const Lbl = ({ c }) => null
+    const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }
+
+    async function guardarGC() {
+      const updateData = {
+        monto_facturado: neto || null, monto_negro: paralelo,
+        iva_pct: iva, iva_monto: ivaMonto,
+        descuento_monto: descuento || null,
+        descuento_descripcion: formComercial.descuento_descripcion || null,
+        estado_comercial: neto ? 'facturado' : 'precio_cargado',
+        tiene_retencion: formComercial.tiene_retencion || false,
+        retencion_monto: retMonto || null,
+        plazo_dias: formComercial.plazo_dias ? parseInt(formComercial.plazo_dias) : null,
+        fecha_vencimiento_cobro: formComercial.fecha_vencimiento || null,
+      }
+      if (isGroup) {
+        const totalKgNet = grupo.reduce((s, gv) => s + (gv.kg_neto || 0), 0)
+        for (const gv of grupo) {
+          const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / grupo.length
+          const netoV = neto ? Math.round(neto * prop) : null
+          const ivaMV = netoV ? Math.round(netoV * iva / 100) : 0
+          const descV = descuento ? Math.round(descuento * prop) : 0
+          const totalFactV = (netoV || 0) + ivaMV - descV
+          const montoTotalV = montoTotal ? Math.round(montoTotal * prop) : 0
+          const paraleloV = Math.max(0, montoTotalV - totalFactV)
+          await supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null }).eq('id', gv.id)
+        }
+      } else {
+        await supabase.from('ventas').update(updateData).eq('id', gcKey)
+      }
+      setEditandoComercial(null)
+      await cargar()
+    }
+
+    return (
+      <div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto Facturado $ (sin IVA)</div>
+            <input type="number" value={formComercial.monto_facturado} onChange={e => setFormComercial({...formComercial, monto_facturado: e.target.value})}
+              style={{ ...inp, border: `1px solid ${S.accent}`, fontFamily: 'monospace', fontWeight: 600 }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA %</div>
+            <select value={formComercial.iva_pct} onChange={e => setFormComercial({...formComercial, iva_pct: e.target.value})} style={inp}>
+              <option value="0">Sin IVA</option>
+              <option value="10.5">10.5%</option>
+              <option value="21">21%</option>
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA $</div>
+            <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, fontWeight: 700, color: S.green }}>
+              {neto ? `$${ivaMonto.toLocaleString('es-AR')}` : '—'}
+            </div>
+          </div>
+        </div>
+        {neto > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px' }}>
+              <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total Facturado (Neto + IVA)</div>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${totalFact.toLocaleString('es-AR')}</div>
+              <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${neto.toLocaleString('es-AR')} + IVA: ${ivaMonto.toLocaleString('es-AR')}</div>
+            </div>
+            <div style={{ background: paralelo > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${paralelo > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '10px 12px' }}>
+              <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta Paralela</div>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: paralelo > 0 ? '#3D1A6B' : S.hint }}>${paralelo.toLocaleString('es-AR')}</div>
+              {montoTotal > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Total op: ${montoTotal.toLocaleString('es-AR')}</div>}
+            </div>
+          </div>
+        )}
+        <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Descuentos varios (opcional)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Monto $</div>
+              <input type="number" value={formComercial.descuento_monto || ''} onChange={e => setFormComercial({...formComercial, descuento_monto: e.target.value})} placeholder="0" style={{ ...inp, fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Descripción</div>
+              <input type="text" value={formComercial.descuento_descripcion || ''} onChange={e => setFormComercial({...formComercial, descuento_descripcion: e.target.value})} placeholder="ej. flete, merma, comisión, etc." style={inp} />
+            </div>
+          </div>
+          {descuento > 0 && <div style={{ fontSize: 12, color: S.red, marginTop: 6, fontFamily: 'monospace' }}>Total final: ${netoFinal.toLocaleString('es-AR')} (descuento: -${descuento.toLocaleString('es-AR')})</div>}
+        </div>
+        <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+            <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
+            Retención de Ganancias
+          </label>
+          {formComercial.tiene_retencion && neto > 0 && (
+            <div style={{ marginTop: 8, background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+              <div>Retención: <strong style={{ fontFamily: 'monospace', color: S.red }}>-${retMonto.toLocaleString('es-AR')}</strong></div>
+              <div style={{ fontWeight: 700, color: S.red, fontSize: 14, marginTop: 4 }}>
+                Neto a cobrar: ${(netoFinal - retMonto).toLocaleString('es-AR')}
+                {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Paralelo: ${paralelo.toLocaleString('es-AR')}</span>}
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={guardarGC} style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+          <button onClick={() => setEditandoComercial(null)} style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -965,7 +1082,13 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{v.kg_vivo_total && v.cantidad ? Math.round(v.kg_vivo_total / v.cantidad).toLocaleString('es-AR') : '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.desbaste_pct}%</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{(() => {
+                              if (v.kg_neto && (v.monto_facturado || v.monto_negro)) {
+                                const precioReal = Math.round(((v.monto_facturado || 0) + (v.monto_negro || 0)) / v.kg_neto)
+                                return `$${precioReal.toLocaleString('es-AR')}`
+                              }
+                              return v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>
+                            })()}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{(() => {
                               if (!v.total) return '—'
                               const com = (!v.comision_es_paralela && v.comision_monto) ? v.comision_monto : 0
@@ -974,9 +1097,9 @@ export default function Ventas({ usuario }) {
                               return `$${neto.toLocaleString('es-AR')}`
                             })()}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
-                              <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg || '', monto_total_con_iva: v.monto_total_con_iva || '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), monto_facturado: v.monto_facturado !== null && v.monto_facturado !== undefined ? String(v.monto_facturado) : '', iva_pct: v.iva_pct || '10.5', plazo_dias: v.plazo_dias || '', comision_pct: v.comision_pct || '', comision_es_paralela: v.comision_es_paralela || false, tiene_retencion: v.tiene_retencion || false })}
+                              <button onClick={() => { const mt = v.monto_total_con_iva || v.total || 0; setEditandoComercial(v.id); setFormComercial({ monto_facturado: v.monto_facturado ? String(v.monto_facturado) : String(mt), iva_pct: v.iva_pct || '10.5', descuento_monto: v.descuento_monto ? String(v.descuento_monto) : '', descuento_descripcion: v.descuento_descripcion || '', tiene_retencion: v.tiene_retencion || false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-                                Editar
+                                G. Comercial
                               </button>
                               <button onClick={async () => {
                                 if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
@@ -999,126 +1122,7 @@ export default function Ventas({ usuario }) {
                             <tr style={{ background: S.accentLight }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — C-{v.corrales?.numero}</div>
-                                {/* Fila 1: Neto Facturado / IVA % / IVA $ */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                                  <div>
-                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto Facturado $ (sin IVA)</div>
-                                    <input type="number" value={formComercial.monto_facturado} onChange={e => setFormComercial({...formComercial, monto_facturado: e.target.value})}
-                                      placeholder={montoTotalGC > 0 ? String(Math.round(montoTotalGC / (1 + parseFloat(formComercial.iva_pct || 10.5)/100))) : ''}
-                                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA %</div>
-                                    <select value={formComercial.iva_pct} onChange={e => setFormComercial({...formComercial, iva_pct: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
-                                      <option value="0">Sin IVA</option>
-                                      <option value="10.5">10.5%</option>
-                                      <option value="21">21%</option>
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA $</div>
-                                    <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.green, fontWeight: 700 }}>
-                                      {formComercial.monto_facturado ? `$${Math.round(parseFloat(formComercial.monto_facturado) * parseFloat(formComercial.iva_pct || 10.5) / 100).toLocaleString('es-AR')}` : '—'}
-                                    </div>
-                                  </div>
-                                </div>
-                                {formComercial.monto_facturado && (() => {
-                                  const neto = parseFloat(formComercial.monto_facturado) || 0
-                                  const iva = parseFloat(formComercial.iva_pct || 10.5)
-                                  const ivaMonto = Math.round(neto * iva / 100)
-                                  const totalFact = neto + ivaMonto
-                                  const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
-                                  return (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                                      <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px' }}>
-                                        <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total Facturado (Neto + IVA)</div>
-                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${totalFact.toLocaleString('es-AR')}</div>
-                                        <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${neto.toLocaleString('es-AR')} + IVA: ${ivaMonto.toLocaleString('es-AR')}</div>
-                                      </div>
-                                      <div style={{ background: paralelo > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${paralelo > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '10px 12px' }}>
-                                        <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta Paralela</div>
-                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: paralelo > 0 ? '#3D1A6B' : S.hint }}>${paralelo.toLocaleString('es-AR')}</div>
-                                        {montoTotalGC > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Total Op: ${montoTotalGC.toLocaleString('es-AR')}</div>}
-                                      </div>
-                                    </div>
-                                  )
-                                })()}
-                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
-                                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Descuentos varios</div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
-                                    <div>
-                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión %</div>
-                                      <input type="number" value={formComercial.comision_pct || ''} onChange={e => setFormComercial({...formComercial, comision_pct: e.target.value})} placeholder="0"
-                                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                    </div>
-                                    <div>
-                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión $</div>
-                                      <div style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 13, fontFamily: 'monospace', background: S.bg }}>
-                                        {formComercial.comision_pct && montoTotalGC ? `$${Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100).toLocaleString('es-AR')}` : '—'}
-                                      </div>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
-                                        <input type="checkbox" checked={formComercial.comision_es_paralela || false} onChange={e => setFormComercial({...formComercial, comision_es_paralela: e.target.checked})} />
-                                        Paralela
-                                      </label>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
-                                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                                    <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
-                                    Retención de Ganancias
-                                  </label>
-                                  {formComercial.tiene_retencion && formComercial.monto_facturado && (() => {
-                                    const neto = parseFloat(formComercial.monto_facturado) || 0
-                                    const iva = parseFloat(formComercial.iva_pct || 10.5)
-                                    const ivaMonto = Math.round(neto * iva / 100)
-                                    const totalFact = neto + ivaMonto
-                                    const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
-                                    const retMonto = Math.max(0, Math.round((neto - 224000) * 0.02))
-                                    const comMonto = formComercial.comision_pct && montoTotalGC ? Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100) : 0
-                                    return (
-                                      <div style={{ marginTop: 10, background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
-                                        <div style={{ marginBottom: 4 }}>Retención: <strong style={{ fontFamily: 'monospace', color: S.red }}>-${retMonto.toLocaleString('es-AR')}</strong></div>
-                                        <div style={{ fontWeight: 700, color: S.red, fontSize: 14 }}>
-                                          Neto a cobrar: ${(totalFact - retMonto - (formComercial.comision_es_paralela ? 0 : comMonto)).toLocaleString('es-AR')}
-                                          {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Paralelo: ${paralelo.toLocaleString('es-AR')}</span>}
-                                        </div>
-                                      </div>
-                                    )
-                                  })()}
-                                </div>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                  <button onClick={async () => {
-                                    const neto = parseFloat(formComercial.monto_facturado) || null
-                                    const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
-                                    const ivaMonto = neto ? Math.round(neto * ivaPct / 100) : 0
-                                    const totalFact = neto ? neto + ivaMonto : null
-                                    const paralelo = montoTotalGC && totalFact ? Math.max(0, montoTotalGC - totalFact) : 0
-                                    const comPct = parseFloat(formComercial.comision_pct || 0)
-                                    const comMonto = comPct > 0 && montoTotalGC ? Math.round(montoTotalGC * comPct / 100) : 0
-                                    const retMonto = formComercial.tiene_retencion && neto ? Math.max(0, Math.round((neto - 224000) * 0.02)) : 0
-                                    await supabase.from('ventas').update({
-                                      monto_facturado: neto, monto_negro: paralelo,
-                                      iva_pct: ivaPct, iva_monto: ivaMonto,
-                                      estado_comercial: neto ? 'facturado' : 'precio_cargado',
-                                      comision_pct: comPct || null, comision_monto: comMonto || null,
-                                      comision_es_paralela: formComercial.comision_es_paralela || false,
-                                      tiene_retencion: formComercial.tiene_retencion || false,
-                                      retencion_monto: retMonto || null,
-                                    }).eq('id', gcId)
-                                    setEditandoComercial(null)
-                                    await cargar()
-                                  }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                                    Guardar
-                                  </button>
-                                  <button onClick={() => setEditandoComercial(null)}
-                                    style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                                    Cancelar
-                                  </button>
-                                </div>
+                                {renderFormGC(v, false, [v], gcId, montoTotalGC)}
                               </td>
                             </tr>
                             )
@@ -1149,13 +1153,21 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{totalKgVivo && totalAnim ? Math.round(totalKgVivo / totalAnim).toLocaleString('es-AR') : '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.desbaste_pct}%</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{(() => {
+                              const totalNetoFact = g.reduce((s, gv) => s + (gv.monto_facturado || 0), 0)
+                              const totalNegro = g.reduce((s, gv) => s + (gv.monto_negro || 0), 0)
+                              const totalKgNetoG = g.reduce((s, gv) => s + (gv.kg_neto || 0), 0)
+                              if (totalKgNetoG && (totalNetoFact || totalNegro)) {
+                                return `$${Math.round((totalNetoFact + totalNegro) / totalKgNetoG).toLocaleString('es-AR')}`
+                              }
+                              return v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>
+                            })()}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg !== null && v0.precio_kg !== undefined ? String(v0.precio_kg) : '', monto_total_con_iva: v0.monto_total_grupo ? String(v0.monto_total_grupo) : (v0.monto_total_con_iva || ''), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), monto_facturado: v0.monto_facturado_grupo ? String(v0.monto_facturado_grupo) : (v0.monto_facturado ? String(v0.monto_facturado) : ''), iva_pct: v0.iva_pct || '10.5', plazo_dias: v0.plazo_dias || '', comision_pct: v0.comision_pct || '', comision_monto_input: v0.comision_monto ? String(v0.comision_monto) : '', comision_es_paralela: v0.comision_es_paralela || false, tiene_retencion: v0.tiene_retencion || false })}
+                              <button onClick={() => { const mt = v0.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoComercial(v0.grupo_venta_id); setFormComercial({ monto_facturado: v0.monto_facturado ? String(v0.monto_facturado) : String(mt), iva_pct: v0.iva_pct || '10.5', descuento_monto: v0.descuento_monto ? String(v0.descuento_monto) : '', descuento_descripcion: v0.descuento_descripcion || '', tiene_retencion: v0.tiene_retencion || false, plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '', fecha_vencimiento: v0.fecha_vencimiento_cobro || '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-                                Editar
+                                G. Comercial
                               </button>
                               <button onClick={async () => {
                                 if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${g.length} corrales.`)) return
@@ -1174,139 +1186,12 @@ export default function Ventas({ usuario }) {
                             </td>
                           </tr>
                           {editandoComercial === v0.grupo_venta_id && (() => {
-                            const gcId = v0.grupo_venta_id
-                            const isGroup = true
-                            const montoTotalGC = v0.monto_total_grupo || g.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
+                            const montoTotalGCM = v0.monto_total_grupo || g.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
                             return (
                             <tr style={{ background: S.accentLight }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — Venta multi-corral · {corralesNums}</div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                                  <div>
-                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Neto Facturado $ (sin IVA)</div>
-                                    <input type="number" value={formComercial.monto_facturado} onChange={e => setFormComercial({...formComercial, monto_facturado: e.target.value})}
-                                      placeholder={montoTotalGC > 0 ? String(Math.round(montoTotalGC / (1 + parseFloat(formComercial.iva_pct || 10.5)/100))) : ''}
-                                      style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA %</div>
-                                    <select value={formComercial.iva_pct} onChange={e => setFormComercial({...formComercial, iva_pct: e.target.value})}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
-                                      <option value="0">Sin IVA</option>
-                                      <option value="10.5">10.5%</option>
-                                      <option value="21">21%</option>
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA $</div>
-                                    <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.green, fontWeight: 700 }}>
-                                      {formComercial.monto_facturado ? `$${Math.round(parseFloat(formComercial.monto_facturado) * parseFloat(formComercial.iva_pct || 10.5) / 100).toLocaleString('es-AR')}` : '—'}
-                                    </div>
-                                  </div>
-                                </div>
-                                {formComercial.monto_facturado && (() => {
-                                  const neto = parseFloat(formComercial.monto_facturado) || 0
-                                  const iva = parseFloat(formComercial.iva_pct || 10.5)
-                                  const ivaMonto = Math.round(neto * iva / 100)
-                                  const totalFact = neto + ivaMonto
-                                  const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
-                                  return (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                                      <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px' }}>
-                                        <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total Facturado (Neto + IVA)</div>
-                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${totalFact.toLocaleString('es-AR')}</div>
-                                        <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${neto.toLocaleString('es-AR')} + IVA: ${ivaMonto.toLocaleString('es-AR')}</div>
-                                      </div>
-                                      <div style={{ background: paralelo > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${paralelo > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '10px 12px' }}>
-                                        <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta Paralela</div>
-                                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: paralelo > 0 ? '#3D1A6B' : S.hint }}>${paralelo.toLocaleString('es-AR')}</div>
-                                        {montoTotalGC > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Total Op: ${montoTotalGC.toLocaleString('es-AR')}</div>}
-                                      </div>
-                                    </div>
-                                  )
-                                })()}
-                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
-                                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Descuentos varios</div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
-                                    <div>
-                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión %</div>
-                                      <input type="number" value={formComercial.comision_pct || ''} onChange={e => setFormComercial({...formComercial, comision_pct: e.target.value})} placeholder="0"
-                                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 5, padding: '7px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                                    </div>
-                                    <div>
-                                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Comisión $</div>
-                                      <div style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 13, fontFamily: 'monospace', background: S.bg }}>
-                                        {formComercial.comision_pct && montoTotalGC ? `$${Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100).toLocaleString('es-AR')}` : '—'}
-                                      </div>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
-                                        <input type="checkbox" checked={formComercial.comision_es_paralela || false} onChange={e => setFormComercial({...formComercial, comision_es_paralela: e.target.checked})} />
-                                        Paralela
-                                      </label>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
-                                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                                    <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
-                                    Retención de Ganancias
-                                  </label>
-                                  {formComercial.tiene_retencion && formComercial.monto_facturado && (() => {
-                                    const neto = parseFloat(formComercial.monto_facturado) || 0
-                                    const iva = parseFloat(formComercial.iva_pct || 10.5)
-                                    const totalFact = neto + Math.round(neto * iva / 100)
-                                    const paralelo = montoTotalGC > 0 ? Math.max(0, montoTotalGC - totalFact) : 0
-                                    const retMonto = Math.max(0, Math.round((neto - 224000) * 0.02))
-                                    const comMonto = formComercial.comision_pct && montoTotalGC ? Math.round(montoTotalGC * parseFloat(formComercial.comision_pct) / 100) : 0
-                                    return (
-                                      <div style={{ marginTop: 10, background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
-                                        <div style={{ marginBottom: 4 }}>Retención: <strong style={{ fontFamily: 'monospace', color: S.red }}>-${retMonto.toLocaleString('es-AR')}</strong></div>
-                                        <div style={{ fontWeight: 700, color: S.red, fontSize: 14 }}>
-                                          Neto a cobrar: ${(totalFact - retMonto - (formComercial.comision_es_paralela ? 0 : comMonto)).toLocaleString('es-AR')}
-                                          {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Paralelo: ${paralelo.toLocaleString('es-AR')}</span>}
-                                        </div>
-                                      </div>
-                                    )
-                                  })()}
-                                </div>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                  <button onClick={async () => {
-                                    const neto = parseFloat(formComercial.monto_facturado) || null
-                                    const ivaPct = parseFloat(formComercial.iva_pct || 10.5)
-                                    const ivaMonto = neto ? Math.round(neto * ivaPct / 100) : 0
-                                    const totalFact = neto ? neto + ivaMonto : null
-                                    const paralelo = montoTotalGC && totalFact ? Math.max(0, montoTotalGC - totalFact) : 0
-                                    const comPct = parseFloat(formComercial.comision_pct || 0)
-                                    const comMonto = comPct > 0 && montoTotalGC ? Math.round(montoTotalGC * comPct / 100) : 0
-                                    const retMonto = formComercial.tiene_retencion && neto ? Math.max(0, Math.round((neto - 224000) * 0.02)) : 0
-                                    const { data: grupoData } = await supabase.from('ventas').select('*').eq('grupo_venta_id', gcId)
-                                    const totalKgNetGrupo = (grupoData || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
-                                    for (const gv of (grupoData || [])) {
-                                      const prop = totalKgNetGrupo > 0 ? gv.kg_neto / totalKgNetGrupo : 1 / grupoData.length
-                                      const netoV = neto ? Math.round(neto * prop) : null
-                                      const ivaMV = netoV ? Math.round(netoV * ivaPct / 100) : 0
-                                      const paraleloV = montoTotalGC ? Math.max(0, Math.round(montoTotalGC * prop) - (netoV ? netoV + ivaMV : 0)) : 0
-                                      await supabase.from('ventas').update({
-                                        monto_facturado: netoV, monto_negro: paraleloV,
-                                        iva_pct: ivaPct, iva_monto: ivaMV,
-                                        estado_comercial: neto ? 'facturado' : 'precio_cargado',
-                                        comision_pct: comPct || null, comision_monto: comMonto || null,
-                                        comision_es_paralela: formComercial.comision_es_paralela || false,
-                                        tiene_retencion: formComercial.tiene_retencion || false,
-                                        retencion_monto: retMonto || null,
-                                      }).eq('id', gv.id)
-                                    }
-                                    setEditandoComercial(null)
-                                    await cargar()
-                                  }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                                    Guardar
-                                  </button>
-                                  <button onClick={() => setEditandoComercial(null)}
-                                    style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                                    Cancelar
-                                  </button>
-                                </div>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — Multi-corral · {corralesNums}</div>
+                                {renderFormGC(v0, true, g, v0.grupo_venta_id, montoTotalGCM)}
                               </td>
                             </tr>
                             )
@@ -1743,6 +1628,44 @@ export default function Ventas({ usuario }) {
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Gestión comercial</div>
           <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Seguimiento de cobros, facturas, retenciones y cheques</div>
+
+          {/* Banner completar datos G. Comercial */}
+          {ventas.filter(v => v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
+            <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
+                📋 Ventas pendientes de completar en G. Comercial
+              </div>
+              {ventas.filter(v => v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).map(v => {
+                const isGroup = !!v.grupo_venta_id
+                const grupo = isGroup ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
+                const totalAnimales = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
+                const montoTotal = isGroup ? (v.monto_total_grupo || grupo.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0)) : (v.monto_total_con_iva || v.total || 0)
+                const corralesStr = isGroup ? grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ') : `C-${v.corrales?.numero || v.corral_id}`
+                const gcKey = isGroup ? v.grupo_venta_id : v.id
+                const isEditGC = editandoComercial === gcKey
+                return (
+                  <div key={gcKey} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isEditGC ? '1rem' : 0 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{isGroup ? 'Venta multi-corral' : corralesStr} · {totalAnimales} animales</div>
+                        <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                          {new Date((v.fecha || v.creado_en?.split('T')[0]) + 'T12:00:00').toLocaleDateString('es-AR')} · {v.comprador || '—'}
+                          {montoTotal > 0 && ` · $${montoTotal.toLocaleString('es-AR')}`}
+                        </div>
+                      </div>
+                      {!isEditGC && (
+                        <button onClick={() => { setEditandoComercial(gcKey); setFormComercial({ monto_facturado: montoTotal ? String(montoTotal) : '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                          style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', flexShrink: 0, marginLeft: 12 }}>
+                          Completar datos
+                        </button>
+                      )}
+                    </div>
+                    {isEditGC && renderFormGC(v, isGroup, grupo, gcKey, montoTotal)}
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {ventas.filter(v => v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)).length > 0 && (
             <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
