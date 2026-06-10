@@ -73,6 +73,7 @@ export default function Tablero({ usuario }) {
       { data: stockItems },
       { data: lotesDB },
       { data: racionesDB },
+      { data: lotesVenc },
     ] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
@@ -83,6 +84,7 @@ export default function Tablero({ usuario }) {
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }).limit(5),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('stock_insumos').select('*'),
+      supabase.from('lotes').select('id, procedencia, cantidad, monto_total_con_iva, fecha_vencimiento_pago, estado_pago, categoria').not('fecha_vencimiento_pago', 'is', null).eq('estado_pago', 'pendiente').order('fecha_vencimiento_pago'),
       supabase.from('lotes').select('cantidad, kg_bascula, fecha_ingreso, estado').limit(500),
       supabase.from('raciones_app').select('kg_total, creado_en').limit(1000),
     ])
@@ -136,13 +138,13 @@ export default function Tablero({ usuario }) {
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
     const stockBajo = (stockItems || []).filter(s => s.cantidad_kg != null && s.minimo_kg != null && s.cantidad_kg <= s.minimo_kg)
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [] })
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [], lotesVenc: lotesVenc || [] })
     setLoading(false)
   }
 
   if (loading) return <Loader />
 
-  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotes = [], raciones = [] } = datos
+  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotes = [], raciones = [], lotesVenc = [] } = datos
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre')
   const totalAnimales = corralesActivos.reduce((s, c) => s + (c.animales || 0), 0)
@@ -213,7 +215,12 @@ export default function Tablero({ usuario }) {
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
 
   // Alertas
-  const totalAlertas = alertas.length + (diasPesada !== null && diasPesada <= 14 ? 1 : 0) + stockBajo.length
+  const hoy = new Date()
+  const en7dias = new Date(hoy.getTime() + 7 * 86400000)
+  const en30dias = new Date(hoy.getTime() + 30 * 86400000)
+  const lotesVencProximos = lotesVenc.filter(l => new Date(l.fecha_vencimiento_pago) <= en30dias)
+  const lotesVencUrgentes = lotesVenc.filter(l => new Date(l.fecha_vencimiento_pago) <= en7dias)
+  const totalAlertas = alertas.length + (diasPesada !== null && diasPesada <= 14 ? 1 : 0) + stockBajo.length + lotesVencUrgentes.length
 
   // Animales listos para vender (≥400 kg estimado)
   const animalesListos = corralesActivos.filter(c => {
@@ -453,6 +460,34 @@ export default function Tablero({ usuario }) {
               </div>
             </div>
           ))}
+
+          {lotesVencProximos.length > 0 && (
+            <div style={{ marginBottom: '1rem', background: lotesVencUrgentes.length > 0 ? S.redLight : S.amberLight, border: `1px solid ${lotesVencUrgentes.length > 0 ? '#F09595' : '#EF9F27'}`, borderRadius: 8, padding: '1rem' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: lotesVencUrgentes.length > 0 ? S.red : S.amber, marginBottom: 8 }}>
+                💰 {lotesVencProximos.length} pago{lotesVencProximos.length !== 1 ? 's' : ''} de hacienda próximo{lotesVencProximos.length !== 1 ? 's' : ''}
+              </div>
+              {lotesVencProximos.map(l => {
+                const fechaVenc = new Date(l.fecha_vencimiento_pago + 'T12:00:00')
+                const diasHasta = Math.round((fechaVenc - hoy) / 86400000)
+                const urgente = diasHasta <= 7
+                return (
+                  <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${urgente ? '#F09595' : '#EF9F27'}20` }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{l.procedencia || 'Sin proveedor'} · {l.cantidad} cab.</div>
+                      <div style={{ fontSize: 11, color: urgente ? S.red : S.amber, fontWeight: 600 }}>
+                        {diasHasta === 0 ? '¡Vence hoy!' : diasHasta < 0 ? `Venció hace ${Math.abs(diasHasta)} días` : `Vence en ${diasHasta} días — ${fechaVenc.toLocaleDateString('es-AR')}`}
+                      </div>
+                    </div>
+                    {l.monto_total_con_iva && (
+                      <div style={{ fontFamily: 'monospace', fontWeight: 700, color: urgente ? S.red : S.amber, fontSize: 14 }}>
+                        ${l.monto_total_con_iva.toLocaleString('es-AR')}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {alertas.map(a => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: `1px solid ${S.border}` }}>
