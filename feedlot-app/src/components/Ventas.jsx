@@ -801,7 +801,16 @@ export default function Ventas({ usuario }) {
                             <div>
                               <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>Desbaste %</label>
                               <input type="number" placeholder="8" value={editandoVenta.desbaste}
-                                onChange={e => setEditandoVenta({ ...editandoVenta, desbaste: e.target.value })}
+                                onChange={e => {
+                              const desb = e.target.value
+                              const kgB = v.grupo_venta_id
+                                ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+                                : (v.kg_vivo_total || 0)
+                              const kgN = Math.round(kgB * (1 - parseFloat(desb || 8) / 100))
+                              const precio = parseFloat(editandoVenta.precio_kg) || 0
+                              const mt = precio && kgN ? String(Math.round(precio * kgN)) : editandoVenta.monto_total_con_iva
+                              setEditandoVenta({ ...editandoVenta, desbaste: desb, monto_total_con_iva: mt })
+                            }}
                                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                             </div>
                             <div>
