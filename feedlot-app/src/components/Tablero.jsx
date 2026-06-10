@@ -215,9 +215,9 @@ export default function Tablero({ usuario }) {
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
 
   // Alertas
-  const hoy = new Date()
-  const en7dias = new Date(hoy.getTime() + 7 * 86400000)
-  const en30dias = new Date(hoy.getTime() + 30 * 86400000)
+  const ahora = new Date()
+  const en7dias = new Date(ahora.getTime() + 7 * 86400000)
+  const en30dias = new Date(ahora.getTime() + 30 * 86400000)
   const lotesVencProximos = lotesVenc.filter(l => new Date(l.fecha_vencimiento_pago) <= en30dias)
   const lotesVencUrgentes = lotesVenc.filter(l => new Date(l.fecha_vencimiento_pago) <= en7dias)
   const totalAlertas = alertas.length + (diasPesada !== null && diasPesada <= 14 ? 1 : 0) + stockBajo.length + lotesVencUrgentes.length
@@ -468,7 +468,7 @@ export default function Tablero({ usuario }) {
               </div>
               {lotesVencProximos.map(l => {
                 const fechaVenc = new Date(l.fecha_vencimiento_pago + 'T12:00:00')
-                const diasHasta = Math.round((fechaVenc - hoy) / 86400000)
+                const diasHasta = Math.round((fechaVenc - ahora) / 86400000)
                 const urgente = diasHasta <= 7
                 return (
                   <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${urgente ? '#F09595' : '#EF9F27'}20` }}>
