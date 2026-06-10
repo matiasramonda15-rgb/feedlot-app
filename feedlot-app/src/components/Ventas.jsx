@@ -430,7 +430,7 @@ export default function Ventas({ usuario }) {
             </div>
           </div>
         </div>
-        {neto > 0 && (
+        {(neto >= 0 && formComercial.monto_facturado !== '') && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
             <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px' }}>
               <div style={{ fontSize: 10, color: S.green, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total Facturado (Neto + IVA)</div>
