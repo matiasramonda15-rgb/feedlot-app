@@ -138,7 +138,8 @@ export default function Corrales({ usuario }) {
     await cargarCorrales()
   }
 
-  const byNum = Object.fromEntries(corrales.map(c => [c.numero, c]))
+  const [ajustando, setAjustando] = useState(null)
+  const [ajusteValor, setAjusteValor] = useState('')
   const sel = seleccionado ? corrales.find(c => c.id === seleccionado.id) : null
 
   if (loading) return <div style={{ padding: '2rem', color: '#9E9A94', fontSize: 13 }}>Cargando...</div>
@@ -358,6 +359,28 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
   const [cambiandoRol, setCambiandoRol] = useState(false)
   const [rolNuevo, setRolNuevo] = useState('')
   const [subNuevo, setSubNuevo] = useState('')
+  const [ajustando, setAjustando] = useState(false)
+  const [ajusteValor, setAjusteValor] = useState('')
+  const [guardandoAjuste, setGuardandoAjuste] = useState(false)
+
+  async function guardarAjuste() {
+    const nuevo = parseInt(ajusteValor)
+    if (isNaN(nuevo) || nuevo < 0) { alert('Ingresá un número válido'); return }
+    setGuardandoAjuste(true)
+    await supabase.from('corrales').update({ animales: nuevo }).eq('id', corral.id)
+    await supabase.from('movimientos').insert({
+      corral_origen_id: corral.id,
+      corral_destino_id: corral.id,
+      cantidad: nuevo - (corral.animales || 0),
+      tipo: 'ajuste_manual',
+      motivo: `Ajuste manual: ${corral.animales || 0} → ${nuevo}`,
+      registrado_por: usuario?.id,
+    })
+    setAjustando(false)
+    setAjusteValor('')
+    setGuardandoAjuste(false)
+    window.location.reload()
+  }
 
   return (
     <div>
@@ -383,6 +406,33 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
           style={{ width: '100%', background: '#E8EFF8', border: '1px solid #378ADD', borderRadius: 8, padding: '9px 12px', fontSize: 13, fontWeight: 600, color: '#1A3D6B', cursor: 'pointer', marginBottom: 10 }}>
           Mover animales a otro corral
         </button>
+      )}
+
+      {/* Ajuste manual de cantidad */}
+      {esDueno && (
+        <div style={{ marginBottom: 10 }}>
+          {!ajustando
+            ? <button onClick={() => { setAjustando(true); setAjusteValor(String(corral.animales || 0)) }}
+                style={{ width: '100%', background: '#FDF0E0', border: '1px solid #EF9F27', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, color: '#7A4500', cursor: 'pointer' }}>
+                ✏️ Ajustar cantidad manualmente
+              </button>
+            : <div style={{ background: '#FDF0E0', border: '1px solid #EF9F27', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#7A4500', marginBottom: 8 }}>Ajuste manual — actual: {corral.animales || 0} animales</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="number" value={ajusteValor} onChange={e => setAjusteValor(e.target.value)} min="0"
+                    style={{ flex: 1, padding: '7px 10px', border: '1px solid #EF9F27', borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700 }} />
+                  <button onClick={guardarAjuste} disabled={guardandoAjuste}
+                    style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: '#7A4500', border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                    {guardandoAjuste ? '...' : 'Guardar'}
+                  </button>
+                  <button onClick={() => setAjustando(false)}
+                    style={{ padding: '7px 10px', fontSize: 12, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer' }}>
+                    ✕
+                  </button>
+                </div>
+              </div>
+          }
+        </div>
       )}
 
       {esDueno && (
