@@ -611,6 +611,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         kg_total: kgs[c.id] || 0,
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
         solo_rollo: soloRollo[c.id] || false,
+        tipo_dieta: dieta,
       }
     })
     for (const reg of registros) {

@@ -181,10 +181,18 @@ export default function Tablero({ usuario }) {
     : null
 
   // Conversión: kg alimento consumido / kg producidos estimados
+  // Conversión: kg alimento en MS / kg producidos
+  // MS: maiz humedo = 63.4%, maiz seco = 70.5% (de toda la dieta)
+  const MS_HUMEDO = 0.634
+  const MS_SECO = 0.705
+  const kgAlimMesMS = raciones.reduce((s, r) => {
+    const ms = r.tipo_dieta === 'humedo' ? MS_HUMEDO : MS_SECO
+    return s + (r.kg_total || 0) * ms
+  }, 0)
   const kgAlimMes = raciones.reduce((s,r)=>s+(r.kg_total||0),0)
   const gdpParaConversion = gdpGlobal || gdpPesadas
   const kgProducidosMes = gdpParaConversion && existPromMes ? gdpParaConversion * existPromMes * diasMes : null
-  const conversionMF = kgAlimMes > 0 && kgProducidosMes > 0 ? (kgAlimMes / kgProducidosMes).toFixed(1) : null
+  const conversionMF = kgAlimMesMS > 0 && kgProducidosMes > 0 ? (kgAlimMesMS / kgProducidosMes).toFixed(1) : null
 
   // GDP global para display (corral-level basado en pesadas — fallback)
   const corralesConGDP = corralesActivos.filter(c => gdpPorCorral[c.numero])

@@ -197,11 +197,17 @@ export default function Reportes({ usuario }) {
       ? diasConDatos.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatos.length
       : null
     const consumoDiarioCalc = consumoDiario && consumoDiario <= 30 ? consumoDiario : null
+    const MS_HUMEDO = 0.634
+    const MS_SECO = 0.705
     const kgAlimento = racionesPeriodo.reduce((s, r) => s + (r.kg_total || 0), 0)
+    const kgAlimentoMS = racionesPeriodo.reduce((s, r) => {
+      const ms = r.tipo_dieta === 'humedo' ? MS_HUMEDO : MS_SECO
+      return s + (r.kg_total || 0) * ms
+    }, 0)
 
     // Paso 7: Conversión
-    const conversion = gdp && consumoDiarioCalc ? consumoDiarioCalc / gdp : null
-    const conversionCorregida = gdpCorregido && consumoDiarioCalc ? consumoDiarioCalc / gdpCorregido : null
+    const conversion = gdp && consumoDiarioCalc ? (kgAlimentoMS / (gdp * existenciaPromedio * dias)) : null
+    const conversionCorregida = gdpCorregido && consumoDiarioCalc ? (kgAlimentoMS / (gdpCorregido * existenciaPromedio * dias)) : null
     const kgProducidos = gdp && existenciaPromedio ? gdp * existenciaPromedio * dias : null
 
     return {
