@@ -364,7 +364,7 @@ export default function Ventas({ usuario }) {
     { key: 'nueva-venta', label: '+ Nueva venta' },
   ]
 
-  function renderFormGC(v, isGroup, grupo, gcKey, montoTotal) {
+  function renderFormGC(v, isGroup, grupo, gcKey, montoTotal, _cargar, _supabase) {
     const neto = parseFloat(formComercial.monto_facturado) || 0
     const iva = parseFloat(formComercial.iva_pct || 10.5)
     const ivaMonto = neto ? Math.round(neto * iva / 100) : 0
@@ -398,14 +398,14 @@ export default function Ventas({ usuario }) {
           const totalFactV = (netoV || 0) + ivaMV - descV
           const montoTotalV = montoTotal ? Math.round(montoTotal * prop) : 0
           const paraleloV = Math.max(0, montoTotalV - totalFactV)
-          await supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null }).eq('id', gv.id)
+          await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null }).eq('id', gv.id)
         }
       } else {
-        await supabase.from('ventas').update(updateData).eq('id', gcKey)
+        await _supabase.from('ventas').update(updateData).eq('id', gcKey)
       }
       setEditandoComercial(null)
       setFormComercial({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
-      await cargar()
+      await _cargar()
     }
 
     return (
@@ -1123,7 +1123,7 @@ export default function Ventas({ usuario }) {
                             <tr style={{ background: S.accentLight }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — C-{v.corrales?.numero}</div>
-                                {renderFormGC(v, false, [v], gcId, montoTotalGC)}
+                                {renderFormGC(v, false, [v], gcId, montoTotalGC, cargar, supabase)}
                               </td>
                             </tr>
                             )
@@ -1192,7 +1192,7 @@ export default function Ventas({ usuario }) {
                             <tr style={{ background: S.accentLight }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — Multi-corral · {corralesNums}</div>
-                                {renderFormGC(v0, true, g, v0.grupo_venta_id, montoTotalGCM)}
+                                {renderFormGC(v0, true, g, v0.grupo_venta_id, montoTotalGCM, cargar, supabase)}
                               </td>
                             </tr>
                             )
@@ -1661,7 +1661,7 @@ export default function Ventas({ usuario }) {
                         </button>
                       )}
                     </div>
-                    {isEditGC && renderFormGC(v, isGroup, grupo, gcKey, montoTotal)}
+                    {isEditGC && renderFormGC(v, isGroup, grupo, gcKey, montoTotal, cargar, supabase)}
                   </div>
                 )
               })}
