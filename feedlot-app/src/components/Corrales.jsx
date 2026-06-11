@@ -113,6 +113,7 @@ export default function Corrales({ usuario }) {
 
   async function eliminarMovimiento(id, mov) {
     if (!confirm('¿Eliminar este movimiento? Se revertirán los animales a sus corrales originales.')) return
+    if (!mov) { await supabase.from('movimientos').delete().eq('id', id); await cargarCorrales(); return }
 
     // Revertir: devolver animales al origen y sacar del destino
     const { data: origen } = await supabase.from('corrales').select('animales, rol').eq('id', mov.corral_origen_id).single()
@@ -306,7 +307,7 @@ export default function Corrales({ usuario }) {
                         <td style={{ padding: '9px 12px', color: '#6B6760' }}>{m.motivo || <span style={{ color: '#9E9A94' }}>—</span>}</td>
                         <td style={{ padding: '9px 12px', fontSize: 12, color: '#6B6760' }}>{m.usuario?.nombre || '—'}</td>
                         <td style={{ padding: '9px 12px' }}>
-                          <button onClick={() => eliminarMovimiento(m.id)}
+                          <button onClick={() => eliminarMovimiento(m.id, m)}
                             style={{ background: '#FDF0F0', border: '1px solid #F09595', borderRadius: 5, color: '#7A1A1A', fontSize: 11, padding: '3px 8px', cursor: 'pointer' }}>
                             Eliminar
                           </button>
