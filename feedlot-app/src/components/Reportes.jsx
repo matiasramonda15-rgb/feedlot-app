@@ -891,4 +891,4 @@ function calcPesoProm(pa) {
   const tot = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (!tot) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / tot
-}
+} 
