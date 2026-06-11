@@ -190,10 +190,6 @@ export default function Tablero({ usuario }) {
     return s + (r.kg_total || 0) * ms
   }, 0)
   const kgAlimMes = raciones.reduce((s,r)=>s+(r.kg_total||0),0)
-  const gdpParaConversion = gdpGlobal || gdpPesadas
-  const kgProducidosMes = gdpParaConversion && existPromMes ? gdpParaConversion * existPromMes * diasMes : null
-  const conversionMF = kgAlimMesMS > 0 && kgProducidosMes > 0 ? (kgAlimMesMS / kgProducidosMes).toFixed(1) : null
-
   // GDP global para display (corral-level basado en pesadas — fallback)
   const corralesConGDP = corralesActivos.filter(c => gdpPorCorral[c.numero])
   const totalAnimGDP = corralesConGDP.reduce((s, c) => s + (c.animales || 0), 0)
@@ -201,7 +197,10 @@ export default function Tablero({ usuario }) {
     ? corralesConGDP.reduce((s, c) => s + (gdpPorCorral[c.numero].gdp * (c.animales || 0)), 0) / totalAnimGDP
     : null
 
-  // Días prom para 400 kg (usando GDP del mes o de pesadas)
+  const gdpParaConversion = gdpGlobal || gdpPesadas
+  const kgProducidosMes = gdpParaConversion && existPromMes ? gdpParaConversion * existPromMes * diasMes : null
+  const conversionMF = kgAlimMesMS > 0 && kgProducidosMes > 0 ? (kgAlimMesMS / kgProducidosMes).toFixed(1) : null
+
   const gdpRef = gdpGlobal || gdpPesadas
   const corralesConPeso = corralesActivos.filter(c => gdpPorCorral[c.numero]?.pesoActual && gdpPorCorral[c.numero]?.gdp > 0)
   const diasProm = corralesConPeso.length
