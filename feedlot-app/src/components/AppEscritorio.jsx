@@ -47,8 +47,8 @@ const MODULOS = {
 }
 
 export default function AppEscritorio({ usuario, onLogout }) {
-  const [modulo, setModulo] = useState('tablero')
-  const Componente = MODULOS[modulo] || Tablero
+  const [modulo, setModulo] = useState('corrales')
+  const Componente = MODULOS[modulo] || Corrales
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: '100vh', fontFamily: "'IBM Plex Sans', sans-serif", background: '#F7F5F0' }}>
       <Sidebar modulo={modulo} setModulo={setModulo} usuario={usuario} onLogout={onLogout} />
