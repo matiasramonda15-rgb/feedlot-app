@@ -140,6 +140,8 @@ export default function Corrales({ usuario }) {
 
   const [ajustando, setAjustando] = useState(null)
   const [ajusteValor, setAjusteValor] = useState('')
+
+  const byNum = Object.fromEntries(corrales.map(c => [c.numero, c]))
   const sel = seleccionado ? corrales.find(c => c.id === seleccionado.id) : null
 
   if (loading) return <div style={{ padding: '2rem', color: '#9E9A94', fontSize: 13 }}>Cargando...</div>
