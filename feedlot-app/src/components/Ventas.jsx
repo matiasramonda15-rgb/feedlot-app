@@ -404,6 +404,7 @@ export default function Ventas({ usuario }) {
         await supabase.from('ventas').update(updateData).eq('id', gcKey)
       }
       setEditandoComercial(null)
+      setFormComercial({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
       await cargar()
     }
 
@@ -1630,12 +1631,12 @@ export default function Ventas({ usuario }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Seguimiento de cobros, facturas, retenciones y cheques</div>
 
           {/* Banner completar datos G. Comercial */}
-          {ventas.filter(v => v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
+          {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
             <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
                 📋 Ventas pendientes de completar en G. Comercial
               </div>
-              {ventas.filter(v => v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).map(v => {
+              {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).map(v => {
                 const isGroup = !!v.grupo_venta_id
                 const grupo = isGroup ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                 const totalAnimales = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
