@@ -182,7 +182,8 @@ export default function Tablero({ usuario }) {
 
   // Conversión: kg alimento consumido / kg producidos estimados
   const kgAlimMes = raciones.reduce((s,r)=>s+(r.kg_total||0),0)
-  const kgProducidosMes = gdpGlobal && existPromMes ? gdpGlobal * existPromMes * diasMes : null
+  const gdpParaConversion = gdpGlobal || gdpPesadas
+  const kgProducidosMes = gdpParaConversion && existPromMes ? gdpParaConversion * existPromMes * diasMes : null
   const conversionMF = kgAlimMes > 0 && kgProducidosMes > 0 ? (kgAlimMes / kgProducidosMes).toFixed(1) : null
 
   // GDP global para display (corral-level basado en pesadas — fallback)
@@ -262,10 +263,10 @@ export default function Tablero({ usuario }) {
             },
             {
               label: 'GDP global',
-              val: gdpGlobal ? gdpGlobal.toFixed(2) : '—',
-              valSuffix: gdpGlobal ? ' kg/d' : '',
-              valStyle: { color: gdpGlobal ? (gdpGlobal >= 1.1 ? '#7EE8A2' : gdpGlobal >= 0.9 ? '#F5C97A' : '#F09595') : 'rgba(255,255,255,.4)' },
-              sub: totalAnimGDP > 0 ? `prom. ponderado · ${totalAnimGDP} anim.` : 'sin pesadas registradas',
+              val: (gdpGlobal || gdpPesadas) ? (gdpGlobal || gdpPesadas).toFixed(2) : '—',
+              valSuffix: (gdpGlobal || gdpPesadas) ? ' kg/d' : '',
+              valStyle: { color: (gdpGlobal || gdpPesadas) ? ((gdpGlobal || gdpPesadas) >= 1.1 ? '#7EE8A2' : (gdpGlobal || gdpPesadas) >= 0.9 ? '#F5C97A' : '#F09595') : 'rgba(255,255,255,.4)' },
+              sub: gdpGlobal ? `prom. mensual · ${totalAnimGDP} anim.` : gdpPesadas ? `basado en pesadas · ${totalAnimGDP} anim.` : 'sin pesadas registradas',
             },
             {
               label: 'Conversión MF',
