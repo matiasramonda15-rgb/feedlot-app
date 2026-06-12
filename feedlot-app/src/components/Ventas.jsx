@@ -55,6 +55,7 @@ export default function Ventas({ usuario }) {
   const [showDetalleKg, setShowDetalleKg] = useState(false)
   const [showDetallePrecio, setShowDetallePrecio] = useState(false)
   const [editandoComercial, setEditandoComercial] = useState(null)
+  const [gcVersion, setGcVersion] = useState(0)
   const [formComercial, setFormComercial] = useState({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
   const [formPagoVto, setFormPagoVto] = useState('')
   const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '' })
@@ -406,6 +407,7 @@ export default function Ventas({ usuario }) {
       setEditandoComercial(null)
       setFormComercial({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
       await _cargar()
+      setGcVersion(v => v + 1)
     }
 
     return (
@@ -1632,7 +1634,7 @@ export default function Ventas({ usuario }) {
 
           {/* Banner completar datos G. Comercial */}
           {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
-            <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div key={gcVersion} style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
                 📋 Ventas pendientes de completar en G. Comercial
               </div>
