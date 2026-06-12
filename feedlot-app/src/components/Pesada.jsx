@@ -242,12 +242,7 @@ export default function Pesada({ usuario }) {
     const fechaTermC = new Date()
     fechaTermC.setDate(fechaTermC.getDate() + 20)
     const fechaTermCStr = fechaTermC.toISOString().split('T')[0]
-    const { data: cfgExistente } = await supabase.from('configuracion').select('clave').eq('clave', 'fecha_term_c').single().catch(() => ({ data: null }))
-    if (cfgExistente) {
-      await supabase.from('configuracion').update({ valor: fechaTermCStr }).eq('clave', 'fecha_term_c')
-    } else {
-      await supabase.from('configuracion').insert({ clave: 'fecha_term_c', valor: fechaTermCStr })
-    }
+    await supabase.from('configuracion').upsert({ clave: 'fecha_term_c', valor: fechaTermCStr }, { onConflict: 'clave' })
 
     setPesadaConfirmada({
       clasificables: clasificables.length,
