@@ -559,7 +559,43 @@ export default function Ventas({ usuario }) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={guardarGC} style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+          <button onClick={async () => {
+            const netoVal = parseFloat(formComercial.monto_facturado) || 0
+            const ivaVal = parseFloat(formComercial.iva_pct || 10.5)
+            const ivaMVal = netoVal ? Math.round(netoVal * ivaVal / 100) : 0
+            const descuentoVal = parseFloat(formComercial.descuento_monto) || 0
+            const netoFinalVal = netoVal + ivaMVal - descuentoVal
+            const paraleloVal = montoTotal > 0 ? Math.max(0, montoTotal - netoFinalVal) : 0
+            const retMontoVal = formComercial.tiene_retencion && netoVal ? Math.max(0, Math.round((netoVal - 224000) * 0.02)) : 0
+            const updateData = {
+              monto_facturado: netoVal || null, monto_negro: paraleloVal,
+              iva_pct: ivaVal, iva_monto: ivaMVal,
+              descuento_monto: descuentoVal || null,
+              descuento_descripcion: formComercial.descuento_descripcion || null,
+              estado_comercial: 'facturado',
+              tiene_retencion: formComercial.tiene_retencion || false,
+              retencion_monto: retMontoVal || null,
+              plazo_dias: formComercial.plazo_dias ? parseInt(formComercial.plazo_dias) : null,
+              fecha_vencimiento_cobro: formComercial.fecha_vencimiento || null,
+            }
+            if (isGroup) {
+              const totalKgNet = grupo.reduce((s, gv) => s + (gv.kg_neto || 0), 0)
+              for (const gv of grupo) {
+                const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / grupo.length
+                const netoV = netoVal ? Math.round(netoVal * prop) : null
+                const ivaMV = netoV ? Math.round(netoV * ivaVal / 100) : 0
+                const descV = descuentoVal ? Math.round(descuentoVal * prop) : 0
+                const paraleloV = montoTotal ? Math.max(0, Math.round(montoTotal * prop) - ((netoV || 0) + ivaMV - descV)) : 0
+                await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null }).eq('id', gv.id)
+              }
+            } else {
+              await _supabase.from('ventas').update(updateData).eq('id', gcKey)
+            }
+            setEditandoComercial(null)
+            setFormComercial({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
+            await _cargar()
+            setGcVersion(v => v + 1)
+          }} style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
           <button onClick={() => setEditandoComercial(null)} style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
         </div>
       </div>
