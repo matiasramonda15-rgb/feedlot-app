@@ -1857,6 +1857,12 @@ export default function Ventas({ usuario }) {
                         <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                           <input type="checkbox" checked={v.retencion_enviada || false} title="Retencion enviada" onChange={async e => { for (const vv of grupo) await supabase.from('ventas').update({ retencion_enviada: e.target.checked }).eq('id', vv.id); await cargar() }} />
                         </td>
+                        <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                          <button onClick={() => { const mt = v.monto_total_con_iva || v.total || 0; setEditandoComercial(rowKey); setFormComercial({ monto_facturado: v.monto_facturado ? String(v.monto_facturado) : String(mt), iva_pct: v.iva_pct || '10.5', descuento_monto: v.descuento_monto ? String(v.descuento_monto) : '', descuento_descripcion: v.descuento_descripcion || '', tiene_retencion: v.tiene_retencion || false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                            style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            ✏️ Editar
+                          </button>
+                        </td>
                         <td style={{ padding: '7px 10px', minWidth: 200 }}>
                           <div>
                             {pagosList.map(p => (
@@ -1986,6 +1992,14 @@ export default function Ventas({ usuario }) {
                           </div>
                         </td>
                       </tr>
+                      {editandoComercial === rowKey && (
+                        <tr style={{ background: S.accentLight }}>
+                          <td colSpan={20} style={{ padding: '1.25rem' }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — {corralesStr}</div>
+                            {renderFormGC(v, v.grupo_venta_id ? true : false, grupo, rowKey, v.monto_total_con_iva || v.total || 0, cargar, supabase)}
+                          </td>
+                        </tr>
+                      )}
                     )
                   })
                 })()}
