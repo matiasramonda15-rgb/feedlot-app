@@ -1756,10 +1756,6 @@ export default function Ventas({ usuario }) {
                       </div>
                       {!isEditGC && (
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 12 }}>
-                          <button onClick={() => setEditandoVenta({ id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: montoTotal ? String(montoTotal) : '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' })}
-                            style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                            Completar datos
-                          </button>
                           <button onClick={() => { setEditandoComercial(gcKey); setFormComercial({ monto_facturado: montoTotal ? String(montoTotal) : '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
                             style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
                             ✏️ G. Comercial
