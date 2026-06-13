@@ -1155,7 +1155,7 @@ export default function Ventas({ usuario }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: S.bg }}>
-                    {['Fecha', 'Corral', 'Anim.', 'Comprador', 'Kg brutos', 'Kg prom.', 'Desbaste', 'Kg netos', '$/kg', 'Total', ''].map(h => (
+                    {['Fecha', 'Corral', 'Anim.', 'Comprador', 'Kg brutos', 'Kg prom.', 'Desbaste', 'Kg netos', '$/kg real', 'Total', ''].map(h => (
                       <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -1209,7 +1209,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{(() => {
                               if (v.kg_neto && (v.monto_facturado || v.monto_negro)) {
-                                const precioReal = Math.round(((v.monto_facturado || 0) + (v.monto_negro || 0)) / v.kg_neto)
+                                const precioReal = Math.round(((v.monto_facturado || 0) + (v.monto_negro || 0) - (v.descuento_monto || 0)) / v.kg_neto)
                                 return `$${precioReal.toLocaleString('es-AR')}`
                               }
                               return v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>
@@ -1289,9 +1289,10 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{(() => {
                               const totalNetoFact = g.reduce((s, gv) => s + (gv.monto_facturado || 0), 0)
                               const totalNegro = g.reduce((s, gv) => s + (gv.monto_negro || 0), 0)
+                              const totalDescuento = g.reduce((s, gv) => s + (gv.descuento_monto || 0), 0)
                               const totalKgNetoG = g.reduce((s, gv) => s + (gv.kg_neto || 0), 0)
                               if (totalKgNetoG && (totalNetoFact || totalNegro)) {
-                                return `$${Math.round((totalNetoFact + totalNegro) / totalKgNetoG).toLocaleString('es-AR')}`
+                                return `$${Math.round((totalNetoFact + totalNegro - totalDescuento) / totalKgNetoG).toLocaleString('es-AR')}`
                               }
                               return v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11, fontWeight: 600 }}>Pendiente</span>
                             })()}</td>

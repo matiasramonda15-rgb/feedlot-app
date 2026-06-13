@@ -604,9 +604,15 @@ export default function Reportes({ usuario }) {
             const margenBruto = totalIngreso - totalCostoComp
             const margenPct = totalCostoComp > 0 ? (margenBruto / totalCostoComp * 100) : null
             const totalAnimVendidos = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
-            const precioPromVenta = ventas.filter(v => v.precio_kg).length > 0
-              ? ventas.filter(v => v.precio_kg).reduce((s, v) => s + v.precio_kg, 0) / ventas.filter(v => v.precio_kg).length
-              : null
+            const precioPromVenta = (() => {
+      const ventasConPrecioReal = ventas.filter(v => v.kg_neto && (v.monto_facturado || v.monto_negro))
+      if (ventasConPrecioReal.length === 0) return ventas.filter(v => v.precio_kg).length > 0
+        ? Math.round(ventas.filter(v => v.precio_kg).reduce((s, v) => s + v.precio_kg, 0) / ventas.filter(v => v.precio_kg).length)
+        : null
+      const totalNeto = ventasConPrecioReal.reduce((s, v) => s + ((v.monto_facturado||0) + (v.monto_negro||0) - (v.descuento_monto||0)), 0)
+      const totalKg = ventasConPrecioReal.reduce((s, v) => s + (v.kg_neto||0), 0)
+      return totalKg > 0 ? Math.round(totalNeto / totalKg) : null
+    })()
             const precioPromCompra = lotes.filter(l => l.precio_compra).length > 0
               ? lotes.filter(l => l.precio_compra).reduce((s, l) => s + l.precio_compra, 0) / lotes.filter(l => l.precio_compra).length
               : null
@@ -642,7 +648,12 @@ export default function Reportes({ usuario }) {
                       <td style={{ padding: '10px 12px' }}>C-{v.corrales?.numero || v.corral_id}</td>
                       <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
                       <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')} kg</td>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>}</td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{(() => {
+                        if (v.kg_neto && (v.monto_facturado || v.monto_negro)) {
+                          return `$${Math.round(((v.monto_facturado||0) + (v.monto_negro||0) - (v.descuento_monto||0)) / v.kg_neto).toLocaleString('es-AR')}`
+                        }
+                        return v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>
+                      })()}</td>
                       <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(2)}M` : '—'}</td>
                       <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: S.muted }}>{v.costoCompra ? `$${(v.costoCompra / 1000000).toFixed(2)}M` : '—'}</td>
                       <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.margen !== null ? (v.margen > 0 ? S.green : S.red) : S.hint }}>
