@@ -1824,7 +1824,8 @@ export default function Ventas({ usuario }) {
                     const ec = { pendiente: { bg: '#FDF0E0', color: '#7A4500' }, precio_cargado: { bg: '#E8EFF8', color: '#1A3D6B' }, facturado: { bg: '#F0EAFB', color: '#3D1A6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' } }[v.estado_comercial] || { bg: '#F7F5F0', color: '#6B6760' }
                     const venceProx = v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)
                     return (
-                      <tr key={rowKey} style={{ borderBottom: '1px solid #E2DDD6', background: esGrupo ? S.accentLight : venceProx ? '#FFF5F5' : 'transparent' }}>
+                      <React.Fragment key={rowKey}>
+                      <tr style={{ borderBottom: '1px solid #E2DDD6', background: esGrupo ? S.accentLight : venceProx ? '#FFF5F5' : 'transparent' }}>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                         <td style={{ padding: '7px 10px', fontWeight: 600 }}>
                           {corralesStr}
@@ -2000,6 +2001,7 @@ export default function Ventas({ usuario }) {
                           </td>
                         </tr>
                       )}
+                    </React.Fragment>
                     )
                   })
                 })()}
