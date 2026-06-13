@@ -1093,16 +1093,9 @@ export default function Ventas({ usuario }) {
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{l.precio_compra ? `$${l.precio_compra.toLocaleString('es-AR')}` : <span style={{ color: S.hint }}>—</span>}</td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{total > 0 ? `${total.toLocaleString('es-AR')}` : '—'}</td>
                         <td style={{ padding: '9px 12px' }}>
-                          <Badge type={l.corral_cuarentena_id ? 'warn' : 'ok'}>{l.corral_cuarentena_id ? 'Cuarentena' : 'Activo'}</Badge>                          </div>
+                          <Badge type={l.corral_cuarentena_id ? 'warn' : 'ok'}>{l.corral_cuarentena_id ? 'Cuarentena' : 'Activo'}</Badge>
                         </td>
                       </tr>
-                      {isReg && (
-                        <tr style={{ background: '#F7F5F0' }}>
-                          <td colSpan={20} style={{ padding: '12px 16px' }}>
-
-                          </td>
-                        </tr>
-                      )}
                     )
                   })}
                 </tbody>
@@ -1654,7 +1647,6 @@ export default function Ventas({ usuario }) {
                         <tr style={{ background: '#F7F5F0' }}>
                           <td colSpan={20} style={{ padding: '12px 16px', borderBottom: `1px solid ${S.border}` }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
                                   <div>
                                     <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Monto $</div>
                                     <input type="number" value={formPago.monto} onChange={e => setFormPago({...formPago, monto: e.target.value})}
@@ -1711,7 +1703,7 @@ export default function Ventas({ usuario }) {
                                       </div>
                                     </>
                                   )}
-                                </div>
+                            </div>
                                 <div style={{ display: 'flex', gap: 4 }}>
                                   <button onClick={async () => {
                                     if (!formPago.monto) return
