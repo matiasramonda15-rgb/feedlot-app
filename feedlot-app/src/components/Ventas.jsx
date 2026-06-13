@@ -1222,7 +1222,7 @@ export default function Ventas({ usuario }) {
                               return `$${neto.toLocaleString('es-AR')}`
                             })()}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
-                              <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: v.monto_total_con_iva ? String(v.monto_total_con_iva) : (v.total ? String(v.total) : ''), comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' })}
+                              <button onClick={() => { setEditandoComercial(null); setEditandoVenta({ id: v.id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: v.monto_total_con_iva ? String(v.monto_total_con_iva) : (v.total ? String(v.total) : ''), comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 ✏️ Editar
                               </button>
@@ -1247,7 +1247,7 @@ export default function Ventas({ usuario }) {
                               </td>
                             </tr>
                           )}
-                          {editandoComercial === v.id && (() => {
+                          {editandoComercial === v.id && !editandoVenta && (() => {
                             const gcId = v.id
                             const isGroup = false
                             const montoTotalGC = v.monto_total_con_iva || v.total || 0
@@ -1327,7 +1327,7 @@ export default function Ventas({ usuario }) {
                               </td>
                             </tr>
                           )}
-                          {editandoComercial === v0.grupo_venta_id && (() => {
+                          {editandoComercial === v0.grupo_venta_id && !editandoVenta && (() => {
                             const montoTotalGCM = v0.monto_total_grupo || g.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
                             return (
                             <tr style={{ background: S.accentLight }}>
@@ -2107,6 +2107,7 @@ export default function Ventas({ usuario }) {
                                 </div>
                               </div>
                             )}
+                          </div>
                         </td>
                       </tr>
                       {editandoComercial === rowKey && (
