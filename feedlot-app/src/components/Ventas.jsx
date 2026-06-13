@@ -544,7 +544,7 @@ export default function Ventas({ usuario }) {
               <input type="text" value={formComercial.descuento_descripcion || ''} onChange={e => setFormComercial({...formComercial, descuento_descripcion: e.target.value})} placeholder="ej. flete, merma, comisión, etc." style={inp} />
             </div>
           </div>
-          {descuento > 0 && <div style={{ fontSize: 12, color: S.red, marginTop: 6, fontFamily: 'monospace' }}>Total final: ${netoFinal.toLocaleString('es-AR')} (descuento: -${descuento.toLocaleString('es-AR')})</div>}
+          {descuento > 0 && <div style={{ fontSize: 12, color: S.red, marginTop: 6, fontFamily: 'monospace' }}>Neto final: ${(totalFact - descuento).toLocaleString('es-AR')} (descuento: -${descuento.toLocaleString('es-AR')})</div>}
         </div>
         <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
@@ -555,7 +555,7 @@ export default function Ventas({ usuario }) {
             <div style={{ marginTop: 8, background: S.redLight, border: '1px solid #F09595', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
               <div>Retención: <strong style={{ fontFamily: 'monospace', color: S.red }}>-${retMonto.toLocaleString('es-AR')}</strong></div>
               <div style={{ fontWeight: 700, color: S.red, fontSize: 14, marginTop: 4 }}>
-                Neto a cobrar: ${(netoFinal - retMonto).toLocaleString('es-AR')}
+                Neto a cobrar: ${(totalFact - descuento - retMonto).toLocaleString('es-AR')}
                 {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Paralelo: ${paralelo.toLocaleString('es-AR')}</span>}
               </div>
             </div>
@@ -567,7 +567,7 @@ export default function Ventas({ usuario }) {
             const ivaVal = parseFloat(formComercial.iva_pct || 10.5)
             const ivaMVal = netoVal ? Math.round(netoVal * ivaVal / 100) : 0
             const descuentoVal = parseFloat(formComercial.descuento_monto) || 0
-            const netoFinalVal = netoVal + ivaMVal - descuentoVal
+            const netoFinalVal = netoVal + ivaMVal
             const paraleloVal = montoTotal > 0 ? Math.max(0, montoTotal - netoFinalVal) : 0
             const retMontoVal = formComercial.tiene_retencion && netoVal ? Math.max(0, Math.round((netoVal - 224000) * 0.02)) : 0
             const updateData = {
