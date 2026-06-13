@@ -50,6 +50,9 @@ export default function Ventas({ usuario }) {
   const [editandoVenta, setEditandoVenta] = useState(null)
   const [pagosVenta, setPagosVenta] = useState({})
   const [registrandoPago, setRegistrandoPago] = useState(null)
+  const [pagosExpandidos, setPagosExpandidos] = useState({})
+  const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
+  const [filtroArchivadas, setFiltroArchivadas] = useState({ comprador: '', desde: '', hasta: '' })
   const [filtroCuentas, setFiltroCuentas] = useState('')
   const [showDetalleMeses, setShowDetalleMeses] = useState(false)
   const [showDetalleKg, setShowDetalleKg] = useState(false)
@@ -1898,16 +1901,44 @@ export default function Ventas({ usuario }) {
                         </td>
                         <td style={{ padding: '7px 10px', minWidth: 200 }}>
                           <div>
-                            {pagosList.map(p => (
-                              <div key={p.id} style={{ fontSize: 10, color: '#1E5C2E', marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                                <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
-                                <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }}
-                                  style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 10 }}>✕</button>
+                            {saldo <= 0 && pagosList.length > 0 ? (
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#1E5C2E', marginBottom: 3 }}>
+                                  ✓ Cobrado completo · ${totalPagado.toLocaleString('es-AR')}
+                                </div>
+                                {pagosExpandidos[rowKey] ? (
+                                  <div>
+                                    {pagosList.map(p => (
+                                      <div key={p.id} style={{ fontSize: 10, color: '#1E5C2E', marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                                        <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
+                                        <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }}
+                                          style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 10 }}>✕</button>
+                                      </div>
+                                    ))}
+                                    <button onClick={() => setPagosExpandidos(prev => ({...prev, [rowKey]: false}))}
+                                      style={{ fontSize: 9, color: '#6B6760', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▲ Ocultar</button>
+                                  </div>
+                                ) : (
+                                  <button onClick={() => setPagosExpandidos(prev => ({...prev, [rowKey]: true}))}
+                                    style={{ fontSize: 9, color: '#1A3D6B', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▼ Ver pagos</button>
+                                )}
                               </div>
-                            ))}
-                            {totalPagado > 0 && (
-                              <div style={{ fontSize: 10, fontWeight: 700, color: saldo <= 0 ? '#1E5C2E' : '#7A4500', marginBottom: 4 }}>
-                                {saldo <= 0 ? '✓ Cobrado completo' : 'Saldo: $' + saldo.toLocaleString('es-AR')}
+                            ) : (
+                              <div>
+                                {pagosList.map(p => (
+                                  <div key={p.id} style={{ fontSize: 10, color: '#1E5C2E', marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                                    <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
+                                    <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }}
+                                      style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 10 }}>✕</button>
+                                  </div>
+                                ))}
+                                {totalPagado > 0 && (
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#7A4500', marginBottom: 4 }}>
+                                    Saldo: ${saldo.toLocaleString('es-AR')}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                               </div>
                             )}
                             {!isReg ? (
@@ -2042,6 +2073,71 @@ export default function Ventas({ usuario }) {
           </div>
         </div>
       )}
+
+      {/* ARCHIVADAS */}
+      {tab === 'gestion' && (() => {
+        const hoy40 = new Date(Date.now() - 40 * 86400000)
+        const archivadas = ventas.filter(v => {
+          if (v.estado_comercial !== 'cobrado') return false
+          const fecha = new Date(v.creado_en)
+          return fecha < hoy40
+        }).filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i)
+        if (archivadas.length === 0) return null
+        const archFiltradas = archivadas.filter(v => {
+          if (filtroArchivadas.comprador && !((v.comprador || '').toLowerCase().includes(filtroArchivadas.comprador.toLowerCase()))) return false
+          if (filtroArchivadas.desde && v.creado_en < filtroArchivadas.desde) return false
+          if (filtroArchivadas.hasta && v.creado_en > filtroArchivadas.hasta + 'T23:59:59') return false
+          return true
+        })
+        return (
+          <div style={{ marginTop: '1.5rem' }}>
+            <button onClick={() => setMostrarArchivadas(m => !m)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, cursor: 'pointer', color: S.muted, width: '100%' }}>
+              <span>📁</span>
+              <span>Archivadas ({archivadas.length})</span>
+              <span style={{ marginLeft: 'auto' }}>{mostrarArchivadas ? '▲' : '▼'}</span>
+            </button>
+            {mostrarArchivadas && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                  <input type="text" placeholder="Filtrar por comprador..." value={filtroArchivadas.comprador}
+                    onChange={e => setFiltroArchivadas(f => ({...f, comprador: e.target.value}))}
+                    style={{ flex: 1, padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 12, background: S.surface }} />
+                  <input type="date" value={filtroArchivadas.desde} onChange={e => setFiltroArchivadas(f => ({...f, desde: e.target.value}))}
+                    style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 12, background: S.surface }} />
+                  <input type="date" value={filtroArchivadas.hasta} onChange={e => setFiltroArchivadas(f => ({...f, hasta: e.target.value}))}
+                    style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 12, background: S.surface }} />
+                  {(filtroArchivadas.comprador || filtroArchivadas.desde || filtroArchivadas.hasta) && (
+                    <button onClick={() => setFiltroArchivadas({ comprador: '', desde: '', hasta: '' })}
+                      style={{ padding: '7px 12px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>✕ Limpiar</button>
+                  )}
+                </div>
+                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  {archFiltradas.length === 0
+                    ? <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin resultados</div>
+                    : archFiltradas.map(v => {
+                      const grupo = v.grupo_venta_id ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
+                      const totalArch = v.grupo_venta_id ? (v.monto_total_grupo || grupo.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
+                      const corrStr = v.grupo_venta_id ? grupo.map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
+                      return (
+                        <div key={v.grupo_venta_id || v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{corrStr} · {v.comprador || '—'}</div>
+                            <div style={{ fontSize: 11, color: S.muted }}>{new Date((v.fecha||v.creado_en?.split('T')[0]||v.creado_en)+'T12:00:00').toLocaleDateString('es-AR')} · {grupo.reduce((s,gv)=>s+(gv.cantidad||0),0)} animales</div>
+                          </div>
+                          <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green, fontSize: 14 }}>
+                            {totalArch > 0 ? `$${totalArch.toLocaleString('es-AR')}` : '—'}
+                          </div>
+                        </div>
+                      )
+                    })
+                  }
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
 
     </div>
