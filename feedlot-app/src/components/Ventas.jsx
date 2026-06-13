@@ -1210,7 +1210,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{(() => {
                               if (v.kg_neto && (v.monto_facturado || v.monto_negro)) {
-                                const precioReal = Math.round(((v.monto_facturado || 0) + (v.monto_negro || 0) - (v.descuento_monto || 0)) / v.kg_neto)
+                                const precioReal = Math.round(((v.monto_facturado || 0) + (v.monto_negro || 0) - (v.descuento_monto || 0)) / parseFloat(v.kg_neto))
                                 return `$${precioReal.toLocaleString('es-AR')}`
                               }
                               return <span style={{ color: S.hint, fontSize: 11 }}>—</span>
@@ -1248,7 +1248,7 @@ export default function Ventas({ usuario }) {
                               </td>
                             </tr>
                           )}
-                          {editandoComercial === v.id && !editandoVenta && (() => {
+                          {editandoComercial === v.id && !editandoVenta?.id && (() => {
                             const gcId = v.id
                             const isGroup = false
                             const montoTotalGC = v.monto_total_con_iva || v.total || 0
@@ -1329,7 +1329,7 @@ export default function Ventas({ usuario }) {
                               </td>
                             </tr>
                           )}
-                          {editandoComercial === v0.grupo_venta_id && !editandoVenta && (() => {
+                          {editandoComercial === v0.grupo_venta_id && !editandoVenta?.id && (() => {
                             const montoTotalGCM = v0.monto_total_grupo || g.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
                             return (
                             <tr style={{ background: S.accentLight }}>
