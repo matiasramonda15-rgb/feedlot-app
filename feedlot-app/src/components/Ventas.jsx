@@ -365,6 +365,88 @@ export default function Ventas({ usuario }) {
     { key: 'nueva-venta', label: '+ Nueva venta' },
   ]
 
+  function renderFormVenta(v) {
+    const kgBruto = v.grupo_venta_id
+      ? [...ventasSinPrecio, ...ventas].filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+      : (v.kg_vivo_total || 0)
+    const desbPct = parseFloat(editandoVenta?.desbaste || 8) / 100
+    const kgNeto = kgBruto ? Math.round(kgBruto * (1 - desbPct)) : 0
+    const montoCalc = editandoVenta?.precio_kg && kgNeto ? Math.round(parseFloat(editandoVenta.precio_kg) * kgNeto) : null
+    const montoTotal = editandoVenta?.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoCalc
+    const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }
+    const Lbl = ({ children }) => <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>{children}</label>
+    return (
+      <div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div>
+            <Lbl>Kg Brutos</Lbl>
+            <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700, background: S.bg }}>{kgBruto > 0 ? `${kgBruto.toLocaleString('es-AR')} kg` : '—'}</div>
+          </div>
+          <div>
+            <Lbl>Desbaste %</Lbl>
+            <input type="number" placeholder="8" value={editandoVenta?.desbaste || ''} onChange={e => {
+              const desb = e.target.value
+              const kgN = Math.round(kgBruto * (1 - parseFloat(desb || 8) / 100))
+              const precio = parseFloat(editandoVenta?.precio_kg) || 0
+              const mt = precio && kgN ? String(Math.round(precio * kgN)) : editandoVenta?.monto_total_con_iva
+              setEditandoVenta({...editandoVenta, desbaste: desb, monto_total_con_iva: mt})
+            }} style={inp} />
+          </div>
+          <div>
+            <Lbl>Precio $/kg final</Lbl>
+            <input type="number" placeholder="ej. 3100" value={editandoVenta?.precio_kg || ''} onChange={e => {
+              const precio = e.target.value
+              const kgN = Math.round(kgBruto * (1 - parseFloat(editandoVenta?.desbaste || 8) / 100))
+              const mt = precio && kgN ? String(Math.round(parseFloat(precio) * kgN)) : ''
+              setEditandoVenta({...editandoVenta, precio_kg: precio, monto_total_con_iva: mt})
+            }} style={{ ...inp, border: `1px solid ${S.accent}`, fontWeight: 600 }} />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div>
+            <Lbl>Monto Total Operación $ (IVA incluido)</Lbl>
+            <input type="number" value={editandoVenta?.monto_total_con_iva || ''} onChange={e => setEditandoVenta({...editandoVenta, monto_total_con_iva: e.target.value})}
+              style={{ ...inp, border: `1px solid ${S.accent}`, fontWeight: 700 }} placeholder="Total que paga el frigorífico" />
+          </div>
+          <div>
+            <Lbl>Comprador</Lbl>
+            <select value={editandoVenta?.comprador || ''} onChange={e => setEditandoVenta({...editandoVenta, comprador: e.target.value, compradorNuevo: ''})}
+              style={{ ...inp, fontFamily: 'inherit' }}>
+              <option value="">— Sin comprador —</option>
+              {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="Otro">+ Nuevo...</option>
+            </select>
+            {editandoVenta?.comprador === 'Otro' && (
+              <input type="text" placeholder="Nombre del comprador" value={editandoVenta?.compradorNuevo || ''}
+                onChange={e => setEditandoVenta({...editandoVenta, compradorNuevo: e.target.value})}
+                style={{ ...inp, border: `1px solid ${S.accent}`, marginTop: 6, fontFamily: 'inherit' }} />
+            )}
+          </div>
+          <div>
+            <Lbl>Plazo (días)</Lbl>
+            <input type="number" placeholder="0 = contado" value={editandoVenta?.plazo_dias || ''} onChange={e => setEditandoVenta({...editandoVenta, plazo_dias: e.target.value})} style={inp} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <Lbl>Observación</Lbl>
+          <input type="text" placeholder="remito, condiciones, etc." value={editandoVenta?.observaciones || ''} onChange={e => setEditandoVenta({...editandoVenta, observaciones: e.target.value})}
+            style={{ ...inp, fontFamily: 'inherit' }} />
+        </div>
+        {montoTotal > 0 && (
+          <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 14px', fontSize: 13, color: S.green, display: 'flex', gap: 24, marginBottom: 10 }}>
+            <span>Kg brutos = <strong>{kgBruto.toLocaleString('es-AR')} kg</strong></span>
+            <span>Kg netos = <strong>{kgNeto.toLocaleString('es-AR')} kg</strong></span>
+            <span>Total = <strong>${montoTotal.toLocaleString('es-AR')}</strong></span>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => guardarDatosVenta(v)} style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+          <button onClick={() => setEditandoVenta(null)} style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+        </div>
+      </div>
+    )
+  }
+
   function renderFormGC(v, isGroup, grupo, gcKey, montoTotal, _cargar, _supabase) {
     const neto = parseFloat(formComercial.monto_facturado) || 0
     const iva = parseFloat(formComercial.iva_pct || 10.5)
@@ -1100,9 +1182,9 @@ export default function Ventas({ usuario }) {
                               return `$${neto.toLocaleString('es-AR')}`
                             })()}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
-                              <button onClick={() => { const mt = v.monto_total_con_iva || v.total || 0; setEditandoComercial(v.id); setFormComercial({ monto_facturado: v.monto_facturado ? String(v.monto_facturado) : String(mt), iva_pct: v.iva_pct || '10.5', descuento_monto: v.descuento_monto ? String(v.descuento_monto) : '', descuento_descripcion: v.descuento_descripcion || '', tiene_retencion: v.tiene_retencion || false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                              <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: v.monto_total_con_iva ? String(v.monto_total_con_iva) : (v.total ? String(v.total) : ''), comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-                                G. Comercial
+                                ✏️ Editar
                               </button>
                               <button onClick={async () => {
                                 if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
@@ -1117,6 +1199,14 @@ export default function Ventas({ usuario }) {
                               </button>
                             </td>
                           </tr>
+                          {editandoVenta?.id === v.id && (
+                            <tr style={{ background: S.accentLight }}>
+                              <td colSpan={11} style={{ padding: '1.25rem' }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>Editar venta — C-{v.corrales?.numero}</div>
+                                {renderFormVenta(v)}
+                              </td>
+                            </tr>
+                          )}
                           {editandoComercial === v.id && (() => {
                             const gcId = v.id
                             const isGroup = false
@@ -1168,9 +1258,9 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => { const mt = v0.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoComercial(v0.grupo_venta_id); setFormComercial({ monto_facturado: v0.monto_facturado ? String(v0.monto_facturado) : String(mt), iva_pct: v0.iva_pct || '10.5', descuento_monto: v0.descuento_monto ? String(v0.descuento_monto) : '', descuento_descripcion: v0.descuento_descripcion || '', tiene_retencion: v0.tiene_retencion || false, plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '', fecha_vencimiento: v0.fecha_vencimiento_cobro || '' }) }}
+                              <button onClick={() => { const mt = v0.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg ? String(v0.precio_kg) : '', monto_total_con_iva: String(mt), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-                                G. Comercial
+                                ✏️ Editar
                               </button>
                               <button onClick={async () => {
                                 if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${g.length} corrales.`)) return
@@ -1188,6 +1278,14 @@ export default function Ventas({ usuario }) {
                               </div>
                             </td>
                           </tr>
+                          {editandoVenta?.grupo_venta_id === v0.grupo_venta_id && (
+                            <tr style={{ background: S.accentLight }}>
+                              <td colSpan={11} style={{ padding: '1.25rem' }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>Editar venta — Multi-corral · {corralesNums}</div>
+                                {renderFormVenta(v0)}
+                              </td>
+                            </tr>
+                          )}
                           {editandoComercial === v0.grupo_venta_id && (() => {
                             const montoTotalGCM = v0.monto_total_grupo || g.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
                             return (
