@@ -506,4 +506,4 @@ export default function Comercial({ usuario }) {
 
     </div>
   )
-}
+} 
