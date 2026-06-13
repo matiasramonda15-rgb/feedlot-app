@@ -1727,7 +1727,6 @@ export default function Ventas({ usuario }) {
                                     ✕
                                   </button>
                                 </div>
-                            </div>
                           </td>
                         </tr>
                       )}
