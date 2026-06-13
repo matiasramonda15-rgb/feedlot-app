@@ -465,7 +465,7 @@ export default function Ventas({ usuario }) {
         iva_pct: iva, iva_monto: ivaMonto,
         descuento_monto: descuento || null,
         descuento_descripcion: formComercial.descuento_descripcion || null,
-        estado_comercial: neto ? 'facturado' : 'precio_cargado',
+        estado_comercial: 'facturado',
         tiene_retencion: formComercial.tiene_retencion || false,
         retencion_monto: retMonto || null,
         plazo_dias: formComercial.plazo_dias ? parseInt(formComercial.plazo_dias) : null,
@@ -1731,12 +1731,12 @@ export default function Ventas({ usuario }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Seguimiento de cobros, facturas, retenciones y cheques</div>
 
           {/* Banner completar datos G. Comercial */}
-          {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
+          {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
             <div key={gcVersion} style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
                 📋 Ventas pendientes de completar en G. Comercial
               </div>
-              {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).map(v => {
+              {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).map(v => {
                 const isGroup = !!v.grupo_venta_id
                 const grupo = isGroup ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                 const totalAnimales = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
