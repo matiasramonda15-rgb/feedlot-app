@@ -30,6 +30,83 @@ const TIPO_LABEL = { comprador_hacienda: 'Comprador hacienda', vendedor_hacienda
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const ESTADOS_CHEQUE = { en_cartera: { bg: '#FDF0E0', color: '#7A4500' }, depositado: { bg: '#E8EFF8', color: '#1A3D6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' }, rechazado: { bg: '#FDF0F0', color: '#7A1A1A' }, anulado: { bg: '#F7F5F0', color: '#6B6760' } }
 
+function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque, eliminar }) {
+    return (
+      <div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['todos', 'recibidos', 'emitidos'].map(f => (
+              <button key={f} onClick={() => setFiltro(f)}
+                style={{ padding: '6px 14px', fontSize: 12, fontWeight: filtro === f ? 600 : 400, background: filtro === f ? S.accent : 'transparent', border: `1px solid ${filtro === f ? S.accent : S.border}`, color: filtro === f ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: S.muted }}>{items.length} cheques</div>
+        </div>
+
+        {chVence7.length > 0 && (
+          <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ {chVence7.length} cheque{chVence7.length !== 1 ? 's' : ''} vence{chVence7.length === 1 ? '' : 'n'} en los próximos 7 días</div>
+            {chVence7.map(c => (
+              <div key={c.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
+                {c.tipo === 'recibido' ? '📥' : '📤'} {c.tipo} #{c.numero || 'sin número'} · ${c.monto?.toLocaleString('es-AR')} · vence {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')} {c.banco ? `· ${c.banco}` : ''}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Card>
+          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr style={{ background: S.bg }}>
+                {['Tipo', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Vencimiento', 'Librador/Beneficiario', 'Estado', ''].map(h => (
+                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {items.length === 0 && <tr><td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cheques.</td></tr>}
+                {items.map(c => {
+                  const ec = ESTADOS_CHEQUE[c.estado] || ESTADOS_CHEQUE.en_cartera
+                  const diasVence = Math.ceil((new Date(c.fecha_vencimiento + 'T12:00:00') - new Date()) / (1000 * 60 * 60 * 24))
+                  const urgente = diasVence <= 7 && c.estado === 'en_cartera'
+                  return (
+                    <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, background: urgente ? '#FFF5F5' : 'transparent' }}>
+                      <td style={{ padding: '9px 12px' }}>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.tipo === 'recibido' ? S.greenLight : S.amberLight, color: c.tipo === 'recibido' ? S.green : S.amber }}>
+                          {c.tipo === 'recibido' ? '📥 Recibido' : '📤 Emitido'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{c.numero || '—'}</td>
+                      <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{c.banco || '—'}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>${c.monto?.toLocaleString('es-AR')}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{c.fecha_emision ? new Date(c.fecha_emision + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>
+                        {c.fecha_cobro ? new Date(c.fecha_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                      </td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, fontWeight: urgente ? 700 : 400, color: urgente ? S.red : S.text }}>
+                        {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                        {urgente && <span style={{ fontSize: 10, marginLeft: 4, color: S.red }}>({diasVence}d) ⚠</span>}
+                      </td>
+                      <td style={{ padding: '9px 12px', fontSize: 12 }}>{c.librador || c.beneficiario || '—'}</td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <select value={c.estado} onChange={e => cambiarEstadoCheque(c.id, e.target.value)}
+                          style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, border: `1px solid ${ec.color}`, borderRadius: 5, background: ec.bg, color: ec.color, cursor: 'pointer' }}>
+                          {Object.keys(ESTADOS_CHEQUE).map(e => <option key={e} value={e}>{e.replace('_', ' ')}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ padding: '9px 12px' }}><button onClick={() => eliminar('cheques', c.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
 export default function Comercial({ usuario }) {
   const [tab, setTab] = useState('caja_oficial')
   const [loading, setLoading] = useState(true)
@@ -44,6 +121,7 @@ export default function Comercial({ usuario }) {
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
   const [filtroMes, setFiltroMes] = useState('')
   const [filtroCheque, setFiltroCheque] = useState('todos')
+  const [filtroChequePar, setFiltroChequePar] = useState('todos')
   const [showFormOf, setShowFormOf] = useState(false)
   const [showFormPar, setShowFormPar] = useState(false)
   const [showFormContacto, setShowFormContacto] = useState(false)
@@ -160,17 +238,24 @@ export default function Comercial({ usuario }) {
   const anios = [...new Set([...cajaOficial, ...cajaParalela].map(x => new Date(x.fecha + 'T12:00:00').getFullYear()))].sort((a, b) => b - a)
   if (!anios.includes(new Date().getFullYear())) anios.unshift(new Date().getFullYear())
 
-  const chRec = cheques.filter(c => c.tipo === 'recibido')
-  const chEm = cheques.filter(c => c.tipo === 'emitido')
-  const chVence7 = cheques.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
-  const chFiltrados = filtroCheque === 'todos' ? cheques : filtroCheque === 'recibidos' ? chRec : chEm
+  const chOficial = cheques.filter(c => !c.es_paralelo)
+  const chParalelo = cheques.filter(c => c.es_paralelo)
+  const chOficialRec = chOficial.filter(c => c.tipo === 'recibido')
+  const chOficialEm = chOficial.filter(c => c.tipo === 'emitido')
+  const chParaleloRec = chParalelo.filter(c => c.tipo === 'recibido')
+  const chParaleloEm = chParalelo.filter(c => c.tipo === 'emitido')
+  const chVence7Of = chOficial.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
+  const chVence7Par = chParalelo.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
+  const chFiltradosOf = filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm
+  const chFiltradosPar = filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm
 
   const isChecque = ['cheque', 'e-cheq'].includes(formOf.forma_pago)
 
   const TABS = [
     { key: 'caja_oficial', label: 'Caja oficial' },
     { key: 'caja_paralela', label: 'Caja paralela' },
-    { key: 'cheques', label: `Cheques${chVence7.length > 0 ? ` ⚠${chVence7.length}` : ''}` },
+    { key: 'cheques_oficial', label: `Cheques oficial${chVence7Of.length > 0 ? ` ⚠${chVence7Of.length}` : ''}` },
+    { key: 'cheques_paralelo', label: `Cheques paralelo${chVence7Par.length > 0 ? ` ⚠${chVence7Par.length}` : ''}` },
   ]
 
   const FiltrosPeriodo = () => (
@@ -194,8 +279,8 @@ export default function Comercial({ usuario }) {
         {[
           { label: 'Saldo caja oficial', val: `$${((coIng - coEg) / 1000000).toFixed(1)}M`, sub: `+${(coIng/1000000).toFixed(1)}M / -${(coEg/1000000).toFixed(1)}M`, color: coIng - coEg >= 0 ? S.green : S.red },
           { label: 'Saldo caja paralela', val: `$${((cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `+${(cpIng/1000000).toFixed(1)}M / -${(cpEg/1000000).toFixed(1)}M`, color: cpIng - cpEg >= 0 ? S.green : S.red, purple: true },
-          { label: 'Cheques en cartera', val: chRec.filter(c => c.estado === 'en_cartera').length, sub: `$${chRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0).toLocaleString('es-AR')}`, color: S.amber },
-          { label: 'Vencen en 7 días', val: chVence7.length, sub: chVence7.length > 0 ? '⚠ Revisar urgente' : '✓ Sin vencimientos', color: chVence7.length > 0 ? S.red : S.green },
+          { label: 'Cheques en cartera', val: (chOficialRec.filter(c => c.estado === 'en_cartera').length + chParaleloRec.filter(c => c.estado === 'en_cartera').length), sub: `$${(chOficialRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0) + chParaleloRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0)).toLocaleString('es-AR')}`, color: S.amber },
+          { label: 'Vencen en 7 días', val: (chVence7Of.length + chVence7Par.length), sub: (chVence7Of.length + chVence7Par.length) > 0 ? '⚠ Revisar urgente' : '✓ Sin vencimientos', color: (chVence7Of.length + chVence7Par.length) > 0 ? S.red : S.green },
         ].map((m, i) => (
           <div key={i} style={{ background: m.purple ? S.purpleLight : S.surface, border: `1px solid ${m.purple ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: m.purple ? S.purple : S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
@@ -408,86 +493,13 @@ export default function Comercial({ usuario }) {
         </div>
       )}
 
-      {tab === 'cheques' && (
-        <div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {['todos', 'recibidos', 'emitidos'].map(f => (
-                <button key={f} onClick={() => setFiltroCheque(f)}
-                  style={{ padding: '6px 14px', fontSize: 12, fontWeight: filtroCheque === f ? 600 : 400, background: filtroCheque === f ? S.accent : 'transparent', border: `1px solid ${filtroCheque === f ? S.accent : S.border}`, color: filtroCheque === f ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div style={{ fontSize: 12, color: S.muted }}>{chFiltrados.length} cheques</div>
-          </div>
+      {tab === 'cheques_oficial' && (
+        <TablaCheques items={chFiltradosOf} chVence7={chVence7Of} filtro={filtroCheque} setFiltro={setFiltroCheque} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+      )}
 
-          {chVence7.length > 0 && (
-            <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ {chVence7.length} cheque{chVence7.length !== 1 ? 's' : ''} vence{chVence7.length === 1 ? '' : 'n'} en los próximos 7 días</div>
-              {chVence7.map(c => (
-                <div key={c.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
-                  {c.tipo === 'recibido' ? '📥' : '📤'} {c.tipo} #{c.numero || 'sin número'} · ${c.monto?.toLocaleString('es-AR')} · vence {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')} {c.banco ? `· ${c.banco}` : ''}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <Card>
-            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead><tr style={{ background: S.bg }}>
-                  {['Tipo', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Vencimiento', 'Librador/Beneficiario', 'Estado', ''].map(h => (
-                    <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {chFiltrados.length === 0 && <tr><td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cheques.</td></tr>}
-                  {chFiltrados.map(c => {
-                    const ec = ESTADOS_CHEQUE[c.estado] || ESTADOS_CHEQUE.en_cartera
-                    const diasVence = Math.ceil((new Date(c.fecha_vencimiento + 'T12:00:00') - new Date()) / (1000 * 60 * 60 * 24))
-                    const urgente = diasVence <= 7 && c.estado === 'en_cartera'
-                    return (
-                      <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, background: urgente ? '#FFF5F5' : c.es_paralelo ? '#F8F4FF' : 'transparent' }}>
-                        <td style={{ padding: '9px 12px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.tipo === 'recibido' ? S.greenLight : S.amberLight, color: c.tipo === 'recibido' ? S.green : S.amber }}>
-                              {c.tipo === 'recibido' ? '📥 Recibido' : '📤 Emitido'}
-                            </span>
-                            {c.es_paralelo && (
-                              <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600, background: '#F0EAFB', color: '#3D1A6B', border: '1px solid #9F8ED4' }}>
-                                PARALELO
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{c.numero || '—'}</td>
-                        <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{c.banco || '—'}</td>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>${c.monto?.toLocaleString('es-AR')}</td>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{c.fecha_emision ? new Date(c.fecha_emision + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>
-                          {c.fecha_cobro ? new Date(c.fecha_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
-                        </td>
-                        <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, fontWeight: urgente ? 700 : 400, color: urgente ? S.red : S.text }}>
-                          {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                          {urgente && <span style={{ fontSize: 10, marginLeft: 4, color: S.red }}>({diasVence}d) ⚠</span>}
-                        </td>
-                        <td style={{ padding: '9px 12px', fontSize: 12 }}>{c.librador || c.beneficiario || '—'}</td>
-                        <td style={{ padding: '9px 12px' }}>
-                          <select value={c.estado} onChange={e => cambiarEstadoCheque(c.id, e.target.value)}
-                            style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, border: `1px solid ${ec.color}`, borderRadius: 5, background: ec.bg, color: ec.color, cursor: 'pointer' }}>
-                            {Object.keys(ESTADOS_CHEQUE).map(e => <option key={e} value={e}>{e.replace('_', ' ')}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ padding: '9px 12px' }}><button onClick={() => eliminar('cheques', c.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
+      {tab === 'cheques_paralelo' && (
+        <TablaCheques items={chFiltradosPar} chVence7={chVence7Par} filtro={filtroChequePar} setFiltro={setFiltroChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+      )}
       )}
 
       
