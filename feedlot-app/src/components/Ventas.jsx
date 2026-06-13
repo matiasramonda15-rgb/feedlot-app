@@ -1165,10 +1165,11 @@ export default function Ventas({ usuario }) {
                     <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ventas registradas.</td></tr>
                   )}
                   {(() => {
-                    // Agrupar por grupo_venta_id
+                    const hoy40v = new Date(Date.now() - 40 * 86400000)
+                    // Agrupar por grupo_venta_id — solo ventas recientes
                     const grupos = {}
                     const ventasOrden = []
-                    ventas.forEach(v => {
+                    ventas.filter(v => new Date(v.creado_en) >= hoy40v).forEach(v => {
                       if (v.grupo_venta_id) {
                         if (!grupos[v.grupo_venta_id]) {
                           grupos[v.grupo_venta_id] = []
@@ -1344,6 +1345,60 @@ export default function Ventas({ usuario }) {
                 </tbody>
               </table>
             </div>
+            {/* Archivadas ventas */}
+            {(() => {
+              const hoy40v = new Date(Date.now() - 40 * 86400000)
+              const archivadasV = ventas.filter(v => new Date(v.creado_en) < hoy40v)
+                .filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i)
+              if (archivadasV.length === 0) return null
+              return (
+                <div style={{ marginTop: '1rem' }}>
+                  <button onClick={() => setMostrarArchivadas(m => !m)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, cursor: 'pointer', color: S.muted, width: '100%' }}>
+                    <span>📁</span>
+                    <span>Archivadas ({archivadasV.length})</span>
+                    <span style={{ marginLeft: 'auto' }}>{mostrarArchivadas ? '▲' : '▼'}</span>
+                  </button>
+                  {mostrarArchivadas && (
+                    <div style={{ marginTop: 10, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: S.bg }}>
+                            {['Fecha', 'Corral', 'Anim.', 'Comprador', 'Kg netos', '$/kg', 'Total', ''].map(h => (
+                              <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {archivadasV.map(v => {
+                            const g = v.grupo_venta_id ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
+                            const totalA = v.grupo_venta_id ? (v.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
+                            const corrStr = v.grupo_venta_id ? g.map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
+                            const kgNeto = g.reduce((s,gv)=>s+(gv.kg_neto||0),0)
+                            const precioReal = kgNeto && (v.monto_facturado||v.monto_negro) ? Math.round(((v.monto_facturado||0)+(v.monto_negro||0))/kgNeto) : v.precio_kg
+                            return (
+                              <tr key={v.grupo_venta_id||v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date((v.fecha||v.creado_en?.split('T')[0]||v.creado_en)+'T12:00:00').toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit' })}</td>
+                                <td style={{ padding: '7px 10px', fontWeight: 600 }}>{corrStr}{v.grupo_venta_id && <div style={{ fontSize: 10, color: S.muted }}>Multi-corral</div>}</td>
+                                <td style={{ padding: '7px 10px' }}>{g.reduce((s,gv)=>s+(gv.cantidad||0),0)}</td>
+                                <td style={{ padding: '7px 10px' }}>{v.comprador||'—'}</td>
+                                <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{kgNeto > 0 ? kgNeto.toLocaleString('es-AR') : '—'}</td>
+                                <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{precioReal ? `$${precioReal.toLocaleString('es-AR')}` : '—'}</td>
+                                <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: totalA > 0 ? S.green : S.hint }}>{totalA > 0 ? `$${totalA.toLocaleString('es-AR')}` : '—'}</td>
+                                <td style={{ padding: '7px 10px' }}>
+                                  <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: totalA ? String(totalA) : '', comprador: v.comprador||'', compradorNuevo: '', observaciones: v.observaciones||'', desbaste: String(v.desbaste_pct||8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' })}
+                                    style={{ padding: '3px 8px', fontSize: 10, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer' }}>✏️ Editar</button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
