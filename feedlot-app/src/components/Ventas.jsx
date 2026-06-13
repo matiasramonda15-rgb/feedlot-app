@@ -1093,9 +1093,16 @@ export default function Ventas({ usuario }) {
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{l.precio_compra ? `$${l.precio_compra.toLocaleString('es-AR')}` : <span style={{ color: S.hint }}>—</span>}</td>
                         <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{total > 0 ? `${total.toLocaleString('es-AR')}` : '—'}</td>
                         <td style={{ padding: '9px 12px' }}>
-                          <Badge type={l.corral_cuarentena_id ? 'warn' : 'ok'}>{l.corral_cuarentena_id ? 'Cuarentena' : 'Activo'}</Badge>
+                          <Badge type={l.corral_cuarentena_id ? 'warn' : 'ok'}>{l.corral_cuarentena_id ? 'Cuarentena' : 'Activo'}</Badge>                          </div>
                         </td>
                       </tr>
+                      {isReg && (
+                        <tr style={{ background: '#F7F5F0' }}>
+                          <td colSpan={20} style={{ padding: '12px 16px' }}>
+
+                          </td>
+                        </tr>
+                      )}
                     )
                   })}
                 </tbody>
@@ -1639,8 +1646,14 @@ export default function Ventas({ usuario }) {
                                 style={{ fontSize: 10, padding: '3px 8px', background: '#E8EFF8', border: '1px solid #1A3D6B', color: '#1A3D6B', borderRadius: 4, cursor: 'pointer', width: '100%' }}>
                                 + Registrar pago
                               </button>
-                            ) : (
-                              <div style={{ background: '#F7F5F0', border: '1px solid #E2DDD6', borderRadius: 6, padding: '8px', marginTop: 4 }}>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                      {isReg && (
+                        <tr style={{ background: '#F7F5F0' }}>
+                          <td colSpan={20} style={{ padding: '12px 16px', borderBottom: `1px solid ${S.border}` }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
                                   <div>
                                     <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Monto $</div>
@@ -1669,29 +1682,7 @@ export default function Ventas({ usuario }) {
                                       Cobro en cuenta paralela
                                     </label>
                                   </div>
-                                  {/* Selector cheque en cartera */}
-                                  {['cheque','e-cheq'].includes(formPago.forma_pago) && (() => {
-                                    const chFiltrados = formPago.es_paralela
-                                      ? chequesParalelos.filter(c => c.es_paralelo)
-                                      : chequesParalelos.filter(c => !c.es_paralelo)
-                                    if (chFiltrados.length === 0) return null
-                                    return (
-                                      <div style={{ gridColumn: '1/-1' }}>
-                                        <div style={{ fontSize: 9, color: formPago.es_paralela ? '#3D1A6B' : '#1A3D6B', textTransform: 'uppercase', marginBottom: 2 }}>
-                                          {formPago.es_paralela ? 'Cheque en cartera paralela' : 'Cheque en cartera oficial'}
-                                        </div>
-                                        <select onChange={e => {
-                                          const ch = chequesParalelos.find(c => String(c.id) === e.target.value)
-                                          if (ch) setFormPago({...formPago, numero_cheque: ch.numero || '', banco: ch.banco || '', monto: String(ch.monto || ''), fecha_cobro_cheque: ch.fecha_cobro || '', fecha_vencimiento_cheque: ch.fecha_vencimiento || ''})
-                                        }} style={{ width: '100%', border: `1px solid ${formPago.es_paralela ? '#9F8ED4' : '#1A3D6B'}`, borderRadius: 4, padding: '4px 6px', fontSize: 11, background: formPago.es_paralela ? '#F0EAFB' : '#E8EFF8' }}>
-                                          <option value="">— Seleccioná un cheque en cartera —</option>
-                                          {chFiltrados.map(ch => (
-                                            <option key={ch.id} value={ch.id}>#{ch.numero} · {ch.banco} · ${(ch.monto || 0).toLocaleString('es-AR')} · vto {ch.fecha_vencimiento}</option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    )
-                                  })()}
+                                  {/* Cheque recibido - datos del cheque que nos entregan */}
                                   {['cheque','e-cheq'].includes(formPago.forma_pago) && (
                                     <>
                                       <div>
@@ -1744,11 +1735,10 @@ export default function Ventas({ usuario }) {
                                     ✕
                                   </button>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       {editandoComercial === rowKey && (
                         <tr style={{ background: S.accentLight }}>
                           <td colSpan={20} style={{ padding: '1.25rem' }}>
