@@ -2053,7 +2053,6 @@ export default function Ventas({ usuario }) {
                                 </div>
                               </div>
                             )}
-                          </div>
                         </td>
                       </tr>
                       {editandoComercial === rowKey && (
