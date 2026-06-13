@@ -1182,9 +1182,9 @@ export default function Ventas({ usuario }) {
                               return `$${neto.toLocaleString('es-AR')}`
                             })()}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
-                              <button onClick={() => { const mt = v.monto_total_con_iva || v.total || 0; setEditandoComercial(v.id); setFormComercial({ monto_facturado: v.monto_facturado ? String(v.monto_facturado) : String(mt), iva_pct: v.iva_pct || '10.5', descuento_monto: v.descuento_monto ? String(v.descuento_monto) : '', descuento_descripcion: v.descuento_descripcion || '', tiene_retencion: v.tiene_retencion || false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                              <button onClick={() => setEditandoVenta({ id: v.id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: v.monto_total_con_iva ? String(v.monto_total_con_iva) : (v.total ? String(v.total) : ''), comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' })}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-                                ✏️ G. Comercial
+                                ✏️ Editar
                               </button>
                               <button onClick={async () => {
                                 if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
@@ -1258,9 +1258,9 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => { const mt = v0.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoComercial(v0.grupo_venta_id); setFormComercial({ monto_facturado: v0.monto_facturado ? String(v0.monto_facturado) : String(mt), iva_pct: v0.iva_pct || '10.5', descuento_monto: v0.descuento_monto ? String(v0.descuento_monto) : '', descuento_descripcion: v0.descuento_descripcion || '', tiene_retencion: v0.tiene_retencion || false, plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '', fecha_vencimiento: v0.fecha_vencimiento_cobro || '' }) }}
+                              <button onClick={() => { const mt = v0.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg ? String(v0.precio_kg) : '', monto_total_con_iva: String(mt), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-                                ✏️ G. Comercial
+                                ✏️ Editar
                               </button>
                               <button onClick={async () => {
                                 if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${g.length} corrales.`)) return
@@ -1757,12 +1757,12 @@ export default function Ventas({ usuario }) {
                       {!isEditGC && (
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 12 }}>
                           <button onClick={() => setEditandoVenta({ id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: montoTotal ? String(montoTotal) : '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' })}
-                            style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.amberLight, border: `1px solid #EF9F27`, color: S.amber, borderRadius: 6, cursor: 'pointer' }}>
-                            ✏️ Editar venta
-                          </button>
-                          <button onClick={() => { setEditandoComercial(gcKey); setFormComercial({ monto_facturado: montoTotal ? String(montoTotal) : '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
                             style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                             Completar datos
+                          </button>
+                          <button onClick={() => { setEditandoComercial(gcKey); setFormComercial({ monto_facturado: montoTotal ? String(montoTotal) : '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                            style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                            ✏️ G. Comercial
                           </button>
                         </div>
                       )}
