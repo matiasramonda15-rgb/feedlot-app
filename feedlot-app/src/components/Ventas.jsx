@@ -778,7 +778,40 @@ export default function Ventas({ usuario }) {
 
 
 
-          {/* Historial */}}
+          {/* Ventas sin precio cargado - Jesús cargó pero falta completar */}
+          {ventasSinPrecio.length > 0 && (
+            <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
+                ⚠ {ventasSinPrecio.length} venta{ventasSinPrecio.length !== 1 ? 's' : ''} sin precio cargado
+              </div>
+              {ventasSinPrecio.map(v => {
+                const grupo = v.grupo_venta_id ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
+                const kgBrutoTotal = grupo.reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
+                const animTotal = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
+                const corralesNumsP = grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
+                const isEditing = editandoVenta?.id === v.id || editandoVenta?.grupo_venta_id === v.grupo_venta_id
+                return (
+                  <div key={v.grupo_venta_id || v.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isEditing ? 12 : 0 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{corralesNumsP}{v.grupo_venta_id ? ` · Multi-corral` : ''} · {animTotal} animales</div>
+                        <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{kgBrutoTotal.toLocaleString('es-AR')} kg brutos · {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en)+'T12:00:00').toLocaleDateString('es-AR')}</div>
+                      </div>
+                      {!isEditing && (
+                        <button onClick={() => setEditandoVenta({ id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: '', monto_total_con_iva: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: '8', plazo_dias: '' })}
+                          style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                          Completar datos
+                        </button>
+                      )}
+                    </div>
+                    {isEditing && renderFormVenta(v)}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Historial de ventas</div>
