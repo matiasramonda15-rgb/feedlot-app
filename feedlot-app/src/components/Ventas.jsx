@@ -370,7 +370,7 @@ export default function Ventas({ usuario }) {
 
   function renderFormVenta(v) {
     const kgBruto = v.grupo_venta_id
-      ? [...ventasSinPrecio, ...ventas].filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+      ? [...new Map([...ventasSinPrecio, ...ventas].map(vv => [vv.id, vv])).values()].filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
       : (v.kg_vivo_total || 0)
     const desbPct = parseFloat(editandoVenta?.desbaste || 8) / 100
     const kgNeto = kgBruto ? Math.round(kgBruto * (1 - desbPct)) : 0
@@ -868,7 +868,7 @@ export default function Ventas({ usuario }) {
                         return (
                           <React.Fragment key={v.id}>
                           <tr style={{ borderBottom: `1px solid ${S.border}` }}>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                             <td style={{ padding: '9px 12px' }}>C-{v.corrales?.numero || v.corral_id}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>{v.comprador || '—'}</td>
@@ -1589,7 +1589,7 @@ export default function Ventas({ usuario }) {
                     return (
                       <React.Fragment key={rowKey}>
                       <tr style={{ borderBottom: '1px solid #E2DDD6', background: esGrupo ? S.accentLight : venceProx ? '#FFF5F5' : 'transparent' }}>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + (v.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                         <td style={{ padding: '7px 10px', fontWeight: 600 }}>
                           {corralesStr}
                           {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
