@@ -1122,6 +1122,26 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => generarOrdenTrabajo(o, campoO, loteO, stockAgro)}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>📋 Orden</button>
+                          <button onClick={() => {
+                            const superficie = o.superficie_ha_real || loteO?.superficie_ha || campoO?.superficie_ha || '—'
+                            const fecha = o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+                            const productos = (o.productos || []).map(p => {
+                              const item = stockAgro.find(s => String(s.id) === String(p.id))
+                              const total = p.total || (p.dosis && superficie !== '—' ? (parseFloat(p.dosis) * parseFloat(superficie)).toFixed(1) : '—')
+                              return `  • ${item?.insumo || p.nombre || '—'}: ${p.dosis || '—'} ${p.unidad || ''}/ha = ${total} ${p.unidad || ''} total`
+                            }).join('\n')
+                            const texto = [
+                              `ORDEN DE TRABAJO — ${o.tipo?.toUpperCase() || ''}`,
+                              `Campo: ${campoO?.nombre || '—'}${loteO ? ` · Lote ${loteO.numero}` : ''}`,
+                              `Superficie: ${superficie} ha`,
+                              `Fecha: ${fecha}`,
+                              o.proveedor ? `Operario: ${o.proveedor}` : '',
+                              o.descripcion ? `Descripción: ${o.descripcion}` : '',
+                              productos ? `\nProductos:\n${productos}` : '',
+                              o.observaciones ? `\nObservaciones: ${o.observaciones}` : '',
+                            ].filter(Boolean).join('\n')
+                            navigator.clipboard.writeText(texto).then(() => alert('✓ Texto copiado — podés pegarlo en Paint con Ctrl+V'))
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>📎 Copiar</button>
                           {o.estado_pago === 'pagado' && o.costo_total && <button onClick={() => {
                             const campanaO = campanas.find(c => c.id === o.campana_id)
                             generarReciboOrden(o, campoO, loteO, campanaO, stockAgro)
