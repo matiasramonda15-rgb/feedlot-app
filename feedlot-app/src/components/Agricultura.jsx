@@ -832,7 +832,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const superficie = parseFloat(form.superficie_ha) || superficieBase || 0
 
   function addProducto() { setForm({...form, productos: [...form.productos, { id: '', dosis: '', unidad: '' }]}) }
-  function updProducto(idx, key, val) { setForm({...form, productos: form.productos.map((p, i) => i === idx ? {...p, [key]: val} : p)}) }
+  function updProducto(idx, updates) { setForm(prev => ({...prev, productos: prev.productos.map((p, i) => i === idx ? {...p, ...updates} : p)})) }
   function removeProducto(idx) { setForm({...form, productos: form.productos.filter((_, i) => i !== idx)}) }
   function addGasto() { setForm({...form, gastos_propios: [...form.gastos_propios, { descripcion: '', monto: '' }]}) }
   function updGasto(idx, key, val) { setForm({...form, gastos_propios: form.gastos_propios.map((g, i) => i === idx ? {...g, [key]: val} : g)}) }
@@ -1021,13 +1021,13 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   return (
                     <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
                       <div><Label>Producto</Label>
-                        <select value={p.id} onChange={e => { const s = stockAgro.find(x => x.id === parseInt(e.target.value)); updProducto(idx, 'id', e.target.value); updProducto(idx, 'unidad', s?.unidad || '') }} style={inputStyle}>
+                        <select value={p.id} onChange={e => { const s = stockAgro.find(x => x.id === parseInt(e.target.value)); updProducto(idx, { id: e.target.value, unidad: s?.unidad || '' }) }} style={inputStyle}>
                           <option value="">— Seleccioná —</option>
                           {stockAgro.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.cantidad?.toLocaleString('es-AR')} {s.unidad})</option>)}
                         </select>
                       </div>
-                      <div><Label>Dosis/ha</Label><input type="number" value={p.dosis} onChange={e => updProducto(idx, 'dosis', e.target.value)} style={inputStyle} placeholder="ej. 1.5" /></div>
-                      <div><Label>Unidad</Label><input type="text" value={p.unidad || item?.unidad || ''} onChange={e => updProducto(idx, 'unidad', e.target.value)} style={inputStyle} /></div>
+                      <div><Label>Dosis/ha</Label><input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value })} style={inputStyle} placeholder="ej. 1.5" /></div>
+                      <div><Label>Unidad</Label><input type="text" value={p.unidad || item?.unidad || ''} onChange={e => updProducto(idx, { unidad: e.target.value })} style={inputStyle} /></div>
                       <div><Label>Total</Label>
                         <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: totalUso ? S.green : S.hint }}>
                           {totalUso ? `${totalUso.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ${p.unidad || item?.unidad || ''}` : '—'}
