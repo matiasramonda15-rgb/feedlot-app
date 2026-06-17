@@ -64,7 +64,7 @@ export default function Agricultura({ usuario }) {
       supabase.from('campos').select('*, lotes_agricolas(*)').order('nombre'),
       supabase.from('campanas').select('*').order('año_inicio', { ascending: false }),
       supabase.from('plan_cultivos').select('*, campos(nombre), lotes_agricolas(numero), campanas(nombre)').order('creado_en', { ascending: false }),
-      supabase.from('ordenes_trabajo').select('*, campos(nombre, superficie_ha, lotes_agricolas(*)), campanas(nombre)').order('fecha', { ascending: false }),
+      supabase.from('ordenes_trabajo').select('*, campos(nombre, superficie_ha, imagen_url, lotes_agricolas(id, numero, superficie_ha, imagen_url)), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('cosechas').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('ventas_granos').select('*').order('fecha', { ascending: false }),
       supabase.from('gastos_agro').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
@@ -165,17 +165,17 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '' })
+  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
   const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [selectedCampo, setSelectedCampo] = useState(null)
   const [showLoteForm, setShowLoteForm] = useState(false)
-  const [formLote, setFormLote] = useState({ numero: '', superficie_ha: '' })
+  const [formLote, setFormLote] = useState({ numero: '', superficie_ha: '', imagen_url: '' })
 
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
     setGuardando(true)
-    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_qq_ha: parseFloat(form.arrendamiento_qq_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, ubicacion: form.ubicacion || null }
+    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_qq_ha: parseFloat(form.arrendamiento_qq_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
     if (editando) {
       await supabase.from('campos').update(campoData).eq('id', editando)
     } else {
@@ -184,16 +184,16 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '' })
+    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
     setGuardando(false)
   }
 
   async function guardarLote() {
     if (!formLote.numero) { alert('Ingresá el número de lote'); return }
-    await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null })
+    await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null, imagen_url: formLote.imagen_url || null })
     await cargar()
     setShowLoteForm(false)
-    setFormLote({ numero: '', superficie_ha: '' })
+    setFormLote({ numero: '', superficie_ha: '', imagen_url: '' })
   }
 
   async function eliminarLote(id) {
@@ -229,6 +229,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
               </select>
             </div>
             <div><Label>Ubicación</Label><input type="text" value={form.ubicacion} onChange={e => setForm({...form, ubicacion: e.target.value})} style={inputStyle} /></div>
+            <div style={{ gridColumn: '1/-1' }}><Label>Link del mapa (URL de imagen)</Label><input type="url" value={form.imagen_url} onChange={e => setForm({...form, imagen_url: e.target.value})} style={inputStyle} placeholder="https://..." /></div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={guardar} disabled={guardando}
@@ -264,6 +265,12 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {c.imagen_url && (
+                  <a href={c.imagen_url} target="_blank" rel="noopener noreferrer"
+                    style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: '#E8EFF8', border: '1px solid #378ADD', color: '#1A3D6B', borderRadius: 6, textDecoration: 'none' }}>
+                    🗺 Ver mapa
+                  </a>
+                )}
                 {c.arrendamiento_qq_ha && (
                   <div style={{ textAlign: 'right', marginRight: 8 }}>
                     <div style={{ fontSize: 10, color: S.muted }}>Arrendamiento</div>
@@ -271,7 +278,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                     <div style={{ fontSize: 10, color: S.muted }}>{c.forma_pago_arriendo}</div>
                   </div>
                 )}
-                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_qq_ha: c.arrendamiento_qq_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', ubicacion: c.ubicacion || '' }); setShowForm(true); setSelectedCampo(null) }}
+                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_qq_ha: c.arrendamiento_qq_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', ubicacion: c.ubicacion || '', imagen_url: c.imagen_url || '' }); setShowForm(true); setSelectedCampo(null) }}
                   style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                   Editar
                 </button>
@@ -314,6 +321,10 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                       <Label>Superficie (ha)</Label>
                       <input type="number" value={formLote.superficie_ha} onChange={e => setFormLote({...formLote, superficie_ha: e.target.value})} style={{...inputStyle, fontSize: 12}} />
                     </div>
+                    <div style={{ flex: 2 }}>
+                      <Label>Link del mapa (URL)</Label>
+                      <input type="url" value={formLote.imagen_url} onChange={e => setFormLote({...formLote, imagen_url: e.target.value})} placeholder="https://..." style={{...inputStyle, fontSize: 12}} />
+                    </div>
                     <button onClick={guardarLote} style={{ padding: '9px 14px', fontSize: 12, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
                     <button onClick={() => setShowLoteForm(false)} style={{ padding: '9px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                   </div>
@@ -325,7 +336,13 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                         <div style={{ fontSize: 13, fontWeight: 600 }}>Lote {l.numero}</div>
                         {l.superficie_ha && <div style={{ fontSize: 11, color: S.muted }}>{l.superficie_ha} ha</div>}
                       </div>
-                      <button onClick={() => eliminarLote(l.id)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 12 }}>✕</button>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        {l.imagen_url && (
+                          <a href={l.imagen_url} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 11, color: '#1A3D6B', textDecoration: 'none' }}>🗺</a>
+                        )}
+                        <button onClick={() => eliminarLote(l.id)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 12 }}>✕</button>
+                      </div>
                     </div>
                   ))}
                   {(c.lotes_agricolas || []).length === 0 && <div style={{ fontSize: 12, color: S.hint, gridColumn: '1/-1' }}>Sin lotes registrados</div>}
@@ -1080,7 +1097,17 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
                       <td style={{ padding: '8px 12px', fontWeight: 600 }}>{campoO?.nombre || '—'}</td>
-                      <td style={{ padding: '8px 12px', color: S.muted }}>{loteO ? `Lote ${loteO.numero}` : '—'}</td>
+                      <td style={{ padding: '8px 12px', color: S.muted }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>{loteO ? `Lote ${loteO.numero}` : '—'}</span>
+                          {(loteO?.imagen_url || campoO?.imagen_url) && (
+                            <a href={loteO?.imagen_url || campoO?.imagen_url} target="_blank" rel="noopener noreferrer"
+                              style={{ fontSize: 11, color: '#1A3D6B', background: '#E8EFF8', border: '1px solid #378ADD', borderRadius: 4, padding: '1px 6px', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                              🗺 Ver mapa
+                            </a>
+                          )}
+                        </div>
+                      </td>
                       <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11, fontWeight: 600 }}>{o.tipo}</span></td>
                       <td style={{ padding: '8px 12px' }}>{o.es_propia ? <span style={{ fontSize: 11, color: S.green }}>🚜 Propio</span> : <span style={{ fontSize: 11, color: S.muted }}>🤝 Contratista</span>}</td>
                       <td style={{ padding: '8px 12px', color: S.muted, fontSize: 12 }}>{o.proveedor || '—'}</td>
