@@ -831,7 +831,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const superficieBase = loteSeleccionado?.superficie_ha || campo?.superficie_ha || 0
   const superficie = parseFloat(form.superficie_ha) || superficieBase || 0
 
-  function addProducto() { setForm({...form, productos: [...form.productos, { id: '', dosis: '', unidad: '' }]}) }
+  function addProducto() { setForm(prev => ({...prev, productos: [...prev.productos, { id: '', dosis: '', unidad: '', total: '' }]})) }
   function updProducto(idx, updates) { setForm(prev => ({...prev, productos: prev.productos.map((p, i) => i === idx ? {...p, ...updates} : p)})) }
   function removeProducto(idx) { setForm({...form, productos: form.productos.filter((_, i) => i !== idx)}) }
   function addGasto() { setForm({...form, gastos_propios: [...form.gastos_propios, { descripcion: '', monto: '' }]}) }
@@ -1017,7 +1017,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 {form.productos.length === 0 && <div style={{ fontSize: 13, color: S.hint }}>Sin productos asignados.</div>}
                 {form.productos.map((p, idx) => {
                   const item = stockAgro.find(s => s.id === parseInt(p.id))
-                  const totalUso = p.dosis && superficie ? parseFloat(p.dosis) * superficie : null
+                  const totalUso = p.total ? parseFloat(p.total) : (p.dosis && superficie ? parseFloat(p.dosis) * superficie : null)
                   return (
                     <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
                       <div><Label>Producto</Label>
@@ -1026,12 +1026,21 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           {stockAgro.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.cantidad?.toLocaleString('es-AR')} {s.unidad})</option>)}
                         </select>
                       </div>
-                      <div><Label>Dosis/ha</Label><input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value })} style={inputStyle} placeholder="ej. 1.5" /></div>
+                      <div><Label>Dosis/ha</Label><input type="number" value={p.dosis} onChange={e => {
+                        const dosis = e.target.value
+                        const total = dosis && superficie ? String((parseFloat(dosis) * superficie).toFixed(2)) : ''
+                        updProducto(idx, { dosis, total })
+                      }} style={inputStyle} placeholder="ej. 1.5" /></div>
                       <div><Label>Unidad</Label><input type="text" value={p.unidad || item?.unidad || ''} onChange={e => updProducto(idx, { unidad: e.target.value })} style={inputStyle} /></div>
-                      <div><Label>Total</Label>
-                        <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: totalUso ? S.green : S.hint }}>
-                          {totalUso ? `${totalUso.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ${p.unidad || item?.unidad || ''}` : '—'}
-                        </div>
+                      <div><Label>Total {p.unidad || item?.unidad || ''}</Label>
+                        <input type="number" value={p.total || (p.dosis && superficie ? (parseFloat(p.dosis) * superficie).toFixed(2) : '')}
+                          onChange={e => {
+                            const total = e.target.value
+                            const dosis = total && superficie ? String((parseFloat(total) / superficie).toFixed(4)) : ''
+                            updProducto(idx, { total, dosis })
+                          }}
+                          style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 600, color: S.green }}
+                          placeholder={superficie ? `ej. ${superficie}` : '—'} />
                       </div>
                       <button onClick={() => removeProducto(idx)} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginBottom: 2 }}>✕</button>
                     </div>
