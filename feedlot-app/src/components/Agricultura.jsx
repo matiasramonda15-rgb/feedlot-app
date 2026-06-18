@@ -1122,26 +1122,68 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => generarOrdenTrabajo(o, campoO, loteO, stockAgro)}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>📋 Orden</button>
-                          <button onClick={() => {
+                          <button onClick={async () => {
                             const superficie = o.superficie_ha_real || loteO?.superficie_ha || campoO?.superficie_ha || '—'
                             const fecha = o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'
                             const productos = (o.productos || []).map(p => {
                               const item = stockAgro.find(s => String(s.id) === String(p.id))
                               const total = p.total || (p.dosis && superficie !== '—' ? (parseFloat(p.dosis) * parseFloat(superficie)).toFixed(1) : '—')
-                              return `  • ${item?.insumo || p.nombre || '—'}: ${p.dosis || '—'} ${p.unidad || ''}/ha = ${total} ${p.unidad || ''} total`
-                            }).join('\n')
-                            const texto = [
+                              return `• ${item?.insumo || p.nombre || '—'}: ${p.dosis || '—'} ${p.unidad || ''}/ha = ${total} ${p.unidad || ''} total`
+                            })
+                            const lineas = [
                               `ORDEN DE TRABAJO — ${o.tipo?.toUpperCase() || ''}`,
                               `Campo: ${campoO?.nombre || '—'}${loteO ? ` · Lote ${loteO.numero}` : ''}`,
-                              `Superficie: ${superficie} ha`,
-                              `Fecha: ${fecha}`,
-                              o.proveedor ? `Operario: ${o.proveedor}` : '',
-                              o.descripcion ? `Descripción: ${o.descripcion}` : '',
-                              productos ? `\nProductos:\n${productos}` : '',
-                              o.observaciones ? `\nObservaciones: ${o.observaciones}` : '',
-                            ].filter(Boolean).join('\n')
-                            navigator.clipboard.writeText(texto).then(() => alert('✓ Texto copiado — podés pegarlo en Paint con Ctrl+V'))
-                          }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>📎 Copiar</button>
+                              `Superficie: ${superficie} ha  ·  Fecha: ${fecha}`,
+                              o.proveedor ? `Operario: ${o.proveedor}` : null,
+                              o.descripcion ? `Descripción: ${o.descripcion}` : null,
+                              productos.length > 0 ? '' : null,
+                              productos.length > 0 ? 'PRODUCTOS:' : null,
+                              ...productos,
+                              o.observaciones ? '' : null,
+                              o.observaciones ? `Obs: ${o.observaciones}` : null,
+                            ].filter(l => l !== null)
+                            const canvas = document.createElement('canvas')
+                            const fontSize = 18
+                            const padding = 24
+                            const lineHeight = 28
+                            canvas.width = 600
+                            canvas.height = padding * 2 + lineas.length * lineHeight + 20
+                            const ctx = canvas.getContext('2d')
+                            ctx.fillStyle = '#ffffff'
+                            ctx.fillRect(0, 0, canvas.width, canvas.height)
+                            ctx.fillStyle = '#1E5C2E'
+                            ctx.fillRect(0, 0, canvas.width, lineHeight + padding)
+                            ctx.fillStyle = '#ffffff'
+                            ctx.font = `bold ${fontSize}px Arial`
+                            ctx.fillText(lineas[0], padding, padding + fontSize - 4)
+                            ctx.fillStyle = '#1a1a1a'
+                            ctx.font = `${fontSize - 2}px Arial`
+                            lineas.slice(1).forEach((l, i) => {
+                              if (l === 'PRODUCTOS:') {
+                                ctx.font = `bold ${fontSize - 2}px Arial`
+                                ctx.fillStyle = '#1E5C2E'
+                              } else if (l.startsWith('•')) {
+                                ctx.font = `${fontSize - 2}px Arial`
+                                ctx.fillStyle = '#1a1a1a'
+                              } else if (l === '') {
+                                return
+                              } else {
+                                ctx.font = `${fontSize - 2}px Arial`
+                                ctx.fillStyle = '#444444'
+                              }
+                              ctx.fillText(l, padding, padding + lineHeight + (i + 1) * lineHeight - 6)
+                            })
+                            canvas.toBlob(async blob => {
+                              try {
+                                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+                                alert('✓ Imagen copiada — pegala en Paint con Ctrl+V')
+                              } catch {
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url; a.download = 'orden.png'; a.click()
+                              }
+                            })
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>📎 Copiar imagen</button>
                           {o.estado_pago === 'pagado' && o.costo_total && <button onClick={() => {
                             const campanaO = campanas.find(c => c.id === o.campana_id)
                             generarReciboOrden(o, campoO, loteO, campanaO, stockAgro)
