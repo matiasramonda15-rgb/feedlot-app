@@ -36,7 +36,7 @@ const ACTIVIDAD_COLORS = {
   General:     { bg: '#F0EAFB', color: '#3D1A6B' },
 }
 
-const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
 const FORM_INIT = {
   actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '',
@@ -314,8 +314,10 @@ export default function Gastos({ usuario }) {
           estado: 'en_cartera', caja_oficial_id,
           registrado_por: usuario?.id,
         })
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
-        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        for (const chId of pago.cheque_tercero_ids) {
+          await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+        }
       }
     }
 
@@ -534,8 +536,14 @@ export default function Gastos({ usuario }) {
                           return lista.length === 0
                             ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
                             : lista.map(ch => (
-                              <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
-                                <input type="radio" name={`cheque_pago_${idx}`} value={ch.id} checked={pago.cheque_tercero_id === String(ch.id)} onChange={() => setPagoMulti(idx, { cheque_tercero_id: String(ch.id), monto: String(ch.monto || '') })} />
+                              <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
+                                <input type="checkbox" checked={pago.cheque_tercero_ids?.includes(String(ch.id)) || false} onChange={() => {
+                                  const actuales = pago.cheque_tercero_ids || []
+                                  const yaEsta = actuales.includes(String(ch.id))
+                                  const nuevos = yaEsta ? actuales.filter(id => id !== String(ch.id)) : [...actuales, String(ch.id)]
+                                  const nuevoMonto = nuevos.reduce((s, id) => s + (chequesCartera.find(c => String(c.id) === id)?.monto || 0), 0)
+                                  setPagoMulti(idx, { cheque_tercero_ids: nuevos, monto: String(nuevoMonto || '') })
+                                }} />
                                 <div style={{ fontSize: 13 }}>
                                   <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
                                   <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span>
@@ -543,6 +551,11 @@ export default function Gastos({ usuario }) {
                               </label>
                             ))
                         })()}
+                        {pago.cheque_tercero_ids?.length > 0 && (
+                          <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, marginTop: 6, padding: '6px 10px', background: S.accentLight, borderRadius: 6 }}>
+                            {pago.cheque_tercero_ids.length} cheque{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} seleccionado{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} · Total: ${parseFloat(pago.monto || 0).toLocaleString('es-AR')}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
