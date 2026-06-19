@@ -108,9 +108,9 @@ function generarRecibo(gasto, pagos) {
     if (p.es_paralelo) desc += ' (PARALELO)'
     let filaExtra = ''
     if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_detalle?.length > 0) {
-      filaExtra = `<tr><td colspan="4" style="padding:2px 8px;font-size:10px;color:#666;border-bottom:1px solid #ddd;">
-        ${p.cheque_tercero_detalle.map(c => `#${c.numero || 's/n'} · ${c.banco || '—'} · $${(c.monto || 0).toLocaleString('es-AR')} · vto. ${c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}`).join(' &nbsp;|&nbsp; ')}
-      </td></tr>`
+      filaExtra = p.cheque_tercero_detalle.map(c => `<tr><td colspan="4" style="padding:2px 8px 2px 24px;font-size:10px;color:#666;border-bottom:1px solid #ddd;">
+        ↳ #${c.numero || 's/n'} · ${c.banco || '—'} · $${(c.monto || 0).toLocaleString('es-AR')} · vto. ${c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+      </td></tr>`).join('')
     }
     return `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${desc}</td>
