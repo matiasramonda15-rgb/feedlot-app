@@ -28,7 +28,7 @@ const FORMAS_PAGO = ['transferencia', 'cheque', 'e-cheq', 'efectivo', 'depósito
 const TIPOS_CONTACTO = ['comprador_hacienda', 'vendedor_hacienda', 'comprador_grano', 'servicio', 'otro']
 const TIPO_LABEL = { comprador_hacienda: 'Comprador hacienda', vendedor_hacienda: 'Vendedor hacienda', comprador_grano: 'Comprador grano', servicio: 'Servicio', otro: 'Otro' }
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-const ESTADOS_CHEQUE = { en_cartera: { bg: '#FDF0E0', color: '#7A4500' }, depositado: { bg: '#E8EFF8', color: '#1A3D6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' }, rechazado: { bg: '#FDF0F0', color: '#7A1A1A' }, anulado: { bg: '#F7F5F0', color: '#6B6760' } }
+const ESTADOS_CHEQUE = { en_cartera: { bg: '#FDF0E0', color: '#7A4500' }, entregado: { bg: '#F0EAFB', color: '#3D1A6B' }, depositado: { bg: '#E8EFF8', color: '#1A3D6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' }, rechazado: { bg: '#FDF0F0', color: '#7A1A1A' }, anulado: { bg: '#F7F5F0', color: '#6B6760' } }
 
 function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque, eliminar }) {
     return (

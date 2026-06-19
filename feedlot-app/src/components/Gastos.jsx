@@ -101,15 +101,23 @@ function generarRecibo(gasto, pagos) {
                p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' :
                p.subtipo_cheque === 'propio' ? `E-CHEQ PROPIO` :
                `E-CHEQ TERCERO`
-    let nro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.numero || '') : ''
-    let fechaCobro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '') : ''
+    let nro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.numero || '') : (p.cheque_tercero_detalle?.map(c => c.numero || 's/n').join(', ') || '')
+    let fechaCobro = p.subtipo_cheque === 'propio'
+      ? (p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '')
+      : (p.cheque_tercero_detalle?.map(c => c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—').join(', ') || '')
     if (p.es_paralelo) desc += ' (PARALELO)'
+    let filaExtra = ''
+    if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_detalle?.length > 0) {
+      filaExtra = `<tr><td colspan="4" style="padding:2px 8px;font-size:10px;color:#666;border-bottom:1px solid #ddd;">
+        ${p.cheque_tercero_detalle.map(c => `#${c.numero || 's/n'} · ${c.banco || '—'} · $${(c.monto || 0).toLocaleString('es-AR')} · vto. ${c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}`).join(' &nbsp;|&nbsp; ')}
+      </td></tr>`
+    }
     return `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${desc}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${nro}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${fechaCobro}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;font-weight:600;">$ ${parseFloat(p.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-    </tr>`
+    </tr>${filaExtra}`
   }).join('')
 
   const bloqueRecibo = `
@@ -287,7 +295,14 @@ export default function Gastos({ usuario }) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
-      const desc = `${form.actividad} — ${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' (' + form.proveedor + ')' : ''}`
+      let desc = `${form.actividad} — ${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' (' + form.proveedor + ')' : ''}`
+      if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        const detalleCheques = pago.cheque_tercero_ids.map(chId => {
+          const ch = chequesCartera.find(c => String(c.id) === chId)
+          return ch ? `#${ch.numero || 's/n'} ${ch.banco || ''} vto.${ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}` : null
+        }).filter(Boolean).join(', ')
+        desc += ` — Entregado a ${form.proveedor || 'proveedor'}: cheque(s) ${detalleCheques}`
+      }
 
       if (pago.es_paralelo) {
         const { data: cp } = await supabase.from('caja_paralela').insert({
@@ -316,7 +331,7 @@ export default function Gastos({ usuario }) {
         })
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) {
-          await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+          await supabase.from('cheques').update({ estado: 'entregado', beneficiario: form.proveedor || null }).eq('id', parseInt(chId))
         }
       }
     }
@@ -334,7 +349,13 @@ export default function Gastos({ usuario }) {
       cuit: form.cuit || null,
       iva: form.iva || null,
       cbu: form.cbu || null,
-      pagos_detalle: form.pagos,
+      pagos_detalle: form.pagos.map(p => p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0
+        ? { ...p, cheque_tercero_detalle: p.cheque_tercero_ids.map(id => {
+            const ch = chequesCartera.find(c => String(c.id) === id)
+            return ch ? { numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
+          }).filter(Boolean) }
+        : p
+      ),
       forma_pago: form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
       es_paralelo: form.pagos.some(p => p.es_paralelo),
       caja_oficial_id,
