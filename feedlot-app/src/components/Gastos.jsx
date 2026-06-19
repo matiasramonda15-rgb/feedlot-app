@@ -252,6 +252,11 @@ export default function Gastos({ usuario }) {
     setForm({ ...form, pagos: nuevos })
   }
 
+  function setPagoMulti(idx, updates) {
+    const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, ...updates } : p)
+    setForm({ ...form, pagos: nuevos })
+  }
+
   function setPagoChequePropio(idx, campo, valor) {
     const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, cheque_propio: { ...p.cheque_propio, [campo]: valor } } : p)
     setForm({ ...form, pagos: nuevos })
@@ -530,7 +535,7 @@ export default function Gastos({ usuario }) {
                             ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
                             : lista.map(ch => (
                               <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
-                                <input type="radio" name={`cheque_pago_${idx}`} value={ch.id} checked={pago.cheque_tercero_id === String(ch.id)} onChange={() => setPago(idx, 'cheque_tercero_id', String(ch.id))} />
+                                <input type="radio" name={`cheque_pago_${idx}`} value={ch.id} checked={pago.cheque_tercero_id === String(ch.id)} onChange={() => setPagoMulti(idx, { cheque_tercero_id: String(ch.id), monto: String(ch.monto || '') })} />
                                 <div style={{ fontSize: 13 }}>
                                   <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
                                   <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span>
