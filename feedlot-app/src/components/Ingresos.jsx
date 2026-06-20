@@ -962,7 +962,7 @@ function generarReciboCompra(lote, pagos, corrales) {
 
 function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
   const [editandoFactura, setEditandoFactura] = useState(null)
-  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
+  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', localidad: '', cuit: '', iva: '', cbu: '' })
   const [pagosMap, setPagosMap] = useState({})
   const [chequesCartera, setChequesCartera] = useState([])
   const PAGO_INIT_GC = { tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
@@ -1003,11 +1003,11 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       iva_monto: ivaMonto,
       monto_negro: montoNegro,
       observaciones_pago: formFactura.observaciones_pago || null,
-      domicilio: formFactura.proveedor || null,
-      localidad: formFactura.localidad || null,
-      cuit: formFactura.cuit || null,
-      iva: formFactura.iva || null,
-      cbu: formFactura.cbu || null,
+      procedencia: formFactura.proveedor || lote.procedencia || null,
+      proveedor_localidad: formFactura.localidad || null,
+      proveedor_cuit: formFactura.cuit || null,
+      proveedor_iva: formFactura.iva || null,
+      proveedor_cbu: formFactura.cbu || null,
       cuotas_pago: (formFactura.cuotas_pago || []).filter(c => c.fecha && c.monto).map(c => ({ fecha: c.fecha, monto: parseFloat(c.monto) })),
     }).eq('id', lote.id)
     setEditandoFactura(null)
@@ -1185,7 +1185,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
 
               {/* Botón editar factura */}
               {!isEditFactura && (
-                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado != null ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.domicilio || '', localidad: l.localidad || '', cuit: l.cuit || '', iva: l.iva || '', cbu: l.cbu || '', cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })) }) }}
+                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado != null ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.procedencia || '', localidad: l.proveedor_localidad || '', cuit: l.proveedor_cuit || '', iva: l.proveedor_iva || '', cbu: l.proveedor_cbu || '', cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })) }) }}
                   style={{ padding: '5px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginBottom: '1rem' }}>
                   ✏ Completar factura
                 </button>
