@@ -978,12 +978,12 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   }
 
   async function guardarFactura(lote) {
-    const montoFact = formFactura.monto_facturado ? parseFloat(formFactura.monto_facturado) : null
+    const montoFact = formFactura.monto_facturado !== '' ? parseFloat(formFactura.monto_facturado) : null
     const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
-    const ivaMonto = montoFact ? Math.round(montoFact * ivaPct / 100) : 0
-    const totalFactura = montoFact ? montoFact + ivaMonto : null
+    const ivaMonto = montoFact != null ? Math.round(montoFact * ivaPct / 100) : 0
+    const totalFactura = montoFact != null ? montoFact + ivaMonto : null
     const montoTotal = lote.monto_total_con_iva || null
-    const montoNegro = montoTotal && totalFactura ? Math.max(0, montoTotal - totalFactura) : null
+    const montoNegro = montoTotal != null && totalFactura != null ? Math.max(0, montoTotal - totalFactura) : null
     await supabase.from('lotes').update({
       numero_factura: formFactura.numero_factura || null,
       fecha_factura: formFactura.fecha_factura || null,
@@ -1174,7 +1174,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
 
               {/* Botón editar factura */}
               {!isEditFactura && (
-                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.domicilio || '', localidad: l.localidad || '', cuit: l.cuit || '', iva: l.iva || '', cbu: l.cbu || '', cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })) }) }}
+                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado != null ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.domicilio || '', localidad: l.localidad || '', cuit: l.cuit || '', iva: l.iva || '', cbu: l.cbu || '', cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })) }) }}
                   style={{ padding: '5px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginBottom: '1rem' }}>
                   ✏ Completar factura
                 </button>
@@ -1208,15 +1208,15 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                     <div>
                       <Lbl>Cuenta paralela (calculada)</Lbl>
                       {(() => {
-                        const montoFact = parseFloat(formFactura.monto_facturado) || 0
+                        const montoFact = formFactura.monto_facturado !== '' ? (parseFloat(formFactura.monto_facturado) || 0) : null
                         const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
-                        const ivaMonto = montoFact ? Math.round(montoFact * ivaPct / 100) : 0
-                        const totalFact = montoFact + ivaMonto
+                        const ivaMonto = montoFact != null ? Math.round(montoFact * ivaPct / 100) : 0
+                        const totalFact = montoFact != null ? montoFact + ivaMonto : null
                         const montoTotalOp = l.monto_total_con_iva || 0
-                        const paralelo = montoTotalOp && totalFact ? Math.max(0, montoTotalOp - totalFact) : 0
+                        const paralelo = totalFact != null ? Math.max(0, montoTotalOp - totalFact) : 0
                         return (
                           <div style={{ padding: '9px 12px', border: `1px solid ${paralelo > 0 ? '#9B59B6' : S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: paralelo > 0 ? '#F3E8FF' : S.bg, fontWeight: 700, color: paralelo > 0 ? S.purple : S.hint }}>
-                            {paralelo > 0 ? `$${paralelo.toLocaleString('es-AR')}` : '—'}
+                            {paralelo > 0 ? `$${paralelo.toLocaleString('es-AR')}` : (totalFact != null ? '$0' : '—')}
                           </div>
                         )
                       })()}
