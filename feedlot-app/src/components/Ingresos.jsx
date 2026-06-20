@@ -593,38 +593,7 @@ export default function Ingresos({ usuario }) {
                       )}
                     </div>
 
-                    {/* Cuotas reales de factura (independiente del plazo estimado) */}
-                    <div style={{ marginBottom: 12 }}>
-                      <Lbl>Cuotas de pago (según factura — fecha y monto exactos)</Lbl>
-                      {(editandoPrecio.cuotas_pago || []).map((cuota, ci) => (
-                        <div key={ci} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                          <input type="date" value={cuota.fecha || ''} onChange={e => {
-                            const nuevas = [...editandoPrecio.cuotas_pago]
-                            nuevas[ci] = { ...nuevas[ci], fecha: e.target.value }
-                            setEditandoPrecio({...editandoPrecio, cuotas_pago: nuevas})
-                          }} style={{...inpMono, maxWidth: 160}} />
-                          <input type="number" value={cuota.monto || ''} onChange={e => {
-                            const nuevas = [...editandoPrecio.cuotas_pago]
-                            nuevas[ci] = { ...nuevas[ci], monto: e.target.value }
-                            setEditandoPrecio({...editandoPrecio, cuotas_pago: nuevas})
-                          }} placeholder="Monto $" style={{...inpMono, maxWidth: 160}} />
-                          <button onClick={() => {
-                            const nuevas = editandoPrecio.cuotas_pago.filter((_, i) => i !== ci)
-                            setEditandoPrecio({...editandoPrecio, cuotas_pago: nuevas})
-                          }} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                        </div>
-                      ))}
-                      <button onClick={() => setEditandoPrecio({...editandoPrecio, cuotas_pago: [...(editandoPrecio.cuotas_pago || []), { fecha: '', monto: '' }]})}
-                        style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                        + Agregar cuota
-                      </button>
-                      {(editandoPrecio.cuotas_pago || []).length > 0 && (
-                        <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
-                          Total cuotas: ${(editandoPrecio.cuotas_pago || []).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <div style={{ display: 'flex', gap: 8 }}>
                       <Btn onClick={() => guardarPrecio(l)} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</Btn>
                       <Btn ghost onClick={() => setEditandoPrecio(null)}>Cancelar</Btn>
                     </div>
@@ -1050,6 +1019,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       cuit: formFactura.cuit || null,
       iva: formFactura.iva || null,
       cbu: formFactura.cbu || null,
+      cuotas_pago: (formFactura.cuotas_pago || []).filter(c => c.fecha && c.monto).map(c => ({ fecha: c.fecha, monto: parseFloat(c.monto) })),
     }).eq('id', lote.id)
     setEditandoFactura(null)
     await cargarDatos()
@@ -1182,11 +1152,26 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                     </div>
                   </div>
                 )}
+                {l.cuotas_pago?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Cuotas de pago (factura)</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 11, color: S.muted }}>
+                      {l.cuotas_pago.map((c, i) => {
+                        const vencida = c.fecha && new Date(c.fecha + 'T12:00:00') < new Date()
+                        return (
+                          <span key={i} style={{ color: vencida ? S.red : S.muted }}>
+                            {i > 0 && ' · '}{c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}: ${(c.monto || 0).toLocaleString('es-AR')}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Botón editar factura */}
               {!isEditFactura && (
-                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.domicilio || '', localidad: l.localidad || '', cuit: l.cuit || '', iva: l.iva || '', cbu: l.cbu || '' }) }}
+                <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.domicilio || '', localidad: l.localidad || '', cuit: l.cuit || '', iva: l.iva || '', cbu: l.cbu || '', cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })) }) }}
                   style={{ padding: '5px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginBottom: '1rem' }}>
                   ✏ Completar factura
                 </button>
@@ -1220,6 +1205,38 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                       <div><Lbl>IVA</Lbl><input type="text" value={formFactura.iva || ''} onChange={e => setFormFactura({...formFactura, iva: e.target.value})} style={inp} /></div>
                       <div><Lbl>CBU</Lbl><input type="text" value={formFactura.cbu || ''} onChange={e => setFormFactura({...formFactura, cbu: e.target.value})} style={inp} /></div>
                     </div>
+                  </div>
+
+                  {/* Cuotas de pago según factura */}
+                  <div style={{ background: 'white', border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Cuotas de pago (según factura — fecha y monto exactos)</div>
+                    {(formFactura.cuotas_pago || []).map((cuota, ci) => (
+                      <div key={ci} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                        <input type="date" value={cuota.fecha || ''} onChange={e => {
+                          const nuevas = [...formFactura.cuotas_pago]
+                          nuevas[ci] = { ...nuevas[ci], fecha: e.target.value }
+                          setFormFactura({...formFactura, cuotas_pago: nuevas})
+                        }} style={{...inp, maxWidth: 160}} />
+                        <input type="number" value={cuota.monto || ''} onChange={e => {
+                          const nuevas = [...formFactura.cuotas_pago]
+                          nuevas[ci] = { ...nuevas[ci], monto: e.target.value }
+                          setFormFactura({...formFactura, cuotas_pago: nuevas})
+                        }} placeholder="Monto $" style={{...inp, maxWidth: 160}} />
+                        <button onClick={() => {
+                          const nuevas = formFactura.cuotas_pago.filter((_, i) => i !== ci)
+                          setFormFactura({...formFactura, cuotas_pago: nuevas})
+                        }} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
+                      </div>
+                    ))}
+                    <button onClick={() => setFormFactura({...formFactura, cuotas_pago: [...(formFactura.cuotas_pago || []), { fecha: '', monto: '' }]})}
+                      style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                      + Agregar cuota
+                    </button>
+                    {(formFactura.cuotas_pago || []).length > 0 && (
+                      <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
+                        Total cuotas: ${(formFactura.cuotas_pago || []).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', gap: 8 }}>
