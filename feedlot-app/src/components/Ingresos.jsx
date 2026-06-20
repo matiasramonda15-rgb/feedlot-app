@@ -1156,6 +1156,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       const { data: pagoInsertado } = await supabase.from('pagos_compras').insert({
         lote_id: lote.id, fecha: formPago.fecha, monto,
         forma_pago: formaPago,
+        cuota_idx: formPago.cuota_idx ?? null,
         numero_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.numero || null : null,
         banco: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.banco || null : null,
         fecha_vencimiento_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.fecha_vencimiento || null : null,
@@ -1287,8 +1288,28 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         ✏️ Editar
                       </button>
                     </td>
-                    <td style={{ padding: '7px 10px', minWidth: 200 }}>
+                    <td style={{ padding: '7px 10px', minWidth: 220 }}>
                       <div>
+                        {l.cuotas_pago?.length > 0 && (() => {
+                          const pagosPorCuota = {}
+                          pagos.forEach(p => { if (p.cuota_idx != null) pagosPorCuota[p.cuota_idx] = (pagosPorCuota[p.cuota_idx] || 0) + (p.monto || 0) })
+                          return (
+                            <div style={{ marginBottom: 6, paddingBottom: 6, borderBottom: `1px dashed ${S.border}` }}>
+                              <div style={{ fontSize: 9, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Cuotas factura</div>
+                              {l.cuotas_pago.map((c, ci) => {
+                                const pagadoCuota = pagosPorCuota[ci] || 0
+                                const saldoCuota = (c.monto || 0) - pagadoCuota
+                                const vencida = c.fecha && new Date(c.fecha + 'T12:00:00') < new Date() && saldoCuota > 0
+                                return (
+                                  <div key={ci} style={{ fontSize: 10, marginBottom: 2, color: saldoCuota <= 0 ? S.green : vencida ? S.red : S.muted }}>
+                                    {c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}: ${(c.monto || 0).toLocaleString('es-AR')}
+                                    {saldoCuota <= 0 ? ' ✓' : pagadoCuota > 0 ? ` (pag. $${pagadoCuota.toLocaleString('es-AR')})` : ''}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
                         {saldo <= 0 && pagos.length > 0 ? (
                           <div>
                             <div style={{ fontSize: 10, fontWeight: 700, color: S.green, marginBottom: 3 }}>
@@ -1330,7 +1351,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                             style={{ fontSize: 9, padding: '2px 6px', background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', marginBottom: 4 }}>🖨️ Recibo</button>
                         )}
                         {!isReg && l.precio_compra ? (
-                          <button onClick={() => { setRegistrandoPago(l.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
+                          <button onClick={() => { setRegistrandoPago(l.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], cuota_idx: null, pagos: [{...PAGO_INIT, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
                             style={{ fontSize: 10, padding: '3px 8px', background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', width: '100%' }}>
                             + Registrar pago
                           </button>
@@ -1360,6 +1381,31 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                           <Lbl>Fecha</Lbl>
                           <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={{ ...inp, maxWidth: 180 }} />
                         </div>
+                        {l.cuotas_pago?.length > 0 && (() => {
+                          const pagosPorCuota = {}
+                          pagos.forEach(p => { if (p.cuota_idx != null) pagosPorCuota[p.cuota_idx] = (pagosPorCuota[p.cuota_idx] || 0) + (p.monto || 0) })
+                          return (
+                            <div style={{ marginBottom: 10 }}>
+                              <Lbl>Corresponde a la cuota</Lbl>
+                              <select value={formPago.cuota_idx ?? ''} onChange={e => {
+                                const idx = e.target.value === '' ? null : parseInt(e.target.value)
+                                const saldoCuota = idx != null ? (l.cuotas_pago[idx].monto || 0) - (pagosPorCuota[idx] || 0) : null
+                                const nuevosPagos = formPago.pagos.map((p, i) => i === 0 ? {...p, monto: saldoCuota != null ? String(Math.round(saldoCuota)) : p.monto} : p)
+                                setFormPago({...formPago, cuota_idx: idx, pagos: nuevosPagos})
+                              }} style={inp}>
+                                <option value="">— Sin asociar a cuota —</option>
+                                {l.cuotas_pago.map((c, ci) => {
+                                  const saldoCuota = (c.monto || 0) - (pagosPorCuota[ci] || 0)
+                                  return (
+                                    <option key={ci} value={ci} disabled={saldoCuota <= 0}>
+                                      {c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'} — ${c.monto?.toLocaleString('es-AR')} {saldoCuota <= 0 ? '(pagada)' : `(saldo $${saldoCuota.toLocaleString('es-AR')})`}
+                                    </option>
+                                  )
+                                })}
+                              </select>
+                            </div>
+                          )
+                        })()}
                         {formPago.pagos.map((pago, idx) => (
                           <div key={idx} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 8 }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 8 : 0 }}>
