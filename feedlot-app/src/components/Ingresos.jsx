@@ -961,14 +961,25 @@ function generarReciboCompra(lote, pagos, corrales) {
 }
 
 function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
+  const S = {
+    bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', muted: '#6B6760', hint: '#9E9A94', text: '#1A1916',
+    accent: '#378ADD', accentLight: '#E8EFF8', green: '#1E5C2E', greenLight: '#E8F4EB',
+    red: '#7A1A1A', redLight: '#FDF0F0', amber: '#7A4500', amberLight: '#FDF0E0', purple: '#3D1A6B', purpleLight: '#F0EAFB',
+  }
+  const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }
+  const Lbl = ({ children, c }) => <label style={{ fontSize: 11, fontWeight: 600, color: c || S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>{children}</label>
+
   const [editandoFactura, setEditandoFactura] = useState(null)
-  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', localidad: '', cuit: '', iva: '', cbu: '' })
+  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', localidad: '', cuit: '', iva: '', cbu: '', cuotas_pago: [] })
   const [pagosMap, setPagosMap] = useState({})
   const [chequesCartera, setChequesCartera] = useState([])
-  const PAGO_INIT_GC = { tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }] })
-  const [pagoAbierto, setPagoAbierto] = useState(null)
+  const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
+  const [registrandoPago, setRegistrandoPago] = useState(null)
+  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT}] })
+  const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [guardando, setGuardando] = useState(false)
+  const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
+  const [filtroArchivadas, setFiltroArchivadas] = useState({ proveedor: '', desde: '', hasta: '' })
 
   useEffect(() => { cargarPagos() }, [lotes])
 
@@ -986,6 +997,13 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     })
     setPagosMap(map)
     setChequesCartera(ch || [])
+  }
+
+  function totalLoteCalc(l) {
+    const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
+    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
+    const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
+    return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
   }
 
   async function guardarFactura(lote) {
@@ -1014,18 +1032,113 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     await cargarDatos()
   }
 
-  async function registrarPago(lote) {
+  function renderFormFactura(l) {
+    return (
+      <div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div><Lbl>N° Factura</Lbl><input type="text" value={formFactura.numero_factura} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})} style={inp} /></div>
+          <div><Lbl>Fecha Factura</Lbl><input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} /></div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <Lbl>Neto Facturado $</Lbl>
+            <input type="number" value={formFactura.monto_facturado} onChange={e => setFormFactura({...formFactura, monto_facturado: e.target.value})}
+              style={{ ...inp, fontFamily: 'monospace' }} placeholder="Monto sin IVA" />
+          </div>
+          <div>
+            <Lbl>IVA %</Lbl>
+            <select value={formFactura.iva_pct} onChange={e => setFormFactura({...formFactura, iva_pct: e.target.value})} style={inp}>
+              <option value="0">Sin IVA</option>
+              <option value="10.5">10.5%</option>
+              <option value="21">21%</option>
+            </select>
+          </div>
+          <div>
+            <Lbl>Cuenta paralela (calculada)</Lbl>
+            {(() => {
+              const montoFact = formFactura.monto_facturado !== '' ? (parseFloat(formFactura.monto_facturado) || 0) : null
+              const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
+              const ivaMonto = montoFact != null ? Math.round(montoFact * ivaPct / 100) : 0
+              const totalFact = montoFact != null ? montoFact + ivaMonto : null
+              const montoTotalOp = l.monto_total_con_iva || 0
+              const paralelo = totalFact != null ? Math.max(0, montoTotalOp - totalFact) : 0
+              return (
+                <div style={{ padding: '9px 12px', border: `1px solid ${paralelo > 0 ? '#9B59B6' : S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: paralelo > 0 ? '#F3E8FF' : S.bg, fontWeight: 700, color: paralelo > 0 ? S.purple : S.hint }}>
+                  {paralelo > 0 ? `$${paralelo.toLocaleString('es-AR')}` : (totalFact != null ? '$0' : '—')}
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+
+        <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Seleccionar de contactos</div>
+          <select onChange={e => {
+            const ct = (contactos || []).find(c => String(c.id) === e.target.value)
+            if (ct) setFormFactura({...formFactura, proveedor: ct.nombre, cuit: ct.cuit || '', localidad: ct.localidad || '', iva: ct.iva || '', cbu: ct.cbu || ''})
+          }} style={inp} defaultValue="">
+            <option value="">— Seleccionar contacto —</option>
+            {(contactos || []).map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+          </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div><Lbl>Nombre</Lbl><input type="text" value={formFactura.proveedor || ''} onChange={e => setFormFactura({...formFactura, proveedor: e.target.value})} style={inp} /></div>
+            <div><Lbl>Localidad</Lbl><input type="text" value={formFactura.localidad || ''} onChange={e => setFormFactura({...formFactura, localidad: e.target.value})} style={inp} /></div>
+            <div><Lbl>CUIT</Lbl><input type="text" value={formFactura.cuit || ''} onChange={e => setFormFactura({...formFactura, cuit: e.target.value})} style={inp} /></div>
+            <div><Lbl>IVA</Lbl><input type="text" value={formFactura.iva || ''} onChange={e => setFormFactura({...formFactura, iva: e.target.value})} style={inp} /></div>
+            <div><Lbl>CBU</Lbl><input type="text" value={formFactura.cbu || ''} onChange={e => setFormFactura({...formFactura, cbu: e.target.value})} style={inp} /></div>
+          </div>
+        </div>
+
+        <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Cuotas de pago (según factura)</div>
+          {(formFactura.cuotas_pago || []).map((cuota, ci) => (
+            <div key={ci} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <input type="date" value={cuota.fecha || ''} onChange={e => {
+                const nuevas = [...formFactura.cuotas_pago]
+                nuevas[ci] = { ...nuevas[ci], fecha: e.target.value }
+                setFormFactura({...formFactura, cuotas_pago: nuevas})
+              }} style={{...inp, maxWidth: 160}} />
+              <input type="number" value={cuota.monto || ''} onChange={e => {
+                const nuevas = [...formFactura.cuotas_pago]
+                nuevas[ci] = { ...nuevas[ci], monto: e.target.value }
+                setFormFactura({...formFactura, cuotas_pago: nuevas})
+              }} placeholder="Monto $" style={{...inp, maxWidth: 160}} />
+              <button onClick={() => setFormFactura({...formFactura, cuotas_pago: formFactura.cuotas_pago.filter((_, i) => i !== ci)})}
+                style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
+            </div>
+          ))}
+          <button onClick={() => setFormFactura({...formFactura, cuotas_pago: [...(formFactura.cuotas_pago || []), { fecha: '', monto: '' }]})}
+            style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+            + Agregar cuota
+          </button>
+          {(formFactura.cuotas_pago || []).length > 0 && (
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
+              Total cuotas: ${(formFactura.cuotas_pago || []).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <Lbl>Observaciones</Lbl>
+          <input type="text" value={formFactura.observaciones_pago || ''} onChange={e => setFormFactura({...formFactura, observaciones_pago: e.target.value})} style={{...inp, marginBottom: 10}} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => guardarFactura(l)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+          <button onClick={() => setEditandoFactura(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+        </div>
+      </div>
+    )
+  }
+
+  async function registrarPago(lote, rowKey) {
     const totalPagos = formPago.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     if (!totalPagos) { alert('Ingresá el monto'); return }
     setGuardando(true)
 
-    const kgBase = lote.kg_factura > 0 ? lote.kg_factura : lote.kg_bascula
-    const totalLote = lote.monto_total_con_iva || (lote.precio_compra && kgBase ? Math.round(kgBase * lote.precio_compra) : null)
+    const totalLote = totalLoteCalc(lote)
     const pagosActuales = pagosMap[lote.id] || []
-    const pagoIds = []
-    const cajaOficialIds = []
-    const cajaParalelaIds = []
-    const chequeEmitidoIds = []
 
     for (const pago of formPago.pagos) {
       const monto = parseFloat(pago.monto) || 0
@@ -1049,20 +1162,18 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
         es_negro: pago.es_paralela || false,
         descripcion: desc,
       }).select().single()
-      if (pagoInsertado?.id) pagoIds.push(pagoInsertado.id)
 
       let pagoCajaId = null
       if (pago.es_paralela) {
         const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
-        if (cp?.id) { cajaParalelaIds.push(cp.id); pagoCajaId = cp.id }
+        pagoCajaId = cp?.id || null
       } else {
         const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
-        if (co?.id) { cajaOficialIds.push(co.id); pagoCajaId = co.id }
+        pagoCajaId = co?.id || null
       }
 
       if (pago.subtipo_cheque === 'propio' && pago.cheque_propio.fecha_vencimiento) {
-        const { data: chE } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: pago.es_paralela || false, caja_oficial_id: pagoCajaId, pago_compra_id: pagoInsertado?.id }).select().single()
-        if (chE?.id) chequeEmitidoIds.push(chE.id)
+        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: pago.es_paralela || false, caja_oficial_id: pagoCajaId, pago_compra_id: pagoInsertado?.id })
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) {
           await supabase.from('cheques').update({ estado: 'entregado', beneficiario: lote.procedencia || null }).eq('id', parseInt(chId))
@@ -1074,26 +1185,56 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     const nuevoEstado = totalLote && totalPagado > 0 && totalPagado >= totalLote * 0.99 ? 'pagado' : 'pendiente'
     await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', lote.id)
 
-    setPagoAbierto(null)
-    setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT_GC}] })
+    setRegistrandoPago(null)
+    setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT}] })
     setGuardando(false)
     await cargarDatos()
     await cargarPagos()
   }
 
+  async function eliminarPago(p, l, pagos, total) {
+    if (!confirm('¿Eliminar este pago? Se eliminará de la caja y se revertirán los cheques usados.')) return
+    const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).eq('tipo', 'emitido').maybeSingle()
+    if (chAsoc) await supabase.from('cheques').delete().eq('id', chAsoc.id)
+    if (p.descripcion && p.descripcion.includes('Entregado a')) {
+      const matchNums = [...p.descripcion.matchAll(/#(\S+)/g)].map(m => m[1]).filter(n => n !== 's/n')
+      for (const num of matchNums) {
+        await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('numero', num).eq('estado', 'entregado')
+      }
+    }
+    await supabase.from('caja_oficial').delete().eq('pago_compra_id', p.id)
+    await supabase.from('caja_paralela').delete().eq('pago_compra_id', p.id)
+    await supabase.from('pagos_compras').delete().eq('id', p.id)
+    const pagosRest = pagos.filter(pp => pp.id !== p.id)
+    const totalPagadoRest = pagosRest.reduce((s, pp) => s + (pp.monto || 0), 0)
+    const nuevoEstado = total && totalPagadoRest > 0 && totalPagadoRest >= total * 0.99 ? 'pagado' : 'pendiente'
+    await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', l.id)
+    await cargarDatos()
+    await cargarPagos()
+  }
+
+  const hoy40 = new Date(Date.now() - 40 * 86400000)
+  const lotesActivos = lotes.filter(l => !(l.estado_pago === 'pagado' && l.created_at && new Date(l.created_at) < hoy40))
+  const lotesArchivados = lotes.filter(l => l.estado_pago === 'pagado' && l.created_at && new Date(l.created_at) < hoy40)
+  const archFiltrados = lotesArchivados.filter(l => {
+    if (filtroArchivadas.proveedor && !((l.procedencia || '').toLowerCase().includes(filtroArchivadas.proveedor.toLowerCase()))) return false
+    if (filtroArchivadas.desde && (l.fecha_ingreso || '') < filtroArchivadas.desde) return false
+    if (filtroArchivadas.hasta && (l.fecha_ingreso || '') > filtroArchivadas.hasta) return false
+    return true
+  })
+
   return (
     <div>
-      {lotes.map(l => {
+      {lotesActivos.map(l => {
         const pagos = pagosMap[l.id] || []
-        const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
-        const total = l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : null)
+        const total = totalLoteCalc(l)
         const totalPagado = pagos.reduce((s, p) => s + (p.monto || 0), 0)
         const saldo = total ? total - totalPagado : null
-        const ivaMonto = l.iva_monto || (l.monto_facturado ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : null)
-        const totalFactura = l.monto_facturado && ivaMonto ? l.monto_facturado + ivaMonto : null
-        const montoNegro = total && totalFactura ? Math.max(0, total - totalFactura) : (l.monto_negro || null)
+        const ivaMonto = l.iva_monto || (l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : null)
+        const totalFactura = l.monto_facturado != null && ivaMonto != null ? l.monto_facturado + ivaMonto : null
+        const montoNegro = total && totalFactura != null ? Math.max(0, total - totalFactura) : (l.monto_negro || null)
         const isEditFactura = editandoFactura === l.id
-        const isPagoAbierto = pagoAbierto === l.id
+        const isReg = registrandoPago === l.id
         const estadoBadge = l.estado_pago === 'pagado'
           ? { label: 'Pagado', bg: S.greenLight, color: S.green }
           : saldo > 0 ? { label: 'Pendiente', bg: S.amberLight, color: S.amber }
@@ -1114,7 +1255,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: estadoBadge.bg, color: estadoBadge.color }}>{estadoBadge.label}</span>
-                {total && (
+                {total > 0 && (
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: S.muted }}>Total operación</div>
                     <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>-${total.toLocaleString('es-AR')}</div>
@@ -1132,7 +1273,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                 </div>
                 <div>
                   <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Neto facturado</div>
-                  <div style={{ fontFamily: 'monospace' }}>{l.monto_facturado ? `$${l.monto_facturado.toLocaleString('es-AR')}` : '—'}</div>
+                  <div style={{ fontFamily: 'monospace' }}>{l.monto_facturado != null ? `$${l.monto_facturado.toLocaleString('es-AR')}` : '—'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>IVA {l.iva_pct || 10.5}%</div>
@@ -1187,7 +1328,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               {!isEditFactura && (
                 <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado != null ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.procedencia || '', localidad: l.proveedor_localidad || '', cuit: l.proveedor_cuit || '', iva: l.proveedor_iva || '', cbu: l.proveedor_cbu || '', cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })) }) }}
                   style={{ padding: '5px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginBottom: '1rem' }}>
-                  ✏ Completar factura
+                  ✏ Completar / Editar factura
                 </button>
               )}
 
@@ -1195,100 +1336,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               {isEditFactura && (
                 <div style={{ background: S.accentLight, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: S.accent, marginBottom: '0.75rem' }}>Gestión comercial</div>
-
-                  {/* N° Factura + Fecha */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                    <div><Lbl>N° Factura</Lbl><input type="text" value={formFactura.numero_factura} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})} style={inp} /></div>
-                    <div><Lbl>Fecha Factura</Lbl><input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} /></div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                    <div>
-                      <Lbl>Neto Facturado $</Lbl>
-                      <input type="number" value={formFactura.monto_facturado || ''} onChange={e => setFormFactura({...formFactura, monto_facturado: e.target.value})}
-                        style={{ ...inp, fontFamily: 'monospace' }} placeholder="Monto sin IVA" />
-                    </div>
-                    <div>
-                      <Lbl>IVA %</Lbl>
-                      <select value={formFactura.iva_pct || '10.5'} onChange={e => setFormFactura({...formFactura, iva_pct: e.target.value})} style={inp}>
-                        <option value="0">Sin IVA</option>
-                        <option value="10.5">10.5%</option>
-                        <option value="21">21%</option>
-                      </select>
-                    </div>
-                    <div>
-                      <Lbl>Cuenta paralela (calculada)</Lbl>
-                      {(() => {
-                        const montoFact = formFactura.monto_facturado !== '' ? (parseFloat(formFactura.monto_facturado) || 0) : null
-                        const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
-                        const ivaMonto = montoFact != null ? Math.round(montoFact * ivaPct / 100) : 0
-                        const totalFact = montoFact != null ? montoFact + ivaMonto : null
-                        const montoTotalOp = l.monto_total_con_iva || 0
-                        const paralelo = totalFact != null ? Math.max(0, montoTotalOp - totalFact) : 0
-                        return (
-                          <div style={{ padding: '9px 12px', border: `1px solid ${paralelo > 0 ? '#9B59B6' : S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: paralelo > 0 ? '#F3E8FF' : S.bg, fontWeight: 700, color: paralelo > 0 ? S.purple : S.hint }}>
-                            {paralelo > 0 ? `$${paralelo.toLocaleString('es-AR')}` : (totalFact != null ? '$0' : '—')}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Selector de contacto */}
-                  <div style={{ background: 'white', border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 10 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Seleccionar de contactos</div>
-                    <select onChange={e => {
-                      const ct = (contactos || []).find(c => String(c.id) === e.target.value)
-                      if (ct) setFormFactura({...formFactura, proveedor: ct.nombre, cuit: ct.cuit || '', localidad: ct.localidad || '', iva: ct.iva || '', cbu: ct.cbu || ''})
-                    }} style={inp} defaultValue="">
-                      <option value="">— Seleccionar contacto —</option>
-                      {(contactos || []).map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                    </select>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                      <div><Lbl>Nombre</Lbl><input type="text" value={formFactura.proveedor || ''} onChange={e => setFormFactura({...formFactura, proveedor: e.target.value})} style={inp} /></div>
-                      <div><Lbl>Localidad</Lbl><input type="text" value={formFactura.localidad || ''} onChange={e => setFormFactura({...formFactura, localidad: e.target.value})} style={inp} /></div>
-                      <div><Lbl>CUIT</Lbl><input type="text" value={formFactura.cuit || ''} onChange={e => setFormFactura({...formFactura, cuit: e.target.value})} style={inp} /></div>
-                      <div><Lbl>IVA</Lbl><input type="text" value={formFactura.iva || ''} onChange={e => setFormFactura({...formFactura, iva: e.target.value})} style={inp} /></div>
-                      <div><Lbl>CBU</Lbl><input type="text" value={formFactura.cbu || ''} onChange={e => setFormFactura({...formFactura, cbu: e.target.value})} style={inp} /></div>
-                    </div>
-                  </div>
-
-                  {/* Cuotas de pago según factura */}
-                  <div style={{ background: 'white', border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 10 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Cuotas de pago (según factura — fecha y monto exactos)</div>
-                    {(formFactura.cuotas_pago || []).map((cuota, ci) => (
-                      <div key={ci} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                        <input type="date" value={cuota.fecha || ''} onChange={e => {
-                          const nuevas = [...formFactura.cuotas_pago]
-                          nuevas[ci] = { ...nuevas[ci], fecha: e.target.value }
-                          setFormFactura({...formFactura, cuotas_pago: nuevas})
-                        }} style={{...inp, maxWidth: 160}} />
-                        <input type="number" value={cuota.monto || ''} onChange={e => {
-                          const nuevas = [...formFactura.cuotas_pago]
-                          nuevas[ci] = { ...nuevas[ci], monto: e.target.value }
-                          setFormFactura({...formFactura, cuotas_pago: nuevas})
-                        }} placeholder="Monto $" style={{...inp, maxWidth: 160}} />
-                        <button onClick={() => {
-                          const nuevas = formFactura.cuotas_pago.filter((_, i) => i !== ci)
-                          setFormFactura({...formFactura, cuotas_pago: nuevas})
-                        }} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                      </div>
-                    ))}
-                    <button onClick={() => setFormFactura({...formFactura, cuotas_pago: [...(formFactura.cuotas_pago || []), { fecha: '', monto: '' }]})}
-                      style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                      + Agregar cuota
-                    </button>
-                    {(formFactura.cuotas_pago || []).length > 0 && (
-                      <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
-                        Total cuotas: ${(formFactura.cuotas_pago || []).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => guardarFactura(l)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
-                    <button onClick={() => setEditandoFactura(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                  </div>
+                  {renderFormFactura(l)}
                 </div>
               )}
 
@@ -1302,71 +1350,86 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo todos</button>
                     )}
                   </div>
-                  {pagos.map(p => (
-                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: p.es_negro ? S.purpleLight : S.bg, borderRadius: 5, marginBottom: 4, fontSize: 12 }}>
-                      <div style={{ display: 'flex', gap: 10 }}>
-                        <span style={{ fontFamily: 'monospace', color: S.muted }}>{p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</span>
-                        <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>${p.monto?.toLocaleString('es-AR')}</span>
-                        <span style={{ color: S.muted }}>{p.forma_pago}</span>
-                        {p.numero_cheque && <span style={{ color: S.muted }}>#{p.numero_cheque}</span>}
-                        {p.es_negro && <span style={{ color: S.purple, fontWeight: 600 }}>PARALELO</span>}
+                  {saldo <= 0 && pagos.length > 0 ? (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: S.green, marginBottom: 4 }}>
+                        ✓ Pagado completo · ${totalPagado.toLocaleString('es-AR')}
                       </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => generarReciboCompra(l, [p], corrales)}
-                          style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️</button>
-                        <button onClick={async () => {
-                        if (!confirm('¿Eliminar este pago? Se eliminará de la caja y se revertirán los cheques usados.')) return
-                        // Eliminar cheque emitido (propio) asociado
-                        const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).eq('tipo', 'emitido').maybeSingle()
-                        if (chAsoc) await supabase.from('cheques').delete().eq('id', chAsoc.id)
-                        // Revertir cheques de tercero (recibidos) que se usaron para este pago, buscando por descripcion del pago
-                        if (p.descripcion && p.descripcion.includes('Entregado a')) {
-                          const matchNums = [...p.descripcion.matchAll(/#(\S+)/g)].map(m => m[1]).filter(n => n !== 's/n')
-                          for (const num of matchNums) {
-                            await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('numero', num).eq('estado', 'entregado')
-                          }
-                        }
-                        // Eliminar entrada de caja asociada
-                        await supabase.from('caja_oficial').delete().eq('pago_compra_id', p.id)
-                        await supabase.from('caja_paralela').delete().eq('pago_compra_id', p.id)
-                        await supabase.from('pagos_compras').delete().eq('id', p.id)
-                        const pagosRest = pagos.filter(pp => pp.id !== p.id)
-                        const totalPagadoRest = pagosRest.reduce((s, pp) => s + (pp.monto || 0), 0)
-                        const nuevoEstado = total && totalPagadoRest > 0 && totalPagadoRest >= total * 0.99 ? 'pagado' : 'pendiente'
-                        await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', l.id)
-                        await cargarDatos()
-                        await cargarPagos()
-                      }} style={{ padding: '2px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Eliminar</button>
-                      </div>
+                      {pagosExpandidos[l.id] ? (
+                        <div>
+                          {pagos.map(p => (
+                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: p.es_negro ? S.purpleLight : S.bg, borderRadius: 5, marginBottom: 4, fontSize: 12 }}>
+                              <div style={{ display: 'flex', gap: 10 }}>
+                                <span style={{ fontFamily: 'monospace', color: S.muted }}>{p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</span>
+                                <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                <span style={{ color: S.muted }}>{p.forma_pago}</span>
+                                {p.numero_cheque && <span style={{ color: S.muted }}>#{p.numero_cheque}</span>}
+                                {p.es_negro && <span style={{ color: S.purple, fontWeight: 600 }}>PARALELO</span>}
+                              </div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => generarReciboCompra(l, [p], corrales)}
+                                  style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️</button>
+                                <button onClick={() => eliminarPago(p, l, pagos, total)}
+                                  style={{ padding: '2px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Eliminar</button>
+                              </div>
+                            </div>
+                          ))}
+                          <button onClick={() => setPagosExpandidos(prev => ({...prev, [l.id]: false}))}
+                            style={{ fontSize: 11, color: S.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▲ Ocultar</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setPagosExpandidos(prev => ({...prev, [l.id]: true}))}
+                          style={{ fontSize: 11, color: S.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▼ Ver pagos</button>
+                      )}
                     </div>
-                  ))}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', fontSize: 12, fontWeight: 600 }}>
-                    <span>Total pagado</span>
-                    <span style={{ fontFamily: 'monospace' }}>${totalPagado.toLocaleString('es-AR')}</span>
-                  </div>
-                  {saldo > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', fontSize: 12, fontWeight: 700, color: S.red }}>
-                      <span>Saldo pendiente</span>
-                      <span style={{ fontFamily: 'monospace' }}>-${saldo.toLocaleString('es-AR')}</span>
+                  ) : (
+                    <div>
+                      {pagos.map(p => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: p.es_negro ? S.purpleLight : S.bg, borderRadius: 5, marginBottom: 4, fontSize: 12 }}>
+                          <div style={{ display: 'flex', gap: 10 }}>
+                            <span style={{ fontFamily: 'monospace', color: S.muted }}>{p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</span>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>${p.monto?.toLocaleString('es-AR')}</span>
+                            <span style={{ color: S.muted }}>{p.forma_pago}</span>
+                            {p.numero_cheque && <span style={{ color: S.muted }}>#{p.numero_cheque}</span>}
+                            {p.es_negro && <span style={{ color: S.purple, fontWeight: 600 }}>PARALELO</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => generarReciboCompra(l, [p], corrales)}
+                              style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️</button>
+                            <button onClick={() => eliminarPago(p, l, pagos, total)}
+                              style={{ padding: '2px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Eliminar</button>
+                          </div>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', fontSize: 12, fontWeight: 600 }}>
+                        <span>Total pagado</span>
+                        <span style={{ fontFamily: 'monospace' }}>${totalPagado.toLocaleString('es-AR')}</span>
+                      </div>
+                      {saldo > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', fontSize: 12, fontWeight: 700, color: S.red }}>
+                          <span>Saldo pendiente</span>
+                          <span style={{ fontFamily: 'monospace' }}>-${saldo.toLocaleString('es-AR')}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
 
               {/* Botón + pago */}
-              {!isPagoAbierto && l.precio_compra && (
-                <button onClick={() => { setPagoAbierto(l.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT_GC, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
+              {!isReg && l.precio_compra && (
+                <button onClick={() => { setRegistrandoPago(l.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
                   style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer' }}>
                   + Registrar pago
                 </button>
               )}
 
               {/* Form pago */}
-              {isPagoAbierto && (
+              {isReg && (
                 <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 8, padding: '1rem', marginTop: '0.75rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: S.green }}>Nuevo pago</div>
-                    <button onClick={() => setFormPago({...formPago, pagos: [...formPago.pagos, {...PAGO_INIT_GC}]})}
+                    <button onClick={() => setFormPago({...formPago, pagos: [...formPago.pagos, {...PAGO_INIT}]})}
                       style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>+ Agregar forma de pago</button>
                   </div>
                   <div style={{ marginBottom: 10 }}>
@@ -1385,7 +1448,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                           </select>
                         </div>
                         <div><Lbl>Monto $</Lbl>
-                          <input type="number" value={pago.monto} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPago({...formPago, pagos: n}) }} style={inpMono} />
+                          <input type="number" value={pago.monto} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPago({...formPago, pagos: n}) }} style={{...inp, fontFamily: 'monospace'}} />
                         </div>
                         <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -1455,8 +1518,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                     )
                   })()}
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => registrarPago(l)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Registrar pago'}</button>
-                    <button onClick={() => setPagoAbierto(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                    <button onClick={() => registrarPago(l, l.id)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Registrar pago'}</button>
+                    <button onClick={() => setRegistrandoPago(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                   </div>
                 </div>
               )}
@@ -1464,6 +1527,54 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
           </div>
         )
       })}
+
+      {/* ARCHIVADAS */}
+      {lotesArchivados.length > 0 && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <button onClick={() => setMostrarArchivadas(m => !m)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, cursor: 'pointer', color: S.muted, width: '100%' }}>
+            <span>📁</span>
+            <span>Archivadas ({lotesArchivados.length})</span>
+            <span style={{ marginLeft: 'auto' }}>{mostrarArchivadas ? '▲' : '▼'}</span>
+          </button>
+          {mostrarArchivadas && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                <input type="text" placeholder="Filtrar por proveedor..." value={filtroArchivadas.proveedor}
+                  onChange={e => setFiltroArchivadas(f => ({...f, proveedor: e.target.value}))}
+                  style={{ flex: 1, padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 12, background: S.surface }} />
+                <input type="date" value={filtroArchivadas.desde} onChange={e => setFiltroArchivadas(f => ({...f, desde: e.target.value}))}
+                  style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 12, background: S.surface }} />
+                <input type="date" value={filtroArchivadas.hasta} onChange={e => setFiltroArchivadas(f => ({...f, hasta: e.target.value}))}
+                  style={{ padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 12, background: S.surface }} />
+                {(filtroArchivadas.proveedor || filtroArchivadas.desde || filtroArchivadas.hasta) && (
+                  <button onClick={() => setFiltroArchivadas({ proveedor: '', desde: '', hasta: '' })}
+                    style={{ padding: '7px 12px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>✕ Limpiar</button>
+                )}
+              </div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                {archFiltrados.length === 0
+                  ? <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin resultados</div>
+                  : archFiltrados.map(l => {
+                    const totalArch = totalLoteCalc(l)
+                    return (
+                      <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>C-{corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id} · {l.procedencia || '—'}</div>
+                          <div style={{ fontSize: 11, color: S.muted }}>{l.fecha_ingreso ? new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR') : ''} · {l.cantidad} animales</div>
+                        </div>
+                        <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red, fontSize: 14 }}>
+                          {totalArch > 0 ? `-$${totalArch.toLocaleString('es-AR')}` : '—'}
+                        </div>
+                      </div>
+                    )
+                  })
+                }
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
-}   
+}
