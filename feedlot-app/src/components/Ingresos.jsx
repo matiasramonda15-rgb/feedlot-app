@@ -600,7 +600,7 @@ export default function Ingresos({ usuario }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 800 }}>
               <thead>
                 <tr style={{ background: S.bg }}>
-                  {['Fecha', 'Corral', 'Procedencia', 'Categoría', 'Cantidad', 'Kg báscula', 'Kg factura', 'Diferencia', 'Precio/kg', 'Total', 'Vto pago', ''].map(h => (
+                  {['Fecha', 'Corral', 'Procedencia', 'Categoría', 'Cantidad', 'Kg báscula', 'Kg factura', 'Diferencia', 'Precio/kg', 'Precio real $/kg', 'Total', 'Vto pago', ''].map(h => (
                     <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -638,6 +638,13 @@ export default function Ingresos({ usuario }) {
                       </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right', color: l.precio_compra ? S.text : S.hint }}>
                         {l.precio_compra ? `$${l.precio_compra.toLocaleString('es-AR')}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right' }}>
+                        {(() => {
+                          if (!kgParaTotal || (l.monto_facturado == null && l.monto_negro == null)) return <span style={{ color: S.hint }}>—</span>
+                          const real = Math.round(((l.monto_facturado || 0) + (l.monto_negro || 0) - (l.comision_monto || 0)) / kgParaTotal)
+                          return `$${real.toLocaleString('es-AR')}`
+                        })()}
                       </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right', fontWeight: 600, color: total ? S.red : S.hint }}>
                         {total ? `-$${total.toLocaleString('es-AR')}` : '—'}
