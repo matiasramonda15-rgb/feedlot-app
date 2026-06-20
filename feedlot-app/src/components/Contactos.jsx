@@ -120,7 +120,12 @@ export default function Contactos({ usuario }) {
     const totalVentas = data.ventas.reduce((s, v) => s + (v.total || 0), 0)
     const cobradoVentas = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
     const pendienteVentas = totalVentas - cobradoVentas
-    const totalCompras = data.lotes.reduce((s, l) => s + (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0), 0)
+    const totalCompras = data.lotes.reduce((s, l) => {
+      const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
+      const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
+      const totalLote = totalGC || l.monto_total_con_iva || (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0)
+      return s + (totalLote || 0)
+    }, 0)
     const pagadoCompras = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
     const pendienteCompras = totalCompras - pagadoCompras
     return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
@@ -298,8 +303,9 @@ export default function Contactos({ usuario }) {
 
           // Compras
           lotesCto.forEach(l => {
+            const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
             const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
-            const montoFact = l.monto_facturado || total
+            const montoFact = l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc : total
             const montoParalelo = l.monto_negro || 0
             const venc = vencimientosCompra[l.id] || []
 
