@@ -293,6 +293,10 @@ export default function Gastos({ usuario }) {
 
     let caja_oficial_id = null
     let caja_paralela_id = null
+    const cajaOficialIds = []
+    const cajaParalelaIds = []
+    const chequeEmitidoIds = []
+    const pagosConIds = []
 
     for (const pago of form.pagos) {
       const monto = parseFloat(pago.monto) || 0
@@ -307,11 +311,13 @@ export default function Gastos({ usuario }) {
         desc += ` — Entregado a ${form.proveedor || 'proveedor'}: cheque(s) ${detalleCheques}`
       }
 
+      let pagoCajaId = null
       if (pago.es_paralelo) {
         const { data: cp } = await supabase.from('caja_paralela').insert({
           fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto,
         }).select().single()
         if (!caja_paralela_id) caja_paralela_id = cp?.id || null
+        if (cp?.id) { cajaParalelaIds.push(cp.id); pagoCajaId = cp.id }
       } else {
         const { data: co } = await supabase.from('caja_oficial').insert({
           fecha: form.fecha, tipo: 'egreso',
@@ -319,24 +325,30 @@ export default function Gastos({ usuario }) {
           descripcion: desc, monto, forma_pago: formaPago,
         }).select().single()
         if (!caja_oficial_id) caja_oficial_id = co?.id || null
+        if (co?.id) { cajaOficialIds.push(co.id); pagoCajaId = co.id }
       }
 
       // Cheques
+      let chequeEmitidoId = null
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        await supabase.from('cheques').insert({
+        const { data: chE } = await supabase.from('cheques').insert({
           tipo: 'emitido', numero: pago.cheque_propio.numero || null,
           banco: pago.cheque_propio.banco || null,
           fecha_cobro: form.fecha,
           fecha_vencimiento: pago.cheque_propio.fecha_vencimiento,
           monto, beneficiario: form.proveedor || null,
-          estado: 'en_cartera', caja_oficial_id,
+          estado: 'en_cartera', caja_oficial_id: pagoCajaId,
           registrado_por: usuario?.id,
-        })
+        }).select().single()
+        chequeEmitidoId = chE?.id || null
+        if (chequeEmitidoId) chequeEmitidoIds.push(chequeEmitidoId)
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) {
           await supabase.from('cheques').update({ estado: 'entregado', beneficiario: form.proveedor || null }).eq('id', parseInt(chId))
         }
       }
+
+      pagosConIds.push({ ...pago, _caja_id: pagoCajaId, _es_paralelo: pago.es_paralelo, _cheque_emitido_id: chequeEmitidoId })
     }
 
     await supabase.from('gastos_generales').insert({
@@ -352,10 +364,10 @@ export default function Gastos({ usuario }) {
       cuit: form.cuit || null,
       iva: form.iva || null,
       cbu: form.cbu || null,
-      pagos_detalle: form.pagos.map(p => p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0
+      pagos_detalle: pagosConIds.map(p => p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0
         ? { ...p, cheque_tercero_detalle: p.cheque_tercero_ids.map(id => {
             const ch = chequesCartera.find(c => String(c.id) === id)
-            return ch ? { numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
+            return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
           }).filter(Boolean) }
         : p
       ),
@@ -363,6 +375,9 @@ export default function Gastos({ usuario }) {
       es_paralelo: form.pagos.some(p => p.es_paralelo),
       caja_oficial_id,
       caja_paralela_id,
+      caja_oficial_ids: cajaOficialIds.length > 0 ? cajaOficialIds : null,
+      caja_paralela_ids: cajaParalelaIds.length > 0 ? cajaParalelaIds : null,
+      cheque_emitido_ids: chequeEmitidoIds.length > 0 ? chequeEmitidoIds : null,
       registrado_por: usuario?.id,
     })
 
@@ -373,9 +388,49 @@ export default function Gastos({ usuario }) {
   }
 
   async function eliminar(g) {
-    if (!confirm('¿Eliminar este gasto? Se eliminará también de la caja.')) return
-    if (g.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', g.caja_oficial_id)
-    if (g.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', g.caja_paralela_id)
+    if (!confirm('¿Eliminar este gasto? Se eliminará también de la caja y se revertirán los cheques usados.')) return
+
+    // Método robusto: usar arrays de ids guardados (gastos nuevos)
+    const oficialIds = g.caja_oficial_ids || (g.caja_oficial_id ? [g.caja_oficial_id] : [])
+    const paralelaIds = g.caja_paralela_ids || (g.caja_paralela_id ? [g.caja_paralela_id] : [])
+    const chequeEmitidoIds = g.cheque_emitido_ids || []
+
+    for (const id of oficialIds) await supabase.from('caja_oficial').delete().eq('id', id)
+    for (const id of paralelaIds) await supabase.from('caja_paralela').delete().eq('id', id)
+    for (const id of chequeEmitidoIds) await supabase.from('cheques').delete().eq('id', id)
+
+    // Revertir cheques de tercero usados a en_cartera (usando id guardado en detalle, o número como fallback)
+    const pagos = g.pagos_detalle || []
+    for (const p of pagos) {
+      if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_detalle?.length > 0) {
+        for (const c of p.cheque_tercero_detalle) {
+          if (c.id) {
+            await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', c.id)
+          } else if (c.numero) {
+            await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('numero', c.numero).eq('estado', 'entregado')
+          }
+        }
+      }
+      // Fallback gastos viejos: cheque propio sin id guardado
+      if (chequeEmitidoIds.length === 0 && p.subtipo_cheque === 'propio' && p.cheque_propio?.numero) {
+        const monto = parseFloat(p.monto) || 0
+        await supabase.from('cheques').delete().eq('numero', p.cheque_propio.numero).eq('tipo', 'emitido').eq('monto', monto)
+      }
+    }
+
+    // Fallback gastos viejos sin arrays: buscar por descripción/fecha/monto
+    if (oficialIds.length === 0 && paralelaIds.length === 0) {
+      for (const p of pagos) {
+        const monto = parseFloat(p.monto) || 0
+        if (!monto) continue
+        if (p.es_paralelo) {
+          await supabase.from('caja_paralela').delete().eq('fecha', g.fecha).eq('monto', monto).eq('tipo', 'egreso')
+        } else {
+          await supabase.from('caja_oficial').delete().eq('fecha', g.fecha).eq('monto', monto).eq('tipo', 'egreso')
+        }
+      }
+    }
+
     await supabase.from('gastos_generales').delete().eq('id', g.id)
     await cargar()
   }
