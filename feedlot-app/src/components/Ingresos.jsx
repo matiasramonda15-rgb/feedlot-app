@@ -157,6 +157,7 @@ export default function Ingresos({ usuario }) {
       comision_monto: comMonto || null,
       comision_a_quien: editandoPrecio.comision_a_quien || null,
       comision_es_paralela: editandoPrecio.comision_es_paralela || false,
+      cuotas_pago: (editandoPrecio.cuotas_pago || []).filter(c => c.fecha && c.monto).map(c => ({ fecha: c.fecha, monto: parseFloat(c.monto) })),
       procedencia: procFinal,
     }).eq('id', lote.id)
     setEditandoPrecio(null)
@@ -478,6 +479,7 @@ export default function Ingresos({ usuario }) {
                       comision_es_paralela: l.comision_es_paralela || false,
                       procedencia: l.procedencia || '',
                       nuevaProcedencia: '',
+                      cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })),
                     })} style={{ fontSize: 12, padding: '5px 12px' }}>
                       Completar datos
                     </Btn>
@@ -588,8 +590,40 @@ export default function Ingresos({ usuario }) {
                             new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(d) * 86400000).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
                           ).join(' · ')}
                         </div>
-                      )}                    </div>
+                      )}
+                    </div>
 
+                    {/* Cuotas reales de factura (independiente del plazo estimado) */}
+                    <div style={{ marginBottom: 12 }}>
+                      <Lbl>Cuotas de pago (según factura — fecha y monto exactos)</Lbl>
+                      {(editandoPrecio.cuotas_pago || []).map((cuota, ci) => (
+                        <div key={ci} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                          <input type="date" value={cuota.fecha || ''} onChange={e => {
+                            const nuevas = [...editandoPrecio.cuotas_pago]
+                            nuevas[ci] = { ...nuevas[ci], fecha: e.target.value }
+                            setEditandoPrecio({...editandoPrecio, cuotas_pago: nuevas})
+                          }} style={{...inpMono, maxWidth: 160}} />
+                          <input type="number" value={cuota.monto || ''} onChange={e => {
+                            const nuevas = [...editandoPrecio.cuotas_pago]
+                            nuevas[ci] = { ...nuevas[ci], monto: e.target.value }
+                            setEditandoPrecio({...editandoPrecio, cuotas_pago: nuevas})
+                          }} placeholder="Monto $" style={{...inpMono, maxWidth: 160}} />
+                          <button onClick={() => {
+                            const nuevas = editandoPrecio.cuotas_pago.filter((_, i) => i !== ci)
+                            setEditandoPrecio({...editandoPrecio, cuotas_pago: nuevas})
+                          }} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
+                        </div>
+                      ))}
+                      <button onClick={() => setEditandoPrecio({...editandoPrecio, cuotas_pago: [...(editandoPrecio.cuotas_pago || []), { fecha: '', monto: '' }]})}
+                        style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                        + Agregar cuota
+                      </button>
+                      {(editandoPrecio.cuotas_pago || []).length > 0 && (
+                        <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
+                          Total cuotas: ${(editandoPrecio.cuotas_pago || []).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
+                        </div>
+                      )}
+                    </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Btn onClick={() => guardarPrecio(l)} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</Btn>
                       <Btn ghost onClick={() => setEditandoPrecio(null)}>Cancelar</Btn>
@@ -680,6 +714,7 @@ export default function Ingresos({ usuario }) {
                               comision_es_paralela: l.comision_es_paralela || false,
                               procedencia: l.procedencia || '',
                               nuevaProcedencia: '',
+                              cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })),
                             }) }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginRight: 4 }}>Editar</button>
                             <button onClick={() => eliminarLote(l.id)}
