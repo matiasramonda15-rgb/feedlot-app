@@ -88,7 +88,9 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque,
                         {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                         {urgente && <span style={{ fontSize: 10, marginLeft: 4, color: S.red }}>({diasVence}d) ⚠</span>}
                       </td>
-                      <td style={{ padding: '9px 12px', fontSize: 12 }}>{c.librador || c.beneficiario || '—'}</td>
+                      <td style={{ padding: '9px 12px', fontSize: 12 }}>
+                        {c.librador && c.beneficiario ? `${c.librador} / ${c.beneficiario}` : (c.librador || c.beneficiario || '—')}
+                      </td>
                       <td style={{ padding: '9px 12px' }}>
                         <select value={c.estado} onChange={e => cambiarEstadoCheque(c.id, e.target.value)}
                           style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, border: `1px solid ${ec.color}`, borderRadius: 5, background: ec.bg, color: ec.color, cursor: 'pointer' }}>
