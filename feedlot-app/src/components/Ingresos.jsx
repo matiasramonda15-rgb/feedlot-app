@@ -616,7 +616,11 @@ export default function Ingresos({ usuario }) {
                   const diffPct = diffKg !== null && kgFac > 0 ? (diffKg / kgFac * 100) : null
                   const alertaDiff = diffPct !== null && Math.abs(diffPct) > 3
                   const kgParaTotal = kgFac > 0 ? kgFac : kgBas
-                  const total = l.monto_total_con_iva || (kgParaTotal && l.precio_compra ? Math.round(kgParaTotal * l.precio_compra) : null)
+                  const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
+                  const totalGC = (l.monto_facturado != null || l.monto_negro != null)
+                    ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0)
+                    : null
+                  const total = totalGC || l.monto_total_con_iva || (kgParaTotal && l.precio_compra ? Math.round(kgParaTotal * l.precio_compra) : null)
                   const vtoColor = l.fecha_vencimiento_pago && new Date(l.fecha_vencimiento_pago) < new Date() ? S.red : S.muted
                   return (
                     <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
