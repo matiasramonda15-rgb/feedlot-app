@@ -208,23 +208,40 @@ function generarRecibo(gasto, pagos) {
   <meta charset="UTF-8">
   <title>Recibo - ${gasto.proveedor || 'Proveedor'}</title>
   <style>
+    @page { size: A4; margin: 10mm; }
     @media print {
-      body { margin: 0; padding: 10px; }
+      html, body { margin: 0; padding: 0; height: auto; }
       .no-print { display: none; }
-      .recibo { page-break-inside: avoid; }
+      .recibo { page-break-inside: avoid; break-inside: avoid; }
     }
-    body { font-family: Arial, sans-serif; background: #fff; }
-    .recibo { margin-bottom: 20px; }
-    .corte { border-top: 2px dashed #999; margin: 16px 0; text-align: center; font-size: 11px; color: #999; padding: 4px 0; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #fff; font-size: 12px; }
+    table { font-size: 12px; }
+    .recibo { margin-bottom: 14px; }
+    .corte { border-top: 2px dashed #999; margin: 10px 0; text-align: center; font-size: 10px; color: #999; padding: 3px 0; }
   </style>
 </head>
 <body>
   <div style="text-align:right;margin-bottom:10px;" class="no-print">
     <button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;">🖨️ Imprimir / Guardar PDF</button>
   </div>
-  <div class="recibo">${bloqueRecibo}</div>
-  <div class="corte">✂ &nbsp;&nbsp; CORTAR AQUÍ &nbsp;&nbsp; ✂</div>
-  <div class="recibo">${bloqueRecibo}</div>
+  <div id="contenedor" style="transform-origin: top left;">
+    <div class="recibo">${bloqueRecibo}</div>
+    <div class="corte">✂ &nbsp;&nbsp; CORTAR AQUÍ &nbsp;&nbsp; ✂</div>
+    <div class="recibo">${bloqueRecibo}</div>
+  </div>
+  <script>
+    window.onload = function() {
+      var el = document.getElementById('contenedor');
+      var maxHeight = 277 * 3.7795; // ~277mm en px (A4 menos márgenes)
+      var actualHeight = el.scrollHeight;
+      if (actualHeight > maxHeight) {
+        var scale = maxHeight / actualHeight;
+        el.style.transform = 'scale(' + scale + ')';
+        el.style.width = (100 / scale) + '%';
+      }
+    };
+  </script>
 </body>
 </html>`
 
