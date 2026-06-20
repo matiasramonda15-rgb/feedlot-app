@@ -886,7 +886,7 @@ export default function Ingresos({ usuario }) {
 
 function generarReciboCompra(lote, pagos, corrales) {
   const fecha = pagos[0]?.fecha ? new Date(pagos[0].fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
-  const proveedor = lote.domicilio || lote.procedencia || ''
+  const proveedor = lote.procedencia || ''
   const totalMonto = pagos.reduce((s, p) => s + (p.monto || 0), 0)
   const entero = Math.floor(totalMonto)
   const unidades = ['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE']
@@ -926,9 +926,9 @@ function generarReciboCompra(lote, pagos, corrales) {
     <hr style="border:1px solid #333;margin:8px 0;">
     <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
       <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;">Entrego a:</td></tr>
-      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${proveedor}</strong></td><td style="padding:4px 8px;">I.V.A.: ${lote.iva || ''}</td></tr>
-      <tr><td style="padding:4px 8px;">Localidad: ${lote.localidad || ''}</td><td style="padding:4px 8px;">CUIT/DNI: ${lote.cuit || ''}</td></tr>
-      <tr><td style="padding:4px 8px;">C.B.U: ${lote.cbu || ''}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
+      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${proveedor}</strong></td><td style="padding:4px 8px;">I.V.A.: ${lote.proveedor_iva || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">Localidad: ${lote.proveedor_localidad || ''}</td><td style="padding:4px 8px;">CUIT/DNI: ${lote.proveedor_cuit || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">C.B.U: ${lote.proveedor_cbu || ''}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
     </table>
     <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
       <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
