@@ -131,8 +131,10 @@ export default function Ingresos({ usuario }) {
     const montoTotal = editandoPrecio.monto_total ? parseFloat(editandoPrecio.monto_total) : (kgFac && precio ? Math.round(kgFac * precio) : null)
     const montoFac = editandoPrecio.monto_facturado ? parseFloat(editandoPrecio.monto_facturado) : null
     const paralelo = montoTotal && montoFac ? Math.max(0, montoTotal - montoFac) : null
-    const plazo = editandoPrecio.plazo_dias ? parseInt(editandoPrecio.plazo_dias) : null
-    const fechaVto = plazo ? new Date(new Date(lote.fecha_ingreso + 'T12:00:00').getTime() + plazo * 86400000).toISOString().split('T')[0] : null
+    const plazoStr = editandoPrecio.plazo_dias || null
+    const plazosArr = plazoStr ? plazoStr.split(',').filter(Boolean).map(p => parseInt(p)) : []
+    const plazoMax = plazosArr.length > 0 ? Math.max(...plazosArr) : null
+    const fechaVto = plazoMax ? new Date(new Date(lote.fecha_ingreso + 'T12:00:00').getTime() + plazoMax * 86400000).toISOString().split('T')[0] : null
     const comMonto = editandoPrecio.comision_monto ? parseFloat(editandoPrecio.comision_monto) : 0
 
     // Resolver procedencia
@@ -150,7 +152,7 @@ export default function Ingresos({ usuario }) {
       monto_total_con_iva: montoTotal,
       monto_facturado: montoFac,
       monto_negro: paralelo,
-      plazo_dias: plazo,
+      plazo_dias: plazoStr,
       fecha_vencimiento_pago: fechaVto,
       comision_monto: comMonto || null,
       comision_a_quien: editandoPrecio.comision_a_quien || null,
@@ -560,23 +562,33 @@ export default function Ingresos({ usuario }) {
 
                     {/* Fila 4: Plazo */}
                     <div style={{ marginBottom: 12 }}>
-                      <Lbl>Plazo (días corridos)</Lbl>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <input type="number" value={editandoPrecio.plazo_dias} onChange={e => setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value})}
-                          placeholder="ej. 30" style={{...inpMono, maxWidth: 120}} />
-                        {[30, 60, 90].map(d => (
-                          <button key={d} onClick={() => setEditandoPrecio({...editandoPrecio, plazo_dias: String(d)})}
-                            style={{ padding: '6px 12px', fontSize: 12, fontWeight: editandoPrecio.plazo_dias === String(d) ? 700 : 400, borderRadius: 6, cursor: 'pointer', border: `1px solid ${editandoPrecio.plazo_dias === String(d) ? S.accent : S.border}`, background: editandoPrecio.plazo_dias === String(d) ? S.accentLight : 'transparent', color: editandoPrecio.plazo_dias === String(d) ? S.accent : S.muted }}>
-                            {d}d
-                          </button>
-                        ))}
-                        {editandoPrecio.plazo_dias && l.fecha_ingreso && (
-                          <span style={{ fontSize: 11, color: S.muted }}>
-                            Vence: {new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(editandoPrecio.plazo_dias) * 86400000).toLocaleDateString('es-AR')}
-                          </span>
-                        )}
+                      <Lbl>Plazo de pago (días)</Lbl>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {[30, 60, 90, 120].map(d => {
+                          const plazosArr = (editandoPrecio.plazo_dias || '').split(',').filter(Boolean)
+                          const activo = plazosArr.includes(String(d))
+                          return (
+                            <button key={d} onClick={() => {
+                              const nuevos = activo ? plazosArr.filter(p => p !== String(d)) : [...plazosArr, String(d)].sort((a,b) => parseInt(a) - parseInt(b))
+                              setEditandoPrecio({...editandoPrecio, plazo_dias: nuevos.join(',')})
+                            }}
+                              style={{ padding: '6px 14px', fontSize: 12, fontWeight: activo ? 700 : 400, borderRadius: 6, cursor: 'pointer', border: `1px solid ${activo ? S.accent : S.border}`, background: activo ? S.accentLight : 'transparent', color: activo ? S.accent : S.muted }}>
+                              {d}d
+                            </button>
+                          )
+                        })}
+                        <input type="text" value={editandoPrecio.plazo_dias} onChange={e => setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value})}
+                          placeholder="otro, ej. 45,75" style={{...inpMono, maxWidth: 130, fontSize: 12}} />
                       </div>
-                    </div>
+                      {editandoPrecio.plazo_dias && (
+                        <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
+                          Plazos acordados: {editandoPrecio.plazo_dias.split(',').filter(Boolean).map(d => `${d} días`).join(' · ')}
+                          {l.fecha_ingreso && ' — Vencimientos: '}
+                          {l.fecha_ingreso && editandoPrecio.plazo_dias.split(',').filter(Boolean).map(d =>
+                            new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(d) * 86400000).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
+                          ).join(' · ')}
+                        </div>
+                      )}                    </div>
 
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Btn onClick={() => guardarPrecio(l)} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</Btn>
@@ -1119,11 +1131,11 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                     </div>
                   </div>
                 )}
-                {l.plazo_dias > 0 && (
+                {l.plazo_dias && (
                   <div>
-                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Plazo / Vencimiento</div>
+                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Plazo / Venc. final</div>
                     <div style={{ fontFamily: 'monospace', fontSize: 11, color: l.fecha_vencimiento_pago && new Date(l.fecha_vencimiento_pago) < new Date() ? S.red : S.muted }}>
-                      {l.plazo_dias}d · {l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                      {String(l.plazo_dias).split(',').filter(Boolean).join('/')}d · {l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
                     </div>
                   </div>
                 )}
