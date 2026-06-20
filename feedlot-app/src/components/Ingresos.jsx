@@ -178,6 +178,10 @@ export default function Ingresos({ usuario }) {
   if (loading) return <Loader />
 
   const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra && !l.monto_total_con_iva) : []
+  const loteEditandoExtra = (esDueno && editandoPrecio?.id && !lotesSinPrecio.find(l => l.id === editandoPrecio.id))
+    ? lotes.find(l => l.id === editandoPrecio.id)
+    : null
+  const lotesParaCompletar = loteEditandoExtra ? [loteEditandoExtra, ...lotesSinPrecio] : lotesSinPrecio
   const compradores = [...new Set(lotes.map(l => l.procedencia).filter(Boolean))]
 
   // Métricas encabezado
@@ -431,12 +435,12 @@ export default function Ingresos({ usuario }) {
       )}
 
       {/* Banner lotes sin precio */}
-      {lotesSinPrecio.length > 0 && (
+      {lotesParaCompletar.length > 0 && (
         <div style={{ background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
-            ⚠ {lotesSinPrecio.length} ingreso{lotesSinPrecio.length !== 1 ? 's' : ''} sin precio de compra
+            {lotesSinPrecio.length > 0 ? `⚠ ${lotesSinPrecio.length} ingreso${lotesSinPrecio.length !== 1 ? 's' : ''} sin precio de compra` : '✏️ Editando datos comerciales'}
           </div>
-          {lotesSinPrecio.map(l => {
+          {lotesParaCompletar.map(l => {
             const isEdit = editandoPrecio?.id === l.id
             const kgBas = l.kg_bascula || 0
             const kgFac = parseFloat(editandoPrecio?.kg_factura || l.kg_factura || 0)
@@ -651,7 +655,20 @@ export default function Ingresos({ usuario }) {
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
                         {esDueno && (
                           <>
-                            <button onClick={() => { setEditandoLote(l); setForm({ procedencia: l.procedencia || '', otraProcedencia: '', categoria: l.categoria || 'Novillos 2-3 años', cantidad: String(l.cantidad || ''), kg_bascula: String(l.kg_bascula || ''), observaciones: l.observaciones || '', corral_cuarentena_id: String(l.corral_cuarentena_id || '') }); setVista('editar') }}
+                            <button onClick={() => { setEditandoPrecio({
+                              id: l.id,
+                              kg_factura: l.kg_factura ? String(l.kg_factura) : '',
+                              precio_compra: l.precio_compra ? String(l.precio_compra) : '',
+                              monto_total: l.monto_total_con_iva ? String(l.monto_total_con_iva) : '',
+                              monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '',
+                              paralelo: (l.monto_total_con_iva && l.monto_facturado) ? String(Math.max(0, l.monto_total_con_iva - l.monto_facturado)) : '',
+                              plazo_dias: l.plazo_dias ? String(l.plazo_dias) : '',
+                              comision_monto: l.comision_monto ? String(l.comision_monto) : '',
+                              comision_a_quien: l.comision_a_quien || '',
+                              comision_es_paralela: l.comision_es_paralela || false,
+                              procedencia: l.procedencia || '',
+                              nuevaProcedencia: '',
+                            }) }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginRight: 4 }}>Editar</button>
                             <button onClick={() => eliminarLote(l.id)}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
