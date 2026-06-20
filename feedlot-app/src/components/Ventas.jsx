@@ -1579,7 +1579,7 @@ export default function Ventas({ usuario }) {
                     const totalRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
                     const netoACobrarGrupo = totalGrupo - totalCom - totalRet
                     const corralesStr = esGrupo ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
-                    const pagosList = grupo.flatMap(vv => pagosVenta[vv.id] || [])
+                    const pagosList = (grupo || []).flatMap(vv => (pagosVenta && pagosVenta[vv.id]) || [])
                     const totalPagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
                     const saldo = totalGrupo - totalPagado
                     const rowKey = esGrupo ? v.grupo_venta_id : v.id
