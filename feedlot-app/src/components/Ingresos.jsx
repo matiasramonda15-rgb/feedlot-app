@@ -129,8 +129,6 @@ export default function Ingresos({ usuario }) {
     const kgFac = editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null
     const precio = editandoPrecio.precio_compra ? parseFloat(editandoPrecio.precio_compra) : null
     const montoTotal = editandoPrecio.monto_total ? parseFloat(editandoPrecio.monto_total) : (kgFac && precio ? Math.round(kgFac * precio) : null)
-    const montoFac = editandoPrecio.monto_facturado ? parseFloat(editandoPrecio.monto_facturado) : null
-    const paralelo = montoTotal && montoFac ? Math.max(0, montoTotal - montoFac) : null
     const plazoStr = editandoPrecio.plazo_dias || null
     const plazosArr = plazoStr ? plazoStr.split(',').filter(Boolean).map(p => parseInt(p)) : []
     const plazoMax = plazosArr.length > 0 ? Math.max(...plazosArr) : null
@@ -150,14 +148,11 @@ export default function Ingresos({ usuario }) {
       kg_factura: kgFac,
       precio_compra: precio || (montoTotal && kgFac ? Math.round(montoTotal / kgFac) : null),
       monto_total_con_iva: montoTotal,
-      monto_facturado: montoFac,
-      monto_negro: paralelo,
       plazo_dias: plazoStr,
       fecha_vencimiento_pago: fechaVto,
       comision_monto: comMonto || null,
       comision_a_quien: editandoPrecio.comision_a_quien || null,
       comision_es_paralela: editandoPrecio.comision_es_paralela || false,
-      cuotas_pago: (editandoPrecio.cuotas_pago || []).filter(c => c.fecha && c.monto).map(c => ({ fecha: c.fecha, monto: parseFloat(c.monto) })),
       procedencia: procFinal,
     }).eq('id', lote.id)
     setEditandoPrecio(null)
@@ -532,33 +527,16 @@ export default function Ingresos({ usuario }) {
                       </div>
                     </div>
 
-                    {/* Fila 3: Monto Total / Monto Factura / Paralelo */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                    {/* Fila 3: Monto Total */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 10 }}>
                       <div>
                         <Lbl c={S.accent}>Monto Total Compra $</Lbl>
                         <input type="number" value={editandoPrecio.monto_total} onChange={e => {
                           const monto = e.target.value
                           const kgF = parseFloat(editandoPrecio.kg_factura) || 0
                           const precio = monto && kgF ? String(Math.round(parseFloat(monto) / kgF)) : editandoPrecio.precio_compra
-                          const montoFac = editandoPrecio.monto_facturado || ''
-                          const paralelo = monto && montoFac ? String(Math.max(0, parseFloat(monto) - parseFloat(montoFac))) : ''
-                          setEditandoPrecio({...editandoPrecio, monto_total: monto, precio_compra: precio, paralelo})
-                        }} placeholder="Total a pagar" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} />
-                      </div>
-                      <div>
-                        <Lbl>Monto Factura $</Lbl>
-                        <input type="number" value={editandoPrecio.monto_facturado || ''} onChange={e => {
-                          const montoFac = e.target.value
-                          const total = parseFloat(editandoPrecio.monto_total) || 0
-                          const paralelo = total && montoFac ? String(Math.max(0, total - parseFloat(montoFac))) : ''
-                          setEditandoPrecio({...editandoPrecio, monto_facturado: montoFac, paralelo})
-                        }} placeholder="Monto facturado" style={inpMono} />
-                      </div>
-                      <div>
-                        <Lbl>Paralelo (calculado)</Lbl>
-                        <div style={{ padding: '9px 12px', border: `1px solid ${editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? '#9B59B6' : S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? '#F3E8FF' : S.bg, fontWeight: 700, color: editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? S.purple : S.hint }}>
-                          {editandoPrecio.paralelo && parseFloat(editandoPrecio.paralelo) > 0 ? `$${parseFloat(editandoPrecio.paralelo).toLocaleString('es-AR')}` : '—'}
-                        </div>
+                          setEditandoPrecio({...editandoPrecio, monto_total: monto, precio_compra: precio})
+                        }} placeholder="Total a pagar" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600, maxWidth: 280}} />
                       </div>
                     </div>
 
@@ -1211,6 +1189,38 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                     <div><Lbl>N° Factura</Lbl><input type="text" value={formFactura.numero_factura} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})} style={inp} /></div>
                     <div><Lbl>Fecha Factura</Lbl><input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} /></div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                    <div>
+                      <Lbl>Neto Facturado $</Lbl>
+                      <input type="number" value={formFactura.monto_facturado || ''} onChange={e => setFormFactura({...formFactura, monto_facturado: e.target.value})}
+                        style={{ ...inp, fontFamily: 'monospace' }} placeholder="Monto sin IVA" />
+                    </div>
+                    <div>
+                      <Lbl>IVA %</Lbl>
+                      <select value={formFactura.iva_pct || '10.5'} onChange={e => setFormFactura({...formFactura, iva_pct: e.target.value})} style={inp}>
+                        <option value="0">Sin IVA</option>
+                        <option value="10.5">10.5%</option>
+                        <option value="21">21%</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Lbl>Cuenta paralela (calculada)</Lbl>
+                      {(() => {
+                        const montoFact = parseFloat(formFactura.monto_facturado) || 0
+                        const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
+                        const ivaMonto = montoFact ? Math.round(montoFact * ivaPct / 100) : 0
+                        const totalFact = montoFact + ivaMonto
+                        const montoTotalOp = l.monto_total_con_iva || 0
+                        const paralelo = montoTotalOp && totalFact ? Math.max(0, montoTotalOp - totalFact) : 0
+                        return (
+                          <div style={{ padding: '9px 12px', border: `1px solid ${paralelo > 0 ? '#9B59B6' : S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: paralelo > 0 ? '#F3E8FF' : S.bg, fontWeight: 700, color: paralelo > 0 ? S.purple : S.hint }}>
+                            {paralelo > 0 ? `$${paralelo.toLocaleString('es-AR')}` : '—'}
+                          </div>
+                        )
+                      })()}
+                    </div>
                   </div>
 
                   {/* Selector de contacto */}
