@@ -1627,58 +1627,42 @@ export default function Ventas({ usuario }) {
                             ✏️ Editar
                           </button>
                         </td>
-                        <td style={{ padding: '7px 10px', minWidth: 200 }}>
-                          <div>
-                            {saldo <= 0 && pagosList.length > 0 ? (
-                              <div>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: '#1E5C2E', marginBottom: 3 }}>
-                                  ✓ Cobrado completo · ${totalPagado.toLocaleString('es-AR')}
-                                </div>
-                                {pagosExpandidos[rowKey] ? (
-                                  <div>
-                                    {pagosList.map(p => (
-                                      <div key={p.id} style={{ fontSize: 10, color: '#1E5C2E', marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                                        <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
-                                        <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }}
-                                          style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 10 }}>✕</button>
+                        <td style={{ padding: '7px 10px', minWidth: 160 }}>
+                          <button onClick={() => setPagosExpandidos(prev => ({...prev, [rowKey]: !prev[rowKey]}))}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${saldo > 0 ? '#F09595' : '#1E5C2E'}`, background: saldo > 0 ? '#FDF0F0' : '#E8F4EB', color: saldo > 0 ? '#7A1A1A' : '#1E5C2E' }}>
+                            {saldo > 0 ? `Saldo $${Math.round(saldo).toLocaleString('es-AR')}` : pagosList.length > 0 ? '✓ Cobrado' : '— Sin pagos —'}
+                            <span style={{ fontSize: 9 }}>{pagosExpandidos[rowKey] ? '▲' : '▼'}</span>
+                          </button>
+                        </td>
+                      </tr>
+
+                      {pagosExpandidos[rowKey] && (
+                        <tr style={{ background: S.bg }}>
+                          <td colSpan={20} style={{ padding: 0, borderBottom: `1px solid ${S.border}` }}>
+                            <div style={{ padding: '1.25rem' }}>
+                              <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>Pagos realizados</div>
+                              {pagosList.length === 0 && <div style={{ fontSize: 13, color: S.hint, marginBottom: 12 }}>Sin pagos registrados.</div>}
+                              {pagosList.length > 0 && (
+                                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden', marginBottom: 12, maxWidth: 480 }}>
+                                  {pagosList.map((p, pi) => (
+                                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosList.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                                      <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralela ? ' · paralelo' : ''}</span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                        <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }} style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                       </div>
-                                    ))}
-                                    <button onClick={() => setPagosExpandidos(prev => ({...prev, [rowKey]: false}))}
-                                      style={{ fontSize: 9, color: '#6B6760', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▲ Ocultar</button>
-                                  </div>
-                                ) : (
-                                  <button onClick={() => setPagosExpandidos(prev => ({...prev, [rowKey]: true}))}
-                                    style={{ fontSize: 9, color: '#1A3D6B', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▼ Ver pagos</button>
-                                )}
-                              </div>
-                            ) : (
-                              <div>
-                                {pagosList.map(p => (
-                                  <div key={p.id} style={{ fontSize: 10, color: '#1E5C2E', marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                                    <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
-                                    <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }}
-                                      style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 10 }}>✕</button>
-                                  </div>
-                                ))}
-                                {totalPagado > 0 && (
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#7A4500', marginBottom: 4 }}>
-                                    Saldo: ${saldo.toLocaleString('es-AR')}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {!isReg ? (
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {!isReg ? (
                               <button onClick={() => { setRegistrandoPago(rowKey); setFormPago({ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '' }) }}
                                 style={{ fontSize: 10, padding: '3px 8px', background: '#E8EFF8', border: '1px solid #1A3D6B', color: '#1A3D6B', borderRadius: 4, cursor: 'pointer', width: '100%' }}>
                                 + Registrar pago
                               </button>
                             ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                      {isReg && (
-                        <tr style={{ background: '#F7F5F0' }}>
-                          <td colSpan={20} style={{ padding: '12px 16px', borderBottom: `1px solid ${S.border}` }}>
+                            {isReg && (
+                              <div style={{ marginTop: 12 }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                                   <div>
                                     <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Monto $</div>
@@ -1760,6 +1744,9 @@ export default function Ventas({ usuario }) {
                                     ✕
                                   </button>
                                 </div>
+                              </div>
+                            )}
+                            </div>
                           </td>
                         </tr>
                       )}

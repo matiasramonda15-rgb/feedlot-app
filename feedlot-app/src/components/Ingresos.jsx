@@ -1288,78 +1288,76 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         ✏️ Editar
                       </button>
                     </td>
-                    <td style={{ padding: '7px 10px', minWidth: 220 }}>
-                      <div>
-                        {l.cuotas_pago?.length > 0 && (() => {
-                          const pagosPorCuota = {}
-                          pagos.forEach(p => { if (p.cuota_idx != null) pagosPorCuota[p.cuota_idx] = (pagosPorCuota[p.cuota_idx] || 0) + (p.monto || 0) })
-                          return (
-                            <div style={{ marginBottom: 6, paddingBottom: 6, borderBottom: `1px dashed ${S.border}` }}>
-                              <div style={{ fontSize: 9, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Cuotas factura</div>
-                              {l.cuotas_pago.map((c, ci) => {
-                                const pagadoCuota = pagosPorCuota[ci] || 0
-                                const saldoCuota = (c.monto || 0) - pagadoCuota
-                                const vencida = c.fecha && new Date(c.fecha + 'T12:00:00') < new Date() && saldoCuota > 0
-                                return (
-                                  <div key={ci} style={{ fontSize: 10, marginBottom: 2, color: saldoCuota <= 0 ? S.green : vencida ? S.red : S.muted }}>
-                                    {c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}: ${(c.monto || 0).toLocaleString('es-AR')}
-                                    {saldoCuota <= 0 ? ' ✓' : pagadoCuota > 0 ? ` (pag. $${pagadoCuota.toLocaleString('es-AR')})` : ''}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )
-                        })()}
-                        {saldo <= 0 && pagos.length > 0 ? (
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: S.green, marginBottom: 3 }}>
-                              ✓ Pagado completo · ${totalPagado.toLocaleString('es-AR')}
-                            </div>
-                            {pagosExpandidos[l.id] ? (
-                              <div>
-                                {pagos.map(p => (
-                                  <div key={p.id} style={{ fontSize: 10, color: S.green, marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                                    <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
-                                    <button onClick={() => eliminarPago(p, l, pagos, total)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 10 }}>✕</button>
-                                  </div>
-                                ))}
-                                <button onClick={() => setPagosExpandidos(prev => ({...prev, [l.id]: false}))}
-                                  style={{ fontSize: 9, color: S.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▲ Ocultar</button>
-                              </div>
-                            ) : (
-                              <button onClick={() => setPagosExpandidos(prev => ({...prev, [l.id]: true}))}
-                                style={{ fontSize: 9, color: S.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>▼ Ver pagos</button>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            {pagos.map(p => (
-                              <div key={p.id} style={{ fontSize: 10, color: S.green, marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                                <span>${p.monto.toLocaleString('es-AR')} · {p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}</span>
-                                <button onClick={() => eliminarPago(p, l, pagos, total)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 10 }}>✕</button>
-                              </div>
-                            ))}
-                            {totalPagado > 0 && (
-                              <div style={{ fontSize: 10, fontWeight: 700, color: S.amber, marginBottom: 4 }}>
-                                Saldo: ${saldo?.toLocaleString('es-AR')}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {pagos.length > 0 && (
-                          <button onClick={() => generarReciboCompra(l, pagos, corrales)}
-                            style={{ fontSize: 9, padding: '2px 6px', background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', marginBottom: 4 }}>🖨️ Recibo</button>
-                        )}
-                        {!isReg && l.precio_compra ? (
-                          <button onClick={() => { setRegistrandoPago(l.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], cuota_idx: null, pagos: [{...PAGO_INIT, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
-                            style={{ fontSize: 10, padding: '3px 8px', background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', width: '100%' }}>
-                            + Registrar pago
-                          </button>
-                        ) : null}
-                      </div>
+                    <td style={{ padding: '7px 10px', minWidth: 180 }}>
+                      <button onClick={() => setPagosExpandidos(prev => ({...prev, [l.id]: !prev[l.id]}))}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${saldo > 0 ? '#F09595' : S.green}`, background: saldo > 0 ? S.redLight : S.greenLight, color: saldo > 0 ? S.red : S.green }}>
+                        {saldo > 0 ? `Saldo $${Math.round(saldo).toLocaleString('es-AR')}` : pagos.length > 0 ? '✓ Pagado' : '— Sin pagos —'}
+                        <span style={{ fontSize: 9 }}>{pagosExpandidos[l.id] ? '▲' : '▼'}</span>
+                      </button>
                     </td>
                   </tr>
 
+                  {pagosExpandidos[l.id] && (
+                    <tr style={{ background: S.bg }}>
+                      <td colSpan={11} style={{ padding: 0, borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ padding: '1.25rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: l.cuotas_pago?.length > 0 ? '1fr 1fr' : '1fr', gap: '1.5rem', marginBottom: '1rem' }}>
+                            {l.cuotas_pago?.length > 0 && (() => {
+                              const pagosPorCuota = {}
+                              pagos.forEach(p => { if (p.cuota_idx != null) pagosPorCuota[p.cuota_idx] = (pagosPorCuota[p.cuota_idx] || 0) + (p.monto || 0) })
+                              return (
+                                <div>
+                                  <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>Cuotas de la factura</div>
+                                  {l.cuotas_pago.map((c, ci) => {
+                                    const pagadoCuota = pagosPorCuota[ci] || 0
+                                    const saldoCuota = (c.monto || 0) - pagadoCuota
+                                    const vencida = c.fecha && new Date(c.fecha + 'T12:00:00') < new Date() && saldoCuota > 0
+                                    const pagadaCompleta = saldoCuota <= 0
+                                    return (
+                                      <div key={ci} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderRadius: 6, marginBottom: 4, background: pagadaCompleta ? S.greenLight : S.surface, border: `1px solid ${pagadaCompleta ? '#97C459' : vencida ? '#F09595' : S.border}` }}>
+                                        <span style={{ fontSize: 13, color: pagadaCompleta ? S.green : vencida ? S.red : S.text }}>
+                                          {pagadaCompleta ? '✓ ' : '○ '}{c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }) : '—'}
+                                        </span>
+                                        <span style={{ fontSize: 13, fontFamily: 'monospace', color: pagadaCompleta ? S.green : S.text }}>
+                                          ${(c.monto || 0).toLocaleString('es-AR')}
+                                          {!pagadaCompleta && pagadoCuota > 0 && <span style={{ fontSize: 10, color: S.amber, display: 'block', textAlign: 'right' }}>pag. ${pagadoCuota.toLocaleString('es-AR')}</span>}
+                                        </span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )
+                            })()}
+                            <div>
+                              <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>Pagos realizados</div>
+                              {pagos.length === 0 && <div style={{ fontSize: 13, color: S.hint }}>Sin pagos registrados.</div>}
+                              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
+                                {pagos.map((p, pi) => (
+                                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagos.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                                    <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · paralelo' : ''}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                      <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                      <button onClick={() => eliminarPago(p, l, pagos, total)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {pagos.length > 0 && (
+                              <button onClick={() => generarReciboCompra(l, pagos, corrales)}
+                                style={{ padding: '7px 14px', fontSize: 12, background: S.surface, border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer' }}>🖨️ Recibo</button>
+                            )}
+                            {!isReg && l.precio_compra && (
+                              <button onClick={() => { setRegistrandoPago(l.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], cuota_idx: null, pagos: [{...PAGO_INIT, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
+                                style={{ flex: 1, padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer' }}>+ Registrar pago</button>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {isEditFactura && (
                     <tr style={{ background: S.accentLight }}>
                       <td colSpan={11} style={{ padding: '1.25rem' }}>
