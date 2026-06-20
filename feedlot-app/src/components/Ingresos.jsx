@@ -976,8 +976,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
   const [pagosMap, setPagosMap] = useState({})
   const [chequesCartera, setChequesCartera] = useState([])
-  const PAGO_INIT_GC = { tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }] })
+  const PAGO_INIT_GC = { tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
+  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }] })
   const [pagoAbierto, setPagoAbierto] = useState(null)
   const [guardando, setGuardando] = useState(false)
 
@@ -1026,42 +1026,67 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   }
 
   async function registrarPago(lote) {
-    const monto = parseFloat(formPago.monto)
-    if (!monto) { alert('Ingresá el monto'); return }
+    const totalPagos = formPago.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+    if (!totalPagos) { alert('Ingresá el monto'); return }
     setGuardando(true)
-    const formaPago = formPago.subtipo_cheque ? 'e-cheq' : formPago.tipo
-    const desc = `Pago compra ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`
-    const { data: pagoInsertado } = await supabase.from('pagos_compras').insert({
-      lote_id: lote.id, fecha: formPago.fecha, monto,
-      forma_pago: formaPago,
-      numero_cheque: formPago.subtipo_cheque === 'propio' ? formPago.cheque_propio.numero || null : null,
-      banco: formPago.subtipo_cheque === 'propio' ? formPago.cheque_propio.banco || null : null,
-      fecha_vencimiento_cheque: formPago.subtipo_cheque === 'propio' ? formPago.cheque_propio.fecha_vencimiento || null : null,
-      es_negro: formPago.es_paralela || false,
-    }).select().single()
 
     const kgBase = lote.kg_factura > 0 ? lote.kg_factura : lote.kg_bascula
     const totalLote = lote.monto_total_con_iva || (lote.precio_compra && kgBase ? Math.round(kgBase * lote.precio_compra) : null)
     const pagosActuales = pagosMap[lote.id] || []
-    const totalPagado = pagosActuales.reduce((s, p) => s + (p.monto || 0), 0) + monto
+    const pagoIds = []
+    const cajaOficialIds = []
+    const cajaParalelaIds = []
+    const chequeEmitidoIds = []
+
+    for (const pago of formPago.pagos) {
+      const monto = parseFloat(pago.monto) || 0
+      if (!monto) continue
+      const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      let desc = `Pago compra ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`
+      if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        const detalleCheques = pago.cheque_tercero_ids.map(chId => {
+          const ch = chequesCartera.find(c => String(c.id) === chId)
+          return ch ? `#${ch.numero || 's/n'} ${ch.banco || ''} vto.${ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}` : null
+        }).filter(Boolean).join(', ')
+        desc += ` — Entregado a ${lote.procedencia || 'proveedor'}: cheque(s) ${detalleCheques}`
+      }
+
+      const { data: pagoInsertado } = await supabase.from('pagos_compras').insert({
+        lote_id: lote.id, fecha: formPago.fecha, monto,
+        forma_pago: formaPago,
+        numero_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.numero || null : null,
+        banco: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.banco || null : null,
+        fecha_vencimiento_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.fecha_vencimiento || null : null,
+        es_negro: pago.es_paralela || false,
+        descripcion: desc,
+      }).select().single()
+      if (pagoInsertado?.id) pagoIds.push(pagoInsertado.id)
+
+      let pagoCajaId = null
+      if (pago.es_paralela) {
+        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
+        if (cp?.id) { cajaParalelaIds.push(cp.id); pagoCajaId = cp.id }
+      } else {
+        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
+        if (co?.id) { cajaOficialIds.push(co.id); pagoCajaId = co.id }
+      }
+
+      if (pago.subtipo_cheque === 'propio' && pago.cheque_propio.fecha_vencimiento) {
+        const { data: chE } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: pago.es_paralela || false, caja_oficial_id: pagoCajaId, pago_compra_id: pagoInsertado?.id }).select().single()
+        if (chE?.id) chequeEmitidoIds.push(chE.id)
+      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        for (const chId of pago.cheque_tercero_ids) {
+          await supabase.from('cheques').update({ estado: 'entregado', beneficiario: lote.procedencia || null }).eq('id', parseInt(chId))
+        }
+      }
+    }
+
+    const totalPagado = pagosActuales.reduce((s, p) => s + (p.monto || 0), 0) + totalPagos
     const nuevoEstado = totalLote && totalPagado > 0 && totalPagado >= totalLote * 0.99 ? 'pagado' : 'pendiente'
     await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', lote.id)
 
-    let caja_oficial_id = null
-    if (formPago.es_paralela) {
-      await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id })
-    } else {
-      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
-      caja_oficial_id = co?.id || null
-    }
-    if (formPago.subtipo_cheque === 'propio' && formPago.cheque_propio.fecha_vencimiento) {
-      await supabase.from('cheques').insert({ tipo: 'emitido', numero: formPago.cheque_propio.numero || null, banco: formPago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: formPago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: formPago.es_paralela || false, caja_oficial_id, pago_compra_id: pagoInsertado?.id })
-    } else if (formPago.subtipo_cheque === 'tercero' && formPago.cheque_tercero_id) {
-      await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(formPago.cheque_tercero_id))
-    }
-
     setPagoAbierto(null)
-    setFormPago({ monto: '', tipo: 'transferencia', fecha: new Date().toISOString().split('T')[0], es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' })
+    setFormPago({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT_GC}] })
     setGuardando(false)
     await cargarDatos()
     await cargarPagos()
@@ -1269,8 +1294,20 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         <button onClick={() => generarReciboCompra(l, [p], corrales)}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️</button>
                         <button onClick={async () => {
-                        const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).single().catch(() => ({ data: null }))
+                        if (!confirm('¿Eliminar este pago? Se eliminará de la caja y se revertirán los cheques usados.')) return
+                        // Eliminar cheque emitido (propio) asociado
+                        const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).eq('tipo', 'emitido').maybeSingle()
                         if (chAsoc) await supabase.from('cheques').delete().eq('id', chAsoc.id)
+                        // Revertir cheques de tercero (recibidos) que se usaron para este pago, buscando por descripcion del pago
+                        if (p.descripcion && p.descripcion.includes('Entregado a')) {
+                          const matchNums = [...p.descripcion.matchAll(/#(\S+)/g)].map(m => m[1]).filter(n => n !== 's/n')
+                          for (const num of matchNums) {
+                            await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('numero', num).eq('estado', 'entregado')
+                          }
+                        }
+                        // Eliminar entrada de caja asociada
+                        await supabase.from('caja_oficial').delete().eq('pago_compra_id', p.id)
+                        await supabase.from('caja_paralela').delete().eq('pago_compra_id', p.id)
                         await supabase.from('pagos_compras').delete().eq('id', p.id)
                         const pagosRest = pagos.filter(pp => pp.id !== p.id)
                         const totalPagadoRest = pagosRest.reduce((s, pp) => s + (pp.monto || 0), 0)
@@ -1363,12 +1400,24 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                 return lista.length === 0
                                   ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera.</div>
                                   : lista.map(ch => (
-                                    <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_id===String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_id===String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
-                                      <input type="radio" name={`cheq_gc_${idx}`} value={ch.id} checked={pago.cheque_tercero_id===String(ch.id)} onChange={() => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: String(ch.id)} : p); setFormPago({...formPago, pagos: n}) }} />
+                                    <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
+                                      <input type="checkbox" checked={pago.cheque_tercero_ids?.includes(String(ch.id)) || false} onChange={() => {
+                                        const actuales = pago.cheque_tercero_ids || []
+                                        const yaEsta = actuales.includes(String(ch.id))
+                                        const nuevosIds = yaEsta ? actuales.filter(id => id !== String(ch.id)) : [...actuales, String(ch.id)]
+                                        const nuevoMonto = nuevosIds.reduce((s, id) => s + (chequesCartera.find(c => String(c.id) === id)?.monto || 0), 0)
+                                        const n = formPago.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_ids: nuevosIds, monto: String(nuevoMonto || '')} : p)
+                                        setFormPago({...formPago, pagos: n})
+                                      }} />
                                       <div style={{ fontSize: 13 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong><span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero||'sin nro'} · {ch.banco||'—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span></div>
                                     </label>
                                   ))
                               })()}
+                              {pago.cheque_tercero_ids?.length > 0 && (
+                                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, marginTop: 6, padding: '6px 10px', background: S.accentLight, borderRadius: 6 }}>
+                                  {pago.cheque_tercero_ids.length} cheque{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} seleccionado{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} · Total: ${parseFloat(pago.monto || 0).toLocaleString('es-AR')}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
