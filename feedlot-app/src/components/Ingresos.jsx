@@ -1133,9 +1133,17 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                 )}
                 {l.plazo_dias && (
                   <div>
-                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Plazo / Venc. final</div>
-                    <div style={{ fontFamily: 'monospace', fontSize: 11, color: l.fecha_vencimiento_pago && new Date(l.fecha_vencimiento_pago) < new Date() ? S.red : S.muted }}>
-                      {String(l.plazo_dias).split(',').filter(Boolean).join('/')}d · {l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Plazos / Vencimientos</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 11, color: S.muted }}>
+                      {String(l.plazo_dias).split(',').filter(Boolean).map((d, i) => {
+                        const fechaVenc = l.fecha_ingreso ? new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(d) * 86400000) : null
+                        const vencido = fechaVenc && fechaVenc < new Date()
+                        return (
+                          <span key={i} style={{ color: vencido ? S.red : S.muted }}>
+                            {i > 0 && ' · '}{d}d ({fechaVenc ? fechaVenc.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'})
+                          </span>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
