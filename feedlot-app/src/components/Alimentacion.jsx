@@ -412,7 +412,7 @@ export default function Alimentacion({ usuario }) {
   const TABS = [
     { key: 'registro', label: 'Registro diario' },
     { key: 'formulas', label: 'Formulas de mixer' },
-    { key: 'stock', label: 'Stock de insumos' },
+    { key: 'stock', label: 'Stock de alimentos' },
     { key: 'historial', label: 'Historial' },
   ]
 
@@ -817,7 +817,7 @@ export default function Alimentacion({ usuario }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Stock de insumos</h1>
+              <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Stock de alimentos</h1>
               <div style={{ fontSize: 12, color: S.muted }}>Se descuenta al confirmar cada jornada</div>
             </div>
             <button onClick={() => setShowFormIngreso(!showFormIngreso)}
