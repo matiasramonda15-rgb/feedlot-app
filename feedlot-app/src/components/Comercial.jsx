@@ -135,7 +135,8 @@ export default function Comercial({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: co }, { data: cp }, { data: ch }, { data: ct }] = await Promise.all([
+    try {
+    const [{ data: co }, { data: cp }, { data: ch }, { data: vt }, { data: lt }, { data: ct }] = await Promise.all([
       supabase.from('caja_oficial').select('*, contactos(nombre)').order('fecha', { ascending: false }),
       supabase.from('caja_paralela').select('*').order('fecha', { ascending: false }),
       supabase.from('cheques').select('*').order('fecha_vencimiento', { ascending: true }),
@@ -146,7 +147,10 @@ export default function Comercial({ usuario }) {
     setCajaOficial(co || [])
     setCajaParalela(cp || [])
     setCheques(ch || [])
+    setVentasCta(vt || [])
+    setLotesCta(lt || [])
     setContactos(ct || [])
+    } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack) }
     setLoading(false)
   }
 
@@ -502,9 +506,7 @@ export default function Comercial({ usuario }) {
       {tab === 'cheques_paralelo' && (
         <TablaCheques items={chFiltradosPar} chVence7={chVence7Par} filtro={filtroChequePar} setFiltro={setFiltroChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
-      )}
 
-      
 
     </div>
   )
