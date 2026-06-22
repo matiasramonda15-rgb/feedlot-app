@@ -55,7 +55,6 @@ export default function Sanidad({ usuario }) {
   const [revisiones, setRevisiones] = useState([])
   const [productos, setProductos] = useState([])
   const [revState, setRevState] = useState([])
-  const [formProd, setFormProd] = useState({ show: false, nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'dosis' })
   const [showFormMort, setShowFormMort] = useState(false)
   const [formMort, setFormMort] = useState({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
   const [guardandoMort, setGuardandoMort] = useState(false)
@@ -126,7 +125,6 @@ export default function Sanidad({ usuario }) {
     await supabase.from('corrales').update(update).eq('id', m.corral_id)
     await cargarDatos()
   }
-  const [editProd, setEditProd] = useState({})
   const esDueno = ['dueno', 'secretaria'].includes(usuario?.rol)
 
   useEffect(() => {
@@ -232,35 +230,7 @@ export default function Sanidad({ usuario }) {
     const n = [...revState]; n[i].enfermos[ei][k] = v; setRevState(n)
   }
 
-  async function guardarProd() {
-    if (!formProd.nombre.trim()) { alert('Ingresa el nombre'); return }
-    const { data } = await supabase.from('productos_sanidad').insert({ nombre: formProd.nombre.trim(), tipo: formProd.tipo, laboratorio: formProd.lab, carencia_dias: parseInt(formProd.car) || 0, activo: true }).select().single()
-    if (data) setProductos([...productos, { n: data.nombre, tipo: data.tipo, lab: data.laboratorio, car: data.carencia_dias, id: data.id }])
-    setFormProd({ show: false, nombre: '', tipo: 'Vacuna', lab: '', car: '' })
-  }
 
-  async function guardarEditProd(i) {
-    const ep = editProd[i]
-    if (!ep) return
-    const p = productos[i]
-    if (p.id) {
-      await supabase.from('productos_sanidad').update({
-        nombre: ep.nombre, tipo: ep.tipo, laboratorio: ep.lab,
-        carencia_dias: parseInt(ep.car) || 0,
-        unidad: ep.unidad || 'dosis',
-      }).eq('id', p.id)
-    }
-    const nuevos = [...productos]
-    nuevos[i] = { ...p, n: ep.nombre, tipo: ep.tipo, lab: ep.lab, car: parseInt(ep.car) || 0, unidad: ep.unidad }
-    setProductos(nuevos)
-    const ne = { ...editProd }; delete ne[i]; setEditProd(ne)
-  }
-
-  async function eliminarProd(i) {
-    if (!confirm(`Eliminar "${productos[i].n}"?`)) return
-    if (productos[i].id) await supabase.from('productos_sanidad').update({ activo: false }).eq('id', productos[i].id)
-    const p = [...productos]; p.splice(i, 1); setProductos(p)
-  }
 
   if (loading) return <Loader />
 
@@ -282,8 +252,8 @@ export default function Sanidad({ usuario }) {
     return dias <= 0 ? 'Hoy' : dias === 1 ? 'Manana' : `en ${dias} dias`
   })()
 
-  const TABS = ['alertas', 'ingreso', 'revision', 'historial', 'mortalidad', 'productos', 'stock']
-  const TAB_LABELS = ['Alertas', 'Protocolo ingreso', 'Revision bisemanal', 'Historial', '💀 Mortalidad', 'Productos', '📦 Stock']
+  const TABS = ['alertas', 'ingreso', 'revision', 'historial', 'mortalidad', 'stock']
+  const TAB_LABELS = ['Alertas', 'Protocolo ingreso', 'Revision bisemanal', 'Historial', '💀 Mortalidad', '📦 Stock']
 
   return (
     <div>
@@ -707,132 +677,6 @@ export default function Sanidad({ usuario }) {
         </div>
       )}
 
-      {tab === 'productos' && (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-            <div>
-              <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Productos y vacunas</h2>
-              <div style={{ fontSize: 12, color: S.muted }}>Los cargas vos · aparecen al registrar un evento</div>
-            </div>
-            <button onClick={() => setFormProd({...formProd, show: !formProd.show})}
-              style={{ padding: '8px 16px', background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              + Agregar producto
-            </button>
-          </div>
-
-          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-            {false && formProd.show && (
-              <div style={{ marginBottom: '1.25rem', paddingBottom: '1.25rem', borderBottom: `1px solid ${S.border}` }}>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Nuevo producto</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                  {[
-                    { label: 'Nombre', key: 'nombre', type: 'text', placeholder: 'ej. Alliance' },
-                    { label: 'Laboratorio', key: 'lab', type: 'text', placeholder: 'ej. MSD Animal Health' },
-                  ].map(f => (
-                    <div key={f.key}>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>{f.label}</label>
-                      <input type={f.type} placeholder={f.placeholder} value={formProd[f.key]}
-                        onChange={e => setFormProd({...formProd, [f.key]: e.target.value})}
-                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface, boxSizing: 'border-box' }} />
-                    </div>
-                  ))}
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Tipo</label>
-                    <select value={formProd.tipo} onChange={e => setFormProd({...formProd, tipo: e.target.value})}
-                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
-                      {['Vacuna','Antibiotico','Antiparasitario','Vitamina','Antiinflamatorio','Otro'].map(t => <option key={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Carencia (dias)</label>
-                    <input type="number" placeholder="0 = sin carencia" min="0" value={formProd.car}
-                      onChange={e => setFormProd({...formProd, car: e.target.value})}
-                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface, boxSizing: 'border-box' }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Unidad</label>
-                    <select value={formProd.unidad} onChange={e => setFormProd({...formProd, unidad: e.target.value})}
-                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
-                      {['dosis','ml','cm3','kg','g','comprimido'].map(u => <option key={u}>{u}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <button onClick={() => setFormProd({...formProd, show: false})} style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Cancelar</button>
-                  <button onClick={guardarProd} style={{ padding: '5px 10px', fontSize: 12, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>Guardar</button>
-                </div>
-              </div>
-            )}
-
-            {productos.map((p, i) => {
-              const tc = TIPO_BADGE[p.tipo] || TIPO_BADGE.Otro
-              const ep = editProd[i]
-              return (
-                <div key={i} style={{ padding: '.85rem 0', borderBottom: `1px solid ${S.border}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{p.n}</div>
-                      <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
-                        <Badge bg={tc.bg} color={tc.color}>{p.tipo}</Badge>
-                        <span style={{ marginLeft: 6 }}>{p.lab}</span>
-                      </div>
-                    </div>
-                    <div style={{ minWidth: 110, textAlign: 'right', fontSize: 12 }}>
-                      {p.car > 0 ? <span style={{ color: S.amber, fontWeight: 600 }}>Carencia: {p.car} dias</span> : <span style={{ color: S.hint }}>Sin carencia</span>}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => setEditProd({ ...editProd, [i]: { nombre: p.n, tipo: p.tipo, lab: p.lab || '', car: String(p.car || 0), unidad: p.unidad || 'dosis' } })}
-                        style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Editar</button>
-                      <button onClick={() => eliminarProd(i)} style={{ padding: '5px 10px', fontSize: 12, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Eliminar</button>
-                    </div>
-                  </div>
-                  {ep && (
-                    <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginTop: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Nombre</label>
-                          <input type="text" value={ep.nombre} onChange={e => setEditProd({...editProd, [i]: {...ep, nombre: e.target.value}})}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Tipo</label>
-                          <select value={ep.tipo} onChange={e => setEditProd({...editProd, [i]: {...ep, tipo: e.target.value}})}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
-                            {['Vacuna','Antibiotico','Antiparasitario','Vitamina','Antiinflamatorio','Otro'].map(t => <option key={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Laboratorio</label>
-                          <input type="text" value={ep.lab} onChange={e => setEditProd({...editProd, [i]: {...ep, lab: e.target.value}})}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Carencia (días)</label>
-                          <input type="number" value={ep.car} onChange={e => setEditProd({...editProd, [i]: {...ep, car: e.target.value}})}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Unidad</label>
-                          <select value={ep.unidad} onChange={e => setEditProd({...editProd, [i]: {...ep, unidad: e.target.value}})}
-                            style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface }}>
-                            {['dosis','ml','cm3','kg','g','comprimido'].map(u => <option key={u}>{u}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                        <button onClick={() => { const ne = {...editProd}; delete ne[i]; setEditProd(ne) }}
-                          style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                        <button onClick={() => guardarEditProd(i)}
-                          style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
       {/* ── STOCK SANITARIO ── */}
       {tab === 'stock' && (
         <div>
