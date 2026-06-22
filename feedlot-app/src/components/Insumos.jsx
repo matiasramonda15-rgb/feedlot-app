@@ -642,35 +642,21 @@ export default function Insumos({ usuario }) {
                   </tr>
                   {pagarInline === c.id && (
                     <tr>
-                      <td colSpan={10} style={{ padding: '1.25rem', background: S.greenLight, borderBottom: `1px solid ${S.border}` }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: S.green, marginBottom: '1rem' }}>
-                          💳 Pagar — {c.insumo_nombre}{c.proveedor ? ` · ${c.proveedor}` : ''} · {c.cantidad?.toLocaleString('es-AR')} {c.unidad || 'kg'}
-                        </div>
+                      <td colSpan={10} style={{ padding: '1.25rem', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                            Pagar — {c.insumo_nombre}{c.proveedor ? ` · ${c.proveedor}` : ''}
+                          </div>
+                          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>
+                            {c.cantidad?.toLocaleString('es-AR')} {c.unidad || 'kg'} · Total: {c.total ? `$${c.total.toLocaleString('es-AR')}` : '—'}
+                          </div>
 
-                        {/* Precio y fecha */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Precio $/{c.unidad || 'kg'}</div>
-                            <input type="number" value={formPagoInline.precio_unitario}
-                              onChange={e => {
-                                const precio = e.target.value
-                                const total = precio && c.cantidad ? String(Math.round(parseFloat(precio) * c.cantidad)) : ''
-                                const pagos = formPagoInline.pagos.map((p, i) => i === 0 ? {...p, monto: total} : p)
-                                setFormPagoInline({...formPagoInline, precio_unitario: precio, pagos})
-                              }}
-                              style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} placeholder="ej. 1500" />
+                          {/* Fecha */}
+                          <div style={{ marginBottom: '1rem', maxWidth: 200 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Fecha</div>
+                            <input type="date" value={formPagoInline.fecha} onChange={e => setFormPagoInline({...formPagoInline, fecha: e.target.value})}
+                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
                           </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Total calculado</div>
-                            <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: formPagoInline.precio_unitario && c.cantidad ? S.green : S.hint, background: S.bg }}>
-                              {formPagoInline.precio_unitario && c.cantidad ? `$${Math.round(parseFloat(formPagoInline.precio_unitario) * c.cantidad).toLocaleString('es-AR')}` : '—'}
-                            </div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Fecha pago</div>
-                            <input type="date" value={formPagoInline.fecha} onChange={e => setFormPagoInline({...formPagoInline, fecha: e.target.value})} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
-                          </div>
-                        </div>
 
                         {/* Formas de pago — igual a Gastos generales */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -780,73 +766,66 @@ export default function Insumos({ usuario }) {
                           </div>
                         ))}
 
-                        {/* Resumen total */}
-                        {(() => {
-                          const totalPagos = formPagoInline.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-                          const totalEsperado = formPagoInline.precio_unitario && c.cantidad ? Math.round(parseFloat(formPagoInline.precio_unitario) * c.cantidad) : null
-                          const ok = totalEsperado ? Math.abs(totalEsperado - totalPagos) < 0.5 : totalPagos > 0
-                          return (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: ok ? S.greenLight : S.amberLight, border: `1px solid ${ok ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, marginTop: 4 }}>
-                              <span style={{ fontSize: 13 }}>
-                                Total pagos: <strong style={{ fontFamily: 'monospace' }}>${totalPagos.toLocaleString('es-AR')}</strong>
-                                {totalEsperado && <span style={{ marginLeft: 12, color: S.muted }}>· Esperado: <strong style={{ fontFamily: 'monospace' }}>${totalEsperado.toLocaleString('es-AR')}</strong></span>}
-                              </span>
-                              {!ok && totalEsperado && <span style={{ color: S.amber, fontWeight: 600, fontSize: 12 }}>Diferencia: ${Math.abs(totalEsperado - totalPagos).toLocaleString('es-AR')}</span>}
-                            </div>
-                          )
-                        })()}
+                          {/* Resumen — igual a Gastos */}
+                          {(() => {
+                            const totalPagos = formPagoInline.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+                            const montoTotal = c.total || 0
+                            const diferencia = montoTotal - totalPagos
+                            return montoTotal > 0 ? (
+                              <div style={{ background: Math.abs(diferencia) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(diferencia) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: '1rem' }}>
+                                <span style={{ color: S.muted }}>Total gasto: <strong>${montoTotal.toLocaleString('es-AR')}</strong></span>
+                                <span style={{ margin: '0 12px', color: S.muted }}>|</span>
+                                <span style={{ color: S.muted }}>Total pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong></span>
+                                {Math.abs(diferencia) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${Math.abs(diferencia).toLocaleString('es-AR')}</span>}
+                              </div>
+                            ) : null
+                          })()}
 
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button onClick={async () => {
-                            const pagos = formPagoInline.pagos
-                            const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-                            if (!totalPagos) { alert('Ingresá el monto'); return }
-                            const desc = `Pago compra ${c.insumo_nombre}${c.proveedor ? ` — ${c.proveedor}` : ''}`
-                            let caja_oficial_id = null, caja_paralela_id = null
-                            for (const pago of pagos) {
-                              const monto = parseFloat(pago.monto) || 0
-                              if (!monto) continue
-                              const fp = pago.tipo === 'cheque' ? 'cheque' : pago.subtipo_cheque ? 'e-cheq' : pago.tipo
-                              if (pago.es_paralelo) {
-                                const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-                                if (!caja_paralela_id) caja_paralela_id = cp?.id
-                              } else {
-                                const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
-                                if (!caja_oficial_id) caja_oficial_id = co?.id
-                              }
-                              // E-cheq tercero → marcar como depositados (puede ser múltiples)
-                              if (pago.tipo === 'e-cheq' && pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-                                for (const chId of pago.cheque_tercero_ids) {
-                                  await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+                                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: '1rem' }}>
+                            <button onClick={() => setPagarInline(null)}
+                              style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                              Cancelar
+                            </button>
+                            <button onClick={async () => {
+                              const pagos = formPagoInline.pagos
+                              const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+                              if (!totalPagos) { alert('Ingresá el monto'); return }
+                              const desc = `Pago compra ${c.insumo_nombre}${c.proveedor ? ` — ${c.proveedor}` : ''}`
+                              let caja_oficial_id = null, caja_paralela_id = null
+                              for (const pago of pagos) {
+                                const monto = parseFloat(pago.monto) || 0
+                                if (!monto) continue
+                                const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+                                if (pago.es_paralelo) {
+                                  const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+                                  if (!caja_paralela_id) caja_paralela_id = cp?.id
+                                } else {
+                                  const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
+                                  if (!caja_oficial_id) caja_oficial_id = co?.id
+                                }
+                                if (pago.tipo === 'e-cheq' && pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+                                  for (const chId of pago.cheque_tercero_ids) {
+                                    await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+                                  }
+                                }
+                                if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
+                                  await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
                                 }
                               }
-                              // E-cheq propio → registrar en cheques
-                              if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-                                await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+                              const precioUnit = c.precio_unitario || (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
+                              const formaDesc = pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+')
+                              await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos }).eq('id', c.id)
+                              if (precioUnit) {
+                                const tabla = c.insumo_tipo === 'sanitario' ? 'stock_sanitario' : 'stock_insumos'
+                                await supabase.from(tabla).update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
                               }
-                            }
-                            const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
-                            const formaDesc = pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+')
-                            await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos }).eq('id', c.id)
-                            // Actualizar precio_referencia en el stock
-                            if (precioUnit) {
-                              if (c.insumo_tipo === 'sanitario') {
-                                await supabase.from('stock_sanitario').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
-                              } else {
-                                await supabase.from('stock_insumos').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
-                              }
-                            }
-                            setPagarInline(null)
-                            await cargar()
-                            // Generar recibo
-                            generarRecibo({ ...c, fecha: formPagoInline.fecha, precio_unitario: precioUnit, total: totalPagos }, pagos)
-                          }} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                            💾 Confirmar y emitir recibo
-                          </button>
-                          <button onClick={() => setPagarInline(null)}
-                            style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                            Cancelar
-                          </button>
+                              setPagarInline(null)
+                              await cargar()
+                              generarRecibo({ ...c, fecha: formPagoInline.fecha, precio_unitario: precioUnit, total: totalPagos }, pagos)
+                            }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                              💾 Confirmar y emitir recibo
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>
