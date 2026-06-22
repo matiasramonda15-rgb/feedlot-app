@@ -902,7 +902,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   })
   const [confirmados, setConfirmados] = useState({})
   const [revState, setRevState] = useState([])
-  const [formEvento, setFormEvento] = useState({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
+  const [formEvento, setFormEvento] = useState({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [stockSanitario, setStockSanitario] = useState([])
 
@@ -957,17 +957,30 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
 
   async function registrarEvento() {
     if (!formEvento.corral_id) { alert('Selecciona un corral'); return }
+    if (!formEvento.prod_id) { alert('Selecciona un producto'); return }
     if (!formEvento.cantidad) { alert('Ingresa la cantidad de animales'); return }
     setGuardando(true)
+    const cantAnimales = parseInt(formEvento.cantidad)
+    const dosisMl = parseFloat(formEvento.dosis_ml) || 0
+    const mlTotal = dosisMl > 0 ? Math.round(cantAnimales * dosisMl) : null
+    // Descontar del stock sanitario
+    if (mlTotal > 0) {
+      const prod = stockSanitario.find(p => String(p.id) === String(formEvento.prod_id))
+      if (prod) {
+        const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlTotal)
+        await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
+      }
+    }
     await supabase.from('eventos_sanitarios').insert({
       tipo: 'tratamiento', corral_id: parseInt(formEvento.corral_id),
-      producto: formEvento.producto, cantidad_animales: parseInt(formEvento.cantidad),
+      producto: formEvento.producto, cantidad_animales: cantAnimales,
+      cantidad_ml: mlTotal,
       observaciones: formEvento.observaciones || null, registrado_por: usuario?.id,
     })
     onDone()
-    alert('Evento registrado.')
+    alert(`Evento registrado.${mlTotal ? ` Se descontaron ${mlTotal.toLocaleString('es-AR')} ml de ${formEvento.producto}.` : ''}`)
     setPantSan('alertas')
-    setFormEvento({ corral_id: '', producto: 'Alliance+Feedlot', cantidad: '', observaciones: '' })
+    setFormEvento({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -1155,10 +1168,28 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
             </div>
             <div style={{ marginBottom: '.85rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto</div>
-              <select value={formEvento.producto} onChange={e => setFormEvento({...formEvento, producto: e.target.value})}
-                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
-                {PRODUCTOS.map(p => <option key={p}>{p}</option>)}
-              </select>
+              {stockSanitario.length === 0
+                ? <div style={{ padding: '11px 12px', background: C.surface2, borderRadius: 8, fontSize: 13, color: C.muted }}>No hay productos en stock sanitario.</div>
+                : <select value={formEvento.prod_id}
+                    onChange={e => {
+                      const prod = stockSanitario.find(p => String(p.id) === e.target.value)
+                      setFormEvento({...formEvento, prod_id: e.target.value, producto: prod?.producto || ''})
+                    }}
+                    style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans }}>
+                    <option value="">— Seleccioná un producto —</option>
+                    {stockSanitario.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.producto} · {(p.cantidad_ml || 0).toLocaleString('es-AR')} {p.unidad || 'ml'} en stock
+                      </option>
+                    ))}
+                  </select>
+              }
+            </div>
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Dosis ml/animal</div>
+              <input type="number" inputMode="decimal" placeholder="5" value={formEvento.dosis_ml}
+                onChange={e => setFormEvento({...formEvento, dosis_ml: e.target.value})}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.amber, boxSizing: 'border-box' }} />
             </div>
             <div style={{ marginBottom: '.85rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad de animales</div>
@@ -1166,6 +1197,23 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                 onChange={e => setFormEvento({...formEvento, cantidad: e.target.value})}
                 style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.green, boxSizing: 'border-box' }} />
             </div>
+            {/* Preview ml totales */}
+            {formEvento.prod_id && formEvento.dosis_ml && formEvento.cantidad && (() => {
+              const mlTotal = Math.round(parseInt(formEvento.cantidad) * parseFloat(formEvento.dosis_ml))
+              const prod = stockSanitario.find(p => String(p.id) === String(formEvento.prod_id))
+              const stockActual = prod?.cantidad_ml || 0
+              const alcanza = stockActual >= mlTotal
+              return (
+                <div style={{ background: alcanza ? '#1A2E1A' : '#2E1A1A', border: `1px solid ${alcanza ? C.green : C.red}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: alcanza ? C.green : C.red }}>
+                    {mlTotal.toLocaleString('es-AR')} ml totales ({formEvento.cantidad} animales × {formEvento.dosis_ml} ml)
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>
+                    Stock actual: {stockActual.toLocaleString('es-AR')} ml · {alcanza ? `Quedan ${(stockActual - mlTotal).toLocaleString('es-AR')} ml` : `⚠ Faltan ${(mlTotal - stockActual).toLocaleString('es-AR')} ml`}
+                  </div>
+                </div>
+              )
+            })()}
             <div style={{ marginBottom: '1rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
               <input type="text" placeholder="descripcion, diagnostico, etc." value={formEvento.observaciones}
