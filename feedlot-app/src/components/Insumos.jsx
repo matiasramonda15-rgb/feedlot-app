@@ -15,7 +15,7 @@ const inp = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}
 const inpMono = { ...inp, fontFamily: 'monospace' }
 const Lbl = ({ children }) => <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{children}</div>
 
-const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
 function numeroALetras(num) {
   const unidades = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE',
@@ -96,7 +96,7 @@ export default function Insumos({ usuario }) {
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagosPend, setShowPagosPend] = useState(false)
   const [pagarInline, setPagarInline] = useState(null)
-  const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false })
+  const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }] })
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
@@ -619,7 +619,7 @@ export default function Insumos({ usuario }) {
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                               🖨️ Recibo
                             </button>
-                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', es_paralelo: false }) }}
+                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] }) }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                               💳 Pagar
                             </button>
@@ -672,98 +672,109 @@ export default function Insumos({ usuario }) {
                           </div>
                         </div>
 
-                        {/* Formas de pago */}
+                        {/* Formas de pago — igual a Gastos generales */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
                           <button onClick={() => setFormPagoInline({...formPagoInline, pagos: [...formPagoInline.pagos, { ...PAGO_INIT }]})}
                             style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
                         </div>
                         {formPagoInline.pagos.map((pago, idx) => (
-                          <div key={idx} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 6 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
+                          <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 10 : 0 }}>
                               <div>
-                                <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Forma</div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Forma de pago</div>
                                 <select value={pago.tipo} onChange={e => {
                                   const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p)
                                   setFormPagoInline({...formPagoInline, pagos: n})
-                                }} style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13 }}>
+                                }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
                                   <option value="transferencia">Transferencia</option>
                                   <option value="efectivo">Efectivo</option>
-                                  <option value="cheque">Cheque tercero</option>
-                                  <option value="e-cheq">E-cheq propio</option>
+                                  <option value="e-cheq">E-cheq</option>
                                   <option value="cuenta_corriente">Cuenta corriente</option>
                                 </select>
                               </div>
                               <div>
-                                <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Monto $</div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Monto $</div>
                                 <input type="number" value={pago.monto}
                                   onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
-                                  style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
                               </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: S.purple, cursor: 'pointer' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                                   <input type="checkbox" checked={pago.es_paralelo || false}
                                     onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormPagoInline({...formPagoInline, pagos: n}) }} />
                                   Paralelo
                                 </label>
-                                {pago.tipo === 'e-cheq' && (
-                                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: S.muted, cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={pago.subtipo_cheque === 'propio'}
-                                      onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: e.target.checked ? 'propio' : ''} : p); setFormPagoInline({...formPagoInline, pagos: n}) }} />
-                                    Cheque propio
-                                  </label>
-                                )}
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                                 {formPagoInline.pagos.length > 1 &&
                                   <button onClick={() => setFormPagoInline({...formPagoInline, pagos: formPagoInline.pagos.filter((_,i)=>i!==idx)})}
-                                    style={{ padding: '5px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
+                                    style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>}
                               </div>
                             </div>
-                            {/* Cheque de tercero — selector de cheques en cartera */}
-                            {pago.tipo === 'cheque' && (
-                              <div style={{ marginTop: 8, background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 6, padding: '8px 10px' }}>
-                                <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 6 }}>Cheque de tercero en cartera</div>
-                                {chequesCartera.length === 0
-                                  ? <div style={{ fontSize: 12, color: S.hint }}>No hay cheques en cartera.</div>
-                                  : <select value={pago.cheque_tercero_id || ''}
-                                      onChange={e => {
-                                        const ch = chequesCartera.find(x => String(x.id) === e.target.value)
-                                        const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: e.target.value, monto: ch ? String(ch.monto) : p.monto} : p)
-                                        setFormPagoInline({...formPagoInline, pagos: n})
-                                      }}
-                                      style={{ width: '100%', padding: '7px 10px', border: `1px solid #EF9F27`, borderRadius: 6, fontSize: 12 }}>
-                                      <option value="">— Seleccioná un cheque —</option>
-                                      {chequesCartera.map(ch => (
-                                        <option key={ch.id} value={ch.id}>
-                                          #{ch.numero || 'sin nro'} · {ch.banco || '—'} · ${ch.monto?.toLocaleString('es-AR')} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'} · {ch.librador || '—'}
-                                        </option>
-                                      ))}
-                                    </select>
-                                }
-                              </div>
-                            )}
-                            {/* E-cheq propio — datos del cheque */}
-                            {pago.subtipo_cheque === 'propio' && (
-                              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                                <div>
-                                  <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>N° cheque</div>
-                                  <input type="text" value={pago.cheque_propio?.numero || ''}
-                                    onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), numero: e.target.value}} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
-                                    style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
+                            {/* E-cheq: elegir propio o tercero */}
+                            {pago.tipo === 'e-cheq' && (
+                              <div style={{ marginTop: 8 }}>
+                                <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 10 : 0 }}>
+                                  {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
+                                    <button key={t} onClick={() => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque === t ? '' : t} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
+                                      style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque === t ? S.accent : S.border}`, background: pago.subtipo_cheque === t ? S.accentLight : 'transparent', color: pago.subtipo_cheque === t ? S.accent : S.muted }}>
+                                      {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
+                                    </button>
+                                  ))}
                                 </div>
-                                <div>
-                                  <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Banco</div>
-                                  <input type="text" value={pago.cheque_propio?.banco || ''}
-                                    onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), banco: e.target.value}} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
-                                    style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
-                                </div>
-                                <div>
-                                  <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Fecha vencimiento</div>
-                                  <input type="date" value={pago.cheque_propio?.fecha_vencimiento || ''}
-                                    onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), fecha_vencimiento: e.target.value}} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
-                                    style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
-                                </div>
+                                {pago.subtipo_cheque === 'propio' && (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                                    <div>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>N° cheque</div>
+                                      <input type="text" value={pago.cheque_propio?.numero || ''}
+                                        onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), numero: e.target.value}} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
+                                        style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Banco</div>
+                                      <input type="text" value={pago.cheque_propio?.banco || ''}
+                                        onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), banco: e.target.value}} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
+                                        style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Vencimiento *</div>
+                                      <input type="date" value={pago.cheque_propio?.fecha_vencimiento || ''}
+                                        onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), fecha_vencimiento: e.target.value}} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
+                                        style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.amber}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
+                                    </div>
+                                  </div>
+                                )}
+                                {pago.subtipo_cheque === 'tercero' && (
+                                  <div style={{ marginTop: 8 }}>
+                                    {(() => {
+                                      const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
+                                      return lista.length === 0
+                                        ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
+                                        : lista.map(ch => (
+                                          <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
+                                            <input type="checkbox" checked={pago.cheque_tercero_ids?.includes(String(ch.id)) || false} onChange={() => {
+                                              const actuales = pago.cheque_tercero_ids || []
+                                              const yaEsta = actuales.includes(String(ch.id))
+                                              const nuevos = yaEsta ? actuales.filter(id => id !== String(ch.id)) : [...actuales, String(ch.id)]
+                                              const nuevoMonto = nuevos.reduce((s, id) => s + (chequesCartera.find(x => String(x.id) === id)?.monto || 0), 0)
+                                              const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_ids: nuevos, monto: String(nuevoMonto || '')} : p)
+                                              setFormPagoInline({...formPagoInline, pagos: n})
+                                            }} />
+                                            <div style={{ fontSize: 13 }}>
+                                              <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
+                                              <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span>
+                                            </div>
+                                          </label>
+                                        ))
+                                    })()}
+                                    {pago.cheque_tercero_ids?.length > 0 && (
+                                      <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, marginTop: 6, padding: '6px 10px', background: S.accentLight, borderRadius: 6 }}>
+                                        {pago.cheque_tercero_ids.length} cheque{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} seleccionado{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} · Total: ${parseFloat(pago.monto || 0).toLocaleString('es-AR')}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -803,9 +814,11 @@ export default function Insumos({ usuario }) {
                                 const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
                                 if (!caja_oficial_id) caja_oficial_id = co?.id
                               }
-                              // Cheque de tercero → marcar como depositado
-                              if (pago.tipo === 'cheque' && pago.cheque_tercero_id) {
-                                await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+                              // E-cheq tercero → marcar como depositados (puede ser múltiples)
+                              if (pago.tipo === 'e-cheq' && pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+                                for (const chId of pago.cheque_tercero_ids) {
+                                  await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+                                }
                               }
                               // E-cheq propio → registrar en cheques
                               if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
@@ -813,7 +826,7 @@ export default function Insumos({ usuario }) {
                               }
                             }
                             const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
-                            const formaDesc = pagos.map(p => p.tipo === 'cheque' ? 'cheque' : p.subtipo_cheque ? 'e-cheq' : p.tipo).join('+')
+                            const formaDesc = pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+')
                             await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos }).eq('id', c.id)
                             // Actualizar precio_referencia en el stock
                             if (precioUnit) {
@@ -1180,7 +1193,7 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
 
 function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar, chequesCartera = [], S, contactos = [] }) {
   const [editando, setEditando] = useState({})
-  const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+  const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
   function initEp(ing) {
     return {
