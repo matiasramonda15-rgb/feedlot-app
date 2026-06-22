@@ -437,7 +437,7 @@ export default function Insumos({ usuario }) {
 
       {/* Banner ingresos sin precio */}
       {sinPrecio.length > 0 && (
-        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} usuario={usuario} onCargar={cargar} chequesCartera={chequesCartera} S={S} contactos={contactos} />
+        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} stockSan={stockSan} usuario={usuario} onCargar={cargar} chequesCartera={chequesCartera} S={S} contactos={contactos} />
       )}
 
       {/* Tabs */}
@@ -1003,7 +1003,7 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
   )
 }
 
-function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCartera = [], S, contactos = [] }) {
+function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar, chequesCartera = [], S, contactos = [] }) {
   const [editando, setEditando] = useState({})
   const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
 
@@ -1083,6 +1083,36 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
       caja_oficial_id, caja_paralela_id,
     })
 
+    // Actualizar precio_referencia en el stock correspondiente
+    if (precioNum) {
+      if (ing.tipo === 'sanitario') {
+        const prodSan = stockSan.find(s => s.id === ing.insumo_id)
+        if (prodSan) {
+          await supabase.from('stock_sanitario').update({
+            precio_referencia: precioNum,
+            precio_referencia_actualizado_en: new Date().toISOString(),
+          }).eq('id', prodSan.id)
+        }
+      } else {
+        const prodAlim = stockAlim.find(s => s.id === ing.insumo_id)
+        if (prodAlim) {
+          // Calcular precio promedio ponderado con todos los ingresos con precio
+          const { data: todosIngresos } = await supabase.from('ingresos_stock')
+            .select('cantidad_kg, precio_por_kg')
+            .eq('insumo_id', ing.insumo_id)
+            .not('precio_por_kg', 'is', null)
+          const totalKg = (todosIngresos || []).reduce((s, i) => s + (i.cantidad_kg || 0), 0) + ing.cantidad_kg
+          const promPonderado = totalKg > 0
+            ? (((todosIngresos || []).reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0)) + precioNum * ing.cantidad_kg) / totalKg
+            : precioNum
+          await supabase.from('stock_insumos').update({
+            precio_referencia: Math.round(promPonderado * 100) / 100,
+            precio_referencia_actualizado_en: new Date().toISOString(),
+          }).eq('id', prodAlim.id)
+        }
+      }
+    }
+
     setEditando(prev => { const n = {...prev}; delete n[ing.id]; return n })
     await onCargar()
   }
@@ -1093,7 +1123,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
   return (
     <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
-        📦 {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} de Jesús sin precio — completar datos
+        📦 {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} pendiente{ingresos.length !== 1 ? 's' : ''} de precio — completar datos
       </div>
       {ingresos.map(ing => {
         const ep = editando[ing.id]
@@ -1104,7 +1134,12 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: ep ? '1rem' : 0 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{ing.insumo_nombre}</div>
-                <div style={{ fontSize: 12, color: S.muted }}>{ing.cantidad_kg?.toLocaleString('es-AR')} kg · {ing.creado_en ? new Date(ing.creado_en).toLocaleDateString('es-AR') : '—'}</div>
+                <div style={{ fontSize: 12, color: S.muted }}>
+                  {ing.cantidad_kg?.toLocaleString('es-AR')} {ing.unidad || 'kg'}
+                  {ing.tipo === 'sanitario' && <span style={{ marginLeft: 6, padding: '2px 6px', fontSize: 10, fontWeight: 600, background: S.purpleLight, color: S.purple, borderRadius: 4 }}>Sanidad</span>}
+                  {' · '}{ing.proveedor ? `${ing.proveedor} · ` : ''}{ing.creado_en ? new Date(ing.creado_en).toLocaleDateString('es-AR') : '—'}
+                  {ing.remito && <span style={{ marginLeft: 6, color: S.hint }}>Remito: {ing.remito}</span>}
+                </div>
               </div>
               <button onClick={() => setEditando(prev => ({ ...prev, [ing.id]: prev[ing.id] ? undefined : initEp(ing) }))}
                 style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: ep ? S.redLight : S.accentLight, border: `1px solid ${ep ? '#F09595' : S.accent}`, color: ep ? S.red : S.accent, borderRadius: 6, cursor: 'pointer' }}>
@@ -1131,7 +1166,7 @@ function BannerSinPrecio({ ingresos, stockAlim, usuario, onCargar, chequesCarter
                   <div><Lbl>N° Factura</Lbl><input type="text" value={ep.numero_factura} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], numero_factura: e.target.value}}))} style={inp} /></div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-                  <div><Lbl>Precio $/kg</Lbl><input type="number" value={ep.precio} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], precio: e.target.value}}))} style={inp} placeholder="ej. 1500" /></div>
+                  <div><Lbl>Precio $/{ing.unidad || 'kg'}</Lbl><input type="number" value={ep.precio} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], precio: e.target.value}}))} style={inp} placeholder="ej. 1500" /></div>
                   <div><Lbl>Total calculado</Lbl>
                     <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: totalCalc ? S.green : S.hint }}>
                       {totalCalc ? `$${totalCalc.toLocaleString('es-AR')}` : '—'}
