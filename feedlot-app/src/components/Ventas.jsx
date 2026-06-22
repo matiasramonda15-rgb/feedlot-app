@@ -79,6 +79,7 @@ export default function Ventas({ usuario }) {
   useEffect(() => { cargar(); cargarChequesParalelos() }, [])
 
   async function cargar() {
+    try {
     const [{ data: v }, { data: l }, { data: c }, { data: ps }] = await Promise.all([
       supabase.from('ventas').select('*, corrales(numero), grupo_venta_id').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
@@ -144,6 +145,7 @@ export default function Ventas({ usuario }) {
     }
     setGdpPorCorral(gdp)
     setLoading(false)
+    } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack); setLoading(false) }
   }
 
   function calcPesoProm(pa) {
@@ -190,7 +192,9 @@ export default function Ventas({ usuario }) {
   // Detalle por mes
   const ventasPorMes = {}
   ventas.forEach(v => {
+    if (!v.creado_en) return
     const fecha = new Date(v.creado_en)
+    if (isNaN(fecha.getTime())) return
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
     if (!ventasPorMes[key]) ventasPorMes[key] = { total: 0, cantidad: 0, ops: 0 }
     ventasPorMes[key].total += v.total || 0
@@ -202,7 +206,9 @@ export default function Ventas({ usuario }) {
   // Detalle kg prom y precio prom por mes
   const kgPreciosPorMes = {}
   ventas.forEach(v => {
+    if (!v.creado_en) return
     const fecha = new Date(v.creado_en)
+    if (isNaN(fecha.getTime())) return
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
     if (!kgPreciosPorMes[key]) kgPreciosPorMes[key] = { totalKg: 0, cantidad: 0, precioSum: 0, precioCount: 0 }
     kgPreciosPorMes[key].totalKg += v.kg_vivo_total || 0
@@ -856,10 +862,11 @@ export default function Ventas({ usuario }) {
                       if (v.grupo_venta_id) {
                         if (!vistos.has(v.grupo_venta_id)) {
                           vistos.add(v.grupo_venta_id)
-                          filas.push({ tipo: 'grupo', grupo: grupos[v.grupo_venta_id] })
+                          const g = grupos[v.grupo_venta_id]
+                          if (g && g.length > 0) filas.push({ tipo: 'grupo', grupo: g })
                         }
                       } else {
-                        filas.push({ tipo: 'simple', venta: v })
+                        if (new Date(v.creado_en) >= hoy40v) filas.push({ tipo: 'simple', venta: v })
                       }
                     })
                     return filas.map((f, fi) => {
@@ -1836,4 +1843,4 @@ export default function Ventas({ usuario }) {
 
     </div>
   )
-} 
+}   
