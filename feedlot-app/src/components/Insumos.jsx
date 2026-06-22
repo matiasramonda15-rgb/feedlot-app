@@ -861,7 +861,7 @@ export default function Insumos({ usuario }) {
 
 function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ nombre: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
+  const [form, setForm] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
   const [guardando, setGuardando] = useState(false)
   const [editandoIng, setEditandoIng] = useState(null) // id del ingreso en edición
   const [formIng, setFormIng] = useState({ cantidad_kg: '', precio_por_kg: '', proveedor: '' })
@@ -872,10 +872,10 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
     if (tipo === 'alimentacion') {
       await supabase.from('stock_insumos').insert({ insumo: form.nombre, unidad: form.unidad, cantidad_kg: 0, minimo_kg: parseFloat(form.minimo) || 0 })
     } else {
-      await supabase.from('stock_sanitario').insert({ producto: form.nombre, unidad: form.unidad, cantidad_ml: 0, minimo_stock: parseFloat(form.minimo) || 0 })
+      await supabase.from('stock_sanitario').insert({ producto: form.nombre, tipo: form.tipo || 'Vacuna', laboratorio: form.lab || null, carencia_dias: parseInt(form.car) || 0, unidad: form.unidad, cantidad_ml: 0, minimo_stock: parseFloat(form.minimo) || 0, activo: true })
     }
     setShowForm(false)
-    setForm({ nombre: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
+    setForm({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
     setGuardando(false)
     await onCargar()
   }
@@ -895,29 +895,58 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
       </div>
 
       {showForm && (
-        <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
-          <div style={{ flex: 2 }}>
-            <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Nombre</div>
-            <input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} style={inp} />
+        <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: tipo === 'alimentacion' ? '2fr 1fr 1fr' : '2fr 1fr 1fr 1fr', gap: '1rem', marginBottom: tipo === 'alimentacion' ? 0 : '1rem' }}>
+            <div>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Nombre *</div>
+              <input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})}
+                placeholder={tipo === 'alimentacion' ? 'ej. Pellet de soja' : 'ej. Ivermectina 1%, RE-8...'} style={inp} />
+            </div>
+            {tipo !== 'alimentacion' && (
+              <div>
+                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Tipo *</div>
+                <select value={form.tipo || 'Vacuna'} onChange={e => setForm({...form, tipo: e.target.value})} style={inp}>
+                  {['Vacuna', 'Antibiotico', 'Antiparasitario', 'Vitamina', 'Antiinflamatorio', 'Otro'].map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Unidad</div>
+              <select value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})} style={inp}>
+                {tipo === 'alimentacion'
+                  ? ['kg', 'tn', 'litros', 'unidades'].map(u => <option key={u}>{u}</option>)
+                  : ['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Stock mínimo</div>
+              <input type="number" value={form.minimo} onChange={e => setForm({...form, minimo: e.target.value})} style={inp} placeholder="0" />
+            </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Unidad</div>
-            <select value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})} style={inp}>
-              {tipo === 'alimentacion' ? ['kg', 'tn', 'litros', 'unidades'].map(u => <option key={u}>{u}</option>) : ['ml', 'litros', 'cc', 'dosis'].map(u => <option key={u}>{u}</option>)}
-            </select>
+          {tipo !== 'alimentacion' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: 0 }}>
+              <div>
+                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Laboratorio</div>
+                <input type="text" value={form.lab || ''} onChange={e => setForm({...form, lab: e.target.value})}
+                  placeholder="ej. MSD Animal Health, Holliday-Scott..." style={inp} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Carencia (días)</div>
+                <input type="number" value={form.car || ''} onChange={e => setForm({...form, car: e.target.value})}
+                  placeholder="0 = sin carencia" min="0" style={inp} />
+              </div>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: '1rem' }}>
+            <button onClick={() => setShowForm(false)}
+              style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+              Cancelar
+            </button>
+            <button onClick={guardarInsumo} disabled={guardando}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              {guardando ? 'Guardando...' : 'Guardar'}
+            </button>
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Stock mínimo</div>
-            <input type="number" value={form.minimo} onChange={e => setForm({...form, minimo: e.target.value})} style={inp} />
-          </div>
-          <button onClick={guardarInsumo} disabled={guardando}
-            style={{ padding: '9px 16px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-            Guardar
-          </button>
-          <button onClick={() => setShowForm(false)}
-            style={{ padding: '9px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-            Cancelar
-          </button>
         </div>
       )}
 

@@ -62,6 +62,10 @@ export default function Sanidad({ usuario }) {
   const [showFormStockSan, setShowFormStockSan] = useState(false)
   const [formStockSan, setFormStockSan] = useState({ producto_id: '', cantidad: '', unidad: 'ml', proveedor: '', remito: '' })
   const [guardandoStockSan, setGuardandoStockSan] = useState(false)
+  const [showFormNuevoProd, setShowFormNuevoProd] = useState(false)
+  const [formNuevoProd, setFormNuevoProd] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml' })
+  const [editProdSan, setEditProdSan] = useState(null) // { id, nombre, tipo, lab, car, unidad }
+  const [guardandoProd, setGuardandoProd] = useState(false)
 
   async function guardarMortalidad() {
     if (!formMort.corral_id) { alert('Seleccioná un corral'); return }
@@ -81,6 +85,45 @@ export default function Sanidad({ usuario }) {
     setShowFormMort(false)
     setFormMort({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
     setGuardandoMort(false)
+  }
+
+  async function guardarNuevoProd() {
+    if (!formNuevoProd.nombre.trim()) { alert('Ingresá el nombre del producto'); return }
+    setGuardandoProd(true)
+    const { data } = await supabase.from('stock_sanitario').insert({
+      producto: formNuevoProd.nombre.trim(),
+      tipo: formNuevoProd.tipo,
+      laboratorio: formNuevoProd.lab || null,
+      carencia_dias: parseInt(formNuevoProd.car) || 0,
+      unidad: formNuevoProd.unidad,
+      cantidad_ml: 0,
+      activo: true,
+    }).select().single()
+    if (data) setProductos(prev => [...prev, { n: data.producto, tipo: data.tipo, id: data.id, cantidad_ml: 0, unidad: data.unidad || 'ml' }])
+    setFormNuevoProd({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml' })
+    setShowFormNuevoProd(false)
+    setGuardandoProd(false)
+  }
+
+  async function guardarEditProdSan() {
+    if (!editProdSan?.nombre?.trim()) { alert('Ingresá el nombre'); return }
+    setGuardandoProd(true)
+    await supabase.from('stock_sanitario').update({
+      producto: editProdSan.nombre.trim(),
+      tipo: editProdSan.tipo,
+      laboratorio: editProdSan.lab || null,
+      carencia_dias: parseInt(editProdSan.car) || 0,
+      unidad: editProdSan.unidad,
+    }).eq('id', editProdSan.id)
+    await cargarProductos()
+    setEditProdSan(null)
+    setGuardandoProd(false)
+  }
+
+  async function eliminarProdSan(prod) {
+    if (!confirm(`¿Eliminar "${prod.n}"? Se perderá el registro de stock.`)) return
+    await supabase.from('stock_sanitario').update({ activo: false }).eq('id', prod.id)
+    setProductos(prev => prev.filter(p => p.id !== prod.id))
   }
 
   async function guardarIngresoSan() {
@@ -763,11 +806,68 @@ export default function Sanidad({ usuario }) {
               <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
               <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Los ingresos quedan pendientes de precio en Insumos hasta que Paula cargue la factura.</div>
             </div>
-            <button onClick={() => setShowFormStockSan(!showFormStockSan)}
-              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.purple, border: `1px solid ${S.purple}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              + Registrar ingreso
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setShowFormNuevoProd(!showFormNuevoProd); setShowFormStockSan(false) }}
+                style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                + Nuevo producto
+              </button>
+              <button onClick={() => { setShowFormStockSan(!showFormStockSan); setShowFormNuevoProd(false) }}
+                style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.purple, border: `1px solid ${S.purple}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                + Registrar ingreso
+              </button>
+            </div>
           </div>
+
+          {showFormNuevoProd && (
+            <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: S.text, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '1rem' }}>Nuevo producto sanitario</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Nombre *</div>
+                  <input type="text" value={formNuevoProd.nombre}
+                    onChange={e => setFormNuevoProd({...formNuevoProd, nombre: e.target.value})}
+                    placeholder="ej. Ivermectina 1%, RE-8, Vacuna X..."
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Tipo *</div>
+                  <select value={formNuevoProd.tipo} onChange={e => setFormNuevoProd({...formNuevoProd, tipo: e.target.value})}
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+                    {['Vacuna', 'Antibiotico', 'Antiparasitario', 'Vitamina', 'Antiinflamatorio', 'Otro'].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Unidad</div>
+                  <select value={formNuevoProd.unidad} onChange={e => setFormNuevoProd({...formNuevoProd, unidad: e.target.value})}
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+                    {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Carencia (días)</div>
+                  <input type="number" value={formNuevoProd.car}
+                    onChange={e => setFormNuevoProd({...formNuevoProd, car: e.target.value})}
+                    placeholder="0 = sin carencia" min="0"
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Laboratorio</div>
+                <input type="text" value={formNuevoProd.lab}
+                  onChange={e => setFormNuevoProd({...formNuevoProd, lab: e.target.value})}
+                  placeholder="ej. MSD Animal Health, Holliday-Scott..."
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowFormNuevoProd(false)}
+                  style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={guardarNuevoProd} disabled={guardandoProd}
+                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                  {guardandoProd ? 'Guardando...' : 'Agregar producto'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {showFormStockSan && (
             <div style={{ background: S.purpleLight, border: '1px solid #9F8ED4', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
@@ -837,24 +937,30 @@ export default function Sanidad({ usuario }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: S.bg }}>
-                  {['Producto', 'Tipo', 'Stock actual', 'Unidad', ''].map(h => (
+                  {['Producto', 'Tipo', 'Laboratorio', 'Carencia', 'Stock actual', 'Unidad', ''].map(h => (
                     <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {productos.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay productos. Agregá uno desde la pestaña Productos.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay productos. Usá el botón "+ Nuevo producto" para agregar.</td></tr>
                 )}
                 {productos.map((p, i) => {
                   const tc = TIPO_BADGE[p.tipo] || TIPO_BADGE.Otro
                   const cant = p.cantidad_ml || p.cantidad_kg || 0
                   const bajo = cant < 50
+                  const isEditing = editProdSan?.id === p.id
                   return (
-                    <tr key={p.id || i} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <React.Fragment key={p.id || i}>
+                    <tr style={{ borderBottom: isEditing ? 'none' : `1px solid ${S.border}` }}>
                       <td style={{ padding: '10px 14px', fontWeight: 600 }}>{p.n}</td>
                       <td style={{ padding: '10px 14px' }}>
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: tc.bg, color: tc.color }}>{p.tipo}</span>
+                      </td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, color: S.muted }}>{p.lab || '—'}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, color: p.car > 0 ? S.amber : S.hint }}>
+                        {p.car > 0 ? `${p.car} días` : 'Sin carencia'}
                       </td>
                       <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: 700, color: bajo ? S.red : S.green }}>
                         {cant.toLocaleString('es-AR')}
@@ -862,12 +968,71 @@ export default function Sanidad({ usuario }) {
                       </td>
                       <td style={{ padding: '10px 14px', color: S.muted }}>{p.unidad || 'ml'}</td>
                       <td style={{ padding: '10px 14px' }}>
-                        <button onClick={() => { setFormStockSan({...formStockSan, producto_id: String(p.id), unidad: p.unidad || 'ml'}); setShowFormStockSan(true) }}
-                          style={{ padding: '4px 10px', fontSize: 11, background: S.purpleLight, border: `1px solid #9F8ED4`, color: S.purple, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
-                          + Ingreso
-                        </button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => { setFormStockSan({...formStockSan, producto_id: String(p.id), unidad: p.unidad || 'ml'}); setShowFormStockSan(true); setShowFormNuevoProd(false) }}
+                            style={{ padding: '4px 10px', fontSize: 11, background: S.purpleLight, border: `1px solid #9F8ED4`, color: S.purple, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                            + Ingreso
+                          </button>
+                          <button onClick={() => setEditProdSan(isEditing ? null : { id: p.id, nombre: p.n, tipo: p.tipo, lab: p.lab || '', car: String(p.car || 0), unidad: p.unidad || 'ml' })}
+                            style={{ padding: '4px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                            {isEditing ? 'Cancelar' : 'Editar'}
+                          </button>
+                          <button onClick={() => eliminarProdSan(p)}
+                            style={{ padding: '4px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                            Eliminar
+                          </button>
+                        </div>
                       </td>
                     </tr>
+                    {isEditing && (
+                      <tr style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td colSpan={7} style={{ padding: '1rem', background: S.accentLight }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Nombre</div>
+                              <input type="text" value={editProdSan.nombre}
+                                onChange={e => setEditProdSan({...editProdSan, nombre: e.target.value})}
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Tipo</div>
+                              <select value={editProdSan.tipo} onChange={e => setEditProdSan({...editProdSan, tipo: e.target.value})}
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+                                {['Vacuna', 'Antibiotico', 'Antiparasitario', 'Vitamina', 'Antiinflamatorio', 'Otro'].map(t => <option key={t}>{t}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Laboratorio</div>
+                              <input type="text" value={editProdSan.lab}
+                                onChange={e => setEditProdSan({...editProdSan, lab: e.target.value})}
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Carencia (días)</div>
+                              <input type="number" value={editProdSan.car}
+                                onChange={e => setEditProdSan({...editProdSan, car: e.target.value})}
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Unidad</div>
+                              <select value={editProdSan.unidad} onChange={e => setEditProdSan({...editProdSan, unidad: e.target.value})}
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+                                {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button onClick={() => setEditProdSan(null)}
+                              style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                            <button onClick={guardarEditProdSan} disabled={guardandoProd}
+                              style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                              {guardandoProd ? 'Guardando...' : 'Guardar cambios'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   )
                 })}
               </tbody>
