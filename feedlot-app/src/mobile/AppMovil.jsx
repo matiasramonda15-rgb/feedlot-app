@@ -513,6 +513,8 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   }
   const [kgs, setKgs] = useState({})
   const [soloRollo, setSoloRollo] = useState({})
+  const [rolloYMixer, setRolloYMixer] = useState({})
+  const [kgsRollo, setKgsRollo] = useState({})
   const [pils, setPils] = useState({})
   const [tab, setTab] = useState('piletas')
   const [mostrarMixer, setMostrarMixer] = useState(false)
@@ -611,6 +613,8 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         kg_total: kgs[c.id] || 0,
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
         solo_rollo: soloRollo[c.id] || false,
+        rollo_y_mixer: rolloYMixer[c.id] || false,
+        kg_rollo_extra: rolloYMixer[c.id] ? (kgsRollo[c.id] || 0) : null,
         tipo_dieta: dieta,
       }
     })
@@ -661,10 +665,12 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         }
       }
       // Descontar solo rollo para corrales marcados
-      if (kgSoloRollo > 0) {
+      const kgRolloExtra = corralesAlim.filter(c => rolloYMixer[c.id]).reduce((s, c) => s + (kgsRollo[c.id] || 0), 0)
+      const kgRolloTotal = kgSoloRollo + kgRolloExtra
+      if (kgRolloTotal > 0) {
         const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
         if (rolloItem) {
-          const nuevaCantidad = Math.max(0, stockFresh[rolloItem.id] - kgSoloRollo)
+          const nuevaCantidad = Math.max(0, stockFresh[rolloItem.id] - kgRolloTotal)
           await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
         }
       }
@@ -715,10 +721,35 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                         {getEtapa(c) === 'acostumbramiento' ? '🌱 Acostumbramiento' : getEtapa(c) === 'recria' ? '🌾 Recría' : '🏁 Terminación'}
                       </div>
                       {getEtapa(c) === 'acostumbramiento' && (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer', marginTop: 4 }}>
-                          <input type="checkbox" checked={soloRollo[c.id] || false} onChange={e => setSoloRollo({...soloRollo, [c.id]: e.target.checked})} />
-                          Solo rollo (adaptación)
-                        </label>
+                        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer' }}>
+                            <input type="radio" name={`acost_${c.id}`}
+                              checked={!soloRollo[c.id] && !rolloYMixer[c.id]}
+                              onChange={() => { setSoloRollo({...soloRollo, [c.id]: false}); setRolloYMixer({...rolloYMixer, [c.id]: false}) }} />
+                            Dieta mixer acostumbramiento
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer' }}>
+                            <input type="radio" name={`acost_${c.id}`}
+                              checked={soloRollo[c.id] || false}
+                              onChange={() => { setSoloRollo({...soloRollo, [c.id]: true}); setRolloYMixer({...rolloYMixer, [c.id]: false}) }} />
+                            Solo rollo (adaptación)
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer' }}>
+                            <input type="radio" name={`acost_${c.id}`}
+                              checked={rolloYMixer[c.id] || false}
+                              onChange={() => { setRolloYMixer({...rolloYMixer, [c.id]: true}); setSoloRollo({...soloRollo, [c.id]: false}) }} />
+                            Rollo + mixer
+                          </label>
+                          {rolloYMixer[c.id] && (
+                            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 11, color: '#639922' }}>Kg rollo:</span>
+                              <input type="number" inputMode="numeric" value={kgsRollo[c.id] || ''}
+                                onChange={e => setKgsRollo({...kgsRollo, [c.id]: parseInt(e.target.value) || 0})}
+                                placeholder="0"
+                                style={{ width: 80, background: '#F0F7E6', border: '1px solid #639922', borderRadius: 6, padding: '4px 8px', fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: '#639922', textAlign: 'right', boxSizing: 'border-box' }} />
+                            </div>
+                          )}
+                        </div>
                       )}
                       {kgsAyer && kgsAyer[c.id] > 0 && (
                         <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
@@ -748,6 +779,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
             <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
               {(() => {
                 const kgSoloRolloTotal = corralesAlim.filter(c => soloRollo[c.id]).reduce((s, c) => s + (kgs[c.id] || 0), 0)
+                const kgRolloEnRolloYMixer = corralesAlim.filter(c => rolloYMixer[c.id]).reduce((s, c) => s + (kgsRollo[c.id] || 0), 0)
                 const kgMixer = total - kgSoloRolloTotal
                 return (
                   <>
@@ -759,6 +791,12 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem', background: '#F0F7E6', borderRadius: 6, padding: '6px 10px' }}>
                         <div style={{ fontSize: 12, color: '#639922', fontWeight: 600 }}>🌿 Solo rollo (adaptación)</div>
                         <div style={{ fontSize: 16, fontWeight: 700, fontFamily: C.mono, color: '#639922' }}>{kgSoloRolloTotal.toLocaleString('es-AR')} kg</div>
+                      </div>
+                    )}
+                    {kgRolloEnRolloYMixer > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem', background: '#F0F7E6', borderRadius: 6, padding: '6px 10px' }}>
+                        <div style={{ fontSize: 12, color: '#639922', fontWeight: 600 }}>🌿 Rollo extra (rollo + mixer)</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: C.mono, color: '#639922' }}>{kgRolloEnRolloYMixer.toLocaleString('es-AR')} kg</div>
                       </div>
                     )}
                     <button onClick={() => setMostrarMixer(!mostrarMixer)}
