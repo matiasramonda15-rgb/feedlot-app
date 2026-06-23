@@ -185,7 +185,7 @@ function generarRecibo(gasto, pagos) {
       <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
         <tr><td style="padding:4px 8px;font-weight:bold;border-bottom:1px solid #ddd;background:#f5f5f5;">Concepto:</td></tr>
         <tr><td style="padding:6px 8px;">
-          ${gasto.descripcion ? `<strong>${gasto.descripcion}</strong><br>` : ''}
+          <strong>${[gasto.actividad, gasto.categoria, gasto.descripcion].filter(Boolean).join(' — ')}${gasto.proveedor ? ' · ' + gasto.proveedor : ''}</strong><br>
           Observación: RAMONDA HNOS S.A. no se responsabiliza por el vencimiento de cheques/e-cheq de terceros.<br>
           Cantidad de pesos: &nbsp;${montoEnLetras(totalMonto)}
         </td></tr>
