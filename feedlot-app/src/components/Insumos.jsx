@@ -143,15 +143,20 @@ export default function Insumos({ usuario }) {
   const stockActual = form.tipo === 'alimentacion' ? stockAlim : stockSan
 
   async function guardar() {
-    if (!form.insumo_id || !form.cantidad || !form.precio_unitario) {
-      alert('Completá insumo, cantidad y precio')
+    if (!form.insumo_id || !form.cantidad) {
+      alert('Completá insumo y cantidad')
+      return
+    }
+    // Si quiere pagar ahora, precio es obligatorio
+    if (pagarAhora && !form.precio_unitario) {
+      alert('Para pagar ahora necesitás ingresar el precio. Si no tenés la factura todavía, elegí "Dejar pendiente".')
       return
     }
     const cantidad = parseFloat(form.cantidad)
-    const precioUnit = parseFloat(form.precio_unitario)
-    const total = form.total ? parseFloat(form.total) : Math.round(cantidad * precioUnit)
+    const precioUnit = form.precio_unitario ? parseFloat(form.precio_unitario) : null
+    const total = precioUnit ? (form.total ? parseFloat(form.total) : Math.round(cantidad * precioUnit)) : null
     const totalPagos = form.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-    if (pagarAhora && Math.abs(total - totalPagos) > 0.5) {
+    if (pagarAhora && total && Math.abs(total - totalPagos) > 0.5) {
       alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`)
       return
     }
@@ -161,7 +166,7 @@ export default function Insumos({ usuario }) {
     let caja_paralela_id = null
     const desc = `Compra ${form.insumo_nombre}${form.proveedor ? ` — ${form.proveedor}` : ''}`
 
-    if (pagarAhora) for (const pago of form.pagos) {
+    if (pagarAhora && total) for (const pago of form.pagos) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
@@ -185,21 +190,21 @@ export default function Insumos({ usuario }) {
       proveedor: form.proveedor || null, domicilio: form.domicilio || null, localidad: form.localidad || null,
       cuit: form.cuit || null, iva: form.iva || null, cbu: form.cbu || null,
       numero_factura: form.numero_factura || null,
-      forma_pago: form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
+      forma_pago: pagarAhora && total ? form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
       es_paralelo: form.pagos.some(p => p.es_paralelo),
-      pagos_detalle: pagarAhora ? form.pagos : null,
+      pagos_detalle: pagarAhora && total ? form.pagos : null,
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id,
-      estado_pago: pagarAhora ? 'pagado' : 'pendiente',
+      estado_pago: pagarAhora && total ? 'pagado' : 'pendiente',
     })
 
-    // Actualizar stock
+    // Actualizar stock (siempre, tenga o no precio)
     if (form.tipo === 'alimentacion') {
       const item = stockAlim.find(s => s.id === parseInt(form.insumo_id))
-      if (item) await supabase.from('stock_insumos').update({ cantidad_kg: (item.cantidad_kg || 0) + cantidad, precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      if (item) await supabase.from('stock_insumos').update({ cantidad_kg: (item.cantidad_kg || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
     } else {
       const item = stockSan.find(s => s.id === parseInt(form.insumo_id))
-      if (item) await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + cantidad, precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      if (item) await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
     }
 
     setShowForm(false)
@@ -264,12 +269,12 @@ export default function Insumos({ usuario }) {
               }} style={inpMono} />
             </div>
             <div>
-              <Lbl>Precio unitario $/{form.unidad}</Lbl>
+              <Lbl>Precio unitario $/{form.unidad}{!pagarAhora && ' (opcional)'}</Lbl>
               <input type="number" value={form.precio_unitario} onChange={e => {
                 const precio = e.target.value
                 const total = precio && form.cantidad ? String(Math.round(parseFloat(form.cantidad) * parseFloat(precio))) : ''
                 setForm({...form, precio_unitario: precio, total})
-              }} style={inpMono} />
+              }} style={{...inpMono, border: pagarAhora && !form.precio_unitario ? `1px solid ${S.amber}` : inpMono.border}} placeholder={!pagarAhora ? 'Sin precio aún' : ''} />
             </div>
             <div>
               <Lbl>Total $ (calculado)</Lbl>
