@@ -1153,19 +1153,24 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               <div style={{ paddingLeft: 8, borderLeft: `2px solid ${S.amber}` }}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 6 }}>Vencimientos</div>
                 {(factura.vencimientos || []).map((v, vi) => (
-                  <div key={vi} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end', marginBottom: 6 }}>
+                  <div key={vi} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: 6 }}>
                     <div>
                       {vi === 0 && <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Fecha</div>}
                       <input type="date" value={v.fecha || ''}
                         onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: f.vencimientos.map((x,j) => j===vi ? {...x, fecha: e.target.value} : x)} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
-                        style={{...inp, border: `1px solid ${S.amber}`}} />
+                        style={{...inp, border: `1px solid ${v.pagado ? '#97C459' : S.amber}`, background: v.pagado ? S.greenLight : S.surface}} />
                     </div>
                     <div>
                       {vi === 0 && <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Monto $</div>}
                       <input type="number" value={v.monto || ''} placeholder="0"
                         onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: f.vencimientos.map((x,j) => j===vi ? {...x, monto: e.target.value} : x)} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
-                        style={{...inp, fontFamily: 'monospace', border: `1px solid ${S.accent}`}} />
+                        style={{...inp, fontFamily: 'monospace', border: `1px solid ${v.pagado ? '#97C459' : S.accent}`, background: v.pagado ? S.greenLight : S.surface}} />
                     </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: v.pagado ? S.green : S.muted, cursor: 'pointer', whiteSpace: 'nowrap', marginTop: vi === 0 ? 18 : 0, paddingBottom: 8 }}>
+                      <input type="checkbox" checked={v.pagado || false}
+                        onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: f.vencimientos.map((x,j) => j===vi ? {...x, pagado: e.target.checked} : x)} : f); setFormFactura({...formFactura, cuotas_pago: n}) }} />
+                      {v.pagado ? '✓ Pagado' : 'Pagado'}
+                    </label>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
                       <button onClick={() => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: [...f.vencimientos, { fecha: '', monto: '' }]} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
                         style={{ padding: '7px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', marginTop: vi === 0 ? 18 : 0 }}>+</button>
