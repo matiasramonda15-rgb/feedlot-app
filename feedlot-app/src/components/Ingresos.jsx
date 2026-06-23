@@ -906,15 +906,40 @@ function generarReciboCompra(lote, pagos, corrales) {
   const corralNum = corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || ''
   const concepto = `Compra hacienda — ${lote.procedencia || ''} ${lote.categoria || ''} · ${lote.cantidad || ''} cabezas · C-${corralNum}`
 
-  const filasPago = pagos.map(p => {
-    let desc = p.forma_pago === 'transferencia' ? 'TRANSFERENCIA' : p.forma_pago === 'efectivo' ? 'EFECTIVO' : p.forma_pago === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.forma_pago === 'e-cheq' ? 'E-CHEQ' : (p.forma_pago || '').toUpperCase()
-    if (p.es_negro) desc += ' (PARALELO)'
-    return `<tr>
+  const filasPago = pagos.flatMap(p => {
+    const tipo = p.tipo || p.forma_pago || ''
+    const subtipo = p.subtipo_cheque || ''
+    const esParalelo = p.es_paralelo || p.es_negro
+    let desc = tipo === 'transferencia' ? 'TRANSFERENCIA' : tipo === 'efectivo' ? 'EFECTIVO' : tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : tipo === 'e-cheq' ? `E-CHEQ${subtipo ? ' ' + subtipo.toUpperCase() : ''}` : tipo.toUpperCase()
+    if (esParalelo) desc += ' (PARALELO)'
+
+    // E-cheq propio
+    if (subtipo === 'propio' && p.cheque_propio?.fecha_vencimiento) {
+      return [`<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.cheque_propio.numero || p.numero_cheque || ''} · ${p.cheque_propio.banco || ''}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${new Date(p.cheque_propio.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+      </tr>`]
+    }
+
+    // E-cheq tercero (múltiples cheques)
+    if (subtipo === 'tercero' && p.cheque_tercero_detalle?.length > 0) {
+      return p.cheque_tercero_detalle.map(ch => `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">#${ch.numero || '—'} · ${ch.banco || '—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(ch.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+      </tr>`)
+    }
+
+    // Transferencia, efectivo, cuenta corriente, o cheque legacy
+    return [`<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.numero_cheque || ''}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.fecha_vencimiento_cheque ? new Date(p.fecha_vencimiento_cheque+'T12:00:00').toLocaleDateString('es-AR') : ''}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-    </tr>`
+    </tr>`]
   }).join('')
 
   const bloque = `<div style="border:1px solid #333;padding:20px;font-family:Arial,sans-serif;font-size:12px;width:100%;box-sizing:border-box;">
