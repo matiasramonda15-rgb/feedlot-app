@@ -129,11 +129,16 @@ export default function Ingresos({ usuario }) {
     const kgFac = editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null
     const precio = editandoPrecio.precio_compra ? parseFloat(editandoPrecio.precio_compra) : null
     const montoTotal = editandoPrecio.monto_total ? parseFloat(editandoPrecio.monto_total) : (kgFac && precio ? Math.round(kgFac * precio) : null)
-    const plazoStr = editandoPrecio.plazo_dias || null
-    const plazosArr = plazoStr ? plazoStr.split(',').filter(Boolean).map(p => parseInt(p)) : []
-    const plazoMax = plazosArr.length > 0 ? Math.max(...plazosArr) : null
-    const fechaVto = plazoMax ? new Date(new Date(lote.fecha_ingreso + 'T12:00:00').getTime() + plazoMax * 86400000).toISOString().split('T')[0] : null
     const comMonto = editandoPrecio.comision_monto ? parseFloat(editandoPrecio.comision_monto) : 0
+
+    // Facturas — guardar con nro_factura, monto y fecha
+    const facturas = (editandoPrecio.cuotas_pago || [])
+      .filter(f => f.monto || f.fecha)
+      .map(f => ({ nro_factura: f.nro_factura || null, monto: parseFloat(f.monto) || 0, fecha: f.fecha || null }))
+
+    // Fecha de vencimiento = la más lejana de las facturas
+    const fechasFacturas = facturas.map(f => f.fecha).filter(Boolean).sort()
+    const fechaVto = fechasFacturas.length > 0 ? fechasFacturas[fechasFacturas.length - 1] : null
 
     // Resolver procedencia
     let procFinal = editandoPrecio.procedencia !== 'Nuevo' ? (editandoPrecio.procedencia || lote.procedencia) : lote.procedencia
@@ -148,8 +153,8 @@ export default function Ingresos({ usuario }) {
       kg_factura: kgFac,
       precio_compra: precio || (montoTotal && kgFac ? Math.round(montoTotal / kgFac) : null),
       monto_total_con_iva: montoTotal,
-      plazo_dias: plazoStr,
       fecha_vencimiento_pago: fechaVto,
+      cuotas_pago: facturas.length > 0 ? facturas : null,
       comision_monto: comMonto || null,
       comision_a_quien: editandoPrecio.comision_a_quien || null,
       comision_es_paralela: editandoPrecio.comision_es_paralela || false,
@@ -158,6 +163,7 @@ export default function Ingresos({ usuario }) {
     setEditandoPrecio(null)
     await cargarDatos()
   }
+
 
   async function eliminarLote(id) {
     if (!confirm('¿Eliminar este ingreso?')) return
@@ -474,7 +480,7 @@ export default function Ingresos({ usuario }) {
                       comision_es_paralela: l.comision_es_paralela || false,
                       procedencia: l.procedencia || '',
                       nuevaProcedencia: '',
-                      cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })),
+                      cuotas_pago: (l.cuotas_pago || []).map(c => ({ nro_factura: c.nro_factura || '', fecha: c.fecha || '', monto: String(c.monto || '') })),
                     })} style={{ fontSize: 12, padding: '5px 12px' }}>
                       Completar datos
                     </Btn>
@@ -540,35 +546,59 @@ export default function Ingresos({ usuario }) {
                       </div>
                     </div>
 
-                    {/* Fila 4: Plazo */}
+                    {/* Fila 4: Facturas */}
                     <div style={{ marginBottom: 12 }}>
-                      <Lbl>Plazo de pago (días)</Lbl>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        {[30, 60, 90, 120].map(d => {
-                          const plazosArr = (editandoPrecio.plazo_dias || '').split(',').filter(Boolean)
-                          const activo = plazosArr.includes(String(d))
-                          return (
-                            <button key={d} onClick={() => {
-                              const nuevos = activo ? plazosArr.filter(p => p !== String(d)) : [...plazosArr, String(d)].sort((a,b) => parseInt(a) - parseInt(b))
-                              setEditandoPrecio({...editandoPrecio, plazo_dias: nuevos.join(',')})
-                            }}
-                              style={{ padding: '6px 14px', fontSize: 12, fontWeight: activo ? 700 : 400, borderRadius: 6, cursor: 'pointer', border: `1px solid ${activo ? S.accent : S.border}`, background: activo ? S.accentLight : 'transparent', color: activo ? S.accent : S.muted }}>
-                              {d}d
-                            </button>
-                          )
-                        })}
-                        <input type="text" value={editandoPrecio.plazo_dias} onChange={e => setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value})}
-                          placeholder="otro, ej. 45,75" style={{...inpMono, maxWidth: 130, fontSize: 12}} />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Lbl>Facturas</Lbl>
+                        <button onClick={() => setEditandoPrecio({...editandoPrecio, cuotas_pago: [...(editandoPrecio.cuotas_pago || []), { nro_factura: '', monto: '', fecha: '' }]})}
+                          style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar factura</button>
                       </div>
-                      {editandoPrecio.plazo_dias && (
-                        <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
-                          Plazos acordados: {editandoPrecio.plazo_dias.split(',').filter(Boolean).map(d => `${d} días`).join(' · ')}
-                          {l.fecha_ingreso && ' — Vencimientos: '}
-                          {l.fecha_ingreso && editandoPrecio.plazo_dias.split(',').filter(Boolean).map(d =>
-                            new Date(new Date(l.fecha_ingreso + 'T12:00:00').getTime() + parseInt(d) * 86400000).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
-                          ).join(' · ')}
-                        </div>
+                      {(editandoPrecio.cuotas_pago || []).length === 0 && (
+                        <div style={{ fontSize: 12, color: S.hint, padding: '8px 0' }}>Sin facturas — usá "+ Agregar factura" para cargar una o más.</div>
                       )}
+                      {(editandoPrecio.cuotas_pago || []).map((c, ci) => {
+                        const montoTotal = parseFloat(editandoPrecio.monto_total) || 0
+                        const sumaFacturas = (editandoPrecio.cuotas_pago || []).reduce((s, f) => s + (parseFloat(f.monto) || 0), 0)
+                        const resta = montoTotal - sumaFacturas
+                        return (
+                          <div key={ci} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 6, alignItems: 'flex-end' }}>
+                            <div>
+                              {ci === 0 && <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° Factura</div>}
+                              <input type="text" value={c.nro_factura || ''} placeholder="ej. 0001-00012345"
+                                onChange={e => { const n = editandoPrecio.cuotas_pago.map((f,i) => i===ci ? {...f, nro_factura: e.target.value} : f); setEditandoPrecio({...editandoPrecio, cuotas_pago: n}) }}
+                                style={{...inp, fontFamily: 'monospace'}} />
+                            </div>
+                            <div>
+                              {ci === 0 && <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Monto $</div>}
+                              <input type="number" value={c.monto} placeholder="0"
+                                onChange={e => { const n = editandoPrecio.cuotas_pago.map((f,i) => i===ci ? {...f, monto: e.target.value} : f); setEditandoPrecio({...editandoPrecio, cuotas_pago: n}) }}
+                                style={{...inpMono, border: `1px solid ${S.accent}`}} />
+                            </div>
+                            <div>
+                              {ci === 0 && <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Vencimiento</div>}
+                              <input type="date" value={c.fecha}
+                                onChange={e => { const n = editandoPrecio.cuotas_pago.map((f,i) => i===ci ? {...f, fecha: e.target.value} : f); setEditandoPrecio({...editandoPrecio, cuotas_pago: n}) }}
+                                style={{...inp, border: `1px solid ${S.amber}`}} />
+                            </div>
+                            <button onClick={() => setEditandoPrecio({...editandoPrecio, cuotas_pago: editandoPrecio.cuotas_pago.filter((_,i) => i !== ci)})}
+                              style={{ padding: '7px 10px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginBottom: 1 }}>✕</button>
+                          </div>
+                        )
+                      })}
+                      {(editandoPrecio.cuotas_pago || []).length > 0 && (() => {
+                        const montoTotal = parseFloat(editandoPrecio.monto_total) || 0
+                        const sumaFacturas = (editandoPrecio.cuotas_pago || []).reduce((s, f) => s + (parseFloat(f.monto) || 0), 0)
+                        const resta = montoTotal - sumaFacturas
+                        const ok = Math.abs(resta) < 0.5
+                        return (
+                          <div style={{ background: ok ? S.greenLight : S.amberLight, border: `1px solid ${ok ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>
+                            {ok
+                              ? `✓ Las facturas suman $${sumaFacturas.toLocaleString('es-AR')} — coincide con el total`
+                              : `Facturas: $${sumaFacturas.toLocaleString('es-AR')} · ${resta > 0 ? `Falta asignar $${resta.toLocaleString('es-AR')}` : `Excede por $${Math.abs(resta).toLocaleString('es-AR')}`}`
+                            }
+                          </div>
+                        )
+                      })()}
                     </div>
 
                                         <div style={{ display: 'flex', gap: 8 }}>
@@ -672,7 +702,7 @@ export default function Ingresos({ usuario }) {
                               comision_es_paralela: l.comision_es_paralela || false,
                               procedencia: l.procedencia || '',
                               nuevaProcedencia: '',
-                              cuotas_pago: (l.cuotas_pago || []).map(c => ({ fecha: c.fecha, monto: String(c.monto) })),
+                              cuotas_pago: (l.cuotas_pago || []).map(c => ({ nro_factura: c.nro_factura || '', fecha: c.fecha || '', monto: String(c.monto || '') })),
                             }) }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginRight: 4 }}>Editar</button>
                             <button onClick={() => eliminarLote(l.id)}
