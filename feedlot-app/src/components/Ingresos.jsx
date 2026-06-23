@@ -1328,15 +1328,42 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
 
   return (
     <div>
-      {/* Vencimientos próximos */}
-      {lotesActivos.filter(l => l.fecha_vencimiento_pago && l.estado_pago !== 'pagado' && new Date(l.fecha_vencimiento_pago) <= new Date(Date.now() + 7 * 86400000)).length > 0 && (
-        <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>Vencimientos próximos - 7 días</div>
-          {lotesActivos.filter(l => l.fecha_vencimiento_pago && l.estado_pago !== 'pagado' && new Date(l.fecha_vencimiento_pago) <= new Date(Date.now() + 7 * 86400000)).map(l => (
-            <div key={l.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>C-{corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id} - {l.procedencia || 'Sin proveedor'} - vence {new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR')}</div>
-          ))}
-        </div>
-      )}
+      {/* Vencimientos próximos — filtra por vencimientos individuales no pagados */}
+      {(() => {
+        const hoy7 = new Date(Date.now() + 7 * 86400000)
+        const vencProximos = lotesActivos.flatMap(l => {
+          if (l.estado_pago === 'pagado') return []
+          if (l.cuotas_pago?.length > 0) {
+            return l.cuotas_pago.flatMap(f =>
+              (f.vencimientos || [{ fecha: f.fecha, monto: f.monto, pagado: false }])
+                .filter(v => !v.pagado && v.fecha && new Date(v.fecha + 'T12:00:00') <= hoy7)
+                .map(v => ({ lote: l, fecha: v.fecha, monto: v.monto, nro: f.nro_factura }))
+            )
+          }
+          if (l.fecha_vencimiento_pago && new Date(l.fecha_vencimiento_pago + 'T12:00:00') <= hoy7) {
+            return [{ lote: l, fecha: l.fecha_vencimiento_pago, monto: null, nro: null }]
+          }
+          return []
+        })
+        if (vencProximos.length === 0) return null
+        return (
+          <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ Vencimientos pendientes en los próximos 7 días</div>
+            {vencProximos.map((v, i) => {
+              const corralNum = corrales.find(c => c.id === v.lote.corral_cuarentena_id)?.numero || v.lote.corral_cuarentena_id
+              return (
+                <div key={i} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
+                  C-{corralNum} · {v.lote.procedencia || 'Sin proveedor'}
+                  {v.nro ? ` · Fact. ${v.nro}` : ''}
+                  {v.monto ? ` · $${parseFloat(v.monto).toLocaleString('es-AR')}` : ''}
+                  {' · vence '}{new Date(v.fecha + 'T12:00:00').toLocaleDateString('es-AR')}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
 
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
