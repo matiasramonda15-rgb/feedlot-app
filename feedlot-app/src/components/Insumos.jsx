@@ -120,7 +120,7 @@ export default function Insumos({ usuario }) {
 
   async function cargar() {
     setLoading(true)
-    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }, { data: is_ }, { data: ch }, { data: ct }] = await Promise.all([
+    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }, { data: is_ }, { data: ch }, { data: ct }, { data: cp }] = await Promise.all([
       supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
@@ -128,6 +128,7 @@ export default function Insumos({ usuario }) {
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
       supabase.from('contactos').select('*').order('nombre'),
+      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').is('precio_unitario', null).order('fecha', { ascending: false }),
     ])
     setCompras(c || [])
     setStockAlim(sa || [])
@@ -135,10 +136,23 @@ export default function Insumos({ usuario }) {
     setIngresosStock(is_ || [])
     setChequesCartera(ch || [])
     setContactos(ct || [])
-    // Ingresos de alimentación sin precio → van al banner
-    setSinPrecio(ip || [])
+    // Unificar pendientes: ingresos_stock sin precio + compras_insumos sin precio
+    const comprasPend = (cp || []).map(x => ({
+      id: `ci_${x.id}`,
+      _compra_id: x.id,
+      _source: 'compras_insumos',
+      insumo_id: x.insumo_id,
+      insumo_nombre: x.insumo_nombre,
+      tipo: x.insumo_tipo,
+      cantidad_kg: x.cantidad,
+      unidad: x.unidad,
+      proveedor: x.proveedor,
+      creado_en: x.fecha,
+    }))
+    setSinPrecio([...(ip || []), ...comprasPend])
     setLoading(false)
   }
+
 
   const stockActual = form.tipo === 'alimentacion' ? stockAlim : stockSan
 
@@ -1284,21 +1298,6 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
     const total = precioNum ? Math.round(ing.cantidad_kg * precioNum) : null
     const estadoPago = ep.pagarAhora ? 'pagado' : 'pendiente'
 
-    console.log('guardando insumo pendiente:', ing.id, estadoPago, precioNum)
-
-    // Registrar en ingresos_stock
-    const { error: errUpdate } = await supabase.from('ingresos_stock').update({
-      precio_por_kg: precioNum,
-      total,
-      proveedor: ep.proveedor || null,
-      localidad: ep.localidad || null,
-      cuit: ep.cuit || null,
-      numero_factura: ep.numero_factura || null,
-      estado_pago: estadoPago,
-    }).eq('id', ing.id)
-    console.log('update ingresos_stock error:', errUpdate)
-
-    // Registrar en compras_insumos
     let caja_oficial_id = null, caja_paralela_id = null
     const desc = `Compra ${ing.insumo_nombre}${ep.proveedor ? ` — ${ep.proveedor}` : ''}`
 
@@ -1314,62 +1313,71 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
           const { data: co } = await supabase.from('caja_oficial').insert({ fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
           if (!caja_oficial_id) caja_oficial_id = co?.id
         }
-        if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio.fecha_vencimiento) {
+        if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
           await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-        } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
-          await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+        } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+          for (const chId of pago.cheque_tercero_ids) {
+            await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+          }
         }
       }
     }
 
-    // Insertar en compras_insumos para historial
-    const insumo = stockAlim.find(s => s.id === ing.insumo_id)
-    await supabase.from('compras_insumos').insert({
-      fecha, insumo_id: ing.insumo_id,
-      insumo_tipo: insumo?.tipo || 'alimentacion',
-      insumo_nombre: ing.insumo_nombre,
-      cantidad: ing.cantidad_kg, unidad: 'kg',
-      precio_unitario: precioNum, total,
-      proveedor: ep.proveedor || null,
-      localidad: ep.localidad || null,
-      cuit: ep.cuit || null,
-      iva: ep.iva || null,
-      cbu: ep.cbu || null,
-      numero_factura: ep.numero_factura || null,
-      forma_pago: ep.pagarAhora ? ep.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
-      es_paralelo: ep.pagarAhora ? ep.pagos.some(p => p.es_paralelo) : false,
-      pagos_detalle: ep.pagarAhora ? ep.pagos : null,
-      estado_pago: estadoPago,
-      registrado_por: usuario?.id,
-      caja_oficial_id, caja_paralela_id,
-    })
+    if (ing._source === 'compras_insumos') {
+      // Nuevo flujo — actualizar compras_insumos directamente
+      await supabase.from('compras_insumos').update({
+        precio_unitario: precioNum,
+        total,
+        proveedor: ep.proveedor || ing.proveedor || null,
+        numero_factura: ep.numero_factura || null,
+        forma_pago: ep.pagarAhora && total ? ep.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
+        pagos_detalle: ep.pagarAhora && total ? ep.pagos : null,
+        estado_pago: estadoPago,
+        caja_oficial_id: ep.pagarAhora ? caja_oficial_id : null,
+        caja_paralela_id: ep.pagarAhora ? caja_paralela_id : null,
+      }).eq('id', ing._compra_id)
+    } else {
+      // Flujo viejo — ingresos_stock
+      await supabase.from('ingresos_stock').update({
+        precio_por_kg: precioNum,
+        total,
+        proveedor: ep.proveedor || null,
+        localidad: ep.localidad || null,
+        cuit: ep.cuit || null,
+        numero_factura: ep.numero_factura || null,
+        estado_pago: estadoPago,
+      }).eq('id', ing.id)
+      // Insertar en compras_insumos para historial
+      const insumo = stockAlim.find(s => s.id === ing.insumo_id)
+      await supabase.from('compras_insumos').insert({
+        fecha, insumo_id: ing.insumo_id,
+        insumo_tipo: insumo?.tipo || 'alimentacion',
+        insumo_nombre: ing.insumo_nombre,
+        cantidad: ing.cantidad_kg, unidad: 'kg',
+        precio_unitario: precioNum, total,
+        proveedor: ep.proveedor || null, localidad: ep.localidad || null,
+        cuit: ep.cuit || null, iva: ep.iva || null, cbu: ep.cbu || null,
+        numero_factura: ep.numero_factura || null,
+        forma_pago: ep.pagarAhora ? ep.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
+        es_paralelo: ep.pagarAhora ? ep.pagos.some(p => p.es_paralelo) : false,
+        pagos_detalle: ep.pagarAhora ? ep.pagos : null,
+        estado_pago: estadoPago,
+        registrado_por: usuario?.id,
+        caja_oficial_id, caja_paralela_id,
+      })
+    }
 
-    // Actualizar precio_referencia en el stock correspondiente
+    // Actualizar precio_referencia en el stock
     if (precioNum) {
       if (ing.tipo === 'sanitario') {
         const prodSan = stockSan.find(s => s.id === ing.insumo_id)
         if (prodSan) {
-          await supabase.from('stock_sanitario').update({
-            precio_referencia: precioNum,
-            precio_referencia_actualizado_en: new Date().toISOString(),
-          }).eq('id', prodSan.id)
+          await supabase.from('stock_sanitario').update({ precio_referencia: precioNum, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', prodSan.id)
         }
       } else {
         const prodAlim = stockAlim.find(s => s.id === ing.insumo_id)
         if (prodAlim) {
-          // Calcular precio promedio ponderado con todos los ingresos con precio
-          const { data: todosIngresos } = await supabase.from('ingresos_stock')
-            .select('cantidad_kg, precio_por_kg')
-            .eq('insumo_id', ing.insumo_id)
-            .not('precio_por_kg', 'is', null)
-          const totalKg = (todosIngresos || []).reduce((s, i) => s + (i.cantidad_kg || 0), 0) + ing.cantidad_kg
-          const promPonderado = totalKg > 0
-            ? (((todosIngresos || []).reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0)) + precioNum * ing.cantidad_kg) / totalKg
-            : precioNum
-          await supabase.from('stock_insumos').update({
-            precio_referencia: Math.round(promPonderado * 100) / 100,
-            precio_referencia_actualizado_en: new Date().toISOString(),
-          }).eq('id', prodAlim.id)
+          await supabase.from('stock_insumos').update({ precio_referencia: precioNum, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', prodAlim.id)
         }
       }
     }
@@ -1377,9 +1385,6 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
     setEditando(prev => { const n = {...prev}; delete n[ing.id]; return n })
     await onCargar()
   }
-
-  const inp = { width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }
-  const Lbl = ({ children }) => <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{children}</div>
 
   return (
     <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
