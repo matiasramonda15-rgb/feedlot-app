@@ -910,20 +910,23 @@ function generarReciboCompra(lote, pagos, corrales) {
     const tipo = p.tipo || p.forma_pago || ''
     const subtipo = p.subtipo_cheque || ''
     const esParalelo = p.es_paralelo || p.es_negro
-    let desc = tipo === 'transferencia' ? 'TRANSFERENCIA' : tipo === 'efectivo' ? 'EFECTIVO' : tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : tipo === 'e-cheq' ? `E-CHEQ${subtipo ? ' ' + subtipo.toUpperCase() : ''}` : tipo.toUpperCase()
+    let desc = tipo === 'transferencia' ? 'TRANSFERENCIA' : tipo === 'efectivo' ? 'EFECTIVO' : tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : subtipo === 'propio' ? 'E-CHEQ PROPIO' : subtipo === 'tercero' ? 'E-CHEQ TERCERO' : tipo.toUpperCase()
     if (esParalelo) desc += ' (PARALELO)'
 
-    // E-cheq propio
-    if (subtipo === 'propio' && p.cheque_propio?.fecha_vencimiento) {
+    // E-cheq propio — usa cheque_propio (nuevo) o campos legacy
+    if (subtipo === 'propio') {
+      const nro = p.cheque_propio?.numero || p.numero_cheque || ''
+      const banco = p.cheque_propio?.banco || p.banco || ''
+      const vto = p.cheque_propio?.fecha_vencimiento || p.fecha_vencimiento_cheque || ''
       return [`<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.cheque_propio.numero || p.numero_cheque || ''} · ${p.cheque_propio.banco || ''}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${new Date(p.cheque_propio.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${[nro, banco].filter(Boolean).join(' · ')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${vto ? new Date(vto+'T12:00:00').toLocaleDateString('es-AR') : ''}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
       </tr>`]
     }
 
-    // E-cheq tercero (múltiples cheques)
+    // E-cheq tercero — una fila por cheque con detalle
     if (subtipo === 'tercero' && p.cheque_tercero_detalle?.length > 0) {
       return p.cheque_tercero_detalle.map(ch => `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
@@ -933,11 +936,11 @@ function generarReciboCompra(lote, pagos, corrales) {
       </tr>`)
     }
 
-    // Transferencia, efectivo, cuenta corriente, o cheque legacy
+    // Transferencia, efectivo, cuenta corriente
     return [`<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.numero_cheque || ''}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.fecha_vencimiento_cheque ? new Date(p.fecha_vencimiento_cheque+'T12:00:00').toLocaleDateString('es-AR') : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;"></td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;"></td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
     </tr>`]
   }).join('')
@@ -1178,13 +1181,25 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
         desc += ` — Entregado a ${lote.procedencia || 'proveedor'}: cheque(s) ${detalleCheques}`
       }
 
+      // Armar detalle de cheques tercero para el recibo
+      let cheque_tercero_detalle = null
+      if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        cheque_tercero_detalle = pago.cheque_tercero_ids.map(chId => {
+          const ch = chequesCartera.find(c => String(c.id) === chId)
+          return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
+        }).filter(Boolean)
+      }
+
       const { data: pagoInsertado } = await supabase.from('pagos_compras').insert({
         lote_id: lote.id, fecha: formPago.fecha, monto,
         forma_pago: formaPago,
+        subtipo_cheque: pago.subtipo_cheque || null,
         cuota_idx: formPago.cuota_idx ?? null,
         numero_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.numero || null : null,
         banco: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.banco || null : null,
         fecha_vencimiento_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.fecha_vencimiento || null : null,
+        cheque_propio: pago.subtipo_cheque === 'propio' ? pago.cheque_propio : null,
+        cheque_tercero_detalle,
         es_negro: pago.es_paralela || false,
         descripcion: desc,
       }).select().single()

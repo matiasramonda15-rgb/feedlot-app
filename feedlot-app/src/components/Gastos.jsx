@@ -95,7 +95,7 @@ function generarRecibo(gasto, pagos) {
   const fecha = new Date(gasto.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const totalMonto = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
 
-  const filasPago = pagos.map(p => {
+  const filasPago = pagos.flatMap(p => {
     let descBase = p.tipo === 'transferencia' ? 'TRANSFERENCIA' :
                p.tipo === 'efectivo' ? 'EFECTIVO' :
                p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' :
@@ -103,24 +103,24 @@ function generarRecibo(gasto, pagos) {
                `E-CHEQ TERCERO`
     if (p.es_paralelo) descBase += ' (PARALELO)'
 
-    // Cheques de tercero: una fila por cada cheque, mismo formato que las demás filas
+    // Cheques de tercero: una fila por cada cheque
     if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_detalle?.length > 0) {
       return p.cheque_tercero_detalle.map(c => `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${descBase}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${c.numero || ''}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">#${c.numero || '—'} · ${c.banco || '—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;font-weight:600;">$ ${parseFloat(c.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-      </tr>`).join('')
+      </tr>`)
     }
 
-    let nro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.numero || '') : ''
-    let fechaCobro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '') : ''
-    return `<tr>
+    const nro = p.subtipo_cheque === 'propio' ? `${p.cheque_propio?.numero || ''} · ${p.cheque_propio?.banco || ''}`.trim().replace(/^·\s*/, '') : ''
+    const fechaCobro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '') : ''
+    return [`<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${descBase}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${nro}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${fechaCobro}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;font-weight:600;">$ ${parseFloat(p.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-    </tr>`
+    </tr>`]
   }).join('')
 
   const bloqueRecibo = `
