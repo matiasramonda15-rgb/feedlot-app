@@ -2789,4 +2789,4 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
       )}
     </div>
   )
-}
+} 
