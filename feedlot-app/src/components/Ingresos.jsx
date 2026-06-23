@@ -1015,16 +1015,20 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   }
 
   async function guardarFactura(lote) {
-    const montoFact = formFactura.monto_facturado !== '' ? parseFloat(formFactura.monto_facturado) : null
     const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
-    const ivaMonto = montoFact != null ? Math.round(montoFact * ivaPct / 100) : 0
-    const totalFactura = montoFact != null ? montoFact + ivaMonto : null
+    // Calcular totales desde las facturas
+    const facturas = (formFactura.cuotas_pago || []).filter(f => f.nro_factura || (f.vencimientos || []).some(v => v.monto))
+    const totalNeto = facturas.reduce((s, f) => s + (f.vencimientos || []).reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0), 0)
+    const ivaMonto = Math.round(totalNeto * ivaPct / 100)
+    const totalFacturado = totalNeto + ivaMonto
     const montoTotal = lote.monto_total_con_iva || null
-    const montoNegro = montoTotal != null && totalFactura != null ? Math.max(0, montoTotal - totalFactura) : null
+    const montoNegro = montoTotal != null && totalFacturado > 0 ? Math.max(0, montoTotal - totalFacturado) : null
+    // N° de primera factura para compatibilidad
+    const primeraFactura = facturas[0]?.nro_factura || null
     await supabase.from('lotes').update({
-      numero_factura: formFactura.numero_factura || null,
+      numero_factura: primeraFactura,
       fecha_factura: formFactura.fecha_factura || null,
-      monto_facturado: montoFact,
+      monto_facturado: totalNeto > 0 ? totalNeto : null,
       iva_pct: ivaPct,
       iva_monto: ivaMonto,
       monto_negro: montoNegro,
@@ -1034,7 +1038,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       proveedor_cuit: formFactura.cuit || null,
       proveedor_iva: formFactura.iva || null,
       proveedor_cbu: formFactura.cbu || null,
-      cuotas_pago: (formFactura.cuotas_pago || []).filter(f => f.nro_factura || (f.vencimientos || []).some(v => v.monto)).map(f => ({
+      cuotas_pago: facturas.map(f => ({
         nro_factura: f.nro_factura || null,
         vencimientos: (f.vencimientos || []).filter(v => v.fecha || v.monto).map(v => ({
           fecha: v.fecha || null,
@@ -1050,19 +1054,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   function renderFormFactura(l) {
     return (
       <div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-          <div><Lbl>N° Factura</Lbl><input type="text" value={formFactura.numero_factura} onChange={e => setFormFactura({...formFactura, numero_factura: e.target.value})} style={inp} /></div>
-          <div><Lbl>Fecha Factura</Lbl><input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} /></div>
-        </div>
-
+        {/* IVA % — único para todas las facturas */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
-            <Lbl>Neto Facturado $</Lbl>
-            <input type="number" value={formFactura.monto_facturado} onChange={e => setFormFactura({...formFactura, monto_facturado: e.target.value})}
-              style={{ ...inp, fontFamily: 'monospace' }} placeholder="Monto sin IVA" />
-          </div>
-          <div>
-            <Lbl>IVA %</Lbl>
+            <Lbl>IVA % (aplica a todas las facturas)</Lbl>
             <select value={formFactura.iva_pct} onChange={e => setFormFactura({...formFactura, iva_pct: e.target.value})} style={inp}>
               <option value="0">Sin IVA</option>
               <option value="10.5">10.5%</option>
@@ -1070,22 +1065,43 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
             </select>
           </div>
           <div>
-            <Lbl>Cuenta paralela (calculada)</Lbl>
-            {(() => {
-              const montoFact = formFactura.monto_facturado !== '' ? (parseFloat(formFactura.monto_facturado) || 0) : null
-              const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
-              const ivaMonto = montoFact != null ? Math.round(montoFact * ivaPct / 100) : 0
-              const totalFact = montoFact != null ? montoFact + ivaMonto : null
-              const montoTotalOp = l.monto_total_con_iva || 0
-              const paralelo = totalFact != null ? Math.max(0, montoTotalOp - totalFact) : 0
-              return (
-                <div style={{ padding: '9px 12px', border: `1px solid ${paralelo > 0 ? '#9B59B6' : S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: paralelo > 0 ? '#F3E8FF' : S.bg, fontWeight: 700, color: paralelo > 0 ? S.purple : S.hint }}>
-                  {paralelo > 0 ? `$${paralelo.toLocaleString('es-AR')}` : (totalFact != null ? '$0' : '—')}
-                </div>
-              )
-            })()}
+            <Lbl>Fecha factura</Lbl>
+            <input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} />
           </div>
         </div>
+
+        {/* Resumen automático */}
+        {(formFactura.cuotas_pago || []).length > 0 && (() => {
+          const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
+          const totalNeto = (formFactura.cuotas_pago || []).reduce((s, f) =>
+            s + (f.vencimientos || []).reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0), 0)
+          const totalIva = Math.round(totalNeto * ivaPct / 100)
+          const totalFacturado = totalNeto + totalIva
+          const totalCompra = l.monto_total_con_iva || 0
+          const paralelo = totalCompra > 0 ? Math.max(0, totalCompra - totalFacturado) : 0
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px 12px', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total neto</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalNeto.toLocaleString('es-AR')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>IVA {ivaPct}%</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalIva.toLocaleString('es-AR')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total facturado</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalFacturado.toLocaleString('es-AR')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: paralelo > 0 ? S.purple : S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Paralelo</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: paralelo > 0 ? S.purple : S.hint, background: paralelo > 0 ? '#F3E8FF' : 'transparent', padding: '2px 6px', borderRadius: 4 }}>
+                  {totalCompra > 0 ? `$${paralelo.toLocaleString('es-AR')}` : '—'}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: 10, marginBottom: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Seleccionar de contactos</div>
@@ -1119,15 +1135,16 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
           {(formFactura.cuotas_pago || []).map((factura, fi) => (
             <div key={fi} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 8 }}>
               {/* Header factura */}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
+                <div>
                   <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° Factura</div>
                   <input type="text" value={factura.nro_factura || ''} placeholder="0001-00012345"
                     onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, nro_factura: e.target.value} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
                     style={{...inp, fontFamily: 'monospace'}} />
                 </div>
-                <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', fontWeight: 600, paddingTop: 18 }}>
-                  Total: ${((factura.vencimientos || []).reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)).toLocaleString('es-AR')}
+                <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', fontWeight: 600, paddingBottom: 8 }}>
+                  Neto: ${((factura.vencimientos || []).reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)).toLocaleString('es-AR')}
+                  {' '}· c/IVA: ${Math.round((factura.vencimientos || []).reduce((s, v) => s + (parseFloat(v.monto) || 0), 0) * (1 + parseFloat(formFactura.iva_pct || 10.5) / 100)).toLocaleString('es-AR')}
                 </div>
                 <button onClick={() => setFormFactura({...formFactura, cuotas_pago: formFactura.cuotas_pago.filter((_,i) => i !== fi)})}
                   style={{ padding: '5px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginTop: 18 }}>✕</button>
