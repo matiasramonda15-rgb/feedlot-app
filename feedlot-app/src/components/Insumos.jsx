@@ -70,7 +70,7 @@ function generarRecibo(datos, pagos) {
     </table>
     <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
       <tr><td style="padding:4px 8px;font-weight:bold;border-bottom:1px solid #ddd;background:#f5f5f5;">Concepto:</td></tr>
-      <tr><td style="padding:6px 8px;">${datos.insumo_nombre ? `<strong>Compra ${datos.insumo_nombre}</strong><br>` : ''}Observación: RAMONDA HNOS S.A. no se responsabiliza por el vencimiento de cheques/e-cheq de terceros.<br>Cantidad de pesos: &nbsp;${enLetras}</td></tr>
+      <tr><td style="padding:6px 8px;"><strong>Compra ${[datos.insumo_nombre, datos.insumo_tipo === 'sanitario' ? '(Sanitario)' : '(Alimentación)', datos.proveedor].filter(Boolean).join(' · ')}</strong><br>Observación: RAMONDA HNOS S.A. no se responsabiliza por el vencimiento de cheques/e-cheq de terceros.<br>Cantidad de pesos: &nbsp;${enLetras}</td></tr>
       <tr><td style="padding:20px 8px 30px 8px;">&nbsp;</td></tr>
       <tr><td style="padding:8px;"><table style="width:100%;"><tr><td style="width:40%;text-align:center;border-top:1px solid #333;">Firma</td><td style="width:20%;"></td><td style="width:40%;text-align:center;border-top:1px solid #333;">DNI</td></tr></table></td></tr>
     </table>
