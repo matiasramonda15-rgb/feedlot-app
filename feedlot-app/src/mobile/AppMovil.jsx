@@ -51,8 +51,11 @@ export default function AppMovil({ usuario, onLogout }) {
     }
     const fechaTermC = (cfgMixer || []).find(c => c.clave === 'fecha_term_c')?.valor || null
     // Usar el kg_total mas reciente por corral
+    // Encontrar la fecha más reciente de raciones (puede ser hoy o ayer)
+    const fechasRaciones = [...new Set((racionesAyer || []).map(r => r.fecha))].sort().reverse()
+    const fechaUltimaRacion = fechasRaciones[0] || null
     const kgsAyer = {}
-    ;(racionesAyer || []).forEach(r => {
+    ;(racionesAyer || []).filter(r => r.fecha === fechaUltimaRacion).forEach(r => {
       if (kgsAyer[r.corral_id] === undefined) kgsAyer[r.corral_id] = r.kg_total ?? 0
     })
     // Calcular próxima pesada: última pesada + 40 días
@@ -559,23 +562,20 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
 
     // Verificar si ya hay raciones confirmadas hoy
-    const { data: yaConfirmadas } = await supabase.from('raciones_app').select('id, creado_en').eq('fecha', hoy).limit(1)
+    const { data: yaConfirmadas } = await supabase.from('raciones_app').select('id').eq('fecha', hoy).limit(1)
     if (yaConfirmadas && yaConfirmadas.length > 0) {
-      // Verificar si es el mismo dia calendario (antes de medianoche)
-      const ahora = new Date()
-      const horaActual = ahora.getHours()
-      // Si es antes de medianoche del mismo dia, advertir
+      // Ya confirmadas hoy — mostrar cartel de reemplazo, mantener guardando=false
       setGuardando(false)
       setMostrarConfirmReemplazo(true)
       return
     }
-    setGuardando(true)
+    // No hay raciones hoy — confirmar directo
     await ejecutarConfirmar(hoy)
   }
 
   async function ejecutarConfirmar(hoy) {
-    setGuardando(true)
     setMostrarConfirmReemplazo(false)
+    setGuardando(true)
       // Eliminar raciones de hoy y recomponer stock
       const { data: racionesHoy } = await supabase.from('raciones_app').select('corral_id, kg_total, mezclador').eq('fecha', hoy)
       // Recomponer stock — sumar lo que se había descontado
@@ -881,9 +881,9 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                 </div>
               </div>
             )}
-            <button onClick={confirmar} disabled={guardando}
-              style={{ width: '100%', background: C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
-              {guardando ? 'Guardando...' : 'Confirmar raciones'}
+            <button onClick={confirmar} disabled={guardando || mostrarConfirmReemplazo}
+              style={{ width: '100%', background: guardando || mostrarConfirmReemplazo ? '#4A6A4A' : C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: guardando || mostrarConfirmReemplazo ? 'default' : 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
+              {guardando ? 'Guardando...' : mostrarConfirmReemplazo ? 'Respondé el cartel de arriba ↑' : 'Confirmar raciones'}
             </button>
           </>
         )}
