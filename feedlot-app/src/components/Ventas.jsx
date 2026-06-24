@@ -48,6 +48,7 @@ export default function Ventas({ usuario }) {
   const [ventasSinPrecio, setVentasSinPrecio] = useState([])
   const [todasVentasSinPrecio, setTodasVentasSinPrecio] = useState([])
   const [editandoVenta, setEditandoVenta] = useState(null)
+  const [editandoBanner, setEditandoBanner] = useState(null)
   const [pagosVenta, setPagosVenta] = useState({})
   const [registrandoPago, setRegistrandoPago] = useState(null)
   const [pagosExpandidos, setPagosExpandidos] = useState({})
@@ -271,6 +272,7 @@ export default function Ventas({ usuario }) {
     } else {
       await supabase.from('ventas').update(updateData).eq('id', venta.id)
     }
+    setEditandoBanner(null)
     setEditandoVenta(null)
     await cargar()
   }
@@ -793,10 +795,8 @@ export default function Ventas({ usuario }) {
                 const kgBrutoTotal = (grupo || []).reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
                 const animTotal = (grupo || []).reduce((s, gv) => s + (gv.cantidad || 0), 0)
                 const corralesNumsP = (grupo || []).map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
-                // Solo está editando si el usuario hizo click en "Completar datos" de ESTA venta
-                const isEditing = editandoVenta?._bannerKey === vKey
-                // Si hay otra venta editándose en el banner, ocultar esta
-                if (editandoVenta?._bannerKey && editandoVenta._bannerKey !== vKey) return null
+                const isEditing = editandoBanner === vKey
+                if (editandoBanner && editandoBanner !== vKey) return null
                 return (
                   <div key={vKey} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isEditing ? 12 : 0 }}>
@@ -805,9 +805,15 @@ export default function Ventas({ usuario }) {
                         <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{kgBrutoTotal.toLocaleString('es-AR')} kg brutos · {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en)+'T12:00:00').toLocaleDateString('es-AR')}</div>
                       </div>
                       {!isEditing && (
-                        <button onClick={() => setEditandoVenta({ _bannerKey: vKey, id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: '', monto_total_con_iva: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: '8', plazo_dias: '' })}
+                        <button onClick={() => { setEditandoBanner(vKey); setEditandoVenta({ id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: '', monto_total_con_iva: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: '8', plazo_dias: '' }) }}
                           style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                           Completar datos
+                        </button>
+                      )}
+                      {isEditing && (
+                        <button onClick={() => { setEditandoBanner(null); setEditandoVenta(null) }}
+                          style={{ padding: '6px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                          Cancelar
                         </button>
                       )}
                     </div>
@@ -1541,11 +1547,7 @@ export default function Ventas({ usuario }) {
                         </div>
                       )}
                     </div>
-                    {editandoVenta?._bannerKey === (v.grupo_venta_id || v.id) && (
-                      <div style={{ marginTop: 12 }}>
-                        {renderFormVenta(v)}
-                      </div>
-                    )}
+
                     {isEditGC && renderFormGC(v, isGroup, grupo, gcKey, montoTotal, cargar, supabase)}
                   </div>
                 )
