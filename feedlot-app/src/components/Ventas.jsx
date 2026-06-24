@@ -162,8 +162,8 @@ export default function Ventas({ usuario }) {
   const kgBruto = corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0)
   const cantVender = corralesVenta.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
   const desbastePct = parseFloat(form.desbaste) || 8
-  const kgDescuento = Math.round(kgBruto * desbastePct / 100)
-  const kgNeto = Math.round(kgBruto - kgDescuento)
+  const kgDescuento = Math.round(kgBruto * desbastePct / 100 * 10) / 10
+  const kgNeto = Math.round((kgBruto - kgDescuento) * 10) / 10
   const precioKg = parseFloat(form.precio_kg) || 0
   const totalVenta = Math.round(kgNeto * precioKg)
 
@@ -227,7 +227,7 @@ export default function Ventas({ usuario }) {
     const kgBrutoTotal = venta.grupo_venta_id
       ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === venta.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
       : (venta.kg_vivo_total || 0)
-    const kgNeto = Math.round(kgBrutoTotal * (1 - desbastePct / 100))
+    const kgNeto = Math.round(kgBrutoTotal * (1 - desbastePct / 100) * 10) / 10
     const montoTotal = ep.monto_total_con_iva ? Math.round(parseFloat(ep.monto_total_con_iva)) : (precioKg ? Math.round(kgNeto * precioKg) : null)
     const plazo = parseInt(ep.plazo_dias || 0)
     const fechaBase = new Date(venta.creado_en)
@@ -257,9 +257,9 @@ export default function Ventas({ usuario }) {
       // Para multicorral: guardar el total exacto en todos los registros del grupo
       // sin dividir — todos tienen el mismo total y kg_neto proporcional
       const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', grupoId)
-      const totalKgNetoGrupo = (grupo || []).reduce((s, v) => s + (v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100)) : (v.kg_neto || 0)), 0)
+      const totalKgNetoGrupo = (grupo || []).reduce((s, v) => s + (v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100) * 10) / 10 : (v.kg_neto || 0)), 0)
       for (const gv of (grupo || [])) {
-        const kgNetoV = gv.kg_vivo_total ? Math.round(gv.kg_vivo_total * (1 - desbastePct / 100)) : (gv.kg_neto || 0)
+        const kgNetoV = gv.kg_vivo_total ? Math.round(gv.kg_vivo_total * (1 - desbastePct / 100) * 10) / 10 : (gv.kg_neto || 0)
         // Asignar monto proporcional pero guardar también el total exacto en cada registro
         const montoV = montoTotal && totalKgNetoGrupo > 0 ? Math.round(montoTotal * kgNetoV / totalKgNetoGrupo) : (precioKg ? Math.round(kgNetoV * precioKg) : null)
         await supabase.from('ventas').update({
@@ -308,7 +308,7 @@ export default function Ventas({ usuario }) {
 
     let hasError = false
     for (const cv of corralesValidos) {
-      const kgNetoCv = Math.round(parseFloat(cv.kg_vivo) * (1 - desbPct / 100))
+      const kgNetoCv = Math.round(parseFloat(cv.kg_vivo) * (1 - desbPct / 100) * 10) / 10
       const montoTotalCv = precio ? Math.round(kgNetoCv * precio) : null
       const montoFactCv = montoFacturado && montoTotal ? Math.round(montoFacturado * kgNetoCv / totalKgNeto) : montoTotalCv
       const montoNegroCv = montoTotalCv && montoFactCv ? Math.max(0, montoTotalCv - montoFactCv) : 0
