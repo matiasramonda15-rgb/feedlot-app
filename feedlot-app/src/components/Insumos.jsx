@@ -123,11 +123,11 @@ export default function Insumos({ usuario }) {
       supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
-      supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).is('estado_pago', null).order('creado_en', { ascending: false }),
+      supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).is('estado_pago', null).is('proveedor', null).order('creado_en', { ascending: false }),
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
       supabase.from('contactos').select('*').order('nombre'),
-      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').is('precio_unitario', null).order('fecha', { ascending: false }),
+      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').is('precio_unitario', null).is('proveedor', null).order('fecha', { ascending: false }),
     ])
     setCompras(c || [])
     setStockAlim(sa || [])
@@ -1305,7 +1305,7 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
   return (
     <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
-        📦 {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} pendiente{ingresos.length !== 1 ? 's' : ''} de precio — completar datos
+        📦 {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} sin datos de remito — completar
       </div>
       {ingresos.map(ing => {
         const ep = editando[ing.id]
@@ -1325,7 +1325,7 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
               </div>
               <button onClick={() => setEditando(prev => ({ ...prev, [ing.id]: prev[ing.id] ? undefined : initEp(ing) }))}
                 style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: ep ? S.redLight : S.accentLight, border: `1px solid ${ep ? '#F09595' : S.accent}`, color: ep ? S.red : S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                {ep ? 'Cancelar' : 'Completar datos'}
+                {ep ? 'Cancelar' : 'Completar remito'}
               </button>
             </div>
             {ep && (
