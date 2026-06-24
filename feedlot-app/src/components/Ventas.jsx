@@ -786,24 +786,26 @@ export default function Ventas({ usuario }) {
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
                 ⚠ {ventasSinPrecio.length} venta{ventasSinPrecio.length !== 1 ? 's' : ''} sin precio cargado
               </div>
-              {ventasSinPrecio
-                .filter(v => !editandoVenta || editandoVenta.id === v.id || editandoVenta.grupo_venta_id === v.grupo_venta_id)
-                .map(v => {
+              {ventasSinPrecio.map(v => {
+                const vKey = v.grupo_venta_id || v.id
                 const grupo = v.grupo_venta_id ? (todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) || [v]) : [v]
                 if (!grupo || (grupo || []).length === 0) return null
                 const kgBrutoTotal = (grupo || []).reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
                 const animTotal = (grupo || []).reduce((s, gv) => s + (gv.cantidad || 0), 0)
                 const corralesNumsP = (grupo || []).map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
-                const isEditing = editandoVenta?.id === v.id || editandoVenta?.grupo_venta_id === v.grupo_venta_id
+                // Solo está editando si el usuario hizo click en "Completar datos" de ESTA venta
+                const isEditing = editandoVenta?._bannerKey === vKey
+                // Si hay otra venta editándose en el banner, ocultar esta
+                if (editandoVenta?._bannerKey && editandoVenta._bannerKey !== vKey) return null
                 return (
-                  <div key={v.grupo_venta_id || v.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 10 }}>
+                  <div key={vKey} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isEditing ? 12 : 0 }}>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{corralesNumsP}{v.grupo_venta_id ? ` · Multi-corral` : ''} · {animTotal} animales</div>
                         <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{kgBrutoTotal.toLocaleString('es-AR')} kg brutos · {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en)+'T12:00:00').toLocaleDateString('es-AR')}</div>
                       </div>
                       {!isEditing && (
-                        <button onClick={() => setEditandoVenta({ id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: '', monto_total_con_iva: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: '8', plazo_dias: '' })}
+                        <button onClick={() => setEditandoVenta({ _bannerKey: vKey, id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: '', monto_total_con_iva: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: '8', plazo_dias: '' })}
                           style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                           Completar datos
                         </button>
@@ -1539,7 +1541,7 @@ export default function Ventas({ usuario }) {
                         </div>
                       )}
                     </div>
-                    {editandoVenta?.id === v.id && (
+                    {editandoVenta?._bannerKey === (v.grupo_venta_id || v.id) && (
                       <div style={{ marginTop: 12 }}>
                         {renderFormVenta(v)}
                       </div>
