@@ -145,7 +145,7 @@ export default function Ventas({ usuario }) {
     }
     setGdpPorCorral(gdp)
     setLoading(false)
-    } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack); setLoading(false) }
+    } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack) }
   }
 
   function calcPesoProm(pa) {
@@ -192,9 +192,7 @@ export default function Ventas({ usuario }) {
   // Detalle por mes
   const ventasPorMes = {}
   ventas.forEach(v => {
-    if (!v.creado_en) return
     const fecha = new Date(v.creado_en)
-    if (isNaN(fecha.getTime())) return
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
     if (!ventasPorMes[key]) ventasPorMes[key] = { total: 0, cantidad: 0, ops: 0 }
     ventasPorMes[key].total += v.total || 0
@@ -206,9 +204,7 @@ export default function Ventas({ usuario }) {
   // Detalle kg prom y precio prom por mes
   const kgPreciosPorMes = {}
   ventas.forEach(v => {
-    if (!v.creado_en) return
     const fecha = new Date(v.creado_en)
-    if (isNaN(fecha.getTime())) return
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
     if (!kgPreciosPorMes[key]) kgPreciosPorMes[key] = { totalKg: 0, cantidad: 0, precioSum: 0, precioCount: 0 }
     kgPreciosPorMes[key].totalKg += v.kg_vivo_total || 0
@@ -790,7 +786,9 @@ export default function Ventas({ usuario }) {
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
                 ⚠ {ventasSinPrecio.length} venta{ventasSinPrecio.length !== 1 ? 's' : ''} sin precio cargado
               </div>
-              {ventasSinPrecio.map(v => {
+              {ventasSinPrecio
+                .filter(v => !editandoVenta || editandoVenta.id === v.id || editandoVenta.grupo_venta_id === v.grupo_venta_id)
+                .map(v => {
                 const grupo = v.grupo_venta_id ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                 const kgBrutoTotal = grupo.reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
                 const animTotal = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
@@ -862,11 +860,10 @@ export default function Ventas({ usuario }) {
                       if (v.grupo_venta_id) {
                         if (!vistos.has(v.grupo_venta_id)) {
                           vistos.add(v.grupo_venta_id)
-                          const g = grupos[v.grupo_venta_id]
-                          if (g && g.length > 0) filas.push({ tipo: 'grupo', grupo: g })
+                          filas.push({ tipo: 'grupo', grupo: grupos[v.grupo_venta_id] })
                         }
                       } else {
-                        if (new Date(v.creado_en) >= hoy40v) filas.push({ tipo: 'simple', venta: v })
+                        filas.push({ tipo: 'simple', venta: v })
                       }
                     })
                     return filas.map((f, fi) => {
@@ -1505,12 +1502,15 @@ export default function Ventas({ usuario }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Seguimiento de cobros, facturas, retenciones y cheques</div>
 
           {/* Banner completar datos G. Comercial */}
-          {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
+          {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).filter(v => !editandoComercial || editandoComercial === (v.grupo_venta_id || v.id)).length > 0 && (
             <div key={gcVersion} style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
                 📋 Ventas pendientes de completar en G. Comercial
               </div>
-              {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).map(v => {
+              {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).filter(v => {
+                const gcKey = v.grupo_venta_id || v.id
+                return !editandoComercial || editandoComercial === gcKey
+              }).map(v => {
                 const isGroup = !!v.grupo_venta_id
                 const grupo = isGroup ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                 const totalAnimales = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
@@ -1843,4 +1843,4 @@ export default function Ventas({ usuario }) {
 
     </div>
   )
-}   
+}  
