@@ -989,6 +989,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
     { key: 'revision', label: 'Revision' },
     { key: 'evento', label: 'Evento' },
     { key: 'mortalidad', label: '💀 Muerte' },
+    { key: 'stock', label: '📦 Stock' },
   ]
 
   return (
@@ -1962,3 +1963,35 @@ function ServiciosMovil({ nav, usuario }) {
     </div>
   )
 } 
+        {pantSan === 'stock' && (
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Stock sanitario</div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: '1rem' }}>Solo lectura — los ingresos se registran desde la PC en Insumos.</div>
+            {stockSanitario.length === 0 && (
+              <div style={{ padding: '2rem', textAlign: 'center', color: C.muted, fontSize: 13 }}>No hay productos cargados.</div>
+            )}
+            {stockSanitario.map(p => {
+              const cant = p.cantidad_ml || p.cantidad_kg || 0
+              const bajo = cant < 50
+              return (
+                <div key={p.id} style={{ background: C.surface, border: `1px solid ${bajo ? C.red : C.border}`, borderRadius: 10, padding: '1rem', marginBottom: '.65rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{p.producto}</div>
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{p.tipo || '—'}{p.laboratorio ? ` · ${p.laboratorio}` : ''}</div>
+                      {p.carencia_dias > 0 && <div style={{ fontSize: 11, color: C.amber, marginTop: 2 }}>⚠ Carencia: {p.carencia_dias} días</div>}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 20, fontWeight: 700, fontFamily: C.mono, color: bajo ? C.red : C.green }}>
+                        {cant.toLocaleString('es-AR')}
+                      </div>
+                      <div style={{ fontSize: 11, color: C.muted }}>{p.unidad || 'ml'}</div>
+                      {bajo && <div style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>⚠ Stock bajo</div>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+

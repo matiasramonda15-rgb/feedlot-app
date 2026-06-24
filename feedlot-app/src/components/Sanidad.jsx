@@ -761,93 +761,24 @@ export default function Sanidad({ usuario }) {
       {/* ── STOCK SANITARIO ── */}
       {tab === 'stock' && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
-              <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Los ingresos quedan pendientes de precio en Insumos hasta que Paula cargue la factura.</div>
-            </div>
-            <button onClick={() => setShowFormStockSan(!showFormStockSan)}
-              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.purple, border: `1px solid ${S.purple}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              + Registrar ingreso
-            </button>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
+            <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Solo lectura — los ingresos se registran desde <strong>Insumos → Stock sanitario</strong>.</div>
           </div>
-
-          {showFormStockSan && (
-            <div style={{ background: S.purpleLight, border: '1px solid #9F8ED4', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: S.purple, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '1rem' }}>Nuevo ingreso de producto sanitario</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto *</div>
-                  <select value={formStockSan.producto_id}
-                    onChange={e => {
-                      const prod = productos.find(p => String(p.id) === e.target.value)
-                      setFormStockSan({...formStockSan, producto_id: e.target.value, unidad: prod?.unidad || 'ml'})
-                    }}
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid #9F8ED4`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                    <option value="">— Seleccioná —</option>
-                    {productos.map(p => <option key={p.id} value={p.id}>{p.n} ({p.unidad || 'ml'})</option>)}
-                  </select>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad *</div>
-                  <input type="number" value={formStockSan.cantidad}
-                    onChange={e => setFormStockSan({...formStockSan, cantidad: e.target.value})}
-                    placeholder="ej. 500"
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid #9F8ED4`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Unidad</div>
-                  <select value={formStockSan.unidad}
-                    onChange={e => setFormStockSan({...formStockSan, unidad: e.target.value})}
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid #9F8ED4`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                    <option value="ml">ml</option>
-                    <option value="dosis">dosis</option>
-                    <option value="kg">kg</option>
-                    <option value="unidad">unidad</option>
-                  </select>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Proveedor</div>
-                  <input type="text" value={formStockSan.proveedor}
-                    onChange={e => setFormStockSan({...formStockSan, proveedor: e.target.value})}
-                    placeholder="ej. Vetequip"
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>N° remito</div>
-                  <input type="text" value={formStockSan.remito}
-                    onChange={e => setFormStockSan({...formStockSan, remito: e.target.value})}
-                    placeholder="ej. R-0001-00012345"
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                </div>
-              </div>
-              <div style={{ background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 6, padding: '8px 12px', fontSize: 12, color: S.amber, marginBottom: '1rem' }}>
-                ⏳ Se va a crear un pendiente en Insumos sin precio. Paula puede completar el precio cuando llegue la factura.
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFormStockSan(false)}
-                  style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={guardarIngresoSan} disabled={guardandoStockSan}
-                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.purple, border: `1px solid ${S.purple}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                  {guardandoStockSan ? 'Guardando...' : '💾 Guardar ingreso'}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Tabla de stock */}
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: S.bg }}>
-                  {['Producto', 'Tipo', 'Laboratorio', 'Carencia', 'Stock actual', 'Unidad', ''].map(h => (
+                  {['Producto', 'Tipo', 'Laboratorio', 'Carencia', 'Stock actual', 'Unidad'].map(h => (
                     <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {productos.length === 0 && (
-                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay productos cargados. Agregá uno desde el módulo Insumos → Stock sanitario.</td></tr>
+                  <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay productos cargados. Agregalos desde <strong>Insumos → Stock sanitario</strong>.</td></tr>
                 )}
                 {productos.map((p, i) => {
                   const tc = TIPO_BADGE[p.tipo] || TIPO_BADGE.Otro
@@ -869,12 +800,6 @@ export default function Sanidad({ usuario }) {
                         {bajo && <span style={{ fontSize: 11, marginLeft: 6, background: S.redLight, color: S.red, padding: '2px 6px', borderRadius: 4 }}>⚠ Stock bajo</span>}
                       </td>
                       <td style={{ padding: '10px 14px', color: S.muted }}>{p.unidad || 'ml'}</td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <button onClick={() => { setFormStockSan({...formStockSan, producto_id: String(p.id), unidad: p.unidad || 'ml'}); setShowFormStockSan(true) }}
-                          style={{ padding: '4px 10px', fontSize: 11, background: S.purpleLight, border: `1px solid #9F8ED4`, color: S.purple, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
-                          + Ingreso
-                        </button>
-                      </td>
                     </tr>
                     </React.Fragment>
                   )

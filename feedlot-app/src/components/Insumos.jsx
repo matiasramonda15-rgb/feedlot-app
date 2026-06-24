@@ -94,7 +94,6 @@ export default function Insumos({ usuario }) {
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
-  const [showPagosPend, setShowPagosPend] = useState(false)
   const [pagarInline, setPagarInline] = useState(null)
   const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }] })
   const [seleccionadas, setSeleccionadas] = useState([])
@@ -521,12 +520,9 @@ export default function Insumos({ usuario }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
                     ⏳ {pendientes.length} compra{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} · ${pendientes.reduce((s,c)=>s+(c.total||0),0).toLocaleString('es-AR')}
                   </div>
-                  <button onClick={() => setShowPagosPend(!showPagosPend)}
-                    style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.amber, border: `1px solid ${S.amber}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                    {showPagosPend ? 'Cerrar' : 'Registrar pago'}
-                  </button>
+
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: showPagosPend ? '1rem' : 0 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 0 }}>
                   {pendientes.map(c => (
                     <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${seleccionadas.includes(c.id) ? '#EF9F27' : S.border}`, borderRadius: 6, background: seleccionadas.includes(c.id) ? '#FFF8EC' : S.surface, cursor: 'pointer' }}>
                       <input type="checkbox" checked={seleccionadas.includes(c.id)} onChange={e => setSeleccionadas(e.target.checked ? [...seleccionadas, c.id] : seleccionadas.filter(id => id !== c.id))} />
@@ -539,142 +535,6 @@ export default function Insumos({ usuario }) {
                     </label>
                   ))}
                 </div>
-                {showPagosPend && seleccionadas.length > 0 && (
-                  <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginTop: '1rem' }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                      Pagar {seleccionadas.length} compra{seleccionadas.length !== 1 ? 's' : ''}
-                    </div>
-                    <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>
-                      Total seleccionado: <strong style={{ fontFamily: 'monospace' }}>${totalSel.toLocaleString('es-AR')}</strong>
-                      {totalSel === 0 && <span style={{ marginLeft: 8, color: S.amber }}>⚠ Sin precio — ingresá el monto a pagar manualmente</span>}
-                    </div>
-
-                    {/* Fecha */}
-                    <div style={{ marginBottom: '1rem', maxWidth: 200 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Fecha</div>
-                      <input type="date" value={formPagoGrupal.fecha} onChange={e => setFormPagoGrupal({...formPagoGrupal, fecha: e.target.value})}
-                        style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                    </div>
-
-                    {/* Formas de pago — igual a Gastos generales */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Formas de pago</div>
-                      <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: [...formPagoGrupal.pagos, { ...PAGO_INIT }]})}
-                        style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
-                    </div>
-                    {formPagoGrupal.pagos.map((pago, idx) => (
-                      <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: 8 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 10 : 0 }}>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Forma de pago</div>
-                            <select value={pago.tipo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
-                              <option value="transferencia">Transferencia</option>
-                              <option value="efectivo">Efectivo</option>
-                              <option value="e-cheq">E-cheq</option>
-                              <option value="cuenta_corriente">Cuenta corriente</option>
-                            </select>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Monto $</div>
-                            <input type="number" value={pago.monto} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.surface, boxSizing: 'border-box' }} />
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                              <input type="checkbox" checked={pago.es_paralelo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
-                              Paralelo
-                            </label>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                            {formPagoGrupal.pagos.length > 1 && <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: formPagoGrupal.pagos.filter((_,i)=>i!==idx)})} style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>}
-                          </div>
-                        </div>
-                        {/* E-cheq: propio o tercero */}
-                        {pago.tipo === 'e-cheq' && (
-                          <div style={{ marginTop: 8 }}>
-                            <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 10 : 0 }}>
-                              {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
-                                <button key={t} onClick={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque === t ? '' : t} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                                  style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque === t ? S.accent : S.border}`, background: pago.subtipo_cheque === t ? S.accentLight : 'transparent', color: pago.subtipo_cheque === t ? S.accent : S.muted }}>
-                                  {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
-                                </button>
-                              ))}
-                            </div>
-                            {pago.subtipo_cheque === 'propio' && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                                <div>
-                                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>N° cheque</div>
-                                  <input type="text" value={pago.cheque_propio?.numero || ''} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), numero: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                                </div>
-                                <div>
-                                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Banco</div>
-                                  <input type="text" value={pago.cheque_propio?.banco || ''} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), banco: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                                </div>
-                                <div>
-                                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Vencimiento *</div>
-                                  <input type="date" value={pago.cheque_propio?.fecha_vencimiento || ''} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), fecha_vencimiento: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.amber}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-                                </div>
-                              </div>
-                            )}
-                            {pago.subtipo_cheque === 'tercero' && (
-                              <div style={{ marginTop: 8 }}>
-                                {(() => {
-                                  const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
-                                  return lista.length === 0
-                                    ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
-                                    : lista.map(ch => (
-                                      <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
-                                        <input type="checkbox" checked={pago.cheque_tercero_ids?.includes(String(ch.id)) || false} onChange={() => {
-                                          const actuales = pago.cheque_tercero_ids || []
-                                          const yaEsta = actuales.includes(String(ch.id))
-                                          const nuevos = yaEsta ? actuales.filter(id => id !== String(ch.id)) : [...actuales, String(ch.id)]
-                                          const nuevoMonto = nuevos.reduce((s, id) => s + (chequesCartera.find(x => String(x.id) === id)?.monto || 0), 0)
-                                          const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_ids: nuevos, monto: String(nuevoMonto || '')} : p)
-                                          setFormPagoGrupal({...formPagoGrupal, pagos: n})
-                                        }} />
-                                        <div style={{ fontSize: 13 }}>
-                                          <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
-                                          <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span>
-                                        </div>
-                                      </label>
-                                    ))
-                                })()}
-                                {pago.cheque_tercero_ids?.length > 0 && (
-                                  <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, marginTop: 6, padding: '6px 10px', background: S.accentLight, borderRadius: 6 }}>
-                                    {pago.cheque_tercero_ids.length} cheque{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} seleccionado{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} · Total: ${parseFloat(pago.monto || 0).toLocaleString('es-AR')}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    {/* Resumen — igual a Gastos */}
-                    <div style={{ background: Math.abs(totalSel-totalPagGrupal) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalSel-totalPagGrupal) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: '1rem' }}>
-                      <span style={{ color: S.muted }}>Total gasto: <strong>${totalSel.toLocaleString('es-AR')}</strong></span>
-                      <span style={{ margin: '0 12px', color: S.muted }}>|</span>
-                      <span style={{ color: S.muted }}>Total pagos: <strong>${totalPagGrupal.toLocaleString('es-AR')}</strong></span>
-                      {Math.abs(totalSel-totalPagGrupal) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${Math.abs(totalSel-totalPagGrupal).toLocaleString('es-AR')}</span>}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button onClick={() => { setShowPagosPend(false); setSeleccionadas([]) }}
-                        style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                        Cancelar
-                      </button>
-                      <button onClick={pagarSeleccionadas} disabled={guardandoPago}
-                        style={{ padding: '7px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                        {guardandoPago ? 'Registrando...' : `💾 Pagar ${seleccionadas.length} compra${seleccionadas.length !== 1 ? 's' : ''}`}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             )
           })()}
