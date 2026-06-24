@@ -789,7 +789,8 @@ export default function Ventas({ usuario }) {
               {ventasSinPrecio
                 .filter(v => !editandoVenta || editandoVenta.id === v.id || editandoVenta.grupo_venta_id === v.grupo_venta_id)
                 .map(v => {
-                const grupo = v.grupo_venta_id ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
+                const grupo = v.grupo_venta_id ? (todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) || [v]) : [v]
+                if (!grupo || grupo.length === 0) return null
                 const kgBrutoTotal = grupo.reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
                 const animTotal = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
                 const corralesNumsP = grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
