@@ -727,7 +727,7 @@ export default function Insumos({ usuario }) {
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                               🖨️ Recibo
                             </button>
-                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] }) }}
+                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: c.cuit || '', iva: c.iva || '', cbu: c.cbu || '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] }) }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                               💳 Pagar
                             </button>
@@ -765,6 +765,62 @@ export default function Insumos({ usuario }) {
                             <input type="date" value={formPagoInline.fecha} onChange={e => setFormPagoInline({...formPagoInline, fecha: e.target.value})}
                               style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
                           </div>
+
+                        {/* Datos de factura */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: '1rem' }}>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Precio $/{c.unidad || 'kg'} *</div>
+                            <input type="number" value={formPagoInline.precio_unitario}
+                              onChange={e => {
+                                const precio = e.target.value
+                                const total = precio && c.cantidad ? String(Math.round(parseFloat(precio) * c.cantidad)) : ''
+                                const pagos = formPagoInline.pagos.map((p, i) => i === 0 ? {...p, monto: total || p.monto} : p)
+                                setFormPagoInline({...formPagoInline, precio_unitario: precio, pagos})
+                              }}
+                              placeholder="ej. 1500"
+                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.surface, boxSizing: 'border-box', color: S.text }} />
+                            {formPagoInline.precio_unitario && c.cantidad && (
+                              <div style={{ fontSize: 11, color: S.green, marginTop: 3 }}>
+                                Total: ${Math.round(parseFloat(formPagoInline.precio_unitario) * c.cantidad).toLocaleString('es-AR')}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>N° Factura</div>
+                            <input type="text" value={formPagoInline.numero_factura}
+                              onChange={e => setFormPagoInline({...formPagoInline, numero_factura: e.target.value})}
+                              placeholder="0001-00012345"
+                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.surface, boxSizing: 'border-box', color: S.text }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Proveedor</div>
+                            <input type="text" value={formPagoInline.proveedor}
+                              onChange={e => setFormPagoInline({...formPagoInline, proveedor: e.target.value})}
+                              placeholder="ej. Cerealera Ramonda"
+                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>CUIT</div>
+                            <input type="text" value={formPagoInline.cuit}
+                              onChange={e => setFormPagoInline({...formPagoInline, cuit: e.target.value})}
+                              placeholder="20-12345678-9"
+                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>IVA</div>
+                            <input type="text" value={formPagoInline.iva}
+                              onChange={e => setFormPagoInline({...formPagoInline, iva: e.target.value})}
+                              placeholder="ej. Responsable Inscripto"
+                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>CBU</div>
+                            <input type="text" value={formPagoInline.cbu}
+                              onChange={e => setFormPagoInline({...formPagoInline, cbu: e.target.value})}
+                              placeholder="ej. 0720..."
+                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
+                          </div>
+                        </div>
 
                         {/* Formas de pago — igual a Gastos generales */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -920,9 +976,9 @@ export default function Insumos({ usuario }) {
                                   await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
                                 }
                               }
-                              const precioUnit = c.precio_unitario || (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
+                              const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : c.precio_unitario || (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
                               const formaDesc = pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+')
-                              await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos }).eq('id', c.id)
+                              await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, numero_factura: formPagoInline.numero_factura || null, proveedor: formPagoInline.proveedor || c.proveedor || null, cuit: formPagoInline.cuit || null, iva: formPagoInline.iva || null, cbu: formPagoInline.cbu || null, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos }).eq('id', c.id)
                               if (precioUnit) {
                                 const tabla = c.insumo_tipo === 'sanitario' ? 'stock_sanitario' : 'stock_insumos'
                                 await supabase.from(tabla).update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
