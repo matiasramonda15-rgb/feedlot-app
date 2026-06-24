@@ -947,7 +947,8 @@ export default function Ventas({ usuario }) {
                         const totalMonto = (g || []).reduce((s, v) => s + (v.total || 0), 0)
                         const corralesNums = (g || []).map(v => `C-${v.corrales?.numero || v.corral_id}`).join(', ')
                         const sinPrecio = (g || []).some(v => !v.precio_kg && !v.monto_total_con_iva && !v.total)
-                        const v0 = g[0]
+                        const v0 = (g || [])[0]
+                        if (!v0) return null
                         return (
                           <React.Fragment key={v0.grupo_venta_id}>
                           <tr style={{ borderBottom: `1px solid ${S.border}`, background: S.accentLight }}>
