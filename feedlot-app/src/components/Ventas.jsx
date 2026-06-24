@@ -479,7 +479,7 @@ export default function Ventas({ usuario }) {
       if (isGroup) {
         const totalKgNet = (grupo || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
         for (const gv of grupo) {
-          const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / grupo.length
+          const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / (grupo || []).length
           const netoV = neto ? Math.round(neto * prop) : null
           const ivaMV = netoV ? Math.round(netoV * iva / 100) : 0
           const descV = descuento ? Math.round(descuento * prop) : 0
@@ -586,7 +586,7 @@ export default function Ventas({ usuario }) {
             if (isGroup) {
               const totalKgNet = (grupo || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
               for (const gv of grupo) {
-                const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / grupo.length
+                const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / (grupo || []).length
                 const netoV = netoVal ? Math.round(netoVal * prop) : null
                 const ivaMV = netoV ? Math.round(netoV * ivaVal / 100) : 0
                 const descV = descuentoVal ? Math.round(descuentoVal * prop) : 0
@@ -790,10 +790,10 @@ export default function Ventas({ usuario }) {
                 .filter(v => !editandoVenta || editandoVenta.id === v.id || editandoVenta.grupo_venta_id === v.grupo_venta_id)
                 .map(v => {
                 const grupo = v.grupo_venta_id ? (todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) || [v]) : [v]
-                if (!grupo || grupo.length === 0) return null
+                if (!grupo || (grupo || []).length === 0) return null
                 const kgBrutoTotal = (grupo || []).reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
                 const animTotal = (grupo || []).reduce((s, gv) => s + (gv.cantidad || 0), 0)
-                const corralesNumsP = grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
+                const corralesNumsP = (grupo || []).map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
                 const isEditing = editandoVenta?.id === v.id || editandoVenta?.grupo_venta_id === v.grupo_venta_id
                 return (
                   <div key={v.grupo_venta_id || v.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 10 }}>
@@ -945,8 +945,8 @@ export default function Ventas({ usuario }) {
                         const totalKgNeto = (g || []).reduce((s, v) => s + (v.kg_neto || 0), 0)
                         const totalAnim = (g || []).reduce((s, v) => s + (v.cantidad || 0), 0)
                         const totalMonto = (g || []).reduce((s, v) => s + (v.total || 0), 0)
-                        const corralesNums = g.map(v => `C-${v.corrales?.numero || v.corral_id}`).join(', ')
-                        const sinPrecio = g.some(v => !v.precio_kg && !v.monto_total_con_iva && !v.total)
+                        const corralesNums = (g || []).map(v => `C-${v.corrales?.numero || v.corral_id}`).join(', ')
+                        const sinPrecio = (g || []).some(v => !v.precio_kg && !v.monto_total_con_iva && !v.total)
                         const v0 = g[0]
                         return (
                           <React.Fragment key={v0.grupo_venta_id}>
@@ -981,7 +981,7 @@ export default function Ventas({ usuario }) {
                                 ✏️ Editar
                               </button>
                               <button onClick={async () => {
-                                if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${g.length} corrales.`)) return
+                                if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${(g || []).length} corrales.`)) return
                                 for (const v of g) {
                                   const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
                                   const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
@@ -1051,7 +1051,7 @@ export default function Ventas({ usuario }) {
                           {archivadasV.map(v => {
                             const g = v.grupo_venta_id ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                             const totalA = v.grupo_venta_id ? (v.monto_total_grupo || (g || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
-                            const corrStr = v.grupo_venta_id ? g.map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
+                            const corrStr = v.grupo_venta_id ? (g || []).map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
                             const kgNeto = (g || []).reduce((s,gv)=>s+(gv.kg_neto||0),0)
                             const precioReal = kgNeto && (v.monto_facturado||v.monto_negro) ? Math.round(((v.monto_facturado||0)+(v.monto_negro||0))/kgNeto) : v.precio_kg
                             return (
@@ -1516,7 +1516,7 @@ export default function Ventas({ usuario }) {
                 const grupo = isGroup ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                 const totalAnimales = (grupo || []).reduce((s, gv) => s + (gv.cantidad || 0), 0)
                 const montoTotal = isGroup ? (v.monto_total_grupo || (grupo || []).reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0)) : (v.monto_total_con_iva || v.total || 0)
-                const corralesStr = isGroup ? grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ') : `C-${v.corrales?.numero || v.corral_id}`
+                const corralesStr = isGroup ? (grupo || []).map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ') : `C-${v.corrales?.numero || v.corral_id}`
                 const gcKey = isGroup ? v.grupo_venta_id : v.id
                 const isEditGC = editandoComercial === gcKey
                 return (
@@ -1586,7 +1586,7 @@ export default function Ventas({ usuario }) {
                     const totalCom = (grupo || []).reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
                     const totalRet = (grupo || []).reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
                     const netoACobrarGrupo = totalGrupo - totalCom - totalRet
-                    const corralesStr = esGrupo ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
+                    const corralesStr = esGrupo ? (grupo || []).map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
                     const pagosList = (grupo || []).flatMap(vv => (pagosVenta && pagosVenta[vv.id]) || [])
                     const totalPagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
                     const saldo = totalGrupo - totalPagado
@@ -1820,7 +1820,7 @@ export default function Ventas({ usuario }) {
                     : archFiltradas.map(v => {
                       const grupo = v.grupo_venta_id ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                       const totalArch = v.grupo_venta_id ? (v.monto_total_grupo || (grupo || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
-                      const corrStr = v.grupo_venta_id ? grupo.map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
+                      const corrStr = v.grupo_venta_id ? (grupo || []).map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
                       return (
                         <div key={v.grupo_venta_id || v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>
                           <div>
