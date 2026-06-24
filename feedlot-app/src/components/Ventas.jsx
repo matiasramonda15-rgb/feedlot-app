@@ -477,7 +477,7 @@ export default function Ventas({ usuario }) {
         fecha_vencimiento_cobro: formComercial.fecha_vencimiento || null,
       }
       if (isGroup) {
-        const totalKgNet = grupo.reduce((s, gv) => s + (gv.kg_neto || 0), 0)
+        const totalKgNet = (grupo || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
         for (const gv of grupo) {
           const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / grupo.length
           const netoV = neto ? Math.round(neto * prop) : null
@@ -584,7 +584,7 @@ export default function Ventas({ usuario }) {
               fecha_vencimiento_cobro: formComercial.fecha_vencimiento || null,
             }
             if (isGroup) {
-              const totalKgNet = grupo.reduce((s, gv) => s + (gv.kg_neto || 0), 0)
+              const totalKgNet = (grupo || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
               for (const gv of grupo) {
                 const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / grupo.length
                 const netoV = netoVal ? Math.round(netoVal * prop) : null
@@ -791,8 +791,8 @@ export default function Ventas({ usuario }) {
                 .map(v => {
                 const grupo = v.grupo_venta_id ? (todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) || [v]) : [v]
                 if (!grupo || grupo.length === 0) return null
-                const kgBrutoTotal = grupo.reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
-                const animTotal = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
+                const kgBrutoTotal = (grupo || []).reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
+                const animTotal = (grupo || []).reduce((s, gv) => s + (gv.cantidad || 0), 0)
                 const corralesNumsP = grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
                 const isEditing = editandoVenta?.id === v.id || editandoVenta?.grupo_venta_id === v.grupo_venta_id
                 return (
@@ -941,10 +941,10 @@ export default function Ventas({ usuario }) {
                       } else {
                         // Grupo de ventas multi-corral
                         const g = f.grupo
-                        const totalKgVivo = g.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
-                        const totalKgNeto = g.reduce((s, v) => s + (v.kg_neto || 0), 0)
-                        const totalAnim = g.reduce((s, v) => s + (v.cantidad || 0), 0)
-                        const totalMonto = g.reduce((s, v) => s + (v.total || 0), 0)
+                        const totalKgVivo = (g || []).reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
+                        const totalKgNeto = (g || []).reduce((s, v) => s + (v.kg_neto || 0), 0)
+                        const totalAnim = (g || []).reduce((s, v) => s + (v.cantidad || 0), 0)
+                        const totalMonto = (g || []).reduce((s, v) => s + (v.total || 0), 0)
                         const corralesNums = g.map(v => `C-${v.corrales?.numero || v.corral_id}`).join(', ')
                         const sinPrecio = g.some(v => !v.precio_kg && !v.monto_total_con_iva && !v.total)
                         const v0 = g[0]
@@ -964,10 +964,10 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{(() => {
-                              const totalNetoFact = g.reduce((s, gv) => s + (gv.monto_facturado || 0), 0)
-                              const totalNegro = g.reduce((s, gv) => s + (gv.monto_negro || 0), 0)
-                              const totalDescuento = g.reduce((s, gv) => s + (gv.descuento_monto || 0), 0)
-                              const totalKgNetoG = g.reduce((s, gv) => s + (gv.kg_neto || 0), 0)
+                              const totalNetoFact = (g || []).reduce((s, gv) => s + (gv.monto_facturado || 0), 0)
+                              const totalNegro = (g || []).reduce((s, gv) => s + (gv.monto_negro || 0), 0)
+                              const totalDescuento = (g || []).reduce((s, gv) => s + (gv.descuento_monto || 0), 0)
+                              const totalKgNetoG = (g || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
                               if (totalKgNetoG && (totalNetoFact || totalNegro)) {
                                 return `$${Math.round((totalNetoFact + totalNegro - totalDescuento) / totalKgNetoG).toLocaleString('es-AR')}`
                               }
@@ -976,7 +976,7 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => { setEditandoComercial(null); const mt = v0.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg ? String(v0.precio_kg) : '', monto_total_con_iva: String(mt), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '' }) }}
+                              <button onClick={() => { setEditandoComercial(null); const mt = v0.monto_total_grupo || (g || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg ? String(v0.precio_kg) : '', monto_total_con_iva: String(mt), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 ✏️ Editar
                               </button>
@@ -1005,7 +1005,7 @@ export default function Ventas({ usuario }) {
                             </tr>
                           )}
                           {editandoComercial === v0.grupo_venta_id && !editandoVenta?.id && (() => {
-                            const montoTotalGCM = v0.monto_total_grupo || g.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
+                            const montoTotalGCM = v0.monto_total_grupo || (g || []).reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0) || 0
                             return (
                             <tr style={{ background: S.accentLight }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
@@ -1050,15 +1050,15 @@ export default function Ventas({ usuario }) {
                         <tbody>
                           {archivadasV.map(v => {
                             const g = v.grupo_venta_id ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
-                            const totalA = v.grupo_venta_id ? (v.monto_total_grupo || g.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
+                            const totalA = v.grupo_venta_id ? (v.monto_total_grupo || (g || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
                             const corrStr = v.grupo_venta_id ? g.map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
-                            const kgNeto = g.reduce((s,gv)=>s+(gv.kg_neto||0),0)
+                            const kgNeto = (g || []).reduce((s,gv)=>s+(gv.kg_neto||0),0)
                             const precioReal = kgNeto && (v.monto_facturado||v.monto_negro) ? Math.round(((v.monto_facturado||0)+(v.monto_negro||0))/kgNeto) : v.precio_kg
                             return (
                               <tr key={v.grupo_venta_id||v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                                 <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date((v.fecha||v.creado_en?.split('T')[0]||v.creado_en)+'T12:00:00').toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit' })}</td>
                                 <td style={{ padding: '7px 10px', fontWeight: 600 }}>{corrStr}{v.grupo_venta_id && <div style={{ fontSize: 10, color: S.muted }}>Multi-corral</div>}</td>
-                                <td style={{ padding: '7px 10px' }}>{g.reduce((s,gv)=>s+(gv.cantidad||0),0)}</td>
+                                <td style={{ padding: '7px 10px' }}>{(g || []).reduce((s,gv)=>s+(gv.cantidad||0),0)}</td>
                                 <td style={{ padding: '7px 10px' }}>{v.comprador||'—'}</td>
                                 <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{kgNeto > 0 ? kgNeto.toLocaleString('es-AR') : '—'}</td>
                                 <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{precioReal ? `$${precioReal.toLocaleString('es-AR')}` : '—'}</td>
@@ -1514,8 +1514,8 @@ export default function Ventas({ usuario }) {
               }).map(v => {
                 const isGroup = !!v.grupo_venta_id
                 const grupo = isGroup ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
-                const totalAnimales = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
-                const montoTotal = isGroup ? (v.monto_total_grupo || grupo.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0)) : (v.monto_total_con_iva || v.total || 0)
+                const totalAnimales = (grupo || []).reduce((s, gv) => s + (gv.cantidad || 0), 0)
+                const montoTotal = isGroup ? (v.monto_total_grupo || (grupo || []).reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0)) : (v.monto_total_con_iva || v.total || 0)
                 const corralesStr = isGroup ? grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ') : `C-${v.corrales?.numero || v.corral_id}`
                 const gcKey = isGroup ? v.grupo_venta_id : v.id
                 const isEditGC = editandoComercial === gcKey
@@ -1579,12 +1579,12 @@ export default function Ventas({ usuario }) {
                   }).map(v => {
                     const esGrupo = !!v.grupo_venta_id
                     const grupo = esGrupo ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
-                    const totalGrupo = grupo.reduce((s, vv) => s + (vv.total || 0), 0)
-                    const totalFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
-                    const totalNegro = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
-                    const totalIva = grupo.reduce((s, vv) => s + (vv.iva_monto || 0), 0)
-                    const totalCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
-                    const totalRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
+                    const totalGrupo = (grupo || []).reduce((s, vv) => s + (vv.total || 0), 0)
+                    const totalFact = (grupo || []).reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
+                    const totalNegro = (grupo || []).reduce((s, vv) => s + (vv.monto_negro || 0), 0)
+                    const totalIva = (grupo || []).reduce((s, vv) => s + (vv.iva_monto || 0), 0)
+                    const totalCom = (grupo || []).reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
+                    const totalRet = (grupo || []).reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
                     const netoACobrarGrupo = totalGrupo - totalCom - totalRet
                     const corralesStr = esGrupo ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
                     const pagosList = (grupo || []).flatMap(vv => (pagosVenta && pagosVenta[vv.id]) || [])
@@ -1819,13 +1819,13 @@ export default function Ventas({ usuario }) {
                     ? <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin resultados</div>
                     : archFiltradas.map(v => {
                       const grupo = v.grupo_venta_id ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
-                      const totalArch = v.grupo_venta_id ? (v.monto_total_grupo || grupo.reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
+                      const totalArch = v.grupo_venta_id ? (v.monto_total_grupo || (grupo || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
                       const corrStr = v.grupo_venta_id ? grupo.map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
                       return (
                         <div key={v.grupo_venta_id || v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{corrStr} · {v.comprador || '—'}</div>
-                            <div style={{ fontSize: 11, color: S.muted }}>{new Date((v.fecha||v.creado_en?.split('T')[0]||v.creado_en)+'T12:00:00').toLocaleDateString('es-AR')} · {grupo.reduce((s,gv)=>s+(gv.cantidad||0),0)} animales</div>
+                            <div style={{ fontSize: 11, color: S.muted }}>{new Date((v.fecha||v.creado_en?.split('T')[0]||v.creado_en)+'T12:00:00').toLocaleDateString('es-AR')} · {(grupo || []).reduce((s,gv)=>s+(gv.cantidad||0),0)} animales</div>
                           </div>
                           <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green, fontSize: 14 }}>
                             {totalArch > 0 ? `$${totalArch.toLocaleString('es-AR')}` : '—'}
