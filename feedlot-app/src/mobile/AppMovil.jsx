@@ -1,6 +1,7 @@
+// AppMovil v2
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-const C = {
+var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
   border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F',
   green: '#7EC87E', amber: '#F5C97A', red: '#F09595',
@@ -124,19 +125,17 @@ function Home({ usuario, nav, onLogout, datos }) {
   // Corrales en cuarentena próximos a vencer (ingresados hace más de 8 días)
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena')
   corralesCuarentena.forEach(c => {
-    // Buscar el último movimiento hacia este corral
-    // Usar fecha del último lote en ese corral
+    // Usar fecha del último lote en ese corral (más reciente primero)
     const ultimoLote = (datos.lotes || []).find(l => l.corral_cuarentena_id === c.id)
     const ultimaFecha = ultimoLote?.fecha_ingreso || ((datos.movimientos || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0]) || null
+    const diasDesde = ultimaFecha
       ? (() => {
-          const hoy = new Date(); const inicio = new Date(ultimaFecha + 'T00:00:00')
+          const hoy = new Date()
           const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
-          const inicioStr = ultimaFecha
-          const diff = new Date(hoyStr) - new Date(inicioStr)
+          const diff = new Date(hoyStr) - new Date(ultimaFecha)
           return Math.floor(diff / (1000 * 60 * 60 * 24))
         })()
       : null
-    tareas.push({
       icon: '🐄',
       titulo: `Cuarentena C-${c.numero} — ${diasDesde !== null ? `${diasDesde} días` : 'fecha desconocida'}`,
       sub: `${c.animales || 0} animales · último ingreso ${ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}`,
