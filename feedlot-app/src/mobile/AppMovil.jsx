@@ -532,9 +532,6 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     terminacion:      [{n:'Rollo',kg:13,c:'#639922'},{n:'Maiz seco',kg:68,c:'#E8A020'},{n:'Vitaminas',kg:1,c:'#5090E0'},{n:'Urea',kg:1,c:'#9060C0'},{n:'Agua',kg:17,c:'#60A0E0'}],
   }
   const [kgs, setKgs] = useState({})
-  const [soloRollo, setSoloRollo] = useState({})
-  const [rolloYMixer, setRolloYMixer] = useState({})
-  const [kgsRollo, setKgsRollo] = useState({})
   const [pils, setPils] = useState({})
   const [tab, setTab] = useState('piletas')
   const [mostrarMixer, setMostrarMixer] = useState(false)
@@ -580,7 +577,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     setGuardandoRollo(true)
     const ahora = new Date()
     const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
-    const corralesRollo = corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id]))
+    const corralesRollo = corralesAlim.filter(c => (kgsRolloExtra[c.id] || 0) > 0)
     const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
     let kgRolloTotal = 0
     for (const c of corralesRollo) {
@@ -665,9 +662,6 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
         fecha: hoy,
         kg_total: kgs[c.id] || 0,
         mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
-        solo_rollo: soloRollo[c.id] || false,
-        rollo_y_mixer: rolloYMixer[c.id] || false,
-        kg_rollo_extra: rolloYMixer[c.id] ? (kgsRollo[c.id] || 0) : null,
         tipo_dieta: dieta,
       }
     })
@@ -773,37 +767,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                       <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: getEtapa(c) === 'acostumbramiento' ? C.amber : getEtapa(c) === 'recria' ? C.blue : C.green }}>
                         {getEtapa(c) === 'acostumbramiento' ? '🌱 Acostumbramiento' : getEtapa(c) === 'recria' ? '🌾 Recría' : '🏁 Terminación'}
                       </div>
-                      {getEtapa(c) === 'acostumbramiento' && (
-                        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer' }}>
-                            <input type="radio" name={`acost_${c.id}`}
-                              checked={!soloRollo[c.id] && !rolloYMixer[c.id]}
-                              onChange={() => { setSoloRollo({...soloRollo, [c.id]: false}); setRolloYMixer({...rolloYMixer, [c.id]: false}) }} />
-                            Dieta mixer acostumbramiento
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer' }}>
-                            <input type="radio" name={`acost_${c.id}`}
-                              checked={soloRollo[c.id] || false}
-                              onChange={() => { setSoloRollo({...soloRollo, [c.id]: true}); setRolloYMixer({...rolloYMixer, [c.id]: false}) }} />
-                            Solo rollo (adaptación)
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#639922', cursor: 'pointer' }}>
-                            <input type="radio" name={`acost_${c.id}`}
-                              checked={rolloYMixer[c.id] || false}
-                              onChange={() => { setRolloYMixer({...rolloYMixer, [c.id]: true}); setSoloRollo({...soloRollo, [c.id]: false}) }} />
-                            Rollo + mixer
-                          </label>
-                          {rolloYMixer[c.id] && (
-                            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 11, color: '#639922' }}>Kg rollo:</span>
-                              <input type="number" inputMode="numeric" value={kgsRollo[c.id] || ''}
-                                onChange={e => setKgsRollo({...kgsRollo, [c.id]: parseInt(e.target.value) || 0})}
-                                placeholder="0"
-                                style={{ width: 80, background: '#F0F7E6', border: '1px solid #639922', borderRadius: 6, padding: '4px 8px', fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: '#639922', textAlign: 'right', boxSizing: 'border-box' }} />
-                            </div>
-                          )}
-                        </div>
-                      )}
+
                       {kgsAyer && kgsAyer[c.id] > 0 && (
                         <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
                           Ayer: {kgsAyer[c.id].toLocaleString('es-AR')} kg
@@ -831,27 +795,14 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
             })}
             <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
               {(() => {
-                const kgSoloRolloTotal = corralesAlim.filter(c => soloRollo[c.id]).reduce((s, c) => s + (kgs[c.id] || 0), 0)
-                const kgRolloEnRolloYMixer = corralesAlim.filter(c => rolloYMixer[c.id]).reduce((s, c) => s + (kgsRollo[c.id] || 0), 0)
-                const kgMixer = total - kgSoloRolloTotal
+                const kgMixer = total
                 return (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem' }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>Total mixer hoy</div>
                       <div style={{ fontSize: 22, fontWeight: 700, fontFamily: C.mono, color: C.green }}>{kgMixer.toLocaleString('es-AR')} kg</div>
                     </div>
-                    {kgSoloRolloTotal > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem', background: '#F0F7E6', borderRadius: 6, padding: '6px 10px' }}>
-                        <div style={{ fontSize: 12, color: '#639922', fontWeight: 600 }}>🌿 Solo rollo (adaptación)</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: C.mono, color: '#639922' }}>{kgSoloRolloTotal.toLocaleString('es-AR')} kg</div>
-                      </div>
-                    )}
-                    {kgRolloEnRolloYMixer > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.5rem', background: '#F0F7E6', borderRadius: 6, padding: '6px 10px' }}>
-                        <div style={{ fontSize: 12, color: '#639922', fontWeight: 600 }}>🌿 Rollo extra (rollo + mixer)</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: C.mono, color: '#639922' }}>{kgRolloEnRolloYMixer.toLocaleString('es-AR')} kg</div>
-                      </div>
-                    )}
+
                     <button onClick={() => setMostrarMixer(!mostrarMixer)}
                       style={{ width: '100%', background: C.green, border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: C.sans }}>
                       {mostrarMixer ? 'Ocultar ingredientes' : 'Ver ingredientes del mixer'}
@@ -938,37 +889,33 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
               style={{ width: '100%', background: guardando || mostrarConfirmReemplazo ? '#4A6A4A' : C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: guardando || mostrarConfirmReemplazo ? 'default' : 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
               {guardando ? 'Guardando...' : mostrarConfirmReemplazo ? 'Respondé el cartel de arriba ↑' : 'Confirmar raciones'}
             </button>
-            {/* Botón agregar rollo extra — solo aparece cuando ya hay ración confirmada y hay corrales de acostumbramiento */}
-            {mostrarConfirmReemplazo && corralesAlim.some(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id])) && (
-              <div style={{ marginTop: 8 }}>
-                {!mostrarAgregarRollo ? (
-                  <button onClick={() => setMostrarAgregarRollo(true)}
-                    style={{ width: '100%', background: 'transparent', border: `1px solid #639922`, borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 600, color: '#639922', cursor: 'pointer', fontFamily: C.sans }}>
-                    🌿 Agregar rollo a corrales de acostumbramiento
-                  </button>
-                ) : (
-                  <div style={{ background: '#F0F7E6', border: '1px solid #639922', borderRadius: 10, padding: '1rem' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#639922', marginBottom: 10 }}>🌿 Rollo extra — acostumbramiento</div>
-                    {corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id])).map(c => (
-                      <div key={c.id} style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 12, color: '#639922', fontWeight: 600, marginBottom: 4 }}>Corral {c.numero} ({c.animales} animales)</div>
-                        <input type="number" inputMode="numeric" placeholder="Kg de rollo" value={kgsRolloExtra[c.id] || ''}
-                          onChange={e => setKgsRolloExtra({...kgsRolloExtra, [c.id]: parseInt(e.target.value) || 0})}
-                          style={{ width: '100%', background: '#fff', border: '1px solid #639922', borderRadius: 8, padding: '10px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: '#639922', boxSizing: 'border-box' }} />
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <button onClick={() => setMostrarAgregarRollo(false)}
-                        style={{ flex: 1, background: '#fff', border: '1px solid #CCC', borderRadius: 8, padding: 12, fontSize: 14, color: '#555', cursor: 'pointer' }}>
-                        Cancelar
-                      </button>
-                      <button onClick={agregarRolloHoy} disabled={guardandoRollo || !Object.values(kgsRolloExtra).some(v => v > 0)}
-                        style={{ flex: 1, background: '#639922', border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
-                        {guardandoRollo ? 'Guardando...' : '💾 Guardar rollo'}
-                      </button>
-                    </div>
+            {/* Botón agregar rollo — siempre visible, cualquier corral */}
+            {!mostrarAgregarRollo ? (
+              <button onClick={() => setMostrarAgregarRollo(true)}
+                style={{ width: '100%', background: 'transparent', border: `1px solid #639922`, borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 600, color: '#639922', cursor: 'pointer', fontFamily: C.sans, marginTop: 8 }}>
+                🌿 Agregar rollo
+              </button>
+            ) : (
+              <div style={{ background: '#F0F7E6', border: '1px solid #639922', borderRadius: 10, padding: '1rem', marginTop: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#639922', marginBottom: 12 }}>🌿 Agregar rollo</div>
+                {corralesAlim.map(c => (
+                  <div key={c.id} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, color: '#639922', fontWeight: 600, marginBottom: 4 }}>Corral {c.numero} ({c.animales} animales)</div>
+                    <input type="number" inputMode="numeric" placeholder="0 kg" value={kgsRolloExtra[c.id] || ''}
+                      onChange={e => setKgsRolloExtra({...kgsRolloExtra, [c.id]: parseInt(e.target.value) || 0})}
+                      style={{ width: '100%', background: '#fff', border: '1px solid #639922', borderRadius: 8, padding: '10px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: '#639922', boxSizing: 'border-box' }} />
                   </div>
-                )}
+                ))}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button onClick={() => { setMostrarAgregarRollo(false); setKgsRolloExtra({}) }}
+                    style={{ flex: 1, background: '#fff', border: '1px solid #CCC', borderRadius: 8, padding: 12, fontSize: 14, color: '#555', cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                  <button onClick={agregarRolloHoy} disabled={guardandoRollo || !Object.values(kgsRolloExtra).some(v => v > 0)}
+                    style={{ flex: 1, background: '#639922', border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+                    {guardandoRollo ? 'Guardando...' : '💾 Confirmar rollo'}
+                  </button>
+                </div>
               </div>
             )}
           </>
@@ -1676,7 +1623,7 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
     setGuardandoRollo(true)
     const ahora = new Date()
     const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
-    const corralesRollo = corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id]))
+    const corralesRollo = corralesAlim.filter(c => (kgsRolloExtra[c.id] || 0) > 0)
     const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
     let kgRolloTotal = 0
     for (const c of corralesRollo) {
