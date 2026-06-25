@@ -417,8 +417,10 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
     const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || 'Otro') : (form.procedencia || null)
     setGuardando(true)
     const codigo = `L-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
+    const _hoy = new Date()
+    const _fechaHoy = `${_hoy.getFullYear()}-${String(_hoy.getMonth()+1).padStart(2,'0')}-${String(_hoy.getDate()).padStart(2,'0')}`
     const { error } = await supabase.from('lotes').insert({
-      codigo, fecha_ingreso: new Date().toISOString().split('T')[0],
+      codigo, fecha_ingreso: _fechaHoy,
       procedencia: procFinal, categoria: form.categoria,
       cantidad: parseInt(form.cantidad), kg_bascula: parseFloat(form.kg_bascula),
       peso_prom_ingreso: Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad) * 100) / 100,
@@ -430,14 +432,15 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
         const { data: corral } = await supabase.from('corrales').select('animales, numero').eq('id', form.corral_id).single()
         await supabase.from('corrales').update({ animales: (corral?.animales || 0) + parseInt(form.cantidad), rol: 'cuarentena' }).eq('id', form.corral_id)
         // Crear alerta de protocolo de ingreso
-        await supabase.from('alertas_sanitarias').insert({
+        const hoyLocal = new Date()
+        const fechaLocal = `${hoyLocal.getFullYear()}-${String(hoyLocal.getMonth()+1).padStart(2,'0')}-${String(hoyLocal.getDate()).padStart(2,'0')}`
+        await supabase.from('alertas').insert({
           tipo: 'protocolo_ingreso',
           titulo: `Protocolo de ingreso — C-${corral?.numero || form.corral_id}`,
           descripcion: `${form.cantidad} animales · ${codigo} · Vacunar al ingreso`,
           corral_id: form.corral_id,
-          fecha_vencimiento: new Date().toISOString().split('T')[0],
-          completada: false,
-          registrado_por: usuario?.id,
+          fecha_vence: fechaLocal,
+          resuelta: false,
         })
       }
       onDone(); alert(`Lote ${codigo} registrado.`); nav('home')
@@ -1195,7 +1198,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                                   registrado_por: usuario?.id,
                                 })
                                 // Marcar alerta como completada
-                                await supabase.from('alertas_sanitarias').update({ completada: true }).eq('tipo', 'protocolo_ingreso').eq('corral_id', l.corral_cuarentena_id)
+                                await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('tipo', 'protocolo_ingreso').eq('corral_id', l.corral_cuarentena_id)
                                 resumen.push({ nombre: prod.producto, dosis, mlTotal: mlDesc })
                               }
                               await onDone()
