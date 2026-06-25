@@ -245,219 +245,10 @@ export default function Insumos({ usuario }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div style={{ marginBottom: '1.5rem' }}>
         <div style={{ fontSize: 20, fontWeight: 600 }}>Insumos</div>
-        <button onClick={() => setShowForm(!showForm)}
-          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-          + Registrar compra
-        </button>
       </div>
 
-      {/* Form nueva compra */}
-      {showForm && (
-        <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.5rem', marginBottom: '1.5rem' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Nueva compra de insumo</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <Lbl>Tipo de insumo</Lbl>
-              <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value, insumo_id: '', insumo_nombre: '', unidad: e.target.value === 'alimentacion' ? 'kg' : 'ml'})} style={inp}>
-                <option value="alimentacion">Alimentación</option>
-                <option value="sanitario">Sanitario</option>
-              </select>
-            </div>
-            <div>
-              <Lbl>Insumo *</Lbl>
-              <select value={form.insumo_id} onChange={e => {
-                const item = stockActual.find(s => String(s.id) === e.target.value)
-                setForm({...form, insumo_id: e.target.value, insumo_nombre: item ? (item.insumo || item.producto) : '', unidad: item?.unidad || (form.tipo === 'alimentacion' ? 'kg' : 'ml')})
-              }} style={inp}>
-                <option value="">— Seleccioná —</option>
-                {stockActual.map(s => <option key={s.id} value={s.id}>{s.insumo || s.producto}</option>)}
-              </select>
-            </div>
-            <div>
-              <Lbl>Fecha</Lbl>
-              <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
-            </div>
-            <div>
-              <Lbl>Cantidad ({form.unidad})</Lbl>
-              <input type="number" value={form.cantidad} onChange={e => {
-                const cant = e.target.value
-                const total = cant && form.precio_unitario ? String(Math.round(parseFloat(cant) * parseFloat(form.precio_unitario))) : ''
-                setForm({...form, cantidad: cant, total})
-              }} style={inpMono} />
-            </div>
-            <div>
-              <Lbl>Precio unitario $/{form.unidad}{!pagarAhora && ' (opcional)'}</Lbl>
-              <input type="number" value={form.precio_unitario} onChange={e => {
-                const precio = e.target.value
-                const total = precio && form.cantidad ? String(Math.round(parseFloat(form.cantidad) * parseFloat(precio))) : ''
-                setForm({...form, precio_unitario: precio, total})
-              }} style={{...inpMono, border: pagarAhora && !form.precio_unitario ? `1px solid ${S.amber}` : inpMono.border}} placeholder={!pagarAhora ? 'Sin precio aún' : ''} />
-            </div>
-            <div>
-              <Lbl>Total $ (calculado)</Lbl>
-              <input type="number" value={form.total} onChange={e => setForm({...form, total: e.target.value})}
-                style={{...inpMono, fontWeight: 600, border: `1px solid ${S.accent}`}} />
-            </div>
-            <div>
-              <Lbl>Proveedor</Lbl>
-              <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp} />
-            </div>
-            <div>
-              <Lbl>N° Factura</Lbl>
-              <input type="text" value={form.numero_factura} onChange={e => setForm({...form, numero_factura: e.target.value})} style={inp} />
-            </div>
-            <div>
-              <Lbl>Observaciones</Lbl>
-              <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inp} />
-            </div>
-          </div>
-
-          {/* Datos proveedor para recibo */}
-          <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: '1rem' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Datos del proveedor (para el recibo)</div>
-            <div style={{ marginBottom: 10 }}>
-              <Lbl>Seleccionar de contactos</Lbl>
-              <select onChange={e => {
-                const ct = contactos.find(c => String(c.id) === e.target.value)
-                if (ct) setForm({...form, proveedor: ct.nombre, domicilio: ct.banco || '', localidad: ct.localidad || '', cuit: ct.cuit || '', iva: ct.iva || '', cbu: ct.cbu || ''})
-              }} style={inp} defaultValue="">
-                <option value="">— Seleccionar contacto —</option>
-                {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              <div><Lbl>Domicilio</Lbl><input type="text" value={form.domicilio} onChange={e => setForm({...form, domicilio: e.target.value})} style={inp} /></div>
-              <div><Lbl>Localidad</Lbl><input type="text" value={form.localidad} onChange={e => setForm({...form, localidad: e.target.value})} style={inp} /></div>
-              <div><Lbl>CUIT / DNI</Lbl><input type="text" value={form.cuit} onChange={e => setForm({...form, cuit: e.target.value})} style={inp} /></div>
-              <div><Lbl>Condición IVA</Lbl><input type="text" value={form.iva} onChange={e => setForm({...form, iva: e.target.value})} placeholder="ej. Monotributista" style={inp} /></div>
-              <div><Lbl>CBU</Lbl><input type="text" value={form.cbu} onChange={e => setForm({...form, cbu: e.target.value})} style={inp} /></div>
-            </div>
-          </div>
-
-          {/* Toggle pagar ahora / pendiente */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: '1rem', alignItems: 'center' }}>
-            <div style={{ fontSize: 13, color: S.muted }}>Pago:</div>
-            {[{ v: true, l: '💳 Pagar ahora' }, { v: false, l: '⏳ Dejar pendiente' }].map(opt => (
-              <button key={String(opt.v)} onClick={() => setPagarAhora(opt.v)}
-                style={{ padding: '7px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pagarAhora === opt.v ? S.accent : S.border}`, background: pagarAhora === opt.v ? S.accentLight : 'transparent', color: pagarAhora === opt.v ? S.accent : S.muted }}>
-                {opt.l}
-              </button>
-            ))}
-          </div>
-
-          {/* Formas de pago */}
-          {pagarAhora && <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
-              <button onClick={() => setForm({...form, pagos: [...form.pagos, { ...PAGO_INIT }]})}
-                style={{ padding: '4px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                + Agregar
-              </button>
-            </div>
-            {form.pagos.map((pago, idx) => (
-              <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px', marginBottom: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 8 : 0 }}>
-                  <div>
-                    <Lbl>Forma de pago</Lbl>
-                    <select value={pago.tipo} onChange={e => {
-                      const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, tipo: e.target.value, subtipo_cheque: '' } : p)
-                      setForm({...form, pagos: nuevos})
-                    }} style={inp}>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="efectivo">Efectivo</option>
-                      <option value="e-cheq">E-cheq</option>
-                      <option value="cuenta_corriente">Cuenta corriente</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Lbl>Monto $</Lbl>
-                    <input type="number" value={pago.monto} onChange={e => {
-                      const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, monto: e.target.value } : p)
-                      setForm({...form, pagos: nuevos})
-                    }} style={inpMono} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input type="checkbox" checked={pago.es_paralelo} onChange={e => {
-                        const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, es_paralelo: e.target.checked } : p)
-                        setForm({...form, pagos: nuevos})
-                      }} />
-                      Paralelo
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    {form.pagos.length > 1 && (
-                      <button onClick={() => setForm({...form, pagos: form.pagos.filter((_, i) => i !== idx)})}
-                        style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                    )}
-                  </div>
-                </div>
-                {pago.tipo === 'e-cheq' && (
-                  <div style={{ marginTop: 6 }}>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
-                      {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
-                        <button key={t} onClick={() => {
-                          const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, subtipo_cheque: p.subtipo_cheque === t ? '' : t } : p)
-                          setForm({...form, pagos: nuevos})
-                        }} style={{ padding: '4px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque === t ? S.accent : S.border}`, background: pago.subtipo_cheque === t ? S.accentLight : 'transparent', color: pago.subtipo_cheque === t ? S.accent : S.muted }}>
-                          {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
-                        </button>
-                      ))}
-                    </div>
-                    {pago.subtipo_cheque === 'propio' && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 6 }}>
-                        <div><Lbl>N° cheque</Lbl><input type="text" value={pago.cheque_propio.numero} onChange={e => { const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, cheque_propio: { ...p.cheque_propio, numero: e.target.value } } : p); setForm({...form, pagos: nuevos}) }} style={inp} /></div>
-                        <div><Lbl>Banco</Lbl><input type="text" value={pago.cheque_propio.banco} onChange={e => { const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, cheque_propio: { ...p.cheque_propio, banco: e.target.value } } : p); setForm({...form, pagos: nuevos}) }} style={inp} /></div>
-                        <div><Lbl>Vencimiento *</Lbl><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => { const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, cheque_propio: { ...p.cheque_propio, fecha_vencimiento: e.target.value } } : p); setForm({...form, pagos: nuevos}) }} style={{ ...inp, borderColor: S.amber }} /></div>
-                      </div>
-                    )}
-                    {pago.subtipo_cheque === 'tercero' && (
-                      <div style={{ marginTop: 6 }}>
-                        {(() => {
-                          const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
-                          return lista.length === 0
-                            ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
-                            : lista.map(ch => (
-                              <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
-                                <input type="radio" name={`cheque_${idx}`} value={ch.id} checked={pago.cheque_tercero_id === String(ch.id)} onChange={() => { const nuevos = form.pagos.map((p, i) => i === idx ? { ...p, cheque_tercero_id: String(ch.id) } : p); setForm({...form, pagos: nuevos}) }} />
-                                <div style={{ fontSize: 13 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong><span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span></div>
-                              </label>
-                            ))
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-            {/* Resumen pagos */}
-            {form.total && (() => {
-              const totalPagos = form.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-              const total = parseFloat(form.total) || 0
-              const dif = total - totalPagos
-              return (
-                <div style={{ background: Math.abs(dif) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(dif) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13 }}>
-                  Total: <strong>${total.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong>
-                  {Math.abs(dif) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${dif.toLocaleString('es-AR')}</span>}
-                </div>
-              )
-            })()}
-          </div>}
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={guardar} disabled={guardando}
-              style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              {guardando ? 'Guardando...' : '💾 Guardar compra'}
-            </button>
-            <button onClick={() => setShowForm(false)}
-              style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Banner ingresos sin precio */}
       {sinPrecio.length > 0 && (
@@ -870,11 +661,109 @@ export default function Insumos({ usuario }) {
 
       {/* TAB STOCK ALIMENTACION */}
       {tab === 'stock_alim' && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Stock de alimentos</div>
+          <button onClick={() => { setForm({...form, tipo: 'alimentacion', insumo_id: '', insumo_nombre: '', unidad: 'kg', precio_unitario: '', cantidad: '', proveedor: '', numero_factura: ''}); setShowForm(!showForm && form.tipo !== 'alimentacion' ? true : !showForm) }}
+            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            + Registrar ingreso
+          </button>
+        </div>
+        {showForm && form.tipo === 'alimentacion' && (
+          <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.5rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Nuevo ingreso — Alimentación</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <Lbl>Insumo *</Lbl>
+                <select value={form.insumo_id} onChange={e => {
+                  const item = stockAlim.find(s => String(s.id) === e.target.value)
+                  setForm({...form, insumo_id: e.target.value, insumo_nombre: item?.insumo || '', unidad: item?.unidad || 'kg'})
+                }} style={inp}>
+                  <option value="">— Seleccioná —</option>
+                  {stockAlim.map(s => <option key={s.id} value={s.id}>{s.insumo}</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Cantidad *</Lbl>
+                <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} />
+              </div>
+              <div>
+                <Lbl>Proveedor</Lbl>
+                <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>N° Remito</Lbl>
+                <input type="text" value={form.numero_factura} onChange={e => setForm({...form, numero_factura: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>Fecha</Lbl>
+                <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={() => { setPagarAhora(false); guardar() }} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                {guardando ? 'Guardando...' : '💾 Registrar ingreso'}
+              </button>
+            </div>
+          </div>
+        )}
         <StockTable items={stockAlim} tipo="alimentacion" onCargar={cargar} ingresosStock={ingresosStock} />
       )}
 
       {/* TAB STOCK SANITARIO */}
       {tab === 'stock_san' && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
+          <button onClick={() => { setForm({...form, tipo: 'sanitario', insumo_id: '', insumo_nombre: '', unidad: 'ml'}); setShowForm(!showForm) }}
+            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            + Registrar ingreso
+          </button>
+        </div>
+        {showForm && form.tipo === 'sanitario' && (
+          <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.5rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Nuevo ingreso — Sanitario</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <Lbl>Producto *</Lbl>
+                <select value={form.insumo_id} onChange={e => {
+                  const item = stockSan.find(s => String(s.id) === e.target.value)
+                  setForm({...form, insumo_id: e.target.value, insumo_nombre: item?.producto || '', unidad: item?.unidad || 'ml'})
+                }} style={inp}>
+                  <option value="">— Seleccioná —</option>
+                  {stockSan.map(s => <option key={s.id} value={s.id}>{s.producto} ({s.tipo})</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Cantidad *</Lbl>
+                <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} />
+              </div>
+              <div>
+                <Lbl>Unidad</Lbl>
+                <select value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})} style={inp}>
+                  {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Proveedor</Lbl>
+                <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>N° Remito</Lbl>
+                <input type="text" value={form.numero_factura} onChange={e => setForm({...form, numero_factura: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>Fecha</Lbl>
+                <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={() => { setPagarAhora(false); guardar() }} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                {guardando ? 'Guardando...' : '💾 Registrar ingreso'}
+              </button>
+            </div>
+          </div>
+        )}
         <StockTable items={stockSan} tipo="sanitario" onCargar={cargar} historialIngresos={historialIngresosSan} historialUso={historialUsoSan} />
       )}
     </div>
