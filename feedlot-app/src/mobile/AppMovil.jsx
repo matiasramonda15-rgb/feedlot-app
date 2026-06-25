@@ -924,7 +924,10 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   const [formEvento, setFormEvento] = useState({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [stockSanitario, setStockSanitario] = useState([])
-  const [vacunacionMovil, setVacunacionMovil] = useState({})
+  const [vacunacionMovil, setVacunacionMovil] = useState(() => {
+    // Pre-marcar lotes ya vacunados al ingreso
+    return {}
+  })
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
@@ -935,6 +938,22 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   useEffect(() => {
     setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, enfermos: [] })))
   }, [corrales])
+
+  useEffect(() => {
+    // Marcar como ya vacunados los lotes que tienen vacunado_ingreso = true
+    if (lotes && lotes.length > 0) {
+      const preConfirmados = {}
+      lotes.forEach(l => {
+        if (l.vacunado_ingreso) {
+          const vacKey = l.id
+          preConfirmados[vacKey] = { confirmada: true, resumen: [] }
+        }
+      })
+      if (Object.keys(preConfirmados).length > 0) {
+        setVacunacionMovil(prev => ({...preConfirmados, ...prev}))
+      }
+    }
+  }, [lotes])
 
   useEffect(() => {
     supabase.from('stock_sanitario').select('*').order('producto').then(({ data }) => setStockSanitario(data || []))
@@ -1156,6 +1175,10 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                                           registrado_por: usuario?.id,
                                         })
                                         resumen.push({ nombre: prod.producto, dosis, mlTotal: mlDesc })
+                                      }
+                                      // Marcar lote como vacunado en Supabase
+                                      if (loteC) {
+                                        await supabase.from('lotes').update({ vacunado_ingreso: true }).eq('id', loteC.id)
                                       }
                                       await onDone()
                                       setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false, confirmada: true, resumen}, [`exp_vac_${c.id}`]: false}))
