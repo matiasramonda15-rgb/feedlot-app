@@ -136,8 +136,8 @@ function Home({ usuario, nav, onLogout, datos }) {
           return Math.floor(diff / (1000 * 60 * 60 * 24))
         })()
       : null
-      : null
     tareas.push({
+      icon: '🐄',
       titulo: `Cuarentena C-${c.numero} — ${diasDesde !== null ? `${diasDesde} días` : 'fecha desconocida'}`,
       sub: `${c.animales || 0} animales · último ingreso ${ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}`,
       pantalla: 'sanidad',
