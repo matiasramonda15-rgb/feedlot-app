@@ -58,7 +58,7 @@ export default function Sanidad({ usuario }) {
   const [showFormMort, setShowFormMort] = useState(false)
   const [formMort, setFormMort] = useState({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
   const [guardandoMort, setGuardandoMort] = useState(false)
-  const [vacunacionLote, setVacunacionLote] = useState({}) // { [lote_id]: { prod_id, dosis, guardando, confirmada } }
+  const [vacunacionLote, setVacunacionLote] = useState({}) // { [lote_id]: { vacunas: [{prod_id, dosis}], guardando, confirmada, resumen } }
   const [showFormStockSan, setShowFormStockSan] = useState(false)
   const [formStockSan, setFormStockSan] = useState({ producto_id: '', cantidad: '', unidad: 'ml', proveedor: '', remito: '' })
   const [guardandoStockSan, setGuardandoStockSan] = useState(false)
@@ -395,13 +395,12 @@ export default function Sanidad({ usuario }) {
                     {enCuarentena ? 'Cuarentena activa' : 'Cerrado ✓'}
                   </Badge>
                 </div>
-                {/* Día 0 — Vacunación con selector */}
+                {/* Día 0 — Vacunación múltiple */}
                 {(() => {
                   const vac = vacunacionLote[l.id] || {}
-                  const vacunas = productos.filter(p => p.tipo === 'Vacuna')
+                  const todosProductos = productos.filter(p => p.tipo === 'Vacuna')
                   const confirmada = vac.confirmada
-                  const prodSel = vacunas.find(p => String(p.id) === String(vac.prod_id))
-                  const mlTotal = l.cantidad && vac.dosis ? Math.round(l.cantidad * parseFloat(vac.dosis || 5)) : null
+                  const vacSeleccionadas = vac.vacunas || [{ prod_id: '', dosis: '5' }]
                   return (
                     <div style={{ padding: '.85rem 0', borderBottom: `1px solid ${S.border}`, display: 'flex', gap: '1rem' }}>
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: confirmada ? S.green : S.amberLight, border: confirmada ? 'none' : `2px solid #EF9F27`, color: confirmada ? '#fff' : S.amber, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -413,65 +412,107 @@ export default function Sanidad({ usuario }) {
                         </div>
                         {confirmada ? (
                           <div style={{ fontSize: 12, color: S.muted }}>
-                            {prodSel?.n || vac.prod_nombre || 'Vacuna'} · {vac.dosis} ml/animal · {mlTotal?.toLocaleString('es-AR')} ml totales · {new Date(l.fecha_ingreso).toLocaleDateString('es-AR')}
+                            {(vac.resumen || []).map(r => `${r.nombre} ${r.dosis}ml/animal (${r.mlTotal.toLocaleString('es-AR')} ml)`).join(' · ')}
+                            {' · '}{new Date(l.fecha_ingreso).toLocaleDateString('es-AR')}
                           </div>
                         ) : (
                           <div>
-                            <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>
-                              Seleccioná la vacuna aplicada y la dosis. Se descontará del stock automáticamente.
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
-                              <div>
-                                <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Vacuna aplicada *</div>
-                                <select value={vac.prod_id || ''}
-                                  onChange={e => setVacunacionLote(prev => ({...prev, [l.id]: {...(prev[l.id]||{}), prod_id: e.target.value, dosis: prev[l.id]?.dosis || '5'}}))}
-                                  style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }}>
-                                  <option value="">— Seleccioná una vacuna —</option>
-                                  {vacunas.map(p => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.n} ({(p.cantidad_ml || 0).toLocaleString('es-AR')} ml en stock)
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Dosis ml/animal</div>
-                                <input type="number" value={vac.dosis || '5'}
-                                  onChange={e => setVacunacionLote(prev => ({...prev, [l.id]: {...(prev[l.id]||{}), dosis: e.target.value}}))}
-                                  step="0.5" min="0"
-                                  style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
-                              </div>
-                              <button disabled={!vac.prod_id || vac.guardando}
-                                onClick={async () => {
-                                  if (!vac.prod_id) { alert('Seleccioná una vacuna'); return }
-                                  const dosis = parseFloat(vac.dosis || 5)
-                                  const mlDesc = Math.round(l.cantidad * dosis)
-                                  const prod = vacunas.find(p => String(p.id) === String(vac.prod_id))
-                                  if (!prod) return
-                                  if ((prod.cantidad_ml || 0) < mlDesc) {
-                                    if (!confirm(`Stock insuficiente. Hay ${prod.cantidad_ml?.toLocaleString('es-AR')} ml y se necesitan ${mlDesc.toLocaleString('es-AR')} ml. ¿Continuar igual?`)) return
-                                  }
-                                  setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: true}}))
-                                  const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlDesc)
-                                  await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
-                                  await supabase.from('eventos_sanitarios').insert({
-                                    tipo: 'vacunacion', corral_id: l.corral_cuarentena_id,
-                                    producto: prod.n, cantidad_ml: mlDesc,
-                                    cantidad_animales: l.cantidad,
-                                    observaciones: `Ingreso lote ${l.codigo} — ${dosis} ml/animal`,
-                                    registrado_por: usuario?.id,
-                                  })
-                                  await cargarProductos()
-                                  setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: false, confirmada: true, prod_nombre: prod.n}}))
-                                }}
-                                style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, background: vac.prod_id ? S.accent : S.bg, border: `1px solid ${vac.prod_id ? S.accent : S.border}`, color: vac.prod_id ? '#fff' : S.muted, borderRadius: 6, cursor: vac.prod_id ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
-                                {vac.guardando ? 'Guardando...' : '✓ Confirmar vacunación'}
-                              </button>
-                            </div>
-                            {vac.prod_id && vac.dosis && (
-                              <div style={{ marginTop: 8, fontSize: 12, color: S.accent, background: S.accentLight, borderRadius: 6, padding: '6px 10px' }}>
-                                Se descontarán <strong>{mlTotal?.toLocaleString('es-AR')} ml</strong> de {prodSel?.n} ({l.cantidad} animales × {vac.dosis} ml)
-                              </div>
+                            {todosProductos.length === 0 ? (
+                              <div style={{ fontSize: 12, color: S.amber, padding: '6px 0' }}>⚠ No hay vacunas en stock. Agregá productos en Insumos → Stock sanitario.</div>
+                            ) : (
+                              <>
+                                <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>
+                                  Seleccioná una o más vacunas y la dosis de cada una. Se descontará del stock automáticamente.
+                                </div>
+                                {vacSeleccionadas.map((vs, vi) => {
+                                  const prodSel = todosProductos.find(p => String(p.id) === String(vs.prod_id))
+                                  const mlTotal = vs.prod_id && vs.dosis ? Math.round(l.cantidad * parseFloat(vs.dosis || 5)) : null
+                                  return (
+                                    <div key={vi} style={{ marginBottom: 8 }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                                        <div>
+                                          {vi === 0 && <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Vacuna</div>}
+                                          <select value={vs.prod_id || ''}
+                                            onChange={e => {
+                                              const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, prod_id: e.target.value} : x)
+                                              setVacunacionLote(prev => ({...prev, [l.id]: {...(prev[l.id]||{}), vacunas: nuevas}}))
+                                            }}
+                                            style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }}>
+                                            <option value="">— Seleccioná —</option>
+                                            {todosProductos.map(p => (
+                                              <option key={p.id} value={p.id}>
+                                                {p.n} ({(p.cantidad_ml || 0).toLocaleString('es-AR')} ml en stock)
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div>
+                                          {vi === 0 && <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>ml/animal</div>}
+                                          <input type="number" value={vs.dosis || '5'} step="0.5" min="0"
+                                            onChange={e => {
+                                              const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, dosis: e.target.value} : x)
+                                              setVacunacionLote(prev => ({...prev, [l.id]: {...(prev[l.id]||{}), vacunas: nuevas}}))
+                                            }}
+                                            style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
+                                          {vacSeleccionadas.length > 1 && (
+                                            <button onClick={() => {
+                                              const nuevas = vacSeleccionadas.filter((_, i) => i !== vi)
+                                              setVacunacionLote(prev => ({...prev, [l.id]: {...(prev[l.id]||{}), vacunas: nuevas}}))
+                                            }} style={{ padding: '7px 10px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginTop: vi === 0 ? 18 : 0 }}>✕</button>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {vs.prod_id && vs.dosis && mlTotal && (
+                                        <div style={{ marginTop: 4, fontSize: 11, color: S.accent }}>
+                                          → {mlTotal.toLocaleString('es-AR')} ml de {prodSel?.n} ({l.cantidad} animales × {vs.dosis} ml)
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                                <button onClick={() => {
+                                  const nuevas = [...vacSeleccionadas, { prod_id: '', dosis: '5' }]
+                                  setVacunacionLote(prev => ({...prev, [l.id]: {...(prev[l.id]||{}), vacunas: nuevas}}))
+                                }} style={{ padding: '5px 12px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginBottom: 10 }}>
+                                  + Agregar otra vacuna
+                                </button>
+                                <button disabled={!vacSeleccionadas.some(vs => vs.prod_id) || vac.guardando}
+                                  onClick={async () => {
+                                    const validas = vacSeleccionadas.filter(vs => vs.prod_id)
+                                    if (validas.length === 0) { alert('Seleccioná al menos una vacuna'); return }
+                                    setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: true}}))
+                                    const resumen = []
+                                    for (const vs of validas) {
+                                      const dosis = parseFloat(vs.dosis || 5)
+                                      const mlDesc = Math.round(l.cantidad * dosis)
+                                      const prod = todosProductos.find(p => String(p.id) === String(vs.prod_id))
+                                      if (!prod) continue
+                                      if ((prod.cantidad_ml || 0) < mlDesc) {
+                                        if (!confirm(`Stock insuficiente de ${prod.n}. Hay ${prod.cantidad_ml?.toLocaleString('es-AR')} ml y se necesitan ${mlDesc.toLocaleString('es-AR')} ml. ¿Continuar igual?`)) {
+                                          setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: false}}))
+                                          return
+                                        }
+                                      }
+                                      const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlDesc)
+                                      await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
+                                      await supabase.from('eventos_sanitarios').insert({
+                                        tipo: 'vacunacion', corral_id: l.corral_cuarentena_id,
+                                        producto: prod.n, cantidad_ml: mlDesc,
+                                        cantidad_animales: l.cantidad,
+                                        observaciones: `Ingreso lote ${l.codigo} — ${dosis} ml/animal`,
+                                        registrado_por: usuario?.id,
+                                      })
+                                      resumen.push({ nombre: prod.n, dosis, mlTotal: mlDesc })
+                                    }
+                                    await cargarProductos()
+                                    setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: false, confirmada: true, resumen}}))
+                                  }}
+                                  style={{ display: 'block', width: '100%', padding: '8px 14px', fontSize: 12, fontWeight: 600, background: vacSeleccionadas.some(vs => vs.prod_id) ? S.accent : S.bg, border: `1px solid ${vacSeleccionadas.some(vs => vs.prod_id) ? S.accent : S.border}`, color: vacSeleccionadas.some(vs => vs.prod_id) ? '#fff' : S.muted, borderRadius: 6, cursor: vacSeleccionadas.some(vs => vs.prod_id) ? 'pointer' : 'default' }}>
+                                  {vac.guardando ? 'Guardando...' : '✓ Confirmar vacunación'}
+                                </button>
+                              </>
                             )}
                           </div>
                         )}
