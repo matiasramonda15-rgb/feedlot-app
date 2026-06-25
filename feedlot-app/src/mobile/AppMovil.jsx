@@ -1,7 +1,7 @@
 // AppMovil v2
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-const C = {
+var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
   border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F',
   green: '#7EC87E', amber: '#F5C97A', red: '#F09595',
