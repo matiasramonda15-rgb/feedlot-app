@@ -112,11 +112,7 @@ function Home({ usuario, nav, onLogout, datos }) {
     tareas.push({ icon: '⚖️', titulo: 'Pesada proxima', sub: `${proximaDate.toLocaleDateString('es-AR')} - en ${diasPesada} dias`, pantalla: 'pesada', urgente: true })
   }
   alertas.slice(0, 3).forEach(a => {
-    if (a.tipo === 'protocolo_ingreso') {
-      tareas.push({ icon: '🐄', titulo: a.titulo, sub: a.descripcion, pantalla: 'sanidad', tabDestino: 'ingreso', urgente: true })
-    } else {
-      tareas.push({ icon: '💉', titulo: a.titulo, sub: a.descripcion, pantalla: 'sanidad', urgente: true })
-    }
+    tareas.push({ icon: '💉', titulo: a.titulo, sub: a.descripcion, pantalla: 'sanidad', urgente: true })
   })
   // Stock bajo mínimo
   if (stockBajo && stockBajo.length > 0) {
@@ -431,17 +427,7 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
       if (form.corral_id) {
         const { data: corral } = await supabase.from('corrales').select('animales, numero').eq('id', form.corral_id).single()
         await supabase.from('corrales').update({ animales: (corral?.animales || 0) + parseInt(form.cantidad), rol: 'cuarentena' }).eq('id', form.corral_id)
-        // Crear alerta de protocolo de ingreso
-        const hoyLocal = new Date()
-        const fechaLocal = `${hoyLocal.getFullYear()}-${String(hoyLocal.getMonth()+1).padStart(2,'0')}-${String(hoyLocal.getDate()).padStart(2,'0')}`
-        await supabase.from('alertas').insert({
-          tipo: 'protocolo_ingreso',
-          titulo: `Protocolo de ingreso — C-${corral?.numero || form.corral_id}`,
-          descripcion: `${form.cantidad} animales · ${codigo} · Vacunar al ingreso`,
-          corral_id: form.corral_id,
-          fecha_vence: fechaLocal,
-          resuelta: false,
-        })
+
       }
       onDone(); alert(`Lote ${codigo} registrado.`); nav('home')
     } else { alert('Error al guardar.') }
