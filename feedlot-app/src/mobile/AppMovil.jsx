@@ -125,9 +125,9 @@ function Home({ usuario, nav, onLogout, datos }) {
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena')
   corralesCuarentena.forEach(c => {
     // Buscar el último movimiento hacia este corral
-    const ultimoMov = (datos.movimientos || []).find(m => m.corral_destino_id === c.id)
-    const ultimaFecha = ultimoMov ? ultimoMov.fecha.split('T')[0] : null
-    const diasDesde = ultimaFecha
+    // Usar fecha del último lote en ese corral
+    const ultimoLote = (datos.lotes || []).find(l => l.corral_cuarentena_id === c.id)
+    const ultimaFecha = ultimoLote?.fecha_ingreso || ((datos.movimientos || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0]) || null
       ? (() => {
           const hoy = new Date(); const inicio = new Date(ultimaFecha + 'T00:00:00')
           const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
@@ -1040,9 +1040,9 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
             {alertas.length === 0 && corrales.filter(c => c.rol === 'cuarentena').length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
             {/* Cuarentenas */}
             {corrales.filter(c => c.rol === 'cuarentena').map(c => {
-              const ultimoMov = (movimientos || []).find(m => m.corral_destino_id === c.id)
-              const ultimaFecha = ultimoMov ? ultimoMov.fecha.split('T')[0] : null
-              const dias = ultimaFecha ? (() => {
+              // Usar fecha del último lote en ese corral
+              const ultimoLote = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
+              const ultimaFecha = ultimoLote?.fecha_ingreso || (movimientos || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0] || null
                 const hoy = new Date()
                 const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
                 return Math.floor((new Date(hoyStr) - new Date(ultimaFecha)) / (1000 * 60 * 60 * 24))
@@ -1050,10 +1050,127 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
               if (dias === null) return null
               return (
                 <div key={c.id} style={{ background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>🐄 Cuarentena C-{c.numero} — movs: {(movimientos||[]).length} — {dias !== null ? `${dias} días` : 'fecha desconocida'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>🐄 Cuarentena C-{c.numero} — {dias} días</div>
                   <div style={{ fontSize: 12, color: C.muted, marginBottom: '.65rem' }}>
                     {c.animales} animales · último ingreso {ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}
                   </div>
+                  {/* Botón vacunar — al ingreso */}
+                  {(() => {
+                    const loteC = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
+                    const vacunas = stockSanitario.filter(p => p.tipo === 'Vacuna')
+                    const vacKey = loteC?.id || c.id
+                    const vac = vacunacionMovil[vacKey] || {}
+                    const vacSeleccionadas = vac.vacunas || [{ prod_id: '', dosis: '5' }]
+                    const expandido = vacunacionMovil[`exp_vac_${c.id}`]
+                    if (vac.confirmada) {
+                      return (
+                        <div style={{ background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: C.green }}>
+                          ✓ Vacunado — {(vac.resumen || []).map(r => `${r.nombre} ${r.dosis}ml/animal`).join(' · ')}
+                        </div>
+                      )
+                    }
+                    return (
+                      <div style={{ marginBottom: 8 }}>
+                        {!expandido ? (
+                          <button onClick={() => setVacunacionMovil(prev => ({...prev, [`exp_vac_${c.id}`]: true}))}
+                            style={{ width: '100%', padding: 10, background: '#2A1A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
+                            💉 Vacunar al ingreso
+                          </button>
+                        ) : (
+                          <div style={{ background: '#1A1A1A', border: `1px solid ${C.amber}`, borderRadius: 8, padding: '1rem' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: C.amber, marginBottom: 10 }}>💉 Vacunación — C-{c.numero}</div>
+                            {vacunas.length === 0 ? (
+                              <div style={{ fontSize: 12, color: C.amber }}>⚠ No hay vacunas en stock.</div>
+                            ) : (
+                              <>
+                                {vacSeleccionadas.map((vs, vi) => {
+                                  const prodSel = vacunas.find(p => String(p.id) === String(vs.prod_id))
+                                  const mlTotal = vs.prod_id && vs.dosis && loteC ? Math.round(loteC.cantidad * parseFloat(vs.dosis || 5)) : null
+                                  return (
+                                    <div key={vi} style={{ marginBottom: 10 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>
+                                        {vi === 0 ? 'Vacuna' : `Vacuna ${vi + 1}`}
+                                      </div>
+                                      <select value={vs.prod_id || ''}
+                                        onChange={e => {
+                                          const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, prod_id: e.target.value} : x)
+                                          setVacunacionMovil(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                        }}
+                                        style={{ width: '100%', background: C.surface, border: `1px solid ${C.amber}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, marginBottom: 6 }}>
+                                        <option value="">— Seleccioná —</option>
+                                        {vacunas.map(p => (
+                                          <option key={p.id} value={p.id}>{p.producto} · {(p.cantidad_ml || 0).toLocaleString('es-AR')} {p.unidad || 'ml'}</option>
+                                        ))}
+                                      </select>
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>ml/animal</div>
+                                          <input type="number" inputMode="decimal" value={vs.dosis || '5'} step="0.5" min="0"
+                                            onChange={e => {
+                                              const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, dosis: e.target.value} : x)
+                                              setVacunacionMovil(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                            }}
+                                            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: C.amber, boxSizing: 'border-box' }} />
+                                        </div>
+                                        {vacSeleccionadas.length > 1 && (
+                                          <button onClick={() => {
+                                            const nuevas = vacSeleccionadas.filter((_, i) => i !== vi)
+                                            setVacunacionMovil(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                          }} style={{ padding: '10px 12px', fontSize: 13, background: '#2E1A1A', border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, cursor: 'pointer', marginTop: 20 }}>✕</button>
+                                        )}
+                                      </div>
+                                      {mlTotal && <div style={{ fontSize: 12, color: C.green, marginTop: 4 }}>→ {mlTotal.toLocaleString('es-AR')} ml ({loteC?.cantidad} × {vs.dosis} ml)</div>}
+                                    </div>
+                                  )
+                                })}
+                                <button onClick={() => {
+                                  const nuevas = [...vacSeleccionadas, { prod_id: '', dosis: '5' }]
+                                  setVacunacionMovil(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                }} style={{ width: '100%', background: 'transparent', border: `1px solid ${C.green}`, borderRadius: 8, padding: '10px', fontSize: 13, color: C.green, fontWeight: 600, marginBottom: 10, cursor: 'pointer' }}>
+                                  + Agregar otra vacuna
+                                </button>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button onClick={() => setVacunacionMovil(prev => ({...prev, [`exp_vac_${c.id}`]: false}))}
+                                    style={{ flex: 1, background: '#1A1A1A', border: `1px solid ${C.border}`, borderRadius: 8, padding: 10, fontSize: 13, color: C.muted, cursor: 'pointer' }}>
+                                    Cancelar
+                                  </button>
+                                  <button disabled={!vacSeleccionadas.some(vs => vs.prod_id) || vac.guardando}
+                                    onClick={async () => {
+                                      const validas = vacSeleccionadas.filter(vs => vs.prod_id)
+                                      if (!loteC || validas.length === 0) return
+                                      setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: true}}))
+                                      const resumen = []
+                                      for (const vs of validas) {
+                                        const dosis = parseFloat(vs.dosis || 5)
+                                        const mlDesc = Math.round(loteC.cantidad * dosis)
+                                        const prod = vacunas.find(p => String(p.id) === String(vs.prod_id))
+                                        if (!prod) continue
+                                        const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlDesc)
+                                        await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
+                                        await supabase.from('eventos_sanitarios').insert({
+                                          tipo: 'vacunacion', corral_id: c.id,
+                                          producto: prod.producto, cantidad_ml: mlDesc,
+                                          cantidad_animales: loteC.cantidad,
+                                          observaciones: `Ingreso ${loteC.codigo} — ${dosis} ml/animal`,
+                                          registrado_por: usuario?.id,
+                                        })
+                                        resumen.push({ nombre: prod.producto, dosis, mlTotal: mlDesc })
+                                      }
+                                      await onDone()
+                                      setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false, confirmada: true, resumen}, [`exp_vac_${c.id}`]: false}))
+                                    }}
+                                    style={{ flex: 2, background: vacSeleccionadas.some(vs => vs.prod_id) ? C.green : '#1A1A1A', border: 'none', borderRadius: 8, padding: 10, fontSize: 13, fontWeight: 600, color: vacSeleccionadas.some(vs => vs.prod_id) ? '#0A1A0A' : C.muted, cursor: 'pointer', fontFamily: C.sans }}>
+                                    {vac.guardando ? 'Guardando...' : '✓ Confirmar vacunación'}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
                   {dias >= 10 && (
                     <button onClick={async () => {
                       await supabase.from('corrales').update({ rol: 'acumulacion' }).eq('id', c.id)
@@ -2153,4 +2270,4 @@ function ServiciosMovil({ nav, usuario }) {
       </Scroll>
     </div>
   )
-}  
+} 
