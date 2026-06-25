@@ -661,14 +661,14 @@ export default function Insumos({ usuario }) {
 
       {/* TAB STOCK ALIMENTACION */}
       {tab === 'stock_alim' && (
-      {tab === 'stock_alim' && (
         <div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Stock de alimentos</div>
-          <button onClick={() => { setForm({...form, tipo: 'alimentacion', insumo_id: '', insumo_nombre: '', unidad: 'kg', precio_unitario: '', cantidad: '', proveedor: '', numero_factura: ''}); setShowForm(!showForm && form.tipo !== 'alimentacion' ? true : !showForm) }}
-            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-            + Registrar ingreso
-          </button>
-        </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Stock de alimentos</div>
+            <button onClick={() => { setForm({...form, tipo: 'alimentacion', insumo_id: '', insumo_nombre: '', unidad: 'kg', precio_unitario: '', cantidad: '', proveedor: '', numero_factura: ''}); setShowForm(!showForm && form.tipo !== 'alimentacion' ? true : !showForm) }}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              + Registrar ingreso
+            </button>
+          </div>
         {showForm && form.tipo === 'alimentacion' && (
           <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.5rem', marginBottom: '1.5rem' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Nuevo ingreso — Alimentación</div>
