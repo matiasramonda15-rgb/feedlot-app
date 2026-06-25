@@ -661,7 +661,8 @@ export default function Insumos({ usuario }) {
 
       {/* TAB STOCK ALIMENTACION */}
       {tab === 'stock_alim' && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      {tab === 'stock_alim' && (
+        <div>
           <div style={{ fontSize: 16, fontWeight: 600 }}>Stock de alimentos</div>
           <button onClick={() => { setForm({...form, tipo: 'alimentacion', insumo_id: '', insumo_nombre: '', unidad: 'kg', precio_unitario: '', cantidad: '', proveedor: '', numero_factura: ''}); setShowForm(!showForm && form.tipo !== 'alimentacion' ? true : !showForm) }}
             style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -708,10 +709,12 @@ export default function Insumos({ usuario }) {
           </div>
         )}
         <StockTable items={stockAlim} tipo="alimentacion" onCargar={cargar} ingresosStock={ingresosStock} />
+        </div>
       )}
 
       {/* TAB STOCK SANITARIO */}
       {tab === 'stock_san' && (
+        <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
           <button onClick={() => { setForm({...form, tipo: 'sanitario', insumo_id: '', insumo_nombre: '', unidad: 'ml'}); setShowForm(!showForm) }}
@@ -765,6 +768,7 @@ export default function Insumos({ usuario }) {
           </div>
         )}
         <StockTable items={stockSan} tipo="sanitario" onCargar={cargar} historialIngresos={historialIngresosSan} historialUso={historialUsoSan} />
+        </div>
       )}
     </div>
   )
