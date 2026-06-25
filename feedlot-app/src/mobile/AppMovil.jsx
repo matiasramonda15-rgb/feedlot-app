@@ -540,6 +540,9 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   const [mostrarMixer, setMostrarMixer] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [mostrarConfirmReemplazo, setMostrarConfirmReemplazo] = useState(false)
+  const [mostrarAgregarRollo, setMostrarAgregarRollo] = useState(false)
+  const [kgsRolloExtra, setKgsRolloExtra] = useState({}) // { [corral_id]: kg }
+  const [guardandoRollo, setGuardandoRollo] = useState(false)
 
   useEffect(() => {
     const inicial = {}
@@ -572,6 +575,39 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     { nombre: 'Mixer 2 - Recria', etapa: 'recria', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'recria').map(c => c.id), cap: capRecria },
     { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corralesIds: corralesAlim.filter(c => getEtapa(c) === 'terminacion').map(c => c.id), cap: capTerm },
   ].filter(m => m.corralesIds.length > 0)
+
+  async function agregarRolloHoy() {
+    setGuardandoRollo(true)
+    const ahora = new Date()
+    const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
+    const corralesRollo = corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id]))
+    const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
+    let kgRolloTotal = 0
+    for (const c of corralesRollo) {
+      const kg = parseInt(kgsRolloExtra[c.id]) || 0
+      if (!kg) continue
+      kgRolloTotal += kg
+      // Actualizar o insertar ración de rollo extra para este corral
+      const { data: racionExist } = await supabase.from('raciones_app').select('id, kg_total').eq('fecha', hoy).eq('corral_id', c.id).single()
+      if (racionExist) {
+        await supabase.from('raciones_app').update({ kg_total: (racionExist.kg_total || 0) + kg }).eq('id', racionExist.id)
+      } else {
+        await supabase.from('raciones_app').insert({ corral_id: c.id, fecha: hoy, kg_total: kg, mezclador: 'Acostumbramiento', solo_rollo: true, tipo_dieta: dieta })
+      }
+    }
+    // Descontar rollo del stock
+    if (kgRolloTotal > 0 && stockItemsFresh) {
+      const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
+      if (rolloItem) {
+        const nuevaCant = Math.max(0, (rolloItem.cantidad_kg || 0) - kgRolloTotal)
+        await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
+      }
+    }
+    setKgsRolloExtra({})
+    setMostrarAgregarRollo(false)
+    setGuardandoRollo(false)
+    alert(`Rollo extra registrado: ${kgRolloTotal} kg`)
+  }
 
   async function confirmar() {
     setGuardando(true)
@@ -902,6 +938,39 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
               style={{ width: '100%', background: guardando || mostrarConfirmReemplazo ? '#4A6A4A' : C.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: guardando || mostrarConfirmReemplazo ? 'default' : 'pointer', fontFamily: C.sans, marginBottom: 8 }}>
               {guardando ? 'Guardando...' : mostrarConfirmReemplazo ? 'Respondé el cartel de arriba ↑' : 'Confirmar raciones'}
             </button>
+            {/* Botón agregar rollo extra — solo aparece cuando ya hay ración confirmada y hay corrales de acostumbramiento */}
+            {mostrarConfirmReemplazo && corralesAlim.some(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id])) && (
+              <div style={{ marginTop: 8 }}>
+                {!mostrarAgregarRollo ? (
+                  <button onClick={() => setMostrarAgregarRollo(true)}
+                    style={{ width: '100%', background: 'transparent', border: `1px solid #639922`, borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 600, color: '#639922', cursor: 'pointer', fontFamily: C.sans }}>
+                    🌿 Agregar rollo a corrales de acostumbramiento
+                  </button>
+                ) : (
+                  <div style={{ background: '#F0F7E6', border: '1px solid #639922', borderRadius: 10, padding: '1rem' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#639922', marginBottom: 10 }}>🌿 Rollo extra — acostumbramiento</div>
+                    {corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id])).map(c => (
+                      <div key={c.id} style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, color: '#639922', fontWeight: 600, marginBottom: 4 }}>Corral {c.numero} ({c.animales} animales)</div>
+                        <input type="number" inputMode="numeric" placeholder="Kg de rollo" value={kgsRolloExtra[c.id] || ''}
+                          onChange={e => setKgsRolloExtra({...kgsRolloExtra, [c.id]: parseInt(e.target.value) || 0})}
+                          style={{ width: '100%', background: '#fff', border: '1px solid #639922', borderRadius: 8, padding: '10px 12px', fontSize: 16, fontFamily: C.mono, fontWeight: 600, color: '#639922', boxSizing: 'border-box' }} />
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button onClick={() => setMostrarAgregarRollo(false)}
+                        style={{ flex: 1, background: '#fff', border: '1px solid #CCC', borderRadius: 8, padding: 12, fontSize: 14, color: '#555', cursor: 'pointer' }}>
+                        Cancelar
+                      </button>
+                      <button onClick={agregarRolloHoy} disabled={guardandoRollo || !Object.values(kgsRolloExtra).some(v => v > 0)}
+                        style={{ flex: 1, background: '#639922', border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+                        {guardandoRollo ? 'Guardando...' : '💾 Guardar rollo'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
         {tab === 'stock' && (
@@ -1602,6 +1671,39 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
   const totalClasif = ORDEN_RANGOS.reduce((s, k) => s + (parseInt(form[k]) || 0), 0)
   const menores = parseInt(form.menores) || 0
   const totalPesados = totalClasif + menores
+
+  async function agregarRolloHoy() {
+    setGuardandoRollo(true)
+    const ahora = new Date()
+    const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
+    const corralesRollo = corralesAlim.filter(c => getEtapa(c) === 'acostumbramiento' && (soloRollo[c.id] || rolloYMixer[c.id]))
+    const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
+    let kgRolloTotal = 0
+    for (const c of corralesRollo) {
+      const kg = parseInt(kgsRolloExtra[c.id]) || 0
+      if (!kg) continue
+      kgRolloTotal += kg
+      // Actualizar o insertar ración de rollo extra para este corral
+      const { data: racionExist } = await supabase.from('raciones_app').select('id, kg_total').eq('fecha', hoy).eq('corral_id', c.id).single()
+      if (racionExist) {
+        await supabase.from('raciones_app').update({ kg_total: (racionExist.kg_total || 0) + kg }).eq('id', racionExist.id)
+      } else {
+        await supabase.from('raciones_app').insert({ corral_id: c.id, fecha: hoy, kg_total: kg, mezclador: 'Acostumbramiento', solo_rollo: true, tipo_dieta: dieta })
+      }
+    }
+    // Descontar rollo del stock
+    if (kgRolloTotal > 0 && stockItemsFresh) {
+      const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
+      if (rolloItem) {
+        const nuevaCant = Math.max(0, (rolloItem.cantidad_kg || 0) - kgRolloTotal)
+        await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
+      }
+    }
+    setKgsRolloExtra({})
+    setMostrarAgregarRollo(false)
+    setGuardandoRollo(false)
+    alert(`Rollo extra registrado: ${kgRolloTotal} kg`)
+  }
 
   async function confirmar() {
     if (!corralLibre1 || !corralLibre2) { alert('Seleccioná dos corrales libres para A y B'); return }
