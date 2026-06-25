@@ -377,7 +377,7 @@ export default function Ventas({ usuario }) {
       ? [...new Map([...ventasSinPrecio, ...ventas].map(vv => [vv.id, vv])).values()].filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
       : (v.kg_vivo_total || 0)
     const desbPct = parseFloat(editandoVenta?.desbaste || 8) / 100
-    const kgNeto = kgBruto ? Math.round(kgBruto * (1 - desbPct)) : 0
+    const kgNeto = kgBruto ? Math.round(kgBruto * (1 - desbPct) * 10) / 10 : 0
     const montoCalc = editandoVenta?.precio_kg && kgNeto ? Math.round(parseFloat(editandoVenta.precio_kg) * kgNeto) : null
     const montoTotal = editandoVenta?.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoCalc
     const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }
