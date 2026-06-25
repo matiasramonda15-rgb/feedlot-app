@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 const C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -6,7 +6,25 @@ const C = {
   green: '#7EC87E', amber: '#F5C97A', red: '#F09595',
   blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif",
 }
-export default function AppMovil({ usuario, onLogout }) {
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(e) { return { error: e } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '2rem', color: '#F09595', background: '#1A2E1A', minHeight: '100vh', fontFamily: 'monospace', fontSize: 13 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>⚠ Error en la app:</div>
+          <div>{this.state.error?.message}</div>
+          <div style={{ marginTop: 8, color: '#8FA88F', fontSize: 11 }}>{this.state.error?.stack?.split('\n').slice(0,3).join('\n')}</div>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: '8px 16px', background: '#3A4F3A', border: 'none', color: '#E8F0E8', borderRadius: 6, cursor: 'pointer' }}>Reintentar</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function AppMovilInner({ usuario, onLogout }) {
   const [pantalla, setPantalla] = useState('home')
   const [datos, setDatos] = useState({ corrales: [], proximaPesada: null, alertas: [] })
   const nav = (p) => setPantalla(p)
@@ -1048,6 +1066,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                 const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
                 return Math.floor((new Date(hoyStr) - new Date(ultimaFecha)) / (1000 * 60 * 60 * 24))
               })() : null
+              if (dias === null) return null
               return (
                 <div key={c.id} style={{ background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>🐄 Cuarentena C-{c.numero} — {dias} días</div>
@@ -2270,4 +2289,8 @@ function ServiciosMovil({ nav, usuario }) {
       </Scroll>
     </div>
   )
-} 
+}
+
+export default function AppMovil(props) {
+  return <ErrorBoundary><AppMovilInner {...props} /></ErrorBoundary>
+}
