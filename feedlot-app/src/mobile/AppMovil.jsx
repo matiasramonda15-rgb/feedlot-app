@@ -1043,11 +1043,11 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
               // Usar fecha del último lote en ese corral
               const ultimoLote = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
               const ultimaFecha = ultimoLote?.fecha_ingreso || (movimientos || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0] || null
+              const dias = ultimaFecha ? (() => {
                 const hoy = new Date()
                 const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
                 return Math.floor((new Date(hoyStr) - new Date(ultimaFecha)) / (1000 * 60 * 60 * 24))
               })() : null
-              if (dias === null) return null
               return (
                 <div key={c.id} style={{ background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.amber, marginBottom: 3 }}>🐄 Cuarentena C-{c.numero} — {dias} días</div>
