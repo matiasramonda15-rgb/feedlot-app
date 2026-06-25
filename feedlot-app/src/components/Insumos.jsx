@@ -86,6 +86,8 @@ export default function Insumos({ usuario }) {
   const [compras, setCompras] = useState([])
   const [stockAlim, setStockAlim] = useState([])
   const [stockSan, setStockSan] = useState([])
+  const [historialIngresosSan, setHistorialIngresosSan] = useState([])
+  const [historialUsoSan, setHistorialUsoSan] = useState([])
   const [sinPrecio, setSinPrecio] = useState([])
   const [ingresosStock, setIngresosStock] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
@@ -119,10 +121,12 @@ export default function Insumos({ usuario }) {
 
   async function cargar() {
     setLoading(true)
-    const [{ data: c }, { data: sa }, { data: ss }, { data: ip }, { data: is_ }, { data: ch }, { data: ct }, { data: cp }] = await Promise.all([
+    const [{ data: c }, { data: sa }, { data: ss }, { data: hiSan }, { data: huSan }, { data: ip }, { data: is_ }, { data: ch }, { data: ct }, { data: cp }] = await Promise.all([
       supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
+      supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'sanitario').order('fecha', { ascending: false }).limit(10),
+      supabase.from('eventos_sanitarios').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(10),
       supabase.from('ingresos_stock').select('*').is('precio_por_kg', null).is('estado_pago', null).is('proveedor', null).order('creado_en', { ascending: false }),
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
@@ -132,6 +136,8 @@ export default function Insumos({ usuario }) {
     setCompras(c || [])
     setStockAlim(sa || [])
     setStockSan(ss || [])
+    setHistorialIngresosSan(hiSan || [])
+    setHistorialUsoSan(huSan || [])
     setIngresosStock(is_ || [])
     setChequesCartera(ch || [])
     setContactos(ct || [])
@@ -869,13 +875,13 @@ export default function Insumos({ usuario }) {
 
       {/* TAB STOCK SANITARIO */}
       {tab === 'stock_san' && (
-        <StockTable items={stockSan} tipo="sanitario" onCargar={cargar} />
+        <StockTable items={stockSan} tipo="sanitario" onCargar={cargar} historialIngresos={historialIngresosSan} historialUso={historialUsoSan} />
       )}
     </div>
   )
 }
 
-function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
+function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngresos = [], historialUso = [] }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
   const [guardando, setGuardando] = useState(false)
@@ -899,6 +905,8 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
   const cantCol = tipo === 'alimentacion' ? 'cantidad_kg' : 'cantidad_ml'
   const minCol = tipo === 'alimentacion' ? 'minimo_kg' : 'minimo_stock'
   const nombreCol = tipo === 'alimentacion' ? 'insumo' : 'producto'
+
+  const S_local = typeof S !== 'undefined' ? S : {}
 
   return (
     <div>
@@ -1188,6 +1196,78 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [] }) {
               </div>
             )
           }
+        </div>
+      )}
+
+      {/* Historiales — solo para sanitario */}
+      {tipo === 'sanitario' && (
+        <div style={{ marginTop: '2rem' }}>
+          {historialIngresos.length > 0 && (
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '.75rem' }}>Últimos ingresos</div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Fecha', 'Producto', 'Cantidad', 'Precio', 'Total', 'Proveedor', 'Estado'].map(h => (
+                        <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, textAlign: 'left' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialIngresos.map(ing => (
+                      <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>{ing.fecha ? new Date(ing.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{ing.cantidad?.toLocaleString('es-AR')} {ing.unidad || 'ml'}</td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{ing.precio_unitario ? `$${ing.precio_unitario.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>}</td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{ing.total ? `$${ing.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}</td>
+                        <td style={{ padding: '8px 12px', color: S.muted }}>{ing.proveedor || '—'}</td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: ing.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: ing.estado_pago === 'pagado' ? S.green : S.amber }}>
+                            {ing.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {historialUso.length > 0 && (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '.75rem' }}>Últimos usos</div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Fecha', 'Producto', 'Cantidad', 'Animales', 'Corral', 'Tipo', 'Observación'].map(h => (
+                        <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, textAlign: 'left' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialUso.map(ev => (
+                      <tr key={ev.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>{ev.creado_en ? new Date(ev.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>{ev.producto || '—'}</td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{ev.cantidad_ml?.toLocaleString('es-AR')} ml</td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{ev.cantidad_animales?.toLocaleString('es-AR') || '—'}</td>
+                        <td style={{ padding: '8px 12px' }}>{ev.corrales?.numero ? `C-${ev.corrales.numero}` : '—'}</td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>
+                            {ev.tipo === 'vacunacion' ? '💉 Vacunación' : ev.tipo === 'tratamiento' ? '🩺 Tratamiento' : ev.tipo || '—'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 12px', color: S.muted, fontSize: 11 }}>{ev.observaciones || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

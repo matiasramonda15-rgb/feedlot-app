@@ -19,7 +19,7 @@ export default function AppMovil({ usuario, onLogout }) {
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
-      supabase.from('lotes').select('procedencia, fecha_ingreso, corral_cuarentena_id').order('created_at', { ascending: false }),
+      supabase.from('lotes').select('id, codigo, procedencia, fecha_ingreso, corral_cuarentena_id, cantidad').order('created_at', { ascending: false }),
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
       supabase.from('movimientos').select('corral_destino_id, fecha').order('fecha', { ascending: false }),
