@@ -412,7 +412,7 @@ export default function Alimentacion({ usuario }) {
   const TABS = [
     { key: 'registro', label: 'Registro diario' },
     { key: 'formulas', label: 'Formulas de mixer' },
-    { key: 'stock', label: 'Stock de alimentos' },
+    { key: 'stock', label: 'Stock de insumos' },
     { key: 'historial', label: 'Historial' },
   ]
 
@@ -817,7 +817,7 @@ export default function Alimentacion({ usuario }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Stock de alimentos</h1>
+              <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Stock de insumos</h1>
               <div style={{ fontSize: 12, color: S.muted }}>Se descuenta al confirmar cada jornada</div>
             </div>
             <button onClick={() => setShowFormIngreso(!showFormIngreso)}
@@ -945,7 +945,7 @@ export default function Alimentacion({ usuario }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: S.bg }}>
-                          {['Corral', 'Etapa', 'Kg cargados', ''].map(h => (
+                          {['Corral', 'Etapa', 'Dieta', 'Kg cargados', ''].map(h => (
                             <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                           ))}
                         </tr>
@@ -955,6 +955,11 @@ export default function Alimentacion({ usuario }) {
                           <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                             <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
                             <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: h.tipo_dieta === 'humedo' ? '#FFF3DC' : '#E8F4FF', color: h.tipo_dieta === 'humedo' ? '#B07000' : '#1A5A8A' }}>
+                                {h.tipo_dieta === 'humedo' ? 'Maíz húmedo' : 'Maíz seco'}
+                              </span>
+                            </td>
                             <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
                             <td style={{ padding: '8px 12px' }}>
                               <button onClick={() => eliminarRacion(h.id)}
@@ -1039,6 +1044,11 @@ export default function Alimentacion({ usuario }) {
                                   <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                                     <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
                                     <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
+                                    <td style={{ padding: '8px 12px' }}>
+                                      <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: h.tipo_dieta === 'humedo' ? '#FFF3DC' : '#E8F4FF', color: h.tipo_dieta === 'humedo' ? '#B07000' : '#1A5A8A' }}>
+                                        {h.tipo_dieta === 'humedo' ? 'Maíz húmedo' : 'Maíz seco'}
+                                      </span>
+                                    </td>
                                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
                                   </tr>
                                 ))}
