@@ -239,6 +239,8 @@ export default function Insumos({ usuario }) {
 
   const TABS = [
     { key: 'compras', label: 'Historial de compras' },
+    { key: 'stock_alim', label: 'Stock alimentación' },
+    { key: 'stock_san', label: 'Stock sanitario' },
   ]
 
   return (
@@ -658,8 +660,116 @@ export default function Insumos({ usuario }) {
       )}
 
       {/* TAB STOCK ALIMENTACION */}
+      {tab === 'stock_alim' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Stock de alimentos</div>
+            <button onClick={() => { setForm({...form, tipo: 'alimentacion', insumo_id: '', insumo_nombre: '', unidad: 'kg', precio_unitario: '', cantidad: '', proveedor: '', numero_factura: ''}); setShowForm(!showForm && form.tipo !== 'alimentacion' ? true : !showForm) }}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              + Registrar ingreso
+            </button>
+          </div>
+        {showForm && form.tipo === 'alimentacion' && (
+          <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.5rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Nuevo ingreso — Alimentación</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <Lbl>Insumo *</Lbl>
+                <select value={form.insumo_id} onChange={e => {
+                  const item = stockAlim.find(s => String(s.id) === e.target.value)
+                  setForm({...form, insumo_id: e.target.value, insumo_nombre: item?.insumo || '', unidad: item?.unidad || 'kg'})
+                }} style={inp}>
+                  <option value="">— Seleccioná —</option>
+                  {stockAlim.map(s => <option key={s.id} value={s.id}>{s.insumo}</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Cantidad *</Lbl>
+                <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} />
+              </div>
+              <div>
+                <Lbl>Proveedor</Lbl>
+                <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>N° Remito</Lbl>
+                <input type="text" value={form.numero_factura} onChange={e => setForm({...form, numero_factura: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>Fecha</Lbl>
+                <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={() => { setPagarAhora(false); guardar() }} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                {guardando ? 'Guardando...' : '💾 Registrar ingreso'}
+              </button>
+            </div>
+          </div>
+        )}
+        <StockTable items={stockAlim} tipo="alimentacion" onCargar={cargar} ingresosStock={ingresosStock} />
+        </div>
+      )}
 
       {/* TAB STOCK SANITARIO */}
+      {tab === 'stock_san' && (
+        <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
+          <button onClick={() => { setForm({...form, tipo: 'sanitario', insumo_id: '', insumo_nombre: '', unidad: 'ml'}); setShowForm(!showForm) }}
+            style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            + Registrar ingreso
+          </button>
+        </div>
+        {showForm && form.tipo === 'sanitario' && (
+          <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.5rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Nuevo ingreso — Sanitario</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <Lbl>Producto *</Lbl>
+                <select value={form.insumo_id} onChange={e => {
+                  const item = stockSan.find(s => String(s.id) === e.target.value)
+                  setForm({...form, insumo_id: e.target.value, insumo_nombre: item?.producto || '', unidad: item?.unidad || 'ml'})
+                }} style={inp}>
+                  <option value="">— Seleccioná —</option>
+                  {stockSan.map(s => <option key={s.id} value={s.id}>{s.producto} ({s.tipo})</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Cantidad *</Lbl>
+                <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} />
+              </div>
+              <div>
+                <Lbl>Unidad</Lbl>
+                <select value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})} style={inp}>
+                  {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Proveedor</Lbl>
+                <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>N° Remito</Lbl>
+                <input type="text" value={form.numero_factura} onChange={e => setForm({...form, numero_factura: e.target.value})} style={inp} />
+              </div>
+              <div>
+                <Lbl>Fecha</Lbl>
+                <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={() => { setPagarAhora(false); guardar() }} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                {guardando ? 'Guardando...' : '💾 Registrar ingreso'}
+              </button>
+            </div>
+          </div>
+        )}
+        <StockTable items={stockSan} tipo="sanitario" onCargar={cargar} historialIngresos={historialIngresosSan} historialUso={historialUsoSan} />
+        </div>
+      )}
     </div>
   )
 }
