@@ -172,6 +172,7 @@ export default function Alimentacion({ usuario }) {
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
   const [editando, setEditando] = useState({})
   const [showFormIngreso, setShowFormIngreso] = useState(false)
+  const [historialIngresos, setHistorialIngresos] = useState([])
   const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
   const [guardando, setGuardando] = useState(false)
   const [confirmado, setConfirmado] = useState(false)
@@ -197,6 +198,7 @@ export default function Alimentacion({ usuario }) {
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100).range(200, 299),
       supabase.from('formulas_mixer').select('*').order('orden'),
+      supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'alimentacion').order('fecha', { ascending: false }).limit(20),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion', 'fecha_term_c']),
       supabase.from('raciones_app').select('*, corrales(numero)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
     ])
@@ -222,7 +224,8 @@ export default function Alimentacion({ usuario }) {
           formulasDB[row.dieta][row.etapa].push({ n: row.ingrediente, kg: row.kg, c: row.color || '#888888', id: row.id })
         }
       })
-      setFormulas(formulasDB)
+      setHistorialIngresos(ingresosAlim || [])
+    setFormulas(formulasDB)
     }
 
     setLoading(false)
@@ -355,24 +358,40 @@ export default function Alimentacion({ usuario }) {
     setGuardando(true)
     const item = stockDB.find(s => s.insumo === formIngreso.insumo)
     if (item) {
+      // Actualizar stock
       await supabase.from('stock_insumos').update({
         cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
         actualizado_en: new Date().toISOString(),
       }).eq('id', item.id)
+      // Registrar en ingresos_stock (legacy)
       await supabase.from('ingresos_stock').insert({
         insumo_id: item.id,
         insumo_nombre: formIngreso.insumo,
         cantidad_kg: parseFloat(formIngreso.cantidad),
         precio_por_kg: null,
         total: null,
+        proveedor: formIngreso.proveedor || null,
         registrado_por: usuario?.nombre || usuario?.email,
-        precio_cargado_por: null,
-        precio_cargado_en: null,
+      })
+      // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
+      await supabase.from('compras_insumos').insert({
+        fecha: formIngreso.fecha,
+        insumo_id: item.id,
+        insumo_tipo: 'alimentacion',
+        insumo_nombre: formIngreso.insumo,
+        cantidad: parseFloat(formIngreso.cantidad),
+        unidad: item.unidad || 'kg',
+        proveedor: formIngreso.proveedor || null,
+        numero_factura: formIngreso.remito || null,
+        precio_unitario: null,
+        total: null,
+        estado_pago: 'pendiente',
+        registrado_por: usuario?.id,
       })
     }
     await cargarDatos()
     setShowFormIngreso(false)
-    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
+    setFormIngreso({ insumo: stockDB[0]?.insumo || '', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
     setGuardando(false)
   }
 
@@ -935,6 +954,42 @@ export default function Alimentacion({ usuario }) {
 
 
           <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} />
+
+          {/* Historial de ingresos */}
+          {historialIngresos.length > 0 && (
+            <div style={{ marginTop: '2rem' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Últimos ingresos registrados</div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Fecha', 'Insumo', 'Cantidad', 'Proveedor', 'Remito', 'Estado'].map(h => (
+                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialIngresos.map(ing => (
+                      <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>
+                          {ing.fecha ? new Date(ing.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                        </td>
+                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{ing.cantidad?.toLocaleString('es-AR')} {ing.unidad || 'kg'}</td>
+                        <td style={{ padding: '8px 12px', color: S.muted }}>{ing.proveedor || '—'}</td>
+                        <td style={{ padding: '8px 12px', color: S.muted, fontFamily: 'monospace' }}>{ing.numero_factura || '—'}</td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: ing.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: ing.estado_pago === 'pagado' ? S.green : S.amber }}>
+                            {ing.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
