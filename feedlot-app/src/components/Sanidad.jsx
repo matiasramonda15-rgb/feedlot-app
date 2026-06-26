@@ -62,6 +62,7 @@ export default function Sanidad({ usuario }) {
   const [showFormStockSan, setShowFormStockSan] = useState(false)
   const [formStockSan, setFormStockSan] = useState({ producto_id: '', cantidad: '', unidad: 'ml', proveedor: '', remito: '' })
   const [guardandoStockSan, setGuardandoStockSan] = useState(false)
+  const [historialIngresosSan, setHistorialIngresosSan] = useState([])
 
   async function guardarMortalidad() {
     if (!formMort.corral_id) { alert('Seleccioná un corral'); return }
@@ -94,10 +95,12 @@ export default function Sanidad({ usuario }) {
       const cant = parseFloat(formStockSan.cantidad)
       const campoCant = formStockSan.unidad === 'kg' ? 'cantidad_kg' : 'cantidad_ml'
       const valorActual = formStockSan.unidad === 'kg' ? (prod.cantidad_kg || 0) : (prod.cantidad_ml || 0)
+      // Actualizar stock
       await supabase.from('stock_sanitario').update({
         [campoCant]: valorActual + cant,
         actualizado_en: new Date().toISOString(),
       }).eq('id', prod.id)
+      // Registrar en ingresos_stock (legacy)
       await supabase.from('ingresos_stock').insert({
         insumo_id: prod.id,
         insumo_nombre: prod.n,
@@ -109,8 +112,23 @@ export default function Sanidad({ usuario }) {
         proveedor: formStockSan.proveedor || null,
         remito: formStockSan.remito || null,
         registrado_por: usuario?.nombre || usuario?.email,
-        precio_cargado_por: null,
-        precio_cargado_en: null,
+      })
+      // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
+      const hoy = new Date()
+      const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+      await supabase.from('compras_insumos').insert({
+        fecha: fechaHoy,
+        insumo_id: prod.id,
+        insumo_tipo: 'sanitario',
+        insumo_nombre: prod.n,
+        cantidad: cant,
+        unidad: formStockSan.unidad,
+        proveedor: formStockSan.proveedor || null,
+        numero_factura: formStockSan.remito || null,
+        precio_unitario: null,
+        total: null,
+        estado_pago: 'pendiente',
+        registrado_por: usuario?.id,
       })
     }
     await cargarProductos()
@@ -802,13 +820,70 @@ export default function Sanidad({ usuario }) {
       {/* ── STOCK SANITARIO ── */}
       {tab === 'stock' && (
         <div>
-          <div style={{ marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
-            <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Solo lectura — los ingresos se registran desde <strong>Insumos → Stock sanitario</strong>.</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
+              <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Registrá el remito cuando ingresa mercadería. La factura y el pago se completan desde Insumos.</div>
+            </div>
+            <button onClick={() => setShowFormStockSan(!showFormStockSan)}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              + Registrar remito
+            </button>
           </div>
 
+          {/* Formulario remito */}
+          {showFormStockSan && (
+            <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Registrar ingreso de producto sanitario</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto *</div>
+                  <select value={formStockSan.producto_id} onChange={e => {
+                    const p = productos.find(x => String(x.id) === e.target.value)
+                    setFormStockSan({...formStockSan, producto_id: e.target.value, unidad: p?.unidad || 'ml'})
+                  }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }}>
+                    <option value="">— Seleccioná —</option>
+                    {productos.map(p => <option key={p.id} value={p.id}>{p.n} ({p.tipo})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad *</div>
+                  <input type="number" value={formStockSan.cantidad} onChange={e => setFormStockSan({...formStockSan, cantidad: e.target.value})}
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Unidad</div>
+                  <select value={formStockSan.unidad} onChange={e => setFormStockSan({...formStockSan, unidad: e.target.value})}
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+                    {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Proveedor</div>
+                  <input type="text" value={formStockSan.proveedor} onChange={e => setFormStockSan({...formStockSan, proveedor: e.target.value})}
+                    placeholder="ej. Veterinaria Córdoba"
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>N° Remito</div>
+                  <input type="text" value={formStockSan.remito} onChange={e => setFormStockSan({...formStockSan, remito: e.target.value})}
+                    placeholder="ej. R-00012345"
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowFormStockSan(false)}
+                  style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={guardarIngresoSan} disabled={guardandoStockSan}
+                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                  {guardandoStockSan ? 'Guardando...' : '💾 Registrar ingreso'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Tabla de stock */}
-          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: '1.5rem' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: S.bg }}>
@@ -819,7 +894,7 @@ export default function Sanidad({ usuario }) {
               </thead>
               <tbody>
                 {productos.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay productos cargados. Agregalos desde <strong>Insumos → Stock sanitario</strong>.</td></tr>
+                  <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay productos cargados. Agregá desde Insumos → Stock sanitario.</td></tr>
                 )}
                 {productos.map((p, i) => {
                   const tc = TIPO_BADGE[p.tipo] || TIPO_BADGE.Otro
@@ -848,6 +923,42 @@ export default function Sanidad({ usuario }) {
               </tbody>
             </table>
           </div>
+
+          {/* Historial de ingresos */}
+          {historialIngresosSan.length > 0 && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Últimos ingresos registrados</div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Fecha', 'Producto', 'Cantidad', 'Proveedor', 'Remito', 'Estado'].map(h => (
+                        <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialIngresosSan.map(ing => (
+                      <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>
+                          {ing.fecha ? new Date(ing.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                        </td>
+                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>{ing.insumo_nombre}</td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{ing.cantidad?.toLocaleString('es-AR')} {ing.unidad || 'ml'}</td>
+                        <td style={{ padding: '8px 12px', color: S.muted }}>{ing.proveedor || '—'}</td>
+                        <td style={{ padding: '8px 12px', color: S.muted, fontFamily: 'monospace' }}>{ing.numero_factura || '—'}</td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: ing.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: ing.estado_pago === 'pagado' ? S.green : S.amber }}>
+                            {ing.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
