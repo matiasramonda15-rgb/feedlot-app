@@ -166,6 +166,7 @@ export default function Alimentacion({ usuario }) {
 
   const [cfgCapState, setCfgCapState] = useState([])
   const [formulaActiva, setFormulaActiva] = useState('seco')
+  const [pctMS, setPctMS] = useState({}) // { [insumo_id]: pct_ms } editable por usuario
   const [formulaDieta, setFormulaDieta] = useState('seco')
   const [formulas, setFormulas] = useState(JSON.parse(JSON.stringify(FORMULAS)))
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
@@ -290,18 +291,24 @@ export default function Alimentacion({ usuario }) {
   }
 
   async function actualizarPrecioReferencia(insumoId) {
-    const { data: todosIngresos } = await supabase
-      .from('ingresos_stock')
-      .select('cantidad_kg, precio_por_kg')
+    // Promedio de las últimas 3 compras
+    const { data: ultimas } = await supabase
+      .from('compras_insumos')
+      .select('precio_unitario')
       .eq('insumo_id', insumoId)
-      .not('precio_por_kg', 'is', null)
-    if (todosIngresos && todosIngresos.length > 0) {
-      const totalKg = todosIngresos.reduce((s, i) => s + (i.cantidad_kg || 0), 0)
-      const promPonderado = todosIngresos.reduce((s, i) => s + (i.precio_por_kg || 0) * (i.cantidad_kg || 0), 0) / totalKg
-      await supabase.from('stock_insumos').update({
-        precio_referencia: Math.round(promPonderado * 100) / 100,
-        precio_referencia_actualizado_en: new Date().toISOString(),
-      }).eq('id', insumoId)
+      .not('precio_unitario', 'is', null)
+      .order('fecha', { ascending: false })
+      .limit(3)
+    if (ultimas && ultimas.length > 0) {
+      const promedio = Math.round(ultimas.reduce((s, c) => s + (c.precio_unitario || 0), 0) / ultimas.length * 100) / 100
+      await supabase.from('stock_insumos').update({ precio_referencia: promedio, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', insumoId)
+    } else {
+      // Fallback: ingresos_stock legacy (últimas 3)
+      const { data: legacy } = await supabase.from('ingresos_stock').select('precio_por_kg').eq('insumo_id', insumoId).not('precio_por_kg', 'is', null).order('creado_en', { ascending: false }).limit(3)
+      if (legacy && legacy.length > 0) {
+        const promedio = Math.round(legacy.reduce((s, i) => s + (i.precio_por_kg || 0), 0) / legacy.length * 100) / 100
+        await supabase.from('stock_insumos').update({ precio_referencia: promedio, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', insumoId)
+      }
     }
   }
 
@@ -809,6 +816,55 @@ export default function Alimentacion({ usuario }) {
               </div>
             )
           })}
+        {/* ── INGREDIENTES (STOCK-PRECIO) ── */}
+        <div style={{ marginTop: '2rem' }}>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: '.75rem' }}>Ingredientes — Stock y precio</div>
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: S.bg }}>
+                  {['Nombre', 'Base húmeda', '% MS', 'Materia seca', 'Precio/kg MS', 'Total stock'].map(h => (
+                    <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Nombre' ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {stockDB.map(s => {
+                  const msDefault = s.insumo?.toLowerCase().includes('silo') ? 35 : s.insumo?.toLowerCase().includes('humedo') ? 72 : s.insumo?.toLowerCase().includes('expeller') || s.insumo?.toLowerCase().includes('urea') ? 88 : 88
+                  const ms = pctMS[s.id] !== undefined ? pctMS[s.id] : msDefault
+                  const kgMS = Math.round(s.cantidad_kg * ms / 100)
+                  const precioKgMS = s.precio_referencia && ms > 0 ? Math.round(s.precio_referencia * 100 / ms) : null
+                  const totalStock = s.precio_referencia ? Math.round(s.cantidad_kg * s.precio_referencia) : null
+                  const stockOk = s.cantidad_kg > (s.minimo_kg || 0)
+                  return (
+                    <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                      <td style={{ padding: '9px 12px' }}>
+                        <div style={{ fontWeight: 600 }}>{s.insumo}</div>
+                        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, fontWeight: 600, background: stockOk ? S.greenLight : S.redLight, color: stockOk ? S.green : S.red }}>
+                          {stockOk ? 'EN STOCK' : 'SIN STOCK'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right' }}>
+                        <input type="number" value={ms} min="0" max="100" step="0.5"
+                          onChange={e => setPctMS(prev => ({...prev, [s.id]: parseFloat(e.target.value) || 0}))}
+                          style={{ width: 65, padding: '4px 6px', border: `1px solid ${S.accent}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: S.surface }} />
+                        <span style={{ fontSize: 11, color: S.muted, marginLeft: 2 }}>%</span>
+                      </td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{kgMS.toLocaleString('es-AR')} kg</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: precioKgMS ? S.green : S.hint, fontWeight: 600 }}>
+                        {precioKgMS ? `$${precioKgMS.toLocaleString('es-AR')}` : '—'}
+                      </td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
+                        {totalStock ? `$${totalStock.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
         </div>
       )}
 
