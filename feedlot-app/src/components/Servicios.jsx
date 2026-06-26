@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { Loader } from './Tablero'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -9,103 +8,105 @@ const S = {
   green: '#1E5C2E', greenLight: '#E8F4EB',
   amber: '#7A4500', amberLight: '#FDF0E0',
   red: '#7A1A1A', redLight: '#FDF0F0',
+  purple: '#4A1A7A', purpleLight: '#F0E8F8',
 }
 
-const inputStyle = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
+const inp = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
+const inpMono = { ...inp, fontFamily: 'monospace' }
 
-function Label({ children }) {
-  return <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{children}</div>
-}
-
-function Card({ children, style = {} }) {
-  return <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem', ...style }}>{children}</div>
+function Lbl({ children, c }) {
+  return <div style={{ fontSize: 11, fontWeight: 600, color: c || S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{children}</div>
 }
 
 const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Roturación', 'Rastreo', 'Flete', 'Otro']
+const CULTIVOS = ['Maíz', 'Soja', 'Trigo', 'Sorgo', 'Girasol', 'Cebada', 'Otro']
+const ROLES = ['Maquinista', 'Tolvero', 'Sembrador', 'Ayudante', 'Otro']
+const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
 export default function Servicios({ usuario }) {
+  const [tab, setTab] = useState('terceros')
   const [loading, setLoading] = useState(true)
   const [servicios, setServicios] = useState([])
   const [maquinaria, setMaquinaria] = useState([])
-  const [clientes, setClientes] = useState([])
   const [contactos, setContactos] = useState([])
+  const [chequesCartera, setChequesCartera] = useState([])
+
+  // Form nuevo servicio
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
-  const [cobrando, setCobrando] = useState(null)
-  const [formCobro, setFormCobro] = useState({ precio_ha: '', total: '', total_sin_iva: '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false, cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
-  const [guardandoCobro, setGuardandoCobro] = useState(false)
   const [form, setForm] = useState({
-    cliente: '', clienteNuevo: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0],
+    tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra',
+    cultivo: 'Maíz', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0],
     hectareas: '', maquina_id: '', precio_ha: '', observaciones: ''
   })
 
-  useEffect(() => { cargar() }, [])
+  // Descargas
+  const [descargasOpen, setDescargasOpen] = useState(null) // servicio_id
+  const [descargas, setDescargas] = useState({}) // { [servicio_id]: [...] }
+  const [formDescarga, setFormDescarga] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+  const [guardandoDescarga, setGuardandoDescarga] = useState(false)
+
+  // Mano de obra
+  const [manoObraOpen, setManoObraOpen] = useState(null)
+  const [manoObra, setManoObra] = useState({}) // { [servicio_id]: [...] }
+  const [formMO, setFormMO] = useState({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
+  const [guardandoMO, setGuardandoMO] = useState(false)
+
+  // Cobro
+  const [cobrandoId, setCobrandoId] = useState(null)
+  const [formCobro, setFormCobro] = useState({ precio_ha: '', total: '', iva_pct: '0', fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }] })
+  const [guardandoCobro, setGuardandoCobro] = useState(false)
+
+  // Editar precio
+  const [editandoPrecio, setEditandoPrecio] = useState(null)
+
+  const esBrian = usuario?.nombre?.toLowerCase().includes('brian') || usuario?.email?.toLowerCase().includes('brian')
+  const TABS = esBrian
+    ? [{ key: 'descargas', label: '📦 Registro de mercadería' }]
+    : [
+        { key: 'terceros', label: 'Servicios a terceros' },
+        { key: 'propios', label: 'Servicios propios' },
+        { key: 'mano_obra', label: 'Mano de obra' },
+      ]
+
+  useEffect(() => {
+    if (esBrian) setTab('descargas')
+    cargar()
+  }, [])
 
   async function cargar() {
-    const [{ data: s }, { data: m }, { data: ct }] = await Promise.all([
-      supabase.from('servicios_terceros').select('*, maquinaria(nombre)').order('fecha', { ascending: false }),
+    const [{ data: s }, { data: m }, { data: ct }, { data: ch }] = await Promise.all([
+      supabase.from('servicios_terceros').select('*').order('fecha', { ascending: false }),
       supabase.from('maquinaria').select('*').eq('activo', true).order('nombre'),
       supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
+      supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera'),
     ])
     setServicios(s || [])
     setMaquinaria(m || [])
     setContactos(ct || [])
-    const cls = [...new Set((s || []).map(x => x.cliente).filter(Boolean))].sort()
-    setClientes(cls)
+    setChequesCartera(ch || [])
     setLoading(false)
   }
 
-  async function guardarCobro(s) {
-    if (!formCobro.precio_ha && !formCobro.total) { alert('Ingresá el precio/ha o el total'); return }
-    if (formCobro.forma_pago === 'cheque' && !formCobro.cheque_vencimiento) { alert('Ingresá la fecha de vencimiento del cheque'); return }
-    setGuardandoCobro(true)
-    const precio = formCobro.precio_ha ? parseFloat(formCobro.precio_ha) : null
-    const totalSinIva = formCobro.total_sin_iva ? parseFloat(formCobro.total_sin_iva) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
-    const ivaPct = parseFloat(formCobro.iva_pct) || 0
-    const total = formCobro.total ? parseFloat(formCobro.total) : (totalSinIva ? Math.round(totalSinIva * (1 + ivaPct/100)) : null)
-    const desc = `Servicio ${s.labor} — ${s.cliente} · ${s.hectareas} ha`
+  async function cargarDescargas(servicioId) {
+    const { data } = await supabase.from('descargas_cosecha').select('*').eq('servicio_id', servicioId).order('creado_en')
+    setDescargas(prev => ({ ...prev, [servicioId]: data || [] }))
+  }
 
-    let caja_id = null
-    if (formCobro.es_paralelo) {
-      const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', descripcion: desc, monto: total }).select().single()
-      caja_id = cp?.id
-    } else {
-      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha_cobro, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto: total, forma_pago: formCobro.forma_pago }).select().single()
-      caja_id = co?.id
-    }
-
-    // Registrar cheque en cartera si corresponde
-    if (formCobro.forma_pago === 'cheque') {
-      await supabase.from('cheques').insert({
-        tipo: 'recibido',
-        numero: formCobro.cheque_numero || null,
-        banco: formCobro.cheque_banco || null,
-        fecha_cobro: formCobro.fecha_cobro,
-        fecha_vencimiento: formCobro.cheque_vencimiento,
-        monto: total,
-        librador: s.cliente || null,
-        estado: 'en_cartera',
-        es_paralelo: formCobro.es_paralelo || false,
-        caja_oficial_id: formCobro.es_paralelo ? null : caja_id,
-      })
-    }
-
-    await supabase.from('servicios_terceros').update({ precio_ha: precio, total, iva_pct: ivaPct || null, estado_pago: 'cobrado', fecha_cobro: formCobro.fecha_cobro }).eq('id', s.id)
-    setCobrando(null)
-    setFormCobro({ precio_ha: '', total: '', total_sin_iva: '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false, cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
-    setGuardandoCobro(false)
-    await cargar()
+  async function cargarManoObra(servicioId) {
+    const { data } = await supabase.from('mano_obra_servicios').select('*').eq('servicio_id', servicioId).order('creado_en')
+    setManoObra(prev => ({ ...prev, [servicioId]: data || [] }))
   }
 
   async function guardar() {
-    if (!form.cliente || !form.labor || !form.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
-    if (form.cliente === '__nuevo__' && !form.clienteNuevo?.trim()) { alert('Ingresá el nombre del cliente'); return }
+    if (!form.labor || !form.hectareas) { alert('Completá labor y hectáreas'); return }
+    if (form.tipo_servicio === 'tercero' && !form.cliente && !form.clienteNuevo) { alert('Ingresá el cliente'); return }
     setGuardando(true)
     const ha = parseFloat(form.hectareas)
     const precio = form.precio_ha ? parseFloat(form.precio_ha) : null
-    const total = ha && precio ? ha * precio : null
-    // Auto-crear contacto si es nuevo
-    const nombreCliente = form.clienteNuevo?.trim() || form.cliente
+    const total = ha && precio ? Math.round(ha * precio) : null
+    let nombreCliente = form.cliente === '__nuevo__' ? form.clienteNuevo?.trim() : form.cliente
+    if (form.tipo_servicio === 'propio') nombreCliente = 'Ramonda Hnos SA'
     if (form.cliente === '__nuevo__' && form.clienteNuevo?.trim()) {
       const existe = contactos.find(c => c.nombre.toLowerCase() === form.clienteNuevo.trim().toLowerCase())
       if (!existe) await supabase.from('contactos').insert({ nombre: form.clienteNuevo.trim(), tipo: 'otro', activo: true })
@@ -113,273 +114,618 @@ export default function Servicios({ usuario }) {
     await supabase.from('servicios_terceros').insert({
       cliente: nombreCliente,
       labor: form.labor,
+      cultivo: form.cultivo,
+      campo: form.campo || null,
+      nro_lote: form.nro_lote || null,
       fecha: form.fecha,
       hectareas: ha,
       maquina_id: form.maquina_id ? parseInt(form.maquina_id) : null,
       precio_ha: precio,
       total,
-      observaciones: form.observaciones || null,
-      registrado_por: usuario?.id,
-      estado_pago: (ha && precio) ? 'cobrado' : 'pendiente',
+      tipo_servicio: form.tipo_servicio,
+      estado: precio ? 'precio_cargado' : 'pendiente',
     })
-    await cargar()
     setShowForm(false)
-    setForm({ cliente: '', clienteNuevo: '', labor: 'Siembra', fecha: new Date().toISOString().split('T')[0], hectareas: '', maquina_id: '', precio_ha: '', observaciones: '' })
+    setForm({ tipo_servicio: tab === 'propios' ? 'propio' : 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', maquina_id: '', precio_ha: '', observaciones: '' })
     setGuardando(false)
-  }
-
-  async function eliminar(id) {
-    if (!confirm('¿Eliminar este servicio?')) return
-    await supabase.from('servicios_terceros').delete().eq('id', id)
     await cargar()
   }
 
-  if (loading) return <Loader />
+  async function guardarDescarga(servicioId) {
+    if (!formDescarga.kg) { alert('Ingresá los kg'); return }
+    setGuardandoDescarga(true)
+    await supabase.from('descargas_cosecha').insert({
+      servicio_id: servicioId,
+      fecha: formDescarga.fecha,
+      tipo: formDescarga.tipo,
+      patente: formDescarga.tipo === 'camion' ? (formDescarga.patente || null) : null,
+      kg: parseFloat(formDescarga.kg),
+      observaciones: formDescarga.observaciones || null,
+      registrado_por: usuario?.id,
+    })
+    setFormDescarga({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+    setGuardandoDescarga(false)
+    await cargarDescargas(servicioId)
+  }
 
-  const totalFacturado = servicios.reduce((s, x) => s + (x.total || 0), 0)
-  const totalHa = servicios.reduce((s, x) => s + (x.hectareas || 0), 0)
-  const totalAnio = servicios.filter(x => new Date(x.fecha).getFullYear() === new Date().getFullYear()).reduce((s, x) => s + (x.total || 0), 0)
+  async function guardarManoObra(servicioId, s) {
+    if (!formMO.trabajador || !formMO.porcentaje) { alert('Completá trabajador y porcentaje'); return }
+    setGuardandoMO(true)
+    const pct = parseFloat(formMO.porcentaje)
+    const monto = s.total ? Math.round(s.total * pct / 100) : null
+    await supabase.from('mano_obra_servicios').insert({
+      servicio_id: servicioId,
+      trabajador: formMO.trabajador,
+      rol: formMO.rol,
+      porcentaje: pct,
+      monto_calculado: monto,
+    })
+    setFormMO({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
+    setGuardandoMO(false)
+    await cargarManoObra(servicioId)
+  }
 
-  // Agrupar por labor
-  const porLabor = {}
-  servicios.forEach(s => {
-    if (!porLabor[s.labor]) porLabor[s.labor] = { total: 0, ha: 0 }
-    porLabor[s.labor].total += s.total || 0
-    porLabor[s.labor].ha += s.hectareas || 0
-  })
+  async function guardarCobro(s) {
+    if (!formCobro.precio_ha && !formCobro.total) { alert('Ingresá el precio/ha o el total'); return }
+    setGuardandoCobro(true)
+    const precio = formCobro.precio_ha ? parseFloat(formCobro.precio_ha) : null
+    const totalSinIva = formCobro.total ? parseFloat(formCobro.total) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
+    const ivaPct = parseFloat(formCobro.iva_pct) || 0
+    const totalConIva = totalSinIva ? Math.round(totalSinIva * (1 + ivaPct / 100)) : null
+    const desc = `Servicio ${s.labor} ${s.cultivo ? `(${s.cultivo})` : ''} — ${s.cliente} · ${s.hectareas} ha`
+    const pagos = formCobro.pagos.filter(p => p.monto)
+
+    let caja_oficial_id = null, caja_paralela_id = null
+    for (const p of pagos) {
+      const monto = parseFloat(p.monto) || 0
+      if (p.es_paralelo) {
+        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
+        caja_paralela_id = cp?.id
+      } else {
+        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto, forma_pago: p.tipo }).select().single()
+        caja_oficial_id = co?.id
+        if (p.tipo === 'cheque_propio' && p.cheque_propio?.fecha_vencimiento) {
+          await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formCobro.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, librador: s.cliente || null, estado: 'emitido', caja_oficial_id })
+        }
+      }
+    }
+
+    await supabase.from('servicios_terceros').update({
+      precio_ha: precio,
+      total: totalConIva,
+      iva_pct: ivaPct || null,
+      estado_pago: 'cobrado',
+      estado: 'cobrado',
+      fecha_cobro: formCobro.fecha,
+      caja_oficial_id,
+      caja_paralela_id,
+    }).eq('id', s.id)
+    setCobrandoId(null)
+    setFormCobro({ precio_ha: '', total: '', iva_pct: '0', fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }] })
+    setGuardandoCobro(false)
+    await cargar()
+  }
+
+  async function guardarPrecio(s) {
+    if (!editandoPrecio?.precio_ha && !editandoPrecio?.total) { alert('Ingresá el precio/ha o el total'); return }
+    const precio = editandoPrecio.precio_ha ? parseFloat(editandoPrecio.precio_ha) : null
+    const total = editandoPrecio.total ? parseFloat(editandoPrecio.total) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
+    await supabase.from('servicios_terceros').update({ precio_ha: precio, total, estado: 'precio_cargado' }).eq('id', s.id)
+    setEditandoPrecio(null)
+    await cargar()
+  }
+
+  const serviciosFiltrados = tab === 'terceros'
+    ? servicios.filter(s => !s.tipo_servicio || s.tipo_servicio === 'tercero')
+    : tab === 'propios'
+    ? servicios.filter(s => s.tipo_servicio === 'propio')
+    : servicios.filter(s => s.labor === 'Cosecha')
+
+  if (loading) return <div style={{ padding: '2rem', color: S.muted }}>Cargando...</div>
 
   return (
-    <div>
-      <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 3 }}>Servicios</div>
-      <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', marginBottom: '1.5rem' }}>
-        Trabajos de maquinaria para terceros · siembra y cosecha
+    <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <div style={{ fontSize: 20, fontWeight: 600 }}>Servicios</div>
+        {!esBrian && (
+          <button onClick={() => { setShowForm(!showForm); setForm(f => ({ ...f, tipo_servicio: tab === 'propios' ? 'propio' : 'tercero' })) }}
+            style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+            + Nuevo servicio
+          </button>
+        )}
       </div>
 
-      {/* Métricas */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
-        {[
-          { label: 'Facturado este año', val: `$${totalAnio.toLocaleString('es-AR')}`, color: S.green },
-          { label: 'Total facturado', val: `$${totalFacturado.toLocaleString('es-AR')}`, color: S.green },
-          { label: 'Hectáreas trabajadas', val: `${totalHa.toLocaleString('es-AR')} ha`, color: S.accent },
-          { label: 'Trabajos registrados', val: servicios.length },
-        ].map((m, i) => (
-          <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
-            <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>{m.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: m.color || S.text }}>{m.val}</div>
-          </div>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: '1.5rem', borderBottom: `1px solid ${S.border}`, paddingBottom: 0 }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => { setTab(t.key); setShowForm(false) }}
+            style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t.key ? 600 : 400, border: 'none', background: 'transparent', borderBottom: tab === t.key ? `2px solid ${S.accent}` : '2px solid transparent', color: tab === t.key ? S.accent : S.muted, cursor: 'pointer', marginBottom: -1 }}>
+            {t.label}
+          </button>
         ))}
       </div>
 
-      {/* Por labor */}
-      {Object.keys(porLabor).length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
-          {Object.entries(porLabor).map(([labor, datos]) => (
-            <div key={labor} style={{ background: S.accentLight, border: `1px solid #85B7EB`, borderRadius: 8, padding: '.85rem' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: S.accent, marginBottom: 4 }}>{labor}</div>
-              <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${datos.total.toLocaleString('es-AR')}</div>
-              <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>{datos.ha.toLocaleString('es-AR')} ha</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Historial de servicios</div>
-        <button onClick={() => setShowForm(!showForm)}
-          style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-          + Registrar trabajo
-        </button>
-      </div>
-
-      {/* Banner pendientes de cobro */}
-      {servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length > 0 && (
-        <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
-            ⏳ {servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length} servicio{servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length !== 1 ? 's' : ''} pendiente{servicios.filter(s => s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)).length !== 1 ? 's' : ''} de cobro
+      {/* Form nuevo servicio */}
+      {showForm && !esBrian && (
+        <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.5rem', marginBottom: '1.5rem' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '1rem' }}>
+            {form.tipo_servicio === 'propio' ? 'Nuevo servicio propio' : 'Nuevo servicio a tercero'}
           </div>
-        </div>
-      )}
-
-      {showForm && (
-        <Card>
-          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Nuevo trabajo para tercero</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            {form.tipo_servicio === 'tercero' && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Lbl>Cliente *</Lbl>
+                <select value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value, clienteNuevo: '' })} style={inp}>
+                  <option value="">— Seleccioná —</option>
+                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  <option value="__nuevo__">+ Nuevo cliente...</option>
+                </select>
+                {form.cliente === '__nuevo__' && (
+                  <input type="text" placeholder="Nombre del cliente" value={form.clienteNuevo}
+                    onChange={e => setForm({ ...form, clienteNuevo: e.target.value })}
+                    style={{ ...inp, marginTop: 6 }} />
+                )}
+              </div>
+            )}
             <div>
-              <Label>Cliente</Label>
-              <select value={form.cliente} onChange={e => setForm({...form, cliente: e.target.value, clienteNuevo: ''})} style={inputStyle}>
-                <option value="">— Seleccioná —</option>
-                {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                <option value="__nuevo__">+ Nuevo cliente...</option>
-              </select>
-              {form.cliente === '__nuevo__' && (
-                <input type="text" placeholder="Nombre (se guardará en contactos)" value={form.clienteNuevo}
-                  onChange={e => setForm({...form, clienteNuevo: e.target.value})}
-                  style={{ ...inputStyle, marginTop: 6, border: `1px solid ${S.accent}` }} autoFocus />
-              )}
-            </div>
-            <div>
-              <Label>Labor</Label>
-              <select value={form.labor} onChange={e => setForm({...form, labor: e.target.value})} style={inputStyle}>
+              <Lbl>Labor *</Lbl>
+              <select value={form.labor} onChange={e => setForm({ ...form, labor: e.target.value })} style={inp}>
                 {LABORES.map(l => <option key={l}>{l}</option>)}
               </select>
             </div>
             <div>
-              <Label>Fecha</Label>
-              <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} />
+              <Lbl>Cultivo</Lbl>
+              <select value={form.cultivo} onChange={e => setForm({ ...form, cultivo: e.target.value })} style={inp}>
+                {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+              </select>
             </div>
             <div>
-              <Label>Hectáreas</Label>
-              <input type="number" value={form.hectareas} onChange={e => setForm({...form, hectareas: e.target.value})} style={inputStyle} placeholder="ej. 50" />
+              <Lbl>Fecha</Lbl>
+              <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} style={inp} />
             </div>
             <div>
-              <Label>Precio $/ha</Label>
-              <input type="number" value={form.precio_ha} onChange={e => setForm({...form, precio_ha: e.target.value})} style={inputStyle} placeholder="ej. 15000" />
+              <Lbl>Campo</Lbl>
+              <input type="text" value={form.campo} onChange={e => setForm({ ...form, campo: e.target.value })} placeholder="ej. La Esperanza" style={inp} />
             </div>
             <div>
-              <Label>Máquina utilizada</Label>
-              <select value={form.maquina_id} onChange={e => setForm({...form, maquina_id: e.target.value})} style={inputStyle}>
-                <option value="">— Sin especificar —</option>
+              <Lbl>N° Lote</Lbl>
+              <input type="text" value={form.nro_lote} onChange={e => setForm({ ...form, nro_lote: e.target.value })} placeholder="ej. Lote 5" style={inp} />
+            </div>
+            <div>
+              <Lbl>Hectáreas *</Lbl>
+              <input type="number" value={form.hectareas} onChange={e => setForm({ ...form, hectareas: e.target.value })} placeholder="ej. 120" style={inpMono} />
+            </div>
+            <div>
+              <Lbl>Precio $/ha (opcional)</Lbl>
+              <input type="number" value={form.precio_ha} onChange={e => setForm({ ...form, precio_ha: e.target.value })} placeholder="dejar vacío si no está acordado" style={inpMono} />
+            </div>
+            <div>
+              <Lbl>Máquina</Lbl>
+              <select value={form.maquina_id} onChange={e => setForm({ ...form, maquina_id: e.target.value })} style={inp}>
+                <option value="">— Sin asignar —</option>
                 {maquinaria.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
               </select>
             </div>
-            <div style={{ gridColumn: '1/-1' }}>
-              <Label>Observaciones</Label>
-              <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} />
-            </div>
           </div>
-          {form.hectareas && form.precio_ha && (
-            <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: S.green }}>
-              Total: <strong>${(parseFloat(form.hectareas) * parseFloat(form.precio_ha)).toLocaleString('es-AR')}</strong>
-              {' '}({form.hectareas} ha × ${parseFloat(form.precio_ha).toLocaleString('es-AR')}/ha)
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-            <button onClick={guardar} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-              {guardando ? 'Guardando...' : 'Guardar'}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando}
+              style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              {guardando ? 'Guardando...' : '💾 Guardar'}
+            </button>
+            <button onClick={() => setShowForm(false)}
+              style={{ padding: '8px 18px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+              Cancelar
             </button>
           </div>
-        </Card>
+        </div>
       )}
 
-      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-        <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: S.bg }}>
-                {['Fecha', 'Cliente', 'Labor', 'Máquina', 'Ha', '$/ha', 'Total', 'Estado', ''].map(h => (
-                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {servicios.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay servicios registrados.</td></tr>
+      {/* Tab mano de obra — resumen */}
+      {tab === 'mano_obra' && (
+        <div>
+          <div style={{ fontSize: 13, color: S.muted, marginBottom: '1rem' }}>
+            Seleccioná un trabajo de cosecha para asignar personal y calcular liquidación.
+          </div>
+          {servicios.filter(s => s.labor === 'Cosecha').map(s => (
+            <div key={s.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+              <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{s.cliente} — {s.cultivo || s.labor}</div>
+                  <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                    {s.campo || '—'} · {s.hectareas} ha · {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR') : ''}
+                    {s.total ? ` · Total: $${s.total.toLocaleString('es-AR')}` : ' · Sin precio'}
+                  </div>
+                </div>
+                <button onClick={async () => {
+                  if (manoObraOpen === s.id) { setManoObraOpen(null); return }
+                  await cargarManoObra(s.id)
+                  setManoObraOpen(s.id)
+                }} style={{ padding: '6px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                  {manoObraOpen === s.id ? 'Cerrar' : '👷 Personal'}
+                </button>
+              </div>
+              {manoObraOpen === s.id && (
+                <div style={{ borderTop: `1px solid ${S.border}`, padding: '1rem', background: S.bg }}>
+                  {(manoObra[s.id] || []).length > 0 && (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1rem' }}>
+                      <thead>
+                        <tr style={{ background: S.bg }}>
+                          {['Trabajador', 'Rol', '%', 'Monto', 'Estado'].map(h => (
+                            <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(manoObra[s.id] || []).map(mo => (
+                          <tr key={mo.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '8px 10px', fontWeight: 600 }}>{mo.trabajador}</td>
+                            <td style={{ padding: '8px 10px', color: S.muted }}>{mo.rol}</td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{mo.porcentaje}%</td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>
+                              {mo.monto_calculado ? `$${mo.monto_calculado.toLocaleString('es-AR')}` : '—'}
+                            </td>
+                            <td style={{ padding: '8px 10px' }}>
+                              <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: mo.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo.estado_pago === 'pagado' ? S.green : S.amber }}>
+                                {mo.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {(manoObra[s.id] || []).length > 0 && (
+                        <tfoot>
+                          <tr style={{ background: S.accentLight }}>
+                            <td colSpan={2} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 12 }}>Total asignado</td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700 }}>
+                              {(manoObra[s.id] || []).reduce((a, m) => a + (m.porcentaje || 0), 0)}%
+                            </td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>
+                              ${(manoObra[s.id] || []).reduce((a, m) => a + (m.monto_calculado || 0), 0).toLocaleString('es-AR')}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                    <div>
+                      <Lbl>Trabajador</Lbl>
+                      <input type="text" value={formMO.trabajador} onChange={e => setFormMO({ ...formMO, trabajador: e.target.value })}
+                        placeholder="ej. Juan Pérez" style={inp} />
+                    </div>
+                    <div>
+                      <Lbl>Rol</Lbl>
+                      <select value={formMO.rol} onChange={e => setFormMO({ ...formMO, rol: e.target.value })} style={inp}>
+                        {ROLES.map(r => <option key={r}>{r}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Lbl>% del total</Lbl>
+                      <input type="number" value={formMO.porcentaje} onChange={e => setFormMO({ ...formMO, porcentaje: e.target.value })}
+                        placeholder="ej. 10" style={inpMono} />
+                    </div>
+                    <button onClick={() => guardarManoObra(s.id, s)} disabled={guardandoMO}
+                      style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      + Agregar
+                    </button>
+                  </div>
+                </div>
               )}
-              {servicios.map(s => (
-                <React.Fragment key={s.id}>
-                  <tr style={{ borderBottom: `1px solid ${S.border}` }}>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(s.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                    <td style={{ padding: '9px 12px', fontWeight: 600 }}>{s.cliente}</td>
-                    <td style={{ padding: '9px 12px' }}>{s.labor}</td>
-                    <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{s.maquinaria?.nombre || '—'}</td>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{s.hectareas?.toLocaleString('es-AR')} ha</td>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{s.total ? `$${s.total.toLocaleString('es-AR')}` : '—'}</td>
-                    <td style={{ padding: '9px 12px' }}>
-                      {s.estado_pago === 'cobrado' || (s.total && !s.estado_pago)
-                        ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Cobrado</span>
-                        : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
-                    </td>
-                    <td style={{ padding: '9px 12px' }}>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {(s.estado_pago === 'pendiente' || (!s.estado_pago && !s.total)) && (
-                          <button onClick={() => { setCobrando(cobrando === s.id ? null : s.id); setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', total_sin_iva: s.total ? String(s.total) : '', iva_pct: '0', fecha_cobro: new Date().toISOString().split('T')[0], forma_pago: 'transferencia', es_paralelo: false, cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' }) }}
-                            style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
-                            💰 Cobrar
-                          </button>
-                        )}
-                        <button onClick={() => eliminar(s.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+            </div>
+          ))}
+          {servicios.filter(s => s.labor === 'Cosecha').length === 0 && (
+            <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay trabajos de cosecha registrados.</div>
+          )}
+        </div>
+      )}
+
+      {/* Tab descargas — Brian y todos */}
+      {tab === 'descargas' && (
+        <div>
+          <div style={{ fontSize: 13, color: S.muted, marginBottom: '1rem' }}>
+            Registrá las descargas de mercadería por trabajo de cosecha.
+          </div>
+          {servicios.filter(s => s.labor === 'Cosecha').map(s => {
+            const desc = descargas[s.id] || []
+            const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
+            const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
+            const kgOtro = desc.filter(d => d.tipo === 'otro').reduce((a, d) => a + (d.kg || 0), 0)
+            const kgTotal = kgCamion + kgBolsa + kgOtro
+            return (
+              <div key={s.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{s.cliente} — {s.cultivo || 'Cosecha'}</div>
+                    <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                      {s.campo || '—'} · {s.nro_lote || '—'} · {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR') : ''}
+                    </div>
+                    {descargasOpen === s.id && kgTotal > 0 && (
+                      <div style={{ marginTop: 6, display: 'flex', gap: 12, fontSize: 12 }}>
+                        {kgCamion > 0 && <span style={{ color: S.accent }}>🚛 {kgCamion.toLocaleString('es-AR')} kg</span>}
+                        {kgBolsa > 0 && <span style={{ color: S.green }}>🌾 {kgBolsa.toLocaleString('es-AR')} kg</span>}
+                        {kgOtro > 0 && <span style={{ color: S.muted }}>📦 {kgOtro.toLocaleString('es-AR')} kg</span>}
+                        <strong>Total: {kgTotal.toLocaleString('es-AR')} kg</strong>
                       </div>
-                    </td>
-                  </tr>
-                  {cobrando === s.id && (
-                    <tr>
-                      <td colSpan={9} style={{ padding: '1rem', background: S.greenLight, borderBottom: `1px solid ${S.border}` }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: 10 }}>
-                          Registrar cobro — {s.cliente} · {s.labor} · {s.hectareas} ha
+                    )}
+                  </div>
+                  <button onClick={async () => {
+                    if (descargasOpen === s.id) { setDescargasOpen(null); return }
+                    await cargarDescargas(s.id)
+                    setDescargasOpen(s.id)
+                  }} style={{ padding: '6px 12px', fontSize: 12, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer' }}>
+                    {descargasOpen === s.id ? 'Cerrar' : '📦 Descargas'}
+                  </button>
+                </div>
+                {descargasOpen === s.id && (
+                  <div style={{ borderTop: `1px solid ${S.border}`, padding: '1rem', background: S.bg }}>
+                    {desc.length > 0 && (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1rem' }}>
+                        <thead>
+                          <tr>
+                            {['Fecha', 'Tipo', 'Patente/Detalle', 'Kg'].map(h => (
+                              <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {desc.map(d => (
+                            <tr key={d.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                              <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>
+                                {d.fecha ? new Date(d.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                              </td>
+                              <td style={{ padding: '7px 10px' }}>
+                                <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'camion' ? S.accentLight : d.tipo === 'bolsa' ? S.greenLight : S.amberLight, color: d.tipo === 'camion' ? S.accent : d.tipo === 'bolsa' ? S.green : S.amber }}>
+                                  {d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '7px 10px', color: S.muted, fontFamily: 'monospace' }}>{d.patente || d.observaciones || '—'}</td>
+                              <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 700 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ background: S.accentLight }}>
+                            <td colSpan={3} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 12 }}>Total</td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>{kgTotal.toLocaleString('es-AR')} kg</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    )}
+                    {/* Form nueva descarga */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                      <div>
+                        <Lbl>Tipo</Lbl>
+                        <select value={formDescarga.tipo} onChange={e => setFormDescarga({ ...formDescarga, tipo: e.target.value })} style={inp}>
+                          <option value="camion">🚛 Camión</option>
+                          <option value="bolsa">🌾 Bolsa</option>
+                          <option value="otro">📦 Otro</option>
+                        </select>
+                      </div>
+                      {formDescarga.tipo === 'camion' ? (
+                        <div>
+                          <Lbl>Patente</Lbl>
+                          <input type="text" value={formDescarga.patente} onChange={e => setFormDescarga({ ...formDescarga, patente: e.target.value })}
+                            placeholder="ej. ABC 123" style={{ ...inp, textTransform: 'uppercase' }} />
                         </div>
-                        {/* Fila 1: precio, IVA, total */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 8 }}>
-                          <div>
-                            <Label>Precio $/ha</Label>
-                            <input type="number" value={formCobro.precio_ha} onChange={e => {
-                              const p = e.target.value
-                              const base = p && s.hectareas ? Math.round(parseFloat(p) * s.hectareas) : null
-                              const iva = parseFloat(formCobro.iva_pct) || 0
-                              const t = base ? String(Math.round(base * (1 + iva/100))) : formCobro.total
-                              setFormCobro({...formCobro, precio_ha: p, total_sin_iva: base ? String(base) : '', total: t})
-                            }} style={inputStyle} placeholder="ej. 15000" />
-                          </div>
-                          <div>
-                            <Label>IVA %</Label>
-                            <select value={formCobro.iva_pct} onChange={e => {
-                              const iva = parseFloat(e.target.value) || 0
-                              const base = parseFloat(formCobro.total_sin_iva || formCobro.total) || 0
-                              const totalConIva = base > 0 ? String(Math.round(base * (1 + iva/100))) : formCobro.total
-                              setFormCobro({...formCobro, iva_pct: e.target.value, total: totalConIva})
-                            }} style={inputStyle}>
-                              <option value="0">Sin IVA</option>
-                              <option value="10.5">10.5%</option>
-                              <option value="21">21%</option>
-                            </select>
-                          </div>
-                          <div>
-                            <Label>Total $</Label>
-                            <input type="number" value={formCobro.total} onChange={e => setFormCobro({...formCobro, total: e.target.value})} style={inputStyle} />
-                          </div>
+                      ) : (
+                        <div>
+                          <Lbl>Detalle</Lbl>
+                          <input type="text" value={formDescarga.observaciones} onChange={e => setFormDescarga({ ...formDescarga, observaciones: e.target.value })}
+                            placeholder="ej. Bolsa 8" style={inp} />
                         </div>
-                        {/* Fila 2: fecha, forma de pago, paralelo + botón */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
-                          <div>
-                            <Label>Fecha cobro</Label>
-                            <input type="date" value={formCobro.fecha_cobro} onChange={e => setFormCobro({...formCobro, fecha_cobro: e.target.value})} style={inputStyle} />
+                      )}
+                      <div>
+                        <Lbl>Kg *</Lbl>
+                        <input type="number" value={formDescarga.kg} onChange={e => setFormDescarga({ ...formDescarga, kg: e.target.value })}
+                          placeholder="ej. 28500" style={inpMono} />
+                      </div>
+                      <div>
+                        <Lbl>Fecha</Lbl>
+                        <input type="date" value={formDescarga.fecha} onChange={e => setFormDescarga({ ...formDescarga, fecha: e.target.value })} style={inp} />
+                      </div>
+                      <button onClick={() => guardarDescarga(s.id)} disabled={guardandoDescarga}
+                        style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        + Registrar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {servicios.filter(s => s.labor === 'Cosecha').length === 0 && (
+            <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay trabajos de cosecha registrados.</div>
+          )}
+        </div>
+      )}
+
+      {/* Lista servicios — terceros y propios */}
+      {(tab === 'terceros' || tab === 'propios') && (
+        <div>
+          {serviciosFiltrados.length === 0 && (
+            <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay servicios registrados.</div>
+          )}
+          {serviciosFiltrados.map(s => {
+            const isCobrandoThis = cobrandoId === s.id
+            const isEditandoPrecio = editandoPrecio?.id === s.id
+            return (
+              <div key={s.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                <div style={{ padding: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: 15 }}>{s.cliente}</span>
+                        <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{s.labor}</span>
+                        {s.cultivo && <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.greenLight, color: S.green }}>{s.cultivo}</span>}
+                        {s.tipo_servicio === 'propio' && <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.purpleLight, color: S.purple }}>Propio</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: S.muted }}>
+                        {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                        {s.campo ? ` · ${s.campo}` : ''}
+                        {s.nro_lote ? ` · ${s.nro_lote}` : ''}
+                        {` · ${s.hectareas} ha`}
+                        {s.precio_ha ? ` · $${s.precio_ha.toLocaleString('es-AR')}/ha` : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0, marginLeft: 12 }}>
+                      {s.total ? (
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: s.estado_pago === 'cobrado' ? S.green : S.text }}>
+                          ${s.total.toLocaleString('es-AR')}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: S.amber }}>Sin precio</span>
+                      )}
+                      <span style={{ padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, background: s.estado_pago === 'cobrado' ? S.greenLight : s.total ? S.amberLight : S.bg, color: s.estado_pago === 'cobrado' ? S.green : s.total ? S.amber : S.hint }}>
+                        {s.estado_pago === 'cobrado' ? '✓ Cobrado' : s.total ? '⏳ Pendiente' : 'Sin precio'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Botones acción */}
+                  {s.estado_pago !== 'cobrado' && !esBrian && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                      {!s.total && (
+                        <button onClick={() => setEditandoPrecio(isEditandoPrecio ? null : { id: s.id, precio_ha: '', total: '' })}
+                          style={{ padding: '5px 12px', fontSize: 12, background: S.amberLight, border: `1px solid #E8A020`, color: S.amber, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                          {isEditandoPrecio ? 'Cancelar' : '$ Cargar precio'}
+                        </button>
+                      )}
+                      {s.total && s.tipo_servicio !== 'propio' && (
+                        <button onClick={() => {
+                          setCobrandoId(isCobrandoThis ? null : s.id)
+                          setFormCobro({ precio_ha: s.precio_ha ? String(s.precio_ha) : '', total: s.total ? String(s.total) : '', iva_pct: '0', fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT, monto: s.total ? String(s.total) : '' }] })
+                        }}
+                          style={{ padding: '5px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                          {isCobrandoThis ? 'Cancelar' : '💳 Registrar cobro'}
+                        </button>
+                      )}
+                      {s.labor === 'Cosecha' && (
+                        <button onClick={async () => {
+                          setTab('descargas')
+                          await cargarDescargas(s.id)
+                          setDescargasOpen(s.id)
+                        }}
+                          style={{ padding: '5px 12px', fontSize: 12, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                          📦 Descargas
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Form cargar precio */}
+                  {isEditandoPrecio && (
+                    <div style={{ marginTop: 12, padding: '1rem', background: S.bg, borderRadius: 8, display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                      <div>
+                        <Lbl>Precio $/ha</Lbl>
+                        <input type="number" value={editandoPrecio.precio_ha} onChange={e => {
+                          const p = e.target.value
+                          const t = p && s.hectareas ? String(Math.round(parseFloat(p) * s.hectareas)) : editandoPrecio.total
+                          setEditandoPrecio({ ...editandoPrecio, precio_ha: p, total: t })
+                        }} placeholder="ej. 45000" style={inpMono} />
+                      </div>
+                      <div>
+                        <Lbl>Total $</Lbl>
+                        <input type="number" value={editandoPrecio.total} onChange={e => setEditandoPrecio({ ...editandoPrecio, total: e.target.value })}
+                          placeholder="o ingresá el total directo" style={inpMono} />
+                      </div>
+                      <button onClick={() => guardarPrecio(s)}
+                        style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                        Guardar
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Form cobro con multipago */}
+                  {isCobrandoThis && (
+                    <div style={{ marginTop: 12, padding: '1rem', background: S.bg, borderRadius: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: '1rem' }}>
+                        <div>
+                          <Lbl>Precio $/ha</Lbl>
+                          <input type="number" value={formCobro.precio_ha} onChange={e => setFormCobro({ ...formCobro, precio_ha: e.target.value })} style={inpMono} />
+                        </div>
+                        <div>
+                          <Lbl>Total $</Lbl>
+                          <input type="number" value={formCobro.total} onChange={e => setFormCobro({ ...formCobro, total: e.target.value })} style={inpMono} />
+                        </div>
+                        <div>
+                          <Lbl>IVA %</Lbl>
+                          <input type="number" value={formCobro.iva_pct} onChange={e => setFormCobro({ ...formCobro, iva_pct: e.target.value })} placeholder="0, 10.5 o 21" style={inpMono} />
+                        </div>
+                        <div>
+                          <Lbl>Fecha cobro</Lbl>
+                          <input type="date" value={formCobro.fecha} onChange={e => setFormCobro({ ...formCobro, fecha: e.target.value })} style={inp} />
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
+                        <button onClick={() => setFormCobro({ ...formCobro, pagos: [...formCobro.pagos, { ...PAGO_INIT }] })}
+                          style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                          + Agregar
+                        </button>
+                      </div>
+                      {formCobro.pagos.map((p, pi) => (
+                        <div key={pi} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.75rem', marginBottom: 6 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                            <div>
+                              <Lbl>Forma de pago</Lbl>
+                              <select value={p.tipo} onChange={e => {
+                                const pagos = formCobro.pagos.map((x, i) => i === pi ? { ...x, tipo: e.target.value } : x)
+                                setFormCobro({ ...formCobro, pagos })
+                              }} style={inp}>
+                                {['transferencia', 'efectivo', 'cheque_propio', 'cheque_tercero'].map(t => (
+                                  <option key={t} value={t}>{t === 'cheque_propio' ? 'E-cheq propio' : t === 'cheque_tercero' ? 'Cheque tercero' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <Lbl>Monto $</Lbl>
+                              <input type="number" value={p.monto} onChange={e => {
+                                const pagos = formCobro.pagos.map((x, i) => i === pi ? { ...x, monto: e.target.value } : x)
+                                setFormCobro({ ...formCobro, pagos })
+                              }} style={inpMono} />
+                            </div>
+                            <div>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
+                                <input type="checkbox" checked={p.es_paralelo} onChange={e => {
+                                  const pagos = formCobro.pagos.map((x, i) => i === pi ? { ...x, es_paralelo: e.target.checked } : x)
+                                  setFormCobro({ ...formCobro, pagos })
+                                }} />
+                                Paralelo
+                              </label>
+                            </div>
                           </div>
-                          <div>
-                            <Label>Forma de pago</Label>
-                            <select value={formCobro.forma_pago} onChange={e => setFormCobro({...formCobro, forma_pago: e.target.value})} style={inputStyle}>
-                              <option value="transferencia">Transferencia</option>
-                              <option value="efectivo">Efectivo</option>
-                              <option value="cheque">E-cheq / Cheque</option>
-                            </select>
-                          </div>
-                          {formCobro.forma_pago === 'cheque' && (
-                            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                              <div><Label>N° cheque</Label><input type="text" value={formCobro.cheque_numero} onChange={e => setFormCobro({...formCobro, cheque_numero: e.target.value})} style={inputStyle} placeholder="Número" /></div>
-                              <div><Label>Banco</Label><input type="text" value={formCobro.cheque_banco} onChange={e => setFormCobro({...formCobro, cheque_banco: e.target.value})} style={inputStyle} placeholder="Banco emisor" /></div>
-                              <div><Label>Vencimiento *</Label><input type="date" value={formCobro.cheque_vencimiento} onChange={e => setFormCobro({...formCobro, cheque_vencimiento: e.target.value})} style={{ ...inputStyle, borderColor: S.amber }} /></div>
+                          {p.tipo === 'cheque_propio' && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                              <div><Lbl>N° Cheque</Lbl><input type="text" value={p.cheque_propio?.numero || ''} onChange={e => { const pagos = formCobro.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, numero: e.target.value } } : x); setFormCobro({ ...formCobro, pagos }) }} style={inpMono} /></div>
+                              <div><Lbl>Banco</Lbl><input type="text" value={p.cheque_propio?.banco || ''} onChange={e => { const pagos = formCobro.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, banco: e.target.value } } : x); setFormCobro({ ...formCobro, pagos }) }} style={inp} /></div>
+                              <div><Lbl>Vencimiento</Lbl><input type="date" value={p.cheque_propio?.fecha_vencimiento || ''} onChange={e => { const pagos = formCobro.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, fecha_vencimiento: e.target.value } } : x); setFormCobro({ ...formCobro, pagos }) }} style={inp} /></div>
                             </div>
                           )}
-                          <div>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', marginBottom: 8 }}>
-                              <input type="checkbox" checked={formCobro.es_paralelo} onChange={e => setFormCobro({...formCobro, es_paralelo: e.target.checked})} />
-                              Paralelo
-                            </label>
-                            <button onClick={() => guardarCobro(s)} disabled={guardandoCobro}
-                              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                              {guardandoCobro ? 'Guardando...' : '💾 Confirmar cobro'}
-                            </button>
-                          </div>
                         </div>
-                      </td>
-                    </tr>
+                      ))}
+                      <div style={{ marginTop: 10, padding: '8px 12px', background: S.greenLight, borderRadius: 6, fontSize: 13, color: S.green, fontWeight: 600 }}>
+                        Total pagos: ${formCobro.pagos.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0).toLocaleString('es-AR')}
+                        {formCobro.total && ` · Saldo: $${(parseFloat(formCobro.total) - formCobro.pagos.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0)).toLocaleString('es-AR')}`}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button onClick={() => guardarCobro(s)} disabled={guardandoCobro}
+                          style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                          {guardandoCobro ? 'Guardando...' : '✓ Confirmar cobro'}
+                        </button>
+                        <button onClick={() => setCobrandoId(null)}
+                          style={{ padding: '8px 18px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
                   )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+                </div>
+              </div>
+            )
+          })}
         </div>
-      </div>
+      )}
     </div>
   )
 }
