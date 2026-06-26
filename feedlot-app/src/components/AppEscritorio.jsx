@@ -1,21 +1,22 @@
-import { useState } from 'react'
+import { useState, Suspense, lazy } from 'react'
 import Sidebar from './Sidebar'
-import Tablero from './Tablero'
-import Corrales from './Corrales'
-import Ingresos from './Ingresos'
-import Pesada from './Pesada'
-import Ventas from './Ventas'
-import Alimentacion from './Alimentacion'
-import Sanidad from './Sanidad'
-import Reportes from './Reportes'
-import Agricultura from './Agricultura'
-import Servicios from './Servicios'
-import Personal from './Personal'
-import Gastos from './Gastos'
-import Comercial from './Comercial'
-import Contactos from './Contactos'
-import Activos from './Activos'
-import Insumos from './Insumos'
+
+const Tablero      = lazy(() => import('./Tablero'))
+const Corrales     = lazy(() => import('./Corrales'))
+const Ingresos     = lazy(() => import('./Ingresos'))
+const Pesada       = lazy(() => import('./Pesada'))
+const Ventas       = lazy(() => import('./Ventas'))
+const Alimentacion = lazy(() => import('./Alimentacion'))
+const Sanidad      = lazy(() => import('./Sanidad'))
+const Reportes     = lazy(() => import('./Reportes'))
+const Agricultura  = lazy(() => import('./Agricultura'))
+const Servicios    = lazy(() => import('./Servicios'))
+const Personal     = lazy(() => import('./Personal'))
+const Gastos       = lazy(() => import('./Gastos'))
+const Comercial    = lazy(() => import('./Comercial'))
+const Contactos    = lazy(() => import('./Contactos'))
+const Activos      = lazy(() => import('./Activos'))
+const Insumos      = lazy(() => import('./Insumos'))
 
 function Placeholder({ titulo, descripcion }) {
   return (
@@ -46,6 +47,14 @@ const MODULOS = {
   insumos:      Insumos,
 }
 
+function LoadingModulo() {
+  return (
+    <div style={{ padding: '3rem', textAlign: 'center', color: '#9E9A94', fontSize: 13 }}>
+      Cargando...
+    </div>
+  )
+}
+
 export default function AppEscritorio({ usuario, onLogout }) {
   const [modulo, setModulo] = useState('tablero')
   const Componente = MODULOS[modulo] || Tablero
@@ -53,7 +62,9 @@ export default function AppEscritorio({ usuario, onLogout }) {
     <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: '100vh', fontFamily: "'IBM Plex Sans', sans-serif", background: '#F7F5F0' }}>
       <Sidebar modulo={modulo} setModulo={setModulo} usuario={usuario} onLogout={onLogout} />
       <main style={{ padding: '1.75rem', overflowX: 'hidden' }}>
-        <Componente usuario={usuario} />
+        <Suspense fallback={<LoadingModulo />}>
+          <Componente usuario={usuario} />
+        </Suspense>
       </main>
     </div>
   )
