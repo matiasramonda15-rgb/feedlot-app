@@ -51,6 +51,8 @@ export default function Servicios({ usuario }) {
   const [manoObra, setManoObra] = useState({}) // { [servicio_id]: [...] }
   const [formMO, setFormMO] = useState({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
   const [guardandoMO, setGuardandoMO] = useState(false)
+  const [filtroEmpleado, setFiltroEmpleado] = useState('')
+  const [subTabMO, setSubTabMO] = useState('cosecha') // 'cosecha' | 'siembra'
 
   // Mercadería independiente
   const [registros, setRegistros] = useState([]) // lista de registros de campo
@@ -440,105 +442,220 @@ export default function Servicios({ usuario }) {
         </div>
       )}
 
-      {/* Tab mano de obra — resumen */}
-      {tab === 'mano_obra' && (
-        <div>
-          <div style={{ fontSize: 13, color: S.muted, marginBottom: '1rem' }}>
-            Seleccioná un trabajo de cosecha para asignar personal y calcular liquidación.
-          </div>
-          {servicios.filter(s => s.labor === 'Cosecha').map(s => (
-            <div key={s.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
-              <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>{s.cliente} — {s.cultivo || s.labor}</div>
-                  <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
-                    {s.campo || '—'} · {s.hectareas} ha · {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR') : ''}
-                    {s.total ? ` · Total: $${s.total.toLocaleString('es-AR')}` : ' · Sin precio'}
-                  </div>
-                </div>
-                <button onClick={async () => {
-                  if (manoObraOpen === s.id) { setManoObraOpen(null); return }
-                  await cargarManoObra(s.id)
-                  setManoObraOpen(s.id)
-                }} style={{ padding: '6px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                  {manoObraOpen === s.id ? 'Cerrar' : '👷 Personal'}
+      {/* Tab mano de obra */}
+      {tab === 'mano_obra' && (() => {
+        const ROLES_COSECHA = ['Maquinista', 'Tolvero', 'Ayudante']
+        const ROLES_SIEMBRA = ['Sembrador 1', 'Sembrador 2', 'Sembrador 3', 'Ayudante']
+        const rolesActuales = subTabMO === 'cosecha' ? ROLES_COSECHA : ROLES_SIEMBRA
+        const serviciosFiltrados = servicios.filter(s => s.labor === (subTabMO === 'cosecha' ? 'Cosecha' : 'Siembra'))
+        
+        // Todos los empleados que aparecen en mano de obra
+        const todosEmpleados = [...new Set(
+          Object.values(manoObra).flat().map(mo => mo.trabajador).filter(Boolean)
+        )].sort()
+
+        // Vista por empleado
+        const vistaEmpleado = filtroEmpleado
+          ? serviciosFiltrados.filter(s => (manoObra[s.id] || []).some(mo => mo.trabajador === filtroEmpleado))
+          : null
+
+        return (
+          <div>
+            {/* Sub-tabs cosecha / siembra */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: '1.25rem' }}>
+              {[{ key: 'cosecha', label: '🌽 Cosecha' }, { key: 'siembra', label: '🌱 Siembra' }].map(t => (
+                <button key={t.key} onClick={() => { setSubTabMO(t.key); setFiltroEmpleado('') }}
+                  style={{ padding: '7px 16px', fontSize: 13, fontWeight: subTabMO === t.key ? 600 : 400, border: `1px solid ${subTabMO === t.key ? S.accent : S.border}`, background: subTabMO === t.key ? S.accentLight : 'transparent', color: subTabMO === t.key ? S.accent : S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  {t.label}
                 </button>
+              ))}
+            </div>
+
+            {/* Filtro por empleado */}
+            {todosEmpleados.length > 0 && (
+              <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Lbl>Ver por empleado:</Lbl>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button onClick={() => setFiltroEmpleado('')}
+                    style={{ padding: '4px 10px', fontSize: 12, border: `1px solid ${!filtroEmpleado ? S.accent : S.border}`, background: !filtroEmpleado ? S.accentLight : 'transparent', color: !filtroEmpleado ? S.accent : S.muted, borderRadius: 20, cursor: 'pointer' }}>
+                    Todos los campos
+                  </button>
+                  {todosEmpleados.map(e => (
+                    <button key={e} onClick={() => setFiltroEmpleado(e === filtroEmpleado ? '' : e)}
+                      style={{ padding: '4px 10px', fontSize: 12, border: `1px solid ${filtroEmpleado === e ? S.green : S.border}`, background: filtroEmpleado === e ? S.greenLight : 'transparent', color: filtroEmpleado === e ? S.green : S.muted, borderRadius: 20, cursor: 'pointer', fontWeight: filtroEmpleado === e ? 600 : 400 }}>
+                      👷 {e}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {manoObraOpen === s.id && (
-                <div style={{ borderTop: `1px solid ${S.border}`, padding: '1rem', background: S.bg }}>
-                  {(manoObra[s.id] || []).length > 0 && (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1rem' }}>
-                      <thead>
-                        <tr style={{ background: S.bg }}>
-                          {['Trabajador', 'Rol', '%', 'Monto', 'Estado'].map(h => (
-                            <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                          ))}
+            )}
+
+            {/* Resumen por empleado cuando está filtrado */}
+            {filtroEmpleado && (
+              <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 10, padding: '1rem', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: S.green, marginBottom: '1rem' }}>👷 {filtroEmpleado} — Detalle de trabajos</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      {['Fecha', 'Campo/Lote', 'Cliente', 'Ha', '$/ha', 'Rol', '%', 'Total a cobrar'].map(h => (
+                        <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.green, textTransform: 'uppercase', borderBottom: `1px solid ${S.green}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serviciosFiltrados.filter(s => (manoObra[s.id] || []).some(mo => mo.trabajador === filtroEmpleado)).map(s => {
+                      const moEmp = (manoObra[s.id] || []).find(mo => mo.trabajador === filtroEmpleado)
+                      const precioHa = s.precio_ha || (s.total && s.hectareas ? Math.round(s.total / s.hectareas) : null)
+                      const montoEmp = moEmp?.monto_calculado || (s.total && moEmp?.porcentaje ? Math.round(s.total * moEmp.porcentaje / 100) : null)
+                      return (
+                        <tr key={s.id} style={{ borderBottom: `1px solid ${S.green}20` }}>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>
+                            {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                          </td>
+                          <td style={{ padding: '7px 10px', fontWeight: 600 }}>{s.campo || '—'}{s.nro_lote ? ` · ${s.nro_lote}` : ''}</td>
+                          <td style={{ padding: '7px 10px', color: S.muted }}>{s.cliente || '—'}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{s.hectareas}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{precioHa ? `$${precioHa.toLocaleString('es-AR')}` : '—'}</td>
+                          <td style={{ padding: '7px 10px', color: S.muted }}>{moEmp?.rol}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{moEmp?.porcentaje}%</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
+                            {montoEmp ? `$${montoEmp.toLocaleString('es-AR')}` : '—'}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {(manoObra[s.id] || []).map(mo => (
-                          <tr key={mo.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                            <td style={{ padding: '8px 10px', fontWeight: 600 }}>{mo.trabajador}</td>
-                            <td style={{ padding: '8px 10px', color: S.muted }}>{mo.rol}</td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{mo.porcentaje}%</td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>
-                              {mo.monto_calculado ? `$${mo.monto_calculado.toLocaleString('es-AR')}` : '—'}
-                            </td>
-                            <td style={{ padding: '8px 10px' }}>
-                              <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: mo.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo.estado_pago === 'pagado' ? S.green : S.amber }}>
-                                {mo.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      {(manoObra[s.id] || []).length > 0 && (
-                        <tfoot>
-                          <tr style={{ background: S.accentLight }}>
-                            <td colSpan={2} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 12 }}>Total asignado</td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700 }}>
-                              {(manoObra[s.id] || []).reduce((a, m) => a + (m.porcentaje || 0), 0)}%
-                            </td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>
-                              ${(manoObra[s.id] || []).reduce((a, m) => a + (m.monto_calculado || 0), 0).toLocaleString('es-AR')}
-                            </td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: S.green + '20' }}>
+                      <td colSpan={3} style={{ padding: '8px 10px', fontWeight: 700, color: S.green }}>TOTAL</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700 }}>
+                        {serviciosFiltrados.filter(s => (manoObra[s.id] || []).some(mo => mo.trabajador === filtroEmpleado)).reduce((a, s) => a + (s.hectareas || 0), 0)} ha
+                      </td>
+                      <td colSpan={3}></td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700, color: S.green, fontSize: 15 }}>
+                        ${serviciosFiltrados.filter(s => (manoObra[s.id] || []).some(mo => mo.trabajador === filtroEmpleado)).reduce((a, s) => {
+                          const moEmp = (manoObra[s.id] || []).find(mo => mo.trabajador === filtroEmpleado)
+                          return a + (moEmp?.monto_calculado || 0)
+                        }, 0).toLocaleString('es-AR')}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Lista por campo */}
+            {serviciosFiltrados.length === 0 && (
+              <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay trabajos de {subTabMO} registrados.</div>
+            )}
+            {serviciosFiltrados.map(s => {
+              const moList = manoObra[s.id] || []
+              const isOpen = manoObraOpen === s.id
+              const precioHa = s.precio_ha || (s.total && s.hectareas ? Math.round(s.total / s.hectareas) : null)
+              return (
+                <div key={s.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                  <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700 }}>{s.campo || s.cliente || '—'}{s.nro_lote ? ` · ${s.nro_lote}` : ''}</div>
+                      <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                        {s.cliente} · {s.cultivo} · {s.hectareas} ha
+                        {s.fecha ? ` · ${new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR')}` : ''}
+                        {precioHa ? ` · $${precioHa.toLocaleString('es-AR')}/ha` : ''}
+                        {s.total ? ` · Total: $${s.total.toLocaleString('es-AR')}` : ' · Sin precio'}
+                      </div>
+                      {moList.length > 0 && (
+                        <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {moList.map(mo => (
+                            <span key={mo.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent }}>
+                              {mo.trabajador} ({mo.rol} · {mo.porcentaje}%{mo.monto_calculado ? ` · $${mo.monto_calculado.toLocaleString('es-AR')}` : ''})
+                            </span>
+                          ))}
+                        </div>
                       )}
-                    </table>
-                  )}
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
-                    <div>
-                      <Lbl>Trabajador</Lbl>
-                      <input type="text" value={formMO.trabajador} onChange={e => setFormMO({ ...formMO, trabajador: e.target.value })}
-                        placeholder="ej. Juan Pérez" style={inp} />
                     </div>
-                    <div>
-                      <Lbl>Rol</Lbl>
-                      <select value={formMO.rol} onChange={e => setFormMO({ ...formMO, rol: e.target.value })} style={inp}>
-                        {ROLES.map(r => <option key={r}>{r}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <Lbl>% del total</Lbl>
-                      <input type="number" value={formMO.porcentaje} onChange={e => setFormMO({ ...formMO, porcentaje: e.target.value })}
-                        placeholder="ej. 10" style={inpMono} />
-                    </div>
-                    <button onClick={() => guardarManoObra(s.id, s)} disabled={guardandoMO}
-                      style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      + Agregar
+                    <button onClick={async () => {
+                      if (isOpen) { setManoObraOpen(null); return }
+                      await cargarManoObra(s.id)
+                      setManoObraOpen(s.id)
+                    }} style={{ padding: '6px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer', flexShrink: 0, marginLeft: 10 }}>
+                      {isOpen ? 'Cerrar' : '👷 Asignar personal'}
                     </button>
                   </div>
+
+                  {isOpen && (
+                    <div style={{ borderTop: `1px solid ${S.border}`, padding: '1rem', background: S.bg }}>
+                      {moList.length > 0 && (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1rem' }}>
+                          <thead>
+                            <tr>
+                              {['Trabajador', 'Rol', '%', 'Monto a cobrar', 'Estado'].map(h => (
+                                <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {moList.map(mo => (
+                              <tr key={mo.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                <td style={{ padding: '8px 10px', fontWeight: 600 }}>{mo.trabajador}</td>
+                                <td style={{ padding: '8px 10px', color: S.muted }}>{mo.rol}</td>
+                                <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{mo.porcentaje}%</td>
+                                <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>
+                                  {mo.monto_calculado ? `$${mo.monto_calculado.toLocaleString('es-AR')}` : '—'}
+                                </td>
+                                <td style={{ padding: '8px 10px' }}>
+                                  <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: mo.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo.estado_pago === 'pagado' ? S.green : S.amber }}>
+                                    {mo.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: S.accentLight }}>
+                              <td colSpan={2} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 12 }}>Total</td>
+                              <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700 }}>{moList.reduce((a, m) => a + (m.porcentaje || 0), 0)}%</td>
+                              <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>
+                                ${moList.reduce((a, m) => a + (m.monto_calculado || 0), 0).toLocaleString('es-AR')}
+                              </td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      )}
+                      {/* Agregar personal */}
+                      <div style={{ fontSize: 12, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>
+                        + Asignar {subTabMO === 'cosecha' ? 'maquinista / tolvero' : 'sembrador'}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                        <div>
+                          <Lbl>Nombre</Lbl>
+                          <input type="text" value={formMO.trabajador} onChange={e => setFormMO({ ...formMO, trabajador: e.target.value })}
+                            placeholder={subTabMO === 'cosecha' ? 'ej. Juan (Maquinista)' : 'ej. Pedro (Sembrador)'} style={inp} />
+                        </div>
+                        <div>
+                          <Lbl>Rol</Lbl>
+                          <select value={formMO.rol} onChange={e => setFormMO({ ...formMO, rol: e.target.value })} style={inp}>
+                            {rolesActuales.map(r => <option key={r}>{r}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <Lbl>% del total</Lbl>
+                          <input type="number" value={formMO.porcentaje} onChange={e => setFormMO({ ...formMO, porcentaje: e.target.value })}
+                            placeholder="ej. 10" style={inpMono} />
+                        </div>
+                        <button onClick={() => guardarManoObra(s.id, s)} disabled={guardandoMO}
+                          style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          + Agregar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
-          {servicios.filter(s => s.labor === 'Cosecha').length === 0 && (
-            <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay trabajos de cosecha registrados.</div>
-          )}
-        </div>
-      )}
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Tab descargas — Brian y todos */}
       {tab === 'descargas' && (
