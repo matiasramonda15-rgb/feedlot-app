@@ -56,8 +56,10 @@ export default function AppMovil({ usuario, onLogout }) {
     const fechasRaciones = [...new Set((racionesAyer || []).map(r => r.fecha))].sort().reverse()
     const fechaUltimaRacion = fechasRaciones[0] || null
     const kgsAyer = {}
+    let dietaAyer = 'seco'
     ;(racionesAyer || []).filter(r => r.fecha === fechaUltimaRacion).forEach(r => {
       if (kgsAyer[r.corral_id] === undefined) kgsAyer[r.corral_id] = r.kg_total ?? 0
+      if (r.tipo_dieta) dietaAyer = r.tipo_dieta
     })
     // Calcular próxima pesada: última pesada + 40 días
     const ultimaPesadaFecha = cfg?.fecha || cfg?.creado_en?.split('T')[0]
@@ -67,7 +69,7 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, fechaTermC, kgsAyer, lotes: lotes || [], movimientos: movimientos || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
   }
 
   const pantallas = {
@@ -75,7 +77,7 @@ export default function AppMovil({ usuario, onLogout }) {
     corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
-    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
+    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} dietaAyer={datos.dietaAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
@@ -499,8 +501,8 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
     </div>
   )
 }
-function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, fechaTermC, onDone }) {
-  const [dieta, setDieta] = useState('seco')
+function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, dietaAyer, fechaTermC, onDone }) {
+  const [dieta, setDieta] = useState(dietaAyer || 'seco')
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const hoyStr = new Date().toISOString().split('T')[0]
   const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
