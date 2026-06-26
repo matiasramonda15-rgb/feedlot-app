@@ -68,4 +68,4 @@ export default function AppEscritorio({ usuario, onLogout }) {
       </main>
     </div>
   )
-}
+} 
