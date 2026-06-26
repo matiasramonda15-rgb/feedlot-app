@@ -1008,7 +1008,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   }
 
   function totalLoteCalc(l) {
-    const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
+    const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || Math.round((l.monto_total_con_iva || 0) * (l.iva_pct || 10.5) / (100 + (l.iva_pct || 10.5))))
     const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
     const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
     return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
@@ -1038,14 +1038,30 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       proveedor_cuit: formFactura.cuit || null,
       proveedor_iva: formFactura.iva || null,
       proveedor_cbu: formFactura.cbu || null,
-      cuotas_pago: facturas.map(f => ({
-        nro_factura: f.nro_factura || null,
-        vencimientos: (f.vencimientos || []).filter(v => v.fecha || v.monto).map(v => ({
-          fecha: v.fecha || null,
-          monto: parseFloat(v.monto) || 0,
-          pagado: v.pagado || false,
-        }))
-      })),
+      cuotas_pago: facturas.map(f => {
+        // Calcular el neto de esta factura
+        const netoFactura = (f.vencimientos || []).reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
+        const ivaFactura = Math.round(netoFactura * ivaPct / 100)
+        const totalFactura = netoFactura + ivaFactura
+        // Distribuir el IVA proporcionalmente entre los vencimientos
+        const vencsFiltrados = (f.vencimientos || []).filter(v => v.fecha || v.monto)
+        return {
+          nro_factura: f.nro_factura || null,
+          vencimientos: vencsFiltrados.map((v, vi) => {
+            const netoVenc = parseFloat(v.monto) || 0
+            // Al último vencimiento le asignamos el resto para evitar redondeos
+            const ivaVenc = vi === vencsFiltrados.length - 1
+              ? totalFactura - vencsFiltrados.slice(0, -1).reduce((s, vv) => s + Math.round((parseFloat(vv.monto) || 0) * (1 + ivaPct / 100)), 0)
+              : Math.round(netoVenc * (1 + ivaPct / 100))
+            return {
+              fecha: v.fecha || null,
+              monto: Math.round(netoVenc * (1 + ivaPct / 100)),
+              monto_neto: netoVenc,
+              pagado: v.pagado || false,
+            }
+          })
+        }
+      }),
     }).eq('id', lote.id)
     setEditandoFactura(null)
     await cargarDatos()
