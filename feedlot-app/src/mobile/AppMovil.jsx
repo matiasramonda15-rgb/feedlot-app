@@ -832,7 +832,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: 15, fontWeight: 700, fontFamily: C.mono, color: C.green }}>{kg.toLocaleString('es-AR')} kg</div>
-                          <div style={{ fontSize: 10, fontFamily: C.mono, color: C.muted }}>acum. {acum.toLocaleString('es-AR')}</div>
+                          <div style={{ fontSize: 13, fontFamily: C.mono, fontWeight: 700, color: C.amber }}>↑ {acum.toLocaleString('es-AR')} kg</div>
                         </div>
                       </div>
                     )
