@@ -52,6 +52,16 @@ export default function Servicios({ usuario }) {
   const [formMO, setFormMO] = useState({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
   const [guardandoMO, setGuardandoMO] = useState(false)
 
+  // Mercadería independiente
+  const [registros, setRegistros] = useState([]) // lista de registros de campo
+  const [registroActivo, setRegistroActivo] = useState(null) // { id, campo, cliente, nro_lote, cultivo, fecha }
+  const [descargasReg, setDescargasReg] = useState({}) // { [registro_id]: [...] }
+  const [showFormReg, setShowFormReg] = useState(false)
+  const [formReg, setFormReg] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
+  const [formDescargaReg, setFormDescargaReg] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+  const [guardandoReg, setGuardandoReg] = useState(false)
+  const [guardandoDescargaReg, setGuardandoDescargaReg] = useState(false)
+
   // Cobro
   const [cobrandoId, setCobrandoId] = useState(null)
   const [formCobro, setFormCobro] = useState({ precio_ha: '', total: '', iva_pct: '0', fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }] })
@@ -65,15 +75,16 @@ export default function Servicios({ usuario }) {
 
   const esBrian = usuario?.nombre?.toLowerCase().includes('brian') || usuario?.email?.toLowerCase().includes('brian')
   const TABS = esBrian
-    ? [{ key: 'descargas', label: '📦 Registro de mercadería' }]
+    ? [{ key: 'mercaderia', label: '📦 Registro de mercadería' }]
     : [
         { key: 'terceros', label: 'Servicios a terceros' },
         { key: 'propios', label: 'Servicios propios' },
         { key: 'mano_obra', label: 'Mano de obra' },
+        { key: 'mercaderia', label: '📦 Mercadería' },
       ]
 
   useEffect(() => {
-    if (esBrian) setTab('descargas')
+    if (esBrian) setTab('mercaderia')
     cargar()
   }, [])
 
@@ -88,6 +99,9 @@ export default function Servicios({ usuario }) {
     setMaquinaria(m || [])
     setContactos(ct || [])
     setChequesCartera(ch || [])
+    // Cargar registros de mercadería
+    const { data: regs } = await supabase.from('registros_mercaderia').select('*').order('created_at', { ascending: false })
+    setRegistros(regs || [])
     setLoading(false)
   }
 
@@ -99,6 +113,76 @@ export default function Servicios({ usuario }) {
   async function cargarManoObra(servicioId) {
     const { data } = await supabase.from('mano_obra_servicios').select('*').eq('servicio_id', servicioId).order('creado_en')
     setManoObra(prev => ({ ...prev, [servicioId]: data || [] }))
+  }
+
+  async function cargarDescargasReg(regId) {
+    const { data } = await supabase.from('descargas_mercaderia').select('*').eq('registro_id', regId).order('creado_en')
+    setDescargasReg(prev => ({ ...prev, [regId]: data || [] }))
+  }
+
+  async function guardarRegistro() {
+    if (!formReg.campo) { alert('Ingresá el campo'); return }
+    setGuardandoReg(true)
+    const { data } = await supabase.from('registros_mercaderia').insert({
+      campo: formReg.campo,
+      cliente: formReg.cliente || null,
+      nro_lote: formReg.nro_lote || null,
+      cultivo: formReg.cultivo,
+      fecha: formReg.fecha,
+      registrado_por: usuario?.id,
+    }).select().single()
+    setRegistros(prev => [data, ...prev])
+    setRegistroActivo(data)
+    setShowFormReg(false)
+    setFormReg({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
+    setGuardandoReg(false)
+    await cargarDescargasReg(data.id)
+  }
+
+  async function guardarDescargaReg(regId) {
+    if (!formDescargaReg.kg) { alert('Ingresá los kg'); return }
+    setGuardandoDescargaReg(true)
+    await supabase.from('descargas_mercaderia').insert({
+      registro_id: regId,
+      fecha: formDescargaReg.fecha,
+      tipo: formDescargaReg.tipo,
+      patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente || null) : null,
+      kg: parseFloat(formDescargaReg.kg),
+      observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null,
+      registrado_por: usuario?.id,
+    })
+    setFormDescargaReg({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+    setGuardandoDescargaReg(false)
+    await cargarDescargasReg(regId)
+  }
+
+  function exportarResumen(reg) {
+    const desc = descargasReg[reg.id] || []
+    const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
+    const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
+    const kgOtro = desc.filter(d => d.tipo === 'otro').reduce((a, d) => a + (d.kg || 0), 0)
+    const total = kgCamion + kgBolsa + kgOtro
+    let csv = `REGISTRO DE MERCADERÍA\n`
+    csv += `Campo: ${reg.campo}\n`
+    csv += `Cliente: ${reg.cliente || '—'}\n`
+    csv += `Lote: ${reg.nro_lote || '—'}\n`
+    csv += `Cultivo: ${reg.cultivo || '—'}\n\n`
+    csv += `Fecha,Tipo,Patente/Detalle,Kg\n`
+    desc.forEach(d => {
+      csv += `${d.fecha || ''},${d.tipo},${d.patente || d.observaciones || ''},${d.kg}\n`
+    })
+    csv += `\nRESUMEN\n`
+    csv += `Camión,${kgCamion.toLocaleString('es-AR')} kg\n`
+    csv += `Bolsa,${kgBolsa.toLocaleString('es-AR')} kg\n`
+    if (kgOtro > 0) csv += `Otro,${kgOtro.toLocaleString('es-AR')} kg\n`
+    csv += `TOTAL,${total.toLocaleString('es-AR')} kg\n`
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `mercaderia_${reg.campo.replace(/\s+/g, '_')}_${reg.fecha}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function guardarEditServicio() {
@@ -573,6 +657,192 @@ export default function Servicios({ usuario }) {
           {servicios.filter(s => s.labor === 'Cosecha').length === 0 && (
             <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay trabajos de cosecha registrados.</div>
           )}
+        </div>
+      )}
+
+      {/* Tab Mercadería independiente */}
+      {tab === 'mercaderia' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 13, color: S.muted }}>Registrá descargas de camión o bolsa sin necesidad de crear un servicio previo.</div>
+            <button onClick={() => setShowFormReg(!showFormReg)}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              + Nuevo campo
+            </button>
+          </div>
+
+          {/* Form nuevo registro */}
+          {showFormReg && (
+            <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>Nuevo registro de campo</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
+                <div>
+                  <Lbl>Campo *</Lbl>
+                  <input type="text" value={formReg.campo} onChange={e => setFormReg({ ...formReg, campo: e.target.value })}
+                    placeholder="ej. La Esperanza" style={inp} />
+                </div>
+                <div>
+                  <Lbl>Cliente/Propietario</Lbl>
+                  <select value={formReg.cliente} onChange={e => setFormReg({ ...formReg, cliente: e.target.value })} style={inp}>
+                    <option value="">— Sin especificar —</option>
+                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Lbl>N° Lote</Lbl>
+                  <input type="text" value={formReg.nro_lote} onChange={e => setFormReg({ ...formReg, nro_lote: e.target.value })}
+                    placeholder="ej. Lote 3" style={inp} />
+                </div>
+                <div>
+                  <Lbl>Cultivo</Lbl>
+                  <select value={formReg.cultivo} onChange={e => setFormReg({ ...formReg, cultivo: e.target.value })} style={inp}>
+                    {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Lbl>Fecha inicio</Lbl>
+                  <input type="date" value={formReg.fecha} onChange={e => setFormReg({ ...formReg, fecha: e.target.value })} style={inp} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={guardarRegistro} disabled={guardandoReg}
+                  style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                  {guardandoReg ? 'Guardando...' : '💾 Crear registro'}
+                </button>
+                <button onClick={() => setShowFormReg(false)}
+                  style={{ padding: '8px 18px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de registros */}
+          {registros.length === 0 && !showFormReg && (
+            <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay registros. Creá uno con "+ Nuevo campo".</div>
+          )}
+          {registros.map(reg => {
+            const desc = descargasReg[reg.id] || []
+            const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
+            const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
+            const kgOtro = desc.filter(d => d.tipo === 'otro').reduce((a, d) => a + (d.kg || 0), 0)
+            const kgTotal = kgCamion + kgBolsa + kgOtro
+            const isActivo = registroActivo?.id === reg.id
+            return (
+              <div key={reg.id} style={{ background: S.surface, border: `1px solid ${isActivo ? S.accent : S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{reg.campo}</div>
+                    <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
+                      {reg.cliente || '—'} · {reg.nro_lote || 'Sin lote'} · {reg.cultivo}
+                      {reg.fecha ? ` · ${new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-AR')}` : ''}
+                    </div>
+                    {kgTotal > 0 && (
+                      <div style={{ marginTop: 6, display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap' }}>
+                        {kgCamion > 0 && <span style={{ color: S.accent }}>🚛 {kgCamion.toLocaleString('es-AR')} kg</span>}
+                        {kgBolsa > 0 && <span style={{ color: S.green }}>🌾 {kgBolsa.toLocaleString('es-AR')} kg</span>}
+                        {kgOtro > 0 && <span style={{ color: S.muted }}>📦 {kgOtro.toLocaleString('es-AR')} kg</span>}
+                        <strong>Total: {kgTotal.toLocaleString('es-AR')} kg</strong>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 12 }}>
+                    {isActivo && kgTotal > 0 && (
+                      <button onClick={() => exportarResumen(reg)}
+                        style={{ padding: '6px 12px', fontSize: 12, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
+                        ⬇ Exportar
+                      </button>
+                    )}
+                    <button onClick={async () => {
+                      if (isActivo) { setRegistroActivo(null); return }
+                      await cargarDescargasReg(reg.id)
+                      setRegistroActivo(reg)
+                    }} style={{ padding: '6px 12px', fontSize: 12, background: isActivo ? S.accentLight : S.bg, border: `1px solid ${isActivo ? S.accent : S.border}`, color: isActivo ? S.accent : S.muted, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
+                      {isActivo ? '▲ Cerrar' : '📦 Ver / Registrar'}
+                    </button>
+                  </div>
+                </div>
+
+                {isActivo && (
+                  <div style={{ borderTop: `1px solid ${S.border}`, padding: '1rem', background: S.bg }}>
+                    {/* Tabla descargas */}
+                    {desc.length > 0 && (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1rem' }}>
+                        <thead>
+                          <tr>
+                            {['Fecha', 'Tipo', 'Patente/Detalle', 'Kg'].map(h => (
+                              <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {desc.map(d => (
+                            <tr key={d.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                              <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>
+                                {d.fecha ? new Date(d.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                              </td>
+                              <td style={{ padding: '7px 10px' }}>
+                                <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'camion' ? S.accentLight : d.tipo === 'bolsa' ? S.greenLight : S.amberLight, color: d.tipo === 'camion' ? S.accent : d.tipo === 'bolsa' ? S.green : S.amber }}>
+                                  {d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '7px 10px', color: S.muted, fontFamily: 'monospace' }}>{d.patente || d.observaciones || '—'}</td>
+                              <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 700 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ background: S.accentLight }}>
+                            <td colSpan={3} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 12 }}>
+                              {kgCamion > 0 && `🚛 ${kgCamion.toLocaleString('es-AR')} kg`}
+                              {kgCamion > 0 && kgBolsa > 0 && ' · '}
+                              {kgBolsa > 0 && `🌾 ${kgBolsa.toLocaleString('es-AR')} kg`}
+                              {kgOtro > 0 && ` · 📦 ${kgOtro.toLocaleString('es-AR')} kg`}
+                            </td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>
+                              {kgTotal.toLocaleString('es-AR')} kg
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    )}
+
+                    {/* Form nueva descarga */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                      <div>
+                        <Lbl>Tipo</Lbl>
+                        <select value={formDescargaReg.tipo} onChange={e => setFormDescargaReg({ ...formDescargaReg, tipo: e.target.value })} style={inp}>
+                          <option value="camion">🚛 Camión</option>
+                          <option value="bolsa">🌾 Bolsa</option>
+                          <option value="otro">📦 Otro</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Lbl>{formDescargaReg.tipo === 'camion' ? 'Patente' : 'Detalle'}</Lbl>
+                        <input type="text" value={formDescargaReg.tipo === 'camion' ? formDescargaReg.patente : formDescargaReg.observaciones}
+                          onChange={e => setFormDescargaReg({ ...formDescargaReg, [formDescargaReg.tipo === 'camion' ? 'patente' : 'observaciones']: e.target.value })}
+                          placeholder={formDescargaReg.tipo === 'camion' ? 'ej. ABC 123' : 'ej. Bolsa 8'}
+                          style={{ ...inp, textTransform: formDescargaReg.tipo === 'camion' ? 'uppercase' : 'none' }} />
+                      </div>
+                      <div>
+                        <Lbl>Kg *</Lbl>
+                        <input type="number" value={formDescargaReg.kg} onChange={e => setFormDescargaReg({ ...formDescargaReg, kg: e.target.value })}
+                          placeholder="ej. 28500" style={inpMono} />
+                      </div>
+                      <div>
+                        <Lbl>Fecha</Lbl>
+                        <input type="date" value={formDescargaReg.fecha} onChange={e => setFormDescargaReg({ ...formDescargaReg, fecha: e.target.value })} style={inp} />
+                      </div>
+                      <button onClick={() => guardarDescargaReg(reg.id)} disabled={guardandoDescargaReg}
+                        style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        {guardandoDescargaReg ? '...' : '+ Registrar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
