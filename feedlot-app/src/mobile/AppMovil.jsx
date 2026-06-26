@@ -662,7 +662,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     corralesAlim.forEach(c => {
       const etapa = getEtapa(c)
       const kg = kgs[c.id] || 0
-      if (soloRollo[c.id]) {
+      if (false) {
         kgSoloRollo += kg
       } else {
         descuentoPorEtapa[etapa] = (descuentoPorEtapa[etapa] || 0) + kg
@@ -799,7 +799,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
             </div>
             {mostrarMixer && MIXERS.map((mx, mi) => {
               // Excluir corrales con solo rollo del mixer
-              const totalMx = mx.corralesIds.reduce((a, id) => a + (soloRollo[id] ? 0 : (kgs[id] || 0)), 0)
+              const totalMx = mx.corralesIds.reduce((a, id) => a + (kgs[id] || 0), 0)
               if (totalMx === 0) return null
               const f = FRML[mx.etapa]
               const factor = totalMx / 100
