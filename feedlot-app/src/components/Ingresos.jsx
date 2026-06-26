@@ -136,9 +136,11 @@ export default function Ingresos({ usuario }) {
       .filter(f => f.monto || f.fecha)
       .map(f => ({ nro_factura: f.nro_factura || null, monto: parseFloat(f.monto) || 0, fecha: f.fecha || null }))
 
-    // Fecha de vencimiento = la más lejana de las facturas
+    // Fecha de vencimiento = la más lejana de las facturas, o la ingresada manualmente
     const fechasFacturas = facturas.map(f => f.fecha).filter(Boolean).sort()
-    const fechaVto = fechasFacturas.length > 0 ? fechasFacturas[fechasFacturas.length - 1] : null
+    const fechaVto = fechasFacturas.length > 0 
+      ? fechasFacturas[fechasFacturas.length - 1] 
+      : (editandoPrecio.fecha_vencimiento_pago || null)
 
     // Resolver procedencia
     let procFinal = editandoPrecio.procedencia !== 'Nuevo' ? (editandoPrecio.procedencia || lote.procedencia) : lote.procedencia
@@ -149,10 +151,14 @@ export default function Ingresos({ usuario }) {
       procFinal = nombre
     }
 
+    // Si no hay facturas y hay monto total, todo es monto negro (sin factura)
+    const montoNegro = facturas.length === 0 && montoTotal ? montoTotal : null
+
     await supabase.from('lotes').update({
       kg_factura: kgFac,
       precio_compra: precio || (montoTotal && kgFac ? Math.round(montoTotal / kgFac) : null),
       monto_total_con_iva: montoTotal,
+      monto_negro: montoNegro,
       fecha_vencimiento_pago: fechaVto,
       cuotas_pago: facturas.length > 0 ? facturas : null,
       comision_monto: comMonto || null,
@@ -475,6 +481,7 @@ export default function Ingresos({ usuario }) {
                       monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '',
                       paralelo: (l.monto_total_con_iva && l.monto_facturado) ? String(Math.max(0, l.monto_total_con_iva - l.monto_facturado)) : '',
                       plazo_dias: l.plazo_dias ? String(l.plazo_dias) : '',
+                      fecha_vencimiento_pago: l.fecha_vencimiento_pago || '',
                       comision_monto: l.comision_monto ? String(l.comision_monto) : '',
                       comision_a_quien: l.comision_a_quien || '',
                       comision_es_paralela: l.comision_es_paralela || false,
@@ -546,9 +553,28 @@ export default function Ingresos({ usuario }) {
                       </div>
                     </div>
 
-                    {/* Vencimiento — se carga desde Comercial */}
+                    {/* Vencimiento — campo simple para compras sin factura */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div>
+                        <Lbl>Plazo (días)</Lbl>
+                        <input type="number" value={editandoPrecio.plazo_dias || ''} min="0"
+                          onChange={e => {
+                            const dias = parseInt(e.target.value) || 0
+                            const fechaVto = dias > 0 ? new Date(Date.now() + dias * 86400000).toISOString().split('T')[0] : ''
+                            setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value, fecha_vencimiento_pago: fechaVto})
+                          }}
+                          placeholder="ej. 30"
+                          style={inpMono} />
+                      </div>
+                      <div>
+                        <Lbl>Fecha vencimiento</Lbl>
+                        <input type="date" value={editandoPrecio.fecha_vencimiento_pago || ''}
+                          onChange={e => setEditandoPrecio({...editandoPrecio, fecha_vencimiento_pago: e.target.value})}
+                          style={inp} />
+                      </div>
+                    </div>
                     <div style={{ marginBottom: 12, padding: '8px 12px', background: S.accentLight, borderRadius: 6, fontSize: 12, color: S.accent }}>
-                      📋 Las facturas y vencimientos se cargan desde <strong>Comercial → Compras</strong>.
+                      📋 Si hay factura, los vencimientos detallados se cargan desde <strong>Comercial → Compras</strong>.
                     </div>
 
                                         <div style={{ display: 'flex', gap: 8 }}>
@@ -647,6 +673,7 @@ export default function Ingresos({ usuario }) {
                               monto_facturado: l.monto_facturado ? String(l.monto_facturado) : '',
                               paralelo: (l.monto_total_con_iva && l.monto_facturado) ? String(Math.max(0, l.monto_total_con_iva - l.monto_facturado)) : '',
                               plazo_dias: l.plazo_dias ? String(l.plazo_dias) : '',
+                      fecha_vencimiento_pago: l.fecha_vencimiento_pago || '',
                               comision_monto: l.comision_monto ? String(l.comision_monto) : '',
                               comision_a_quien: l.comision_a_quien || '',
                               comision_es_paralela: l.comision_es_paralela || false,
