@@ -16,13 +16,15 @@ export default function AppMovil({ usuario, onLogout }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }, { data: movimientos }] = await Promise.all([
+    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }, { data: stockSanitarioBajo }, { data: movimientos }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('lotes').select('id, codigo, procedencia, fecha_ingreso, corral_cuarentena_id, cantidad').order('created_at', { ascending: false }),
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*').filter('cantidad_kg', 'lte', 'minimo_kg'),
+      supabase.from('stock_sanitario').select('*').filter('cantidad_ml', 'lte', 'minimo_stock').order('producto'),
+      supabase.from('stock_sanitario').select('*').filter('cantidad_ml', 'lte', 'minimo_stock').order('producto'),
       supabase.from('movimientos').select('corral_destino_id, fecha').order('fecha', { ascending: false }),
     ])
     const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
@@ -56,10 +58,8 @@ export default function AppMovil({ usuario, onLogout }) {
     const fechasRaciones = [...new Set((racionesAyer || []).map(r => r.fecha))].sort().reverse()
     const fechaUltimaRacion = fechasRaciones[0] || null
     const kgsAyer = {}
-    let dietaAyer = 'seco'
     ;(racionesAyer || []).filter(r => r.fecha === fechaUltimaRacion).forEach(r => {
       if (kgsAyer[r.corral_id] === undefined) kgsAyer[r.corral_id] = r.kg_total ?? 0
-      if (r.tipo_dieta) dietaAyer = r.tipo_dieta
     })
     // Calcular próxima pesada: última pesada + 40 días
     const ultimaPesadaFecha = cfg?.fecha || cfg?.creado_en?.split('T')[0]
@@ -69,7 +69,7 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: stockBajo || [], stockSanitarioBajo: stockSanitarioBajo || [], formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
   }
 
   const pantallas = {
@@ -77,7 +77,7 @@ export default function AppMovil({ usuario, onLogout }) {
     corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
-    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} dietaAyer={datos.dietaAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
+    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
@@ -120,21 +120,26 @@ function Home({ usuario, nav, onLogout, datos }) {
   // Stock bajo mínimo
   if (stockBajo && stockBajo.length > 0) {
     stockBajo.forEach(s => {
-      tareas.push({ icon: '📦', titulo: `Stock bajo: ${s.insumo}`, sub: `${s.cantidad_kg?.toLocaleString('es-AR')} kg · mínimo ${s.minimo_kg?.toLocaleString('es-AR')} kg`, pantalla: 'alimentacion', urgente: true })
+      tareas.push({ icon: '📦', titulo: `Stock bajo — ${s.insumo}`, sub: `${s.cantidad_kg?.toLocaleString('es-AR')} kg · mínimo ${(s.minimo_kg || 0).toLocaleString('es-AR')} kg · avisá para reponer`, pantalla: 'alimentacion', urgente: true })
     })
   }
+  // Stock sanitario bajo
+  ;(datos.stockSanitarioBajo || []).forEach(p => {
+    tareas.push({ icon: '💉', titulo: `Stock bajo — ${p.producto}`, sub: `${(p.cantidad_ml || 0).toLocaleString('es-AR')} ${p.unidad || 'ml'} disponibles · avisá para reponer`, pantalla: 'sanidad', urgente: true })
+  })
 
   // Corrales en cuarentena próximos a vencer (ingresados hace más de 8 días)
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena')
   corralesCuarentena.forEach(c => {
-    // Usar fecha del último lote en ese corral (más reciente primero)
+    // Buscar el último movimiento hacia este corral
+    // Usar fecha del último lote en ese corral
     const ultimoLote = (datos.lotes || []).find(l => l.corral_cuarentena_id === c.id)
     const ultimaFecha = ultimoLote?.fecha_ingreso || ((datos.movimientos || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0]) || null
-    const diasDesde = ultimaFecha
       ? (() => {
-          const hoy = new Date()
+          const hoy = new Date(); const inicio = new Date(ultimaFecha + 'T00:00:00')
           const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
-          const diff = new Date(hoyStr) - new Date(ultimaFecha)
+          const inicioStr = ultimaFecha
+          const diff = new Date(hoyStr) - new Date(inicioStr)
           return Math.floor(diff / (1000 * 60 * 60 * 24))
         })()
       : null
@@ -501,8 +506,8 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
     </div>
   )
 }
-function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, dietaAyer, fechaTermC, onDone }) {
-  const [dieta, setDieta] = useState(dietaAyer || 'seco')
+function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, fechaTermC, onDone }) {
+  const [dieta, setDieta] = useState('seco')
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const hoyStr = new Date().toISOString().split('T')[0]
   const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
@@ -664,7 +669,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     corralesAlim.forEach(c => {
       const etapa = getEtapa(c)
       const kg = kgs[c.id] || 0
-      if (false) {
+      if (soloRollo[c.id]) {
         kgSoloRollo += kg
       } else {
         descuentoPorEtapa[etapa] = (descuentoPorEtapa[etapa] || 0) + kg
@@ -699,7 +704,16 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
           }).eq('id', stockItem.id)
         }
       }
-
+      // Descontar solo rollo para corrales marcados
+      const kgRolloExtra = corralesAlim.filter(c => rolloYMixer[c.id]).reduce((s, c) => s + (kgsRollo[c.id] || 0), 0)
+      const kgRolloTotal = kgSoloRollo + kgRolloExtra
+      if (kgRolloTotal > 0) {
+        const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
+        if (rolloItem) {
+          const nuevaCantidad = Math.max(0, stockFresh[rolloItem.id] - kgRolloTotal)
+          await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
+        }
+      }
     }
 
     onDone()
@@ -792,7 +806,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
             </div>
             {mostrarMixer && MIXERS.map((mx, mi) => {
               // Excluir corrales con solo rollo del mixer
-              const totalMx = mx.corralesIds.reduce((a, id) => a + (kgs[id] || 0), 0)
+              const totalMx = mx.corralesIds.reduce((a, id) => a + (soloRollo[id] ? 0 : (kgs[id] || 0)), 0)
               if (totalMx === 0) return null
               const f = FRML[mx.etapa]
               const factor = totalMx / 100
@@ -832,7 +846,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: 15, fontWeight: 700, fontFamily: C.mono, color: C.green }}>{kg.toLocaleString('es-AR')} kg</div>
-                          <div style={{ fontSize: 13, fontFamily: C.mono, fontWeight: 700, color: C.amber }}>↑ {acum.toLocaleString('es-AR')} kg</div>
+                          <div style={{ fontSize: 10, fontFamily: C.mono, color: C.muted }}>acum. {acum.toLocaleString('es-AR')}</div>
                         </div>
                       </div>
                     )
@@ -917,10 +931,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   const [formEvento, setFormEvento] = useState({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [stockSanitario, setStockSanitario] = useState([])
-  const [vacunacionMovil, setVacunacionMovil] = useState(() => {
-    // Pre-marcar lotes ya vacunados al ingreso
-    return {}
-  })
+  const [vacunacionMovil, setVacunacionMovil] = useState({})
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
@@ -931,22 +942,6 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   useEffect(() => {
     setRevState(corralesActivos.map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, enfermos: [] })))
   }, [corrales])
-
-  useEffect(() => {
-    // Marcar como ya vacunados los lotes que tienen vacunado_ingreso = true
-    if (lotes && lotes.length > 0) {
-      const preConfirmados = {}
-      lotes.forEach(l => {
-        if (l.vacunado_ingreso) {
-          const vacKey = l.id
-          preConfirmados[vacKey] = { confirmada: true, resumen: [] }
-        }
-      })
-      if (Object.keys(preConfirmados).length > 0) {
-        setVacunacionMovil(prev => ({...preConfirmados, ...prev}))
-      }
-    }
-  }, [lotes])
 
   useEffect(() => {
     supabase.from('stock_sanitario').select('*').order('producto').then(({ data }) => setStockSanitario(data || []))
@@ -1168,10 +1163,6 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                                           registrado_por: usuario?.id,
                                         })
                                         resumen.push({ nombre: prod.producto, dosis, mlTotal: mlDesc })
-                                      }
-                                      // Marcar lote como vacunado en Supabase
-                                      if (loteC) {
-                                        await supabase.from('lotes').update({ vacunado_ingreso: true }).eq('id', loteC.id)
                                       }
                                       await onDone()
                                       setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false, confirmada: true, resumen}, [`exp_vac_${c.id}`]: false}))
@@ -1613,9 +1604,6 @@ function PlaceholderMovil({ titulo, nav }) {
 function StockTab({ usuario, onDone }) {
   const [stock, setStock] = useState([])
   const [loading, setLoading] = useState(true)
-  const [editando, setEditando] = useState(null)
-  const [cantidad, setCantidad] = useState('')
-  const [guardando, setGuardando] = useState(false)
   const COLORES = { 'Rollo (heno)': '#639922', 'Maiz grano seco': '#E8A020', 'Vitaminas': '#5090E0', 'Urea': '#9060C0', 'Soja (expeller)': '#20A060' }
 
   useEffect(() => { cargar() }, [])
@@ -1626,40 +1614,18 @@ function StockTab({ usuario, onDone }) {
     setLoading(false)
   }
 
-  async function actualizar(id, tipo) {
-    if (!cantidad || isNaN(parseFloat(cantidad))) { alert('Ingresa una cantidad valida'); return }
-    setGuardando(true)
-    const item = stock.find(s => s.id === id)
-    const nuevaCantidad = tipo === 'agregar'
-      ? (item.cantidad_kg || 0) + parseFloat(cantidad)
-      : Math.max(0, (item.cantidad_kg || 0) - parseFloat(cantidad))
-    await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', id)
-
-    // Si es ingreso, registrar en ingresos_stock sin precio para que secretaria/dueño completen después
-    if (tipo === 'agregar') {
-      await supabase.from('ingresos_stock').insert({
-        insumo_id: id,
-        insumo_nombre: item.insumo,
-        cantidad_kg: parseFloat(cantidad),
-        registrado_por: usuario?.nombre || usuario?.email || 'empleado',
-      })
-    }
-
-    await cargar()
-    setEditando(null)
-    setCantidad('')
-    setGuardando(false)
-  }
-
   if (loading) return <div style={{ padding: '1rem', color: C.muted, fontSize: 13 }}>Cargando...</div>
 
   return (
     <>
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: '1rem', padding: '6px 10px', background: C.surface, borderRadius: 6 }}>
+        Solo lectura — los ingresos se registran desde la PC en Alimentación
+      </div>
       {stock.map(s => {
-        const bajo = s.cantidad_kg <= s.minimo_kg
+        const bajo = s.cantidad_kg <= (s.minimo_kg || 0)
         const color = bajo ? C.amber : C.green
         const c = COLORES[s.insumo] || C.green
-        const pct = Math.min(100, Math.round(s.cantidad_kg / Math.max(s.minimo_kg * 3, s.cantidad_kg) * 100))
+        const pct = Math.min(100, Math.round(s.cantidad_kg / Math.max((s.minimo_kg || 1) * 3, s.cantidad_kg) * 100))
         return (
           <div key={s.id} style={{ padding: '.75rem 0', borderBottom: `1px solid ${C.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
@@ -1671,32 +1637,10 @@ function StockTab({ usuario, onDone }) {
             <div style={{ height: 4, background: C.surface2, borderRadius: 2, overflow: 'hidden', marginBottom: 5 }}>
               <div style={{ height: '100%', borderRadius: 2, background: color, width: `${pct}%` }} />
             </div>
-            {bajo && <div style={{ fontSize: 11, color: C.amber, marginBottom: 5 }}>Bajo minimo ({s.minimo_kg.toLocaleString('es-AR')} kg) - reponer</div>}
-            {editando === s.id ? (
-              <div style={{ marginTop: 6 }}>
-                <input type="number" inputMode="numeric" placeholder="Cantidad en kg" value={cantidad}
-                  onChange={e => setCantidad(e.target.value)}
-                  style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 14, fontFamily: C.mono, color: C.green, boxSizing: 'border-box', marginBottom: 6 }} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => actualizar(s.id, 'agregar')} disabled={guardando}
-                    style={{ flex: 1, padding: '8px', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, color: C.green, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
-                    + Agregar
-                  </button>
-                  <button onClick={() => actualizar(s.id, 'descontar')} disabled={guardando}
-                    style={{ flex: 1, padding: '8px', background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
-                    - Descontar
-                  </button>
-                  <button onClick={() => { setEditando(null); setCantidad('') }}
-                    style={{ padding: '8px 12px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: C.sans }}>
-                    ✕
-                  </button>
-                </div>
+            {bajo && (
+              <div style={{ fontSize: 11, color: C.amber, marginBottom: 5 }}>
+                ⚠ Bajo mínimo ({(s.minimo_kg || 0).toLocaleString('es-AR')} kg) — avisá para reponer
               </div>
-            ) : (
-              <button onClick={() => { setEditando(s.id); setCantidad('') }}
-                style={{ width: '100%', padding: '6px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: C.sans, marginTop: 4 }}>
-                Actualizar stock
-              </button>
             )}
           </div>
         )
