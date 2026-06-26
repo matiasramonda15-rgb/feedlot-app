@@ -697,16 +697,7 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
           }).eq('id', stockItem.id)
         }
       }
-      // Descontar solo rollo para corrales marcados
-      const kgRolloExtra = corralesAlim.filter(c => rolloYMixer[c.id]).reduce((s, c) => s + (kgsRollo[c.id] || 0), 0)
-      const kgRolloTotal = kgSoloRollo + kgRolloExtra
-      if (kgRolloTotal > 0) {
-        const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
-        if (rolloItem) {
-          const nuevaCantidad = Math.max(0, stockFresh[rolloItem.id] - kgRolloTotal)
-          await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
-        }
-      }
+
     }
 
     onDone()
