@@ -59,6 +59,9 @@ export default function Servicios({ usuario }) {
 
   // Editar precio
   const [editandoPrecio, setEditandoPrecio] = useState(null)
+  // Editar servicio completo
+  const [editandoServicio, setEditandoServicio] = useState(null)
+  const [guardandoEdit, setGuardandoEdit] = useState(false)
 
   const esBrian = usuario?.nombre?.toLowerCase().includes('brian') || usuario?.email?.toLowerCase().includes('brian')
   const TABS = esBrian
@@ -96,6 +99,30 @@ export default function Servicios({ usuario }) {
   async function cargarManoObra(servicioId) {
     const { data } = await supabase.from('mano_obra_servicios').select('*').eq('servicio_id', servicioId).order('creado_en')
     setManoObra(prev => ({ ...prev, [servicioId]: data || [] }))
+  }
+
+  async function guardarEditServicio() {
+    if (!editandoServicio?.labor || !editandoServicio?.hectareas) { alert('Completá labor y hectáreas'); return }
+    setGuardandoEdit(true)
+    const ha = parseFloat(editandoServicio.hectareas)
+    const precio = editandoServicio.precio_ha ? parseFloat(editandoServicio.precio_ha) : null
+    const total = editandoServicio.total ? parseFloat(editandoServicio.total) : (ha && precio ? Math.round(ha * precio) : null)
+    await supabase.from('servicios_terceros').update({
+      cliente: editandoServicio.cliente,
+      labor: editandoServicio.labor,
+      cultivo: editandoServicio.cultivo,
+      campo: editandoServicio.campo || null,
+      nro_lote: editandoServicio.nro_lote || null,
+      fecha: editandoServicio.fecha,
+      hectareas: ha,
+      maquina_id: editandoServicio.maquina_id ? parseInt(editandoServicio.maquina_id) : null,
+      precio_ha: precio,
+      total,
+      observaciones: editandoServicio.observaciones || null,
+    }).eq('id', editandoServicio.id)
+    setEditandoServicio(null)
+    setGuardandoEdit(false)
+    await cargar()
   }
 
   async function guardar() {
@@ -207,10 +234,19 @@ export default function Servicios({ usuario }) {
   }
 
   async function guardarPrecio(s) {
-    if (!editandoPrecio?.precio_ha && !editandoPrecio?.total) { alert('Ingresá el precio/ha o el total'); return }
+    if (!editandoPrecio?.precio_ha && !editandoPrecio?.total_neto && !editandoPrecio?.total) { alert('Ingresá el precio/ha o el total'); return }
     const precio = editandoPrecio.precio_ha ? parseFloat(editandoPrecio.precio_ha) : null
-    const total = editandoPrecio.total ? parseFloat(editandoPrecio.total) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
-    await supabase.from('servicios_terceros').update({ precio_ha: precio, total, estado: 'precio_cargado' }).eq('id', s.id)
+    const totalNeto = editandoPrecio.total_neto ? parseFloat(editandoPrecio.total_neto) : (precio && s.hectareas ? Math.round(precio * s.hectareas) : null)
+    const total = editandoPrecio.total ? parseFloat(editandoPrecio.total) : totalNeto
+    await supabase.from('servicios_terceros').update({
+      precio_ha: precio,
+      total,
+      iva_pct: editandoPrecio.iva_pct ? parseFloat(editandoPrecio.iva_pct) : null,
+      facturado: editandoPrecio.factura !== 'no',
+      nro_factura: editandoPrecio.nro_factura || null,
+      plazo_pago: editandoPrecio.plazo || null,
+      estado: 'precio_cargado',
+    }).eq('id', s.id)
     setEditandoPrecio(null)
     await cargar()
   }
@@ -583,8 +619,16 @@ export default function Servicios({ usuario }) {
                   </div>
 
                   {/* Botones acción */}
-                  {s.estado_pago !== 'cobrado' && !esBrian && (
+                  {!esBrian && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                      <button onClick={() => setEditandoServicio(editandoServicio?.id === s.id ? null : { ...s, precio_ha: s.precio_ha ? String(s.precio_ha) : '', hectareas: String(s.hectareas), maquina_id: s.maquina_id ? String(s.maquina_id) : '' })}
+                        style={{ padding: '5px 12px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+                        ✏ Editar
+                      </button>
+                    </div>
+                  )}
+                  {s.estado_pago !== 'cobrado' && !esBrian && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                       {!s.total && (
                         <button onClick={() => setEditandoPrecio(isEditandoPrecio ? null : { id: s.id, precio_ha: '', total: '' })}
                           style={{ padding: '5px 12px', fontSize: 12, background: S.amberLight, border: `1px solid #E8A020`, color: S.amber, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
@@ -615,24 +659,161 @@ export default function Servicios({ usuario }) {
 
                   {/* Form cargar precio */}
                   {isEditandoPrecio && (
-                    <div style={{ marginTop: 12, padding: '1rem', background: S.bg, borderRadius: 8, display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
-                      <div>
-                        <Lbl>Precio $/ha</Lbl>
-                        <input type="number" value={editandoPrecio.precio_ha} onChange={e => {
-                          const p = e.target.value
-                          const t = p && s.hectareas ? String(Math.round(parseFloat(p) * s.hectareas)) : editandoPrecio.total
-                          setEditandoPrecio({ ...editandoPrecio, precio_ha: p, total: t })
-                        }} placeholder="ej. 45000" style={inpMono} />
+                    <div style={{ marginTop: 12, padding: '1rem', background: S.bg, borderRadius: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem', color: S.accent }}>Cargar precio y facturación</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
+                        <div>
+                          <Lbl>Precio $/ha</Lbl>
+                          <input type="number" value={editandoPrecio.precio_ha} onChange={e => {
+                            const p = e.target.value
+                            const t = p && s.hectareas ? String(Math.round(parseFloat(p) * s.hectareas)) : editandoPrecio.total_neto
+                            const iva = t && editandoPrecio.iva_pct ? String(Math.round(parseFloat(t) * parseFloat(editandoPrecio.iva_pct) / 100)) : ''
+                            const totalCIva = t && iva ? String(Math.round(parseFloat(t) + parseFloat(iva))) : t
+                            setEditandoPrecio({ ...editandoPrecio, precio_ha: p, total_neto: t, iva_monto: iva, total: totalCIva })
+                          }} placeholder="ej. 45000" style={inpMono} />
+                        </div>
+                        <div>
+                          <Lbl>Hectáreas</Lbl>
+                          <div style={{ padding: '9px 12px', background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', color: S.muted, fontWeight: 600 }}>
+                            {s.hectareas} ha
+                          </div>
+                        </div>
+                        <div>
+                          <Lbl>Total neto $</Lbl>
+                          <input type="number" value={editandoPrecio.total_neto} onChange={e => {
+                            const t = e.target.value
+                            const iva = t && editandoPrecio.iva_pct ? String(Math.round(parseFloat(t) * parseFloat(editandoPrecio.iva_pct) / 100)) : ''
+                            const totalCIva = t && iva ? String(Math.round(parseFloat(t) + parseFloat(iva))) : t
+                            setEditandoPrecio({ ...editandoPrecio, total_neto: t, iva_monto: iva, total: totalCIva })
+                          }} placeholder="neto sin IVA" style={inpMono} />
+                        </div>
+                        <div>
+                          <Lbl>¿Se factura?</Lbl>
+                          <select value={editandoPrecio.factura || 'si'} onChange={e => setEditandoPrecio({ ...editandoPrecio, factura: e.target.value })} style={inp}>
+                            <option value="si">Sí — con factura</option>
+                            <option value="no">No — sin factura</option>
+                          </select>
+                        </div>
+                        {editandoPrecio.factura !== 'no' && (
+                          <>
+                            <div>
+                              <Lbl>IVA %</Lbl>
+                              <select value={editandoPrecio.iva_pct || '21'} onChange={e => {
+                                const pct = e.target.value
+                                const iva = editandoPrecio.total_neto ? String(Math.round(parseFloat(editandoPrecio.total_neto) * parseFloat(pct) / 100)) : ''
+                                const totalCIva = editandoPrecio.total_neto && iva ? String(Math.round(parseFloat(editandoPrecio.total_neto) + parseFloat(iva))) : editandoPrecio.total_neto
+                                setEditandoPrecio({ ...editandoPrecio, iva_pct: pct, iva_monto: iva, total: totalCIva })
+                              }} style={inp}>
+                                <option value="0">0% (exento)</option>
+                                <option value="10.5">10.5%</option>
+                                <option value="21">21%</option>
+                              </select>
+                            </div>
+                            <div>
+                              <Lbl>IVA $</Lbl>
+                              <div style={{ padding: '9px 12px', background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', color: S.muted }}>
+                                {editandoPrecio.iva_monto ? `$${parseFloat(editandoPrecio.iva_monto).toLocaleString('es-AR')}` : '—'}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <Lbl>Total con IVA $</Lbl>
+                          <div style={{ padding: '9px 12px', background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
+                            {editandoPrecio.total ? `$${parseFloat(editandoPrecio.total).toLocaleString('es-AR')}` : '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <Lbl>Plazo de pago</Lbl>
+                          <select value={editandoPrecio.plazo || ''} onChange={e => setEditandoPrecio({ ...editandoPrecio, plazo: e.target.value })} style={inp}>
+                            <option value="">— Sin definir —</option>
+                            <option value="contado">Contado</option>
+                            <option value="30">30 días</option>
+                            <option value="60">60 días</option>
+                            <option value="90">90 días</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Lbl>N° Factura (opcional)</Lbl>
+                          <input type="text" value={editandoPrecio.nro_factura || ''} onChange={e => setEditandoPrecio({ ...editandoPrecio, nro_factura: e.target.value })}
+                            placeholder="ej. 0001-00001234" style={{ ...inpMono }} />
+                        </div>
                       </div>
-                      <div>
-                        <Lbl>Total $</Lbl>
-                        <input type="number" value={editandoPrecio.total} onChange={e => setEditandoPrecio({ ...editandoPrecio, total: e.target.value })}
-                          placeholder="o ingresá el total directo" style={inpMono} />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => guardarPrecio(s)}
+                          style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                          💾 Guardar
+                        </button>
+                        <button onClick={() => setEditandoPrecio(null)}
+                          style={{ padding: '8px 18px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                          Cancelar
+                        </button>
                       </div>
-                      <button onClick={() => guardarPrecio(s)}
-                        style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                        Guardar
-                      </button>
+                    </div>
+                  )}
+
+                  {/* Form editar servicio */}
+                  {editandoServicio?.id === s.id && (
+                    <div style={{ marginTop: 12, padding: '1rem', background: S.bg, borderRadius: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>Editar servicio</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
+                        <div>
+                          <Lbl>Cliente</Lbl>
+                          <select value={editandoServicio.cliente} onChange={e => setEditandoServicio({ ...editandoServicio, cliente: e.target.value })} style={inp}>
+                            {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <Lbl>Labor</Lbl>
+                          <select value={editandoServicio.labor} onChange={e => setEditandoServicio({ ...editandoServicio, labor: e.target.value })} style={inp}>
+                            {LABORES.map(l => <option key={l}>{l}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <Lbl>Cultivo</Lbl>
+                          <select value={editandoServicio.cultivo || ''} onChange={e => setEditandoServicio({ ...editandoServicio, cultivo: e.target.value })} style={inp}>
+                            <option value="">— Sin especificar —</option>
+                            {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <Lbl>Fecha</Lbl>
+                          <input type="date" value={editandoServicio.fecha} onChange={e => setEditandoServicio({ ...editandoServicio, fecha: e.target.value })} style={inp} />
+                        </div>
+                        <div>
+                          <Lbl>Campo</Lbl>
+                          <input type="text" value={editandoServicio.campo || ''} onChange={e => setEditandoServicio({ ...editandoServicio, campo: e.target.value })} style={inp} />
+                        </div>
+                        <div>
+                          <Lbl>N° Lote</Lbl>
+                          <input type="text" value={editandoServicio.nro_lote || ''} onChange={e => setEditandoServicio({ ...editandoServicio, nro_lote: e.target.value })} style={inp} />
+                        </div>
+                        <div>
+                          <Lbl>Hectáreas</Lbl>
+                          <input type="number" value={editandoServicio.hectareas} onChange={e => setEditandoServicio({ ...editandoServicio, hectareas: e.target.value })} style={inpMono} />
+                        </div>
+                        <div>
+                          <Lbl>Precio $/ha</Lbl>
+                          <input type="number" value={editandoServicio.precio_ha} onChange={e => setEditandoServicio({ ...editandoServicio, precio_ha: e.target.value })} style={inpMono} />
+                        </div>
+                        <div>
+                          <Lbl>Máquina</Lbl>
+                          <select value={editandoServicio.maquina_id || ''} onChange={e => setEditandoServicio({ ...editandoServicio, maquina_id: e.target.value })} style={inp}>
+                            <option value="">— Sin asignar —</option>
+                            {maquinaria.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={guardarEditServicio} disabled={guardandoEdit}
+                          style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                          {guardandoEdit ? 'Guardando...' : '💾 Guardar cambios'}
+                        </button>
+                        <button onClick={() => setEditandoServicio(null)}
+                          style={{ padding: '8px 18px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                          Cancelar
+                        </button>
+                      </div>
                     </div>
                   )}
 
