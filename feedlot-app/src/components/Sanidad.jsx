@@ -1133,4 +1133,4 @@ export default function Sanidad({ usuario }) {
 
     </div>
   )
-}
+} 
