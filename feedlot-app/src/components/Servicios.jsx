@@ -35,7 +35,7 @@ export default function Servicios({ usuario }) {
   const [descargasReg, setDescargasReg] = useState({})
 
   // Filtros
-  const [filtros, setFiltros] = useState({ campania: '', labor: '', cultivo: '', tipo: '', estado: '', empleado: '' })
+  const [filtros, setFiltros] = useState({ campania: '', cliente: '', labor: '', cultivo: '', tipo: '', estado: '', empleado: '' })
 
   // Form nuevo servicio
   const [showForm, setShowForm] = useState(false)
@@ -249,6 +249,7 @@ export default function Servicios({ usuario }) {
   // Filtrado
   const serviciosFiltrados = servicios.filter(s => {
     if (filtros.campania && s.campania !== filtros.campania) return false
+    if (filtros.cliente && s.cliente !== filtros.cliente) return false
     if (filtros.labor && filtros.labor !== 'Todo' && s.labor !== filtros.labor) return false
     if (filtros.cultivo && filtros.cultivo !== 'Todo' && s.cultivo !== filtros.cultivo) return false
     if (filtros.tipo && filtros.tipo !== 'Todo' && s.tipo_servicio !== filtros.tipo) return false
@@ -388,12 +389,19 @@ export default function Servicios({ usuario }) {
 
           {/* Filtros */}
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem', marginBottom: '1rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
               <div>
                 <Lbl>Campaña</Lbl>
                 <select value={filtros.campania} onChange={e => setFiltros({ ...filtros, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
                   <option value="">Todas</option>
                   {CAMPANAS.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Cliente</Lbl>
+                <select value={filtros.cliente} onChange={e => setFiltros({ ...filtros, cliente: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
+                  <option value="">Todos</option>
+                  {[...new Set(servicios.map(s => s.cliente).filter(Boolean))].sort().map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div>
@@ -408,29 +416,6 @@ export default function Servicios({ usuario }) {
                 <select value={filtros.cultivo} onChange={e => setFiltros({ ...filtros, cultivo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
                   <option value="">Todo</option>
                   {CULTIVOS.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <Lbl>Tipo</Lbl>
-                <select value={filtros.tipo} onChange={e => setFiltros({ ...filtros, tipo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
-                  <option value="">Todo</option>
-                  <option value="tercero">Tercero</option>
-                  <option value="propio">Propio</option>
-                </select>
-              </div>
-              <div>
-                <Lbl>Estado</Lbl>
-                <select value={filtros.estado} onChange={e => setFiltros({ ...filtros, estado: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
-                  <option value="">Todo</option>
-                  <option value="Pendiente">Pendiente</option>
-                  <option value="Cobrado">Cobrado</option>
-                </select>
-              </div>
-              <div>
-                <Lbl>Empleado</Lbl>
-                <select value={filtros.empleado} onChange={e => setFiltros({ ...filtros, empleado: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
-                  <option value="">Todos</option>
-                  {todosEmpleados.map(e => <option key={e}>{e}</option>)}
                 </select>
               </div>
             </div>
@@ -452,8 +437,6 @@ export default function Servicios({ usuario }) {
                   <th style={th}>$/Ha</th>
                   <th style={th}>$Total</th>
                   <th style={th}>Estado</th>
-                  <th style={th}>Empleado 1</th>
-                  <th style={th}>Empleado 2</th>
                   <th style={th}></th>
                 </tr>
               </thead>
@@ -502,7 +485,7 @@ export default function Servicios({ usuario }) {
                       </td>
                       <td style={{ ...td_, fontFamily: 'monospace', fontSize: 12 }}>{s.campania || '—'}</td>
                       <td style={{ ...td_, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                      <td style={{ ...td_, fontWeight: 600 }}>{s.campo || '—'}{s.nro_lote ? <span style={{ fontWeight: 400, color: S.muted }}> · {s.nro_lote}</span> : ''}</td>
+                      <td style={{ ...td_ }}><div style={{ fontWeight: 600 }}>{s.campo || '—'}{s.nro_lote ? <span style={{ fontWeight: 400, color: S.muted }}> · {s.nro_lote}</span> : ''}</div><div style={{ fontSize: 11, color: S.muted }}>{s.cliente || '—'}</div></td>
                       <td style={td_}>
                         <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{s.labor}</span>
                       </td>
@@ -518,8 +501,6 @@ export default function Servicios({ usuario }) {
                           {isCobrado ? '✓ Cobrado' : s.precio_ha ? '⏳ Pendiente' : 'Sin precio'}
                         </span>
                       </td>
-                      <td style={{ ...td_, color: S.muted }}>{s.empleado1 || '—'}</td>
-                      <td style={{ ...td_, color: S.muted }}>{s.empleado2 || '—'}</td>
                       <td style={{ ...td_, whiteSpace: 'nowrap' }}>
                         <button onClick={() => { setEditandoId(s.id); setFormEdit({ ...s, hectareas: String(s.hectareas) }) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>
@@ -795,7 +776,7 @@ export default function Servicios({ usuario }) {
                         </td>
                         <td style={{ ...td_, fontFamily: 'monospace', fontSize: 12 }}>{s.campania || '—'}</td>
                         <td style={{ ...td_, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                        <td style={{ ...td_, fontWeight: 600 }}>{s.campo || '—'}{s.nro_lote ? <span style={{ fontWeight: 400, color: S.muted }}> · {s.nro_lote}</span> : ''}</td>
+                        <td style={{ ...td_ }}><div style={{ fontWeight: 600 }}>{s.campo || '—'}{s.nro_lote ? <span style={{ fontWeight: 400, color: S.muted }}> · {s.nro_lote}</span> : ''}</div><div style={{ fontSize: 11, color: S.muted }}>{s.cliente || '—'}</div></td>
                         <td style={td_}><span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{s.labor}</span></td>
                         <td style={{ ...td_, color: S.muted }}>{s.cultivo || '—'}</td>
                         <td style={td_}><span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: s.tipo_servicio === 'propio' ? S.purpleLight : S.bg, color: s.tipo_servicio === 'propio' ? S.purple : S.muted }}>{s.tipo_servicio === 'propio' ? 'Propio' : 'Tercero'}</span></td>
