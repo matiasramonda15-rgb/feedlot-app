@@ -19,7 +19,7 @@ function Lbl({ children }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{children}</div>
 }
 
-const CAMPANAS = ['2025/26', '2024/25', '2023/24', '2022/23']
+const CAMPANAS = ['2026/27', '2025/26', '2024/25', '2023/24', '2022/23']
 const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Roturación', 'Rastreo', 'Flete', 'Otro']
 const CULTIVOS = ['Maíz', 'Soja', 'Trigo', 'Sorgo', 'Girasol', 'Cebada', 'Otro']
 const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' } }
@@ -39,7 +39,7 @@ export default function Servicios({ usuario }) {
 
   // Form nuevo servicio
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ campania: '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+  const [form, setForm] = useState({ campania: '2026/27', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   // Mano de obra
@@ -146,7 +146,7 @@ export default function Servicios({ usuario }) {
       estado: 'pendiente',
     })
     setShowForm(false)
-    setForm({ campania: '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+    setForm({ campania: '2026/27', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
     setGuardando(false)
     await cargar()
   }
