@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { Loader, Btn, Card, Badge } from './UI'
 
-var S = {
+const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
   text: '#1A1916', muted: '#6B6760', hint: '#9E9A94',
   accent: '#1A3D6B', accentLight: '#E8EFF8',
@@ -12,7 +11,26 @@ var S = {
   purple: '#3D1A6B', purpleLight: '#F0EAFB',
 }
 
-var BADGE_STYLES = {
+export function Loader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4rem', color: S.muted, fontSize: 13 }}>
+      Cargando...
+    </div>
+  )
+}
+
+export function Btn({ children, onClick, variant = 'ghost', size = 'md', disabled }) {
+  const base = { borderRadius: 6, fontFamily: "'IBM Plex Sans', sans-serif", cursor: disabled ? 'not-allowed' : 'pointer', fontWeight: 500, border: '1px solid', transition: 'all .15s', opacity: disabled ? 0.6 : 1 }
+  const variants = {
+    ghost: { background: 'transparent', borderColor: S.border, color: S.muted, padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    primary: { background: S.accent, borderColor: S.accent, color: '#fff', padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    green: { background: S.green, borderColor: S.green, color: '#fff', padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+    red: { background: S.redLight, borderColor: '#F09595', color: S.red, padding: size === 'sm' ? '5px 10px' : '8px 16px', fontSize: size === 'sm' ? 12 : 13 },
+  }
+  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant] }}>{children}</button>
+}
+
+const BADGE_STYLES = {
   ok:      { background: '#E8F4EB', color: '#1E5C2E' },
   warn:    { background: '#FDF0E0', color: '#7A4500' },
   red:     { background: '#FDF0F0', color: '#7A1A1A' },
@@ -22,7 +40,7 @@ var BADGE_STYLES = {
 }
 
 
-var ROL_BADGE = {
+const ROL_BADGE = {
   'cuarentena': 'warn', 'acumulacion': 'info', 'enfermeria': 'red',
   'clasificado': 'ok', 'libre': 'neutral', 'deshabilitado': 'neutral',
 }
@@ -62,7 +80,7 @@ export default function Tablero({ usuario }) {
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
       supabase.from('ventas').select('cantidad, kg_vivo_total, kg_neto, total, precio_kg, comprador, creado_en, corral_id').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
-      supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(50),
+      supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }).limit(5),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('stock_insumos').select('*'),
@@ -101,16 +119,12 @@ export default function Tablero({ usuario }) {
       })
     }
 
-    // Construir movimientos de los últimos 15 días
-    const hace15 = new Date(); hace15.setDate(hace15.getDate() - 15)
+    // Construir movimientos recientes combinados
     const movRecientes = []
-    if (ingresos) ingresos.filter(i => new Date(i.fecha_ingreso) >= hace15).forEach(i => movRecientes.push({ tipo: 'ingreso', cantidad: i.cantidad || 0, texto: `Ingreso ${i.codigo} · ${i.cantidad} animales`, sub: `${new Date(i.fecha_ingreso).toLocaleDateString('es-AR')} · ${i.procedencia} · ${Math.round(i.peso_prom_ingreso || 0)} kg prom.`, color: S.green, fecha: i.fecha_ingreso }))
-    if (ventas) ventas.filter(v => new Date(v.creado_en) >= hace15).forEach(v => movRecientes.push({ tipo: 'venta', cantidad: -(v.cantidad || 0), texto: `Venta · ${v.cantidad} animales · C-${v.corral_id}`, sub: `${new Date(v.creado_en).toLocaleDateString('es-AR')} · ${v.comprador || 'sin comprador'} · ${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') + '/kg' : 'sin precio'}`, color: S.accent, fecha: v.creado_en }))
-    if (mortalidad) mortalidad.filter(m => new Date(m.fecha) >= hace15).forEach(m => movRecientes.push({ tipo: 'mortalidad', cantidad: -(m.cantidad || 0), texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
+    if (ingresos) ingresos.slice(0, 3).forEach(i => movRecientes.push({ tipo: 'ingreso', texto: `Ingreso ${i.codigo} · ${i.cantidad} animales`, sub: `${new Date(i.fecha_ingreso).toLocaleDateString('es-AR')} · ${i.procedencia} · ${Math.round(i.peso_prom_ingreso || 0)} kg prom.`, color: S.green, fecha: i.fecha_ingreso }))
+    if (ventas) ventas.slice(0, 2).forEach(v => movRecientes.push({ tipo: 'venta', texto: `Venta · ${v.cantidad} animales · C-${v.corral_id}`, sub: `${new Date(v.creado_en).toLocaleDateString('es-AR')} · ${v.comprador || 'sin comprador'} · ${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') + '/kg' : 'sin precio'}`, color: S.accent, fecha: v.creado_en }))
+    if (mortalidad) mortalidad.slice(0, 2).forEach(m => movRecientes.push({ tipo: 'mortalidad', texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
     movRecientes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
-    const totalActual = corralesOrdenados.reduce((s, c) => s + (c.animales || 0), 0)
-    let acum = totalActual
-    movRecientes.forEach(m => { m.totalAnimales = acum; acum -= (m.cantidad || 0) })
 
     const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
     // Calcular próxima pesada: última pesada + 40 días
@@ -124,7 +138,7 @@ export default function Tablero({ usuario }) {
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
     const stockBajo = (stockItems || []).filter(s => s.cantidad_kg != null && s.minimo_kg != null && s.cantidad_kg <= s.minimo_kg)
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes, proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [], lotesVenc: lotesVenc || [] })
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [], lotesVenc: lotesVenc || [] })
     setLoading(false)
   }
 
@@ -505,48 +519,22 @@ export default function Tablero({ usuario }) {
         {/* ÚLTIMOS MOVIMIENTOS */}
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
-            Movimientos — últimos 15 días
+            Últimos movimientos
           </div>
 
           {movRecientes.length === 0 && (
             <div style={{ padding: '1.5rem 0', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin movimientos recientes.</div>
           )}
 
-          {movRecientes.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${S.border}` }}>
-                  {['Fecha', 'Movimiento', 'Anim.', 'Total feedlot'].map(h => (
-                    <th key={h} style={{ padding: '4px 6px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', paddingBottom: 8 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {movRecientes.map((m, i) => (
-                  <tr key={i} style={{ borderBottom: i < movRecientes.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                    <td style={{ padding: '6px 6px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap', fontSize: 11 }}>
-                      {new Date(m.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
-                    </td>
-                    <td style={{ padding: '6px 6px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600 }}>{m.texto.split(' · ')[0]}</div>
-                          <div style={{ fontSize: 10, color: S.muted }}>{m.sub}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '6px 6px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: m.cantidad > 0 ? S.green : S.red }}>
-                      {m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}
-                    </td>
-                    <td style={{ padding: '6px 6px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: S.accent }}>
-                      {m.totalAnimales?.toLocaleString('es-AR')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          {movRecientes.map((m, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: i < movRecientes.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: m.color, marginTop: 5, flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 13 }}>
+                {m.texto}
+                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginTop: 2 }}>{m.sub}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -562,4 +550,26 @@ function calcPesoProm(pesadaAnimales) {
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / totalAnim
 }
 
+export function Card({ children, style = {} }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E2DDD6', borderRadius: 10, padding: '1.25rem', marginBottom: '1rem', ...style }}>
+      {children}
+    </div>
+  )
+}
 
+export function Badge({ children, type = 'neutral', style = {} }) {
+  const BADGE_STYLES = {
+    ok:      { background: '#E8F4EB', color: '#1E5C2E' },
+    warn:    { background: '#FDF0E0', color: '#7A4500' },
+    red:     { background: '#FDF0F0', color: '#7A1A1A' },
+    info:    { background: '#E8EFF8', color: '#1A3D6B' },
+    purple:  { background: '#F0EAFB', color: '#3D1A6B' },
+    neutral: { background: '#F7F5F0', color: '#6B6760', border: '1px solid #E2DDD6' },
+  }
+  return (
+    <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, ...BADGE_STYLES[type], ...style }}>
+      {children}
+    </span>
+  )
+}  
