@@ -183,44 +183,53 @@ export default function Servicios({ usuario }) {
   async function registrarPago() {
     if (seleccionadas.length === 0) { alert('Seleccioná al menos un servicio'); return }
     setGuardandoPago(true)
-    const ivaPct = parseFloat(formPago.iva_pct) || 0
-    for (const id of seleccionadas) {
-      const s = servicios.find(x => x.id === id)
-      if (!s) continue
-      const precioHa = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s.precio_ha
-      const totalNeto = precioHa && s.hectareas ? Math.round(precioHa * s.hectareas) : s.total || 0
-      const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
-      const desc = `Servicio ${s.labor} ${s.cultivo ? `(${s.cultivo})` : ''} — ${s.cliente} · ${s.campo || ''} · ${s.hectareas} ha`
-      let caja_oficial_id = null, caja_paralela_id = null
-      let monto_negro = 0
-      for (const p of formPago.pagos.filter(p => p.monto)) {
-        const monto = parseFloat(p.monto) || 0
-        if (p.es_paralelo) {
-          const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
-          caja_paralela_id = cp?.id
-        } else {
-          const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto, forma_pago: p.tipo }).select().single()
-          caja_oficial_id = co?.id
+    try {
+      const ivaPct = parseFloat(formPago.iva_pct) || 0
+      const sinFactura = parseFloat(formPago.sin_factura) || 0
+      for (const id of seleccionadas) {
+        const s = servicios.find(x => x.id === id)
+        if (!s) continue
+        const precioHa = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s.precio_ha
+        const totalNeto = precioHa && s.hectareas ? Math.round(precioHa * s.hectareas) : s.total || 0
+        const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
+        const desc = `Servicio ${s.labor} ${s.cultivo ? `(${s.cultivo})` : ''} — ${s.cliente} · ${s.campo || ''} · ${s.hectareas} ha`
+        let caja_oficial_id = null, caja_paralela_id = null
+        for (const p of formPago.pagos.filter(p => p.monto)) {
+          const monto = parseFloat(p.monto) || 0
+          if (!monto) continue
+          if (p.es_paralelo) {
+            const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
+            if (ep) { alert('Error al registrar caja paralela: ' + ep.message); setGuardandoPago(false); return }
+            caja_paralela_id = cp?.id
+          } else {
+            const { data: co, error: eo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto, forma_pago: p.tipo }).select().single()
+            if (eo) { alert('Error al registrar caja oficial: ' + eo.message); setGuardandoPago(false); return }
+            caja_oficial_id = co?.id
+          }
         }
+        const updateData = {
+          iva_pct: ivaPct || null,
+          estado: 'cobrado',
+          estado_pago: 'cobrado',
+          fecha_cobro: formPago.fecha,
+          caja_oficial_id,
+          caja_paralela_id,
+          monto_negro: sinFactura > 0 ? sinFactura : null,
+        }
+        if (precioHa) updateData.precio_ha = precioHa
+        if (totalConIva > 0) updateData.total = totalConIva
+        const { error: eu } = await supabase.from('servicios_terceros').update(updateData).eq('id', id)
+        if (eu) { alert('Error al actualizar servicio: ' + eu.message); setGuardandoPago(false); return }
       }
-      const updateData = {
-        iva_pct: ivaPct,
-        estado: 'cobrado',
-        estado_pago: 'cobrado',
-        fecha_cobro: formPago.fecha,
-        caja_oficial_id,
-        caja_paralela_id,
-        monto_negro: (parseFloat(formPago.sin_factura) || 0) > 0 ? (parseFloat(formPago.sin_factura) || 0) : null,
-      }
-      if (precioHa) updateData.precio_ha = precioHa
-      if (totalConIva > 0) updateData.total = totalConIva
-      await supabase.from('servicios_terceros').update(updateData).eq('id', id)
+      setSeleccionadas([])
+      setShowPago(false)
+      setFormPago({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
+      await cargar()
+    } catch(e) {
+      alert('Error inesperado: ' + e.message)
+    } finally {
+      setGuardandoPago(false)
     }
-    setSeleccionadas([])
-    setShowPago(false)
-    setFormPago({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
-    setGuardandoPago(false)
-    await cargar()
   }
 
   function imprimirRecibo() {
