@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { Loader } from './Tablero'
+import { Loader } from './UI'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
