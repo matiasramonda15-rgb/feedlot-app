@@ -448,6 +448,14 @@ export default function Servicios({ usuario }) {
                   <th style={th}>$/Ha</th>
                   <th style={th}>$Total</th>
                   <th style={th}>Estado</th>
+                  <th style={th}>Empleado 1</th>
+                  <th style={th}>$/Ha</th>
+                  <th style={th}>$Total</th>
+                  <th style={th}>Estado</th>
+                  <th style={th}>Empleado 2</th>
+                  <th style={th}>$/Ha</th>
+                  <th style={th}>$Total</th>
+                  <th style={th}>Estado</th>
                   <th style={th}></th>
                 </tr>
               </thead>
@@ -512,6 +520,23 @@ export default function Servicios({ usuario }) {
                           {isCobrado ? '✓ Cobrado' : s.precio_ha ? '⏳ Pendiente' : 'Sin precio'}
                         </span>
                       </td>
+                      {[mo1, mo2].map((mo, idx) => {
+                        if (!mo) return <React.Fragment key={idx}><td style={td_}></td><td style={td_}></td><td style={td_}></td><td style={td_}></td></React.Fragment>
+                        const precioHaEmp = s.precio_ha && mo.porcentaje ? Math.round(s.precio_ha * mo.porcentaje / 100) : null
+                        const totalEmp = mo.monto_calculado || (s.precio_ha && s.hectareas && mo.porcentaje ? Math.round(s.precio_ha * s.hectareas * mo.porcentaje / 100) : null)
+                        return (
+                          <React.Fragment key={idx}>
+                            <td style={{ ...td_, fontWeight: 600, whiteSpace: 'nowrap' }}>{mo.trabajador}</td>
+                            <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.muted, fontSize: 12 }}>{precioHaEmp ? `$${precioHaEmp.toLocaleString('es-AR')}` : '—'}</td>
+                            <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 600, color: S.green, fontSize: 12 }}>{totalEmp ? `$${totalEmp.toLocaleString('es-AR')}` : '—'}</td>
+                            <td style={td_}>
+                              <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 10, fontWeight: 600, background: mo.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo.estado_pago === 'pagado' ? S.green : S.amber }}>
+                                {mo.estado_pago === 'pagado' ? '✓ Cobrado' : '⏳ Pendiente'}
+                              </span>
+                            </td>
+                          </React.Fragment>
+                        )
+                      })}
                       <td style={{ ...td_, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => { setEditandoId(s.id); setFormEdit({ ...s, hectareas: String(s.hectareas) }) }}
@@ -1217,4 +1242,4 @@ export default function Servicios({ usuario }) {
       )}
     </div>
   )
-}
+} 
