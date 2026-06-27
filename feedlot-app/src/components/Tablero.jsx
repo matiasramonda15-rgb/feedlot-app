@@ -12,7 +12,7 @@ var S = {
   purple: '#3D1A6B', purpleLight: '#F0EAFB',
 }
 
-const BADGE_STYLES = {
+var BADGE_STYLES = {
   ok:      { background: '#E8F4EB', color: '#1E5C2E' },
   warn:    { background: '#FDF0E0', color: '#7A4500' },
   red:     { background: '#FDF0F0', color: '#7A1A1A' },
@@ -22,7 +22,7 @@ const BADGE_STYLES = {
 }
 
 
-const ROL_BADGE = {
+var ROL_BADGE = {
   'cuarentena': 'warn', 'acumulacion': 'info', 'enfermeria': 'red',
   'clasificado': 'ok', 'libre': 'neutral', 'deshabilitado': 'neutral',
 }
