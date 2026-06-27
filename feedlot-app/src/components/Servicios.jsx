@@ -202,16 +202,17 @@ export default function Servicios({ usuario }) {
           caja_oficial_id = co?.id
         }
       }
-      await supabase.from('servicios_terceros').update({
-        precio_ha: precioHa,
-        total: totalConIva,
+      const updateData = {
         iva_pct: ivaPct,
         estado: 'cobrado',
         estado_pago: 'cobrado',
         fecha_cobro: formPago.fecha,
         caja_oficial_id,
         caja_paralela_id,
-      }).eq('id', id)
+      }
+      if (precioHa) updateData.precio_ha = precioHa
+      if (totalConIva > 0) updateData.total = totalConIva
+      await supabase.from('servicios_terceros').update(updateData).eq('id', id)
     }
     setSeleccionadas([])
     setShowPago(false)
@@ -450,18 +451,15 @@ export default function Servicios({ usuario }) {
                   <th style={th}>Ha</th>
                   <th style={th}>$/Ha</th>
                   <th style={th}>$Total</th>
+                  <th style={th}>Estado</th>
                   <th style={th}>Empleado 1</th>
-                  <th style={th}>$Emp 1</th>
-                  <th style={th}>Estado 1</th>
                   <th style={th}>Empleado 2</th>
-                  <th style={th}>$Emp 2</th>
-                  <th style={th}>Estado 2</th>
                   <th style={th}></th>
                 </tr>
               </thead>
               <tbody>
                 {serviciosFiltrados.length === 0 && (
-                  <tr><td colSpan={17} style={{ ...td_, textAlign: 'center', color: S.hint, padding: '2rem' }}>No hay servicios registrados.</td></tr>
+                  <tr><td colSpan={14} style={{ ...td_, textAlign: 'center', color: S.hint, padding: '2rem' }}>No hay servicios registrados.</td></tr>
                 )}
                 {serviciosFiltrados.map(s => {
                   const moList = manoObra[s.id] || []
@@ -515,20 +513,13 @@ export default function Servicios({ usuario }) {
                       <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{s.hectareas}</td>
                       <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: s.precio_ha ? S.text : S.amber }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
                       <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: isCobrado ? S.green : S.text }}>{s.total ? `$${s.total.toLocaleString('es-AR')}` : '—'}</td>
-                      <td style={td_}>{s.empleado1 || '—'}</td>
-                      <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.green }}>
-                        {mo1?.monto_calculado ? `$${mo1.monto_calculado.toLocaleString('es-AR')}` : mo1?.porcentaje ? `${mo1.porcentaje}%` : '—'}
-                      </td>
                       <td style={td_}>
-                        {mo1 && <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 10, fontWeight: 600, background: mo1.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo1.estado_pago === 'pagado' ? S.green : S.amber }}>{mo1.estado_pago === 'pagado' ? '✓' : '⏳'}</span>}
+                        <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: isCobrado ? S.greenLight : s.precio_ha ? S.amberLight : S.bg, color: isCobrado ? S.green : s.precio_ha ? S.amber : S.hint }}>
+                          {isCobrado ? '✓ Cobrado' : s.precio_ha ? '⏳ Pendiente' : 'Sin precio'}
+                        </span>
                       </td>
-                      <td style={td_}>{s.empleado2 || '—'}</td>
-                      <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.green }}>
-                        {mo2?.monto_calculado ? `$${mo2.monto_calculado.toLocaleString('es-AR')}` : mo2?.porcentaje ? `${mo2.porcentaje}%` : '—'}
-                      </td>
-                      <td style={td_}>
-                        {mo2 && <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 10, fontWeight: 600, background: mo2.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo2.estado_pago === 'pagado' ? S.green : S.amber }}>{mo2.estado_pago === 'pagado' ? '✓' : '⏳'}</span>}
-                      </td>
+                      <td style={{ ...td_, color: S.muted }}>{s.empleado1 || '—'}</td>
+                      <td style={{ ...td_, color: S.muted }}>{s.empleado2 || '—'}</td>
                       <td style={{ ...td_, whiteSpace: 'nowrap' }}>
                         <button onClick={() => { setEditandoId(s.id); setFormEdit({ ...s, hectareas: String(s.hectareas) }) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>
@@ -542,7 +533,7 @@ export default function Servicios({ usuario }) {
               {serviciosFiltrados.length > 0 && (
                 <tfoot>
                   <tr style={{ background: S.accentLight }}>
-                    <td colSpan={7} style={{ ...td_, fontWeight: 700 }}>TOTAL ({serviciosFiltrados.length} servicios)</td>
+                    <td colSpan={9} style={{ ...td_, fontWeight: 700 }}>TOTAL ({serviciosFiltrados.length} servicios)</td>
                     <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700 }}>
                       {serviciosFiltrados.reduce((a, s) => a + (s.hectareas || 0), 0).toLocaleString('es-AR')} ha
                     </td>
@@ -674,11 +665,11 @@ export default function Servicios({ usuario }) {
       {tab === 'mano_obra' && (() => {
         const ROLES_COSECHA = ['Maquinista', 'Tolvero', 'Ayudante']
         const ROLES_SIEMBRA = ['Sembrador 1', 'Sembrador 2', 'Sembrador 3', 'Ayudante']
-        const rolesActuales = subTabMO === 'cosecha' ? ROLES_COSECHA : ROLES_SIEMBRA
-        const configActual = configMO.filter(c => subTabMO === 'cosecha' ? ['Maquinista', 'Tolvero', 'Ayudante'].includes(c.rol) : ['Sembrador 1', 'Sembrador 2', 'Sembrador 3', 'Ayudante'].includes(c.rol))
+        const rolesActuales = !subTabMO ? [...ROLES_COSECHA, ...ROLES_SIEMBRA] : subTabMO === 'cosecha' ? ROLES_COSECHA : ROLES_SIEMBRA
+        const configActual = !subTabMO ? configMO : configMO.filter(c => subTabMO === 'cosecha' ? ['Maquinista', 'Tolvero', 'Ayudante'].includes(c.rol) : ['Sembrador 1', 'Sembrador 2', 'Sembrador 3', 'Ayudante'].includes(c.rol))
         const serviciosMO = servicios.filter(s => {
           if (filtrosMO.campania && s.campania !== filtrosMO.campania) return false
-          if (filtrosMO.labor && filtrosMO.labor !== 'Todo' && s.labor !== filtrosMO.labor) return false
+
           if (filtrosMO.cultivo && filtrosMO.cultivo !== 'Todo' && s.cultivo !== filtrosMO.cultivo) return false
           if (filtrosMO.tipo && filtrosMO.tipo !== 'Todo' && s.tipo_servicio !== filtrosMO.tipo) return false
           if (filtrosMO.estado && filtrosMO.estado !== 'Todo') {
@@ -689,7 +680,7 @@ export default function Servicios({ usuario }) {
             const moList = manoObra[s.id] || []
             if (!moList.some(mo => mo.trabajador === filtrosMO.empleado)) return false
           }
-          return ['Cosecha', 'Siembra'].includes(s.labor)
+          return !subTabMO || ['Cosecha', 'Siembra'].includes(s.labor)
         })
 
         // Calcular montos usando config
@@ -714,13 +705,13 @@ export default function Servicios({ usuario }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.5rem', marginBottom: '1.5rem' }}>
               {/* Filtros */}
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem' }}>
-                <div style={{ display: 'flex', gap: 4, marginBottom: '1rem' }}>
-                  {[{ key: 'cosecha', label: '🌽 Cosecha' }, { key: 'siembra', label: '🌱 Siembra' }].map(t => (
-                    <button key={t.key} onClick={() => setSubTabMO(t.key)}
-                      style={{ padding: '6px 14px', fontSize: 13, fontWeight: subTabMO === t.key ? 600 : 400, border: `1px solid ${subTabMO === t.key ? S.accent : S.border}`, background: subTabMO === t.key ? S.accentLight : 'transparent', color: subTabMO === t.key ? S.accent : S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                      {t.label}
-                    </button>
-                  ))}
+                <div style={{ marginBottom: '1rem' }}>
+                  <Lbl>Servicio</Lbl>
+                  <select value={subTabMO} onChange={e => setSubTabMO(e.target.value)} style={{ ...inp, padding: '6px 8px' }}>
+                    <option value="">Todo</option>
+                    <option value="cosecha">🌽 Cosecha</option>
+                    <option value="siembra">🌱 Siembra</option>
+                  </select>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div><Lbl>Campaña</Lbl><select value={filtrosMO.campania} onChange={e => setFiltrosMO({ ...filtrosMO, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">Todas</option>{CAMPANAS.map(c => <option key={c}>{c}</option>)}</select></div>
@@ -791,7 +782,7 @@ export default function Servicios({ usuario }) {
                 </thead>
                 <tbody>
                   {serviciosMO.length === 0 && (
-                    <tr><td colSpan={10 + configActual.length * 4} style={{ ...td_, textAlign: 'center', color: S.hint, padding: '2rem' }}>No hay servicios que coincidan con los filtros.</td></tr>
+                    <tr><td colSpan={11 + configActual.length * 4} style={{ ...td_, textAlign: 'center', color: S.hint, padding: '2rem' }}>No hay servicios que coincidan con los filtros.</td></tr>
                   )}
                   {serviciosMO.map(s => {
                     const moList = manoObra[s.id] || []
