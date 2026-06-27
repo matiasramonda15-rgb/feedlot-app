@@ -1,22 +1,22 @@
 import { useState, Suspense, lazy } from 'react'
 import Sidebar from './Sidebar'
 
-const Tablero      = lazy(() => import('./Tablero'))
-const Corrales     = lazy(() => import('./Corrales'))
-const Ingresos     = lazy(() => import('./Ingresos'))
-const Pesada       = lazy(() => import('./Pesada'))
-const Ventas       = lazy(() => import('./Ventas'))
-const Alimentacion = lazy(() => import('./Alimentacion'))
-const Sanidad      = lazy(() => import('./Sanidad'))
-const Reportes     = lazy(() => import('./Reportes'))
-const Agricultura  = lazy(() => import('./Agricultura'))
-const Servicios    = lazy(() => import('./Servicios'))
-const Personal     = lazy(() => import('./Personal'))
-const Gastos       = lazy(() => import('./Gastos'))
-const Comercial    = lazy(() => import('./Comercial'))
-const Contactos    = lazy(() => import('./Contactos'))
-const Activos      = lazy(() => import('./Activos'))
-const Insumos      = lazy(() => import('./Insumos'))
+var Tablero      = lazy(() => import('./Tablero'))
+var Corrales     = lazy(() => import('./Corrales'))
+var Ingresos     = lazy(() => import('./Ingresos'))
+var Pesada       = lazy(() => import('./Pesada'))
+var Ventas       = lazy(() => import('./Ventas'))
+var Alimentacion = lazy(() => import('./Alimentacion'))
+var Sanidad      = lazy(() => import('./Sanidad'))
+var Reportes     = lazy(() => import('./Reportes'))
+var Agricultura  = lazy(() => import('./Agricultura'))
+var Servicios    = lazy(() => import('./Servicios'))
+var Personal     = lazy(() => import('./Personal'))
+var Gastos       = lazy(() => import('./Gastos'))
+var Comercial    = lazy(() => import('./Comercial'))
+var Contactos    = lazy(() => import('./Contactos'))
+var Activos      = lazy(() => import('./Activos'))
+var Insumos      = lazy(() => import('./Insumos'))
 
 function Placeholder({ titulo, descripcion }) {
   return (
