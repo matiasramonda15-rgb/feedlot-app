@@ -80,7 +80,7 @@ export default function Tablero({ usuario }) {
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
       supabase.from('ventas').select('cantidad, kg_vivo_total, kg_neto, total, precio_kg, comprador, creado_en, corral_id').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
-      supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
+      supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(50),
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }).limit(5),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('stock_insumos').select('*'),
@@ -119,12 +119,17 @@ export default function Tablero({ usuario }) {
       })
     }
 
-    // Construir movimientos recientes combinados
+    // Construir movimientos de los últimos 15 días
+    const hace15 = new Date(); hace15.setDate(hace15.getDate() - 15)
     const movRecientes = []
-    if (ingresos) ingresos.slice(0, 3).forEach(i => movRecientes.push({ tipo: 'ingreso', texto: `Ingreso ${i.codigo} · ${i.cantidad} animales`, sub: `${new Date(i.fecha_ingreso).toLocaleDateString('es-AR')} · ${i.procedencia} · ${Math.round(i.peso_prom_ingreso || 0)} kg prom.`, color: S.green, fecha: i.fecha_ingreso }))
-    if (ventas) ventas.slice(0, 2).forEach(v => movRecientes.push({ tipo: 'venta', texto: `Venta · ${v.cantidad} animales · C-${v.corral_id}`, sub: `${new Date(v.creado_en).toLocaleDateString('es-AR')} · ${v.comprador || 'sin comprador'} · ${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') + '/kg' : 'sin precio'}`, color: S.accent, fecha: v.creado_en }))
-    if (mortalidad) mortalidad.slice(0, 2).forEach(m => movRecientes.push({ tipo: 'mortalidad', texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
+    if (ingresos) ingresos.filter(i => new Date(i.fecha_ingreso) >= hace15).forEach(i => movRecientes.push({ tipo: 'ingreso', cantidad: i.cantidad || 0, texto: `Ingreso ${i.codigo} · ${i.cantidad} animales`, sub: `${new Date(i.fecha_ingreso).toLocaleDateString('es-AR')} · ${i.procedencia} · ${Math.round(i.peso_prom_ingreso || 0)} kg prom.`, color: S.green, fecha: i.fecha_ingreso }))
+    if (ventas) ventas.filter(v => new Date(v.creado_en) >= hace15).forEach(v => movRecientes.push({ tipo: 'venta', cantidad: -(v.cantidad || 0), texto: `Venta · ${v.cantidad} animales · C-${v.corral_id}`, sub: `${new Date(v.creado_en).toLocaleDateString('es-AR')} · ${v.comprador || 'sin comprador'} · ${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') + '/kg' : 'sin precio'}`, color: S.accent, fecha: v.creado_en }))
+    if (mortalidad) mortalidad.filter(m => new Date(m.fecha) >= hace15).forEach(m => movRecientes.push({ tipo: 'mortalidad', cantidad: -(m.cantidad || 0), texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
     movRecientes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+    // Calcular total acumulado de animales (de más viejo a más nuevo, luego invertir)
+    const totalActual = corralesOrdenados.reduce((s, c) => s + (c.animales || 0), 0)
+    let acum = totalActual
+    movRecientes.forEach(m => { m.totalAnimales = acum; acum -= (m.cantidad || 0) })
 
     const corralesOrdenados = (corrales || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
     // Calcular próxima pesada: última pesada + 40 días
@@ -138,7 +143,7 @@ export default function Tablero({ usuario }) {
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
     const stockBajo = (stockItems || []).filter(s => s.cantidad_kg != null && s.minimo_kg != null && s.cantidad_kg <= s.minimo_kg)
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [], lotesVenc: lotesVenc || [] })
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes, proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [], lotesVenc: lotesVenc || [] })
     setLoading(false)
   }
 
@@ -519,22 +524,48 @@ export default function Tablero({ usuario }) {
         {/* ÚLTIMOS MOVIMIENTOS */}
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
-            Últimos movimientos
+            Movimientos — últimos 15 días
           </div>
 
           {movRecientes.length === 0 && (
             <div style={{ padding: '1.5rem 0', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin movimientos recientes.</div>
           )}
 
-          {movRecientes.map((m, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem', padding: '.75rem 0', borderBottom: i < movRecientes.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: m.color, marginTop: 5, flexShrink: 0 }} />
-              <div style={{ flex: 1, fontSize: 13 }}>
-                {m.texto}
-                <div style={{ fontSize: 11, fontFamily: 'monospace', color: S.muted, marginTop: 2 }}>{m.sub}</div>
-              </div>
-            </div>
-          ))}
+          {movRecientes.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${S.border}` }}>
+                  {['Fecha', 'Movimiento', 'Animales', 'Total feedlot'].map(h => (
+                    <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', paddingBottom: 8 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {movRecientes.map((m, i) => (
+                  <tr key={i} style={{ borderBottom: i < movRecientes.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                    <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap', fontSize: 11 }}>
+                      {new Date(m.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{m.texto.split(' · ')[0]}</div>
+                          <div style={{ fontSize: 10, color: S.muted }}>{m.sub}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: m.cantidad > 0 ? S.green : m.cantidad < 0 ? S.red : S.muted }}>
+                      {m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}
+                    </td>
+                    <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: S.accent }}>
+                      {m.totalAnimales?.toLocaleString('es-AR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
