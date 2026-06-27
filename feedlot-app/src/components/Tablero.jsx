@@ -126,7 +126,6 @@ export default function Tablero({ usuario }) {
     if (ventas) ventas.filter(v => new Date(v.creado_en) >= hace15).forEach(v => movRecientes.push({ tipo: 'venta', cantidad: -(v.cantidad || 0), texto: `Venta · ${v.cantidad} animales · C-${v.corral_id}`, sub: `${new Date(v.creado_en).toLocaleDateString('es-AR')} · ${v.comprador || 'sin comprador'} · ${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') + '/kg' : 'sin precio'}`, color: S.accent, fecha: v.creado_en }))
     if (mortalidad) mortalidad.filter(m => new Date(m.fecha) >= hace15).forEach(m => movRecientes.push({ tipo: 'mortalidad', cantidad: -(m.cantidad || 0), texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
     movRecientes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
-    // Calcular total acumulado de animales (de más viejo a más nuevo, luego invertir)
     const totalActual = corralesOrdenados.reduce((s, c) => s + (c.animales || 0), 0)
     let acum = totalActual
     movRecientes.forEach(m => { m.totalAnimales = acum; acum -= (m.cantidad || 0) })
@@ -535,18 +534,18 @@ export default function Tablero({ usuario }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${S.border}` }}>
-                  {['Fecha', 'Movimiento', 'Animales', 'Total feedlot'].map(h => (
-                    <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', paddingBottom: 8 }}>{h}</th>
+                  {['Fecha', 'Movimiento', 'Anim.', 'Total feedlot'].map(h => (
+                    <th key={h} style={{ padding: '4px 6px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', paddingBottom: 8 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {movRecientes.map((m, i) => (
                   <tr key={i} style={{ borderBottom: i < movRecientes.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                    <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap', fontSize: 11 }}>
+                    <td style={{ padding: '6px 6px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap', fontSize: 11 }}>
                       {new Date(m.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
                     </td>
-                    <td style={{ padding: '6px 8px' }}>
+                    <td style={{ padding: '6px 6px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <div style={{ width: 7, height: 7, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
                         <div>
@@ -555,10 +554,10 @@ export default function Tablero({ usuario }) {
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: m.cantidad > 0 ? S.green : m.cantidad < 0 ? S.red : S.muted }}>
+                    <td style={{ padding: '6px 6px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: m.cantidad > 0 ? S.green : S.red }}>
                       {m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}
                     </td>
-                    <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: S.accent }}>
+                    <td style={{ padding: '6px 6px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: S.accent }}>
                       {m.totalAnimales?.toLocaleString('es-AR')}
                     </td>
                   </tr>
