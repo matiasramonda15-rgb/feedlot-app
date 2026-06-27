@@ -19,7 +19,7 @@ function Lbl({ children }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{children}</div>
 }
 
-const CAMPANAS = ['2026/27', '2025/26', '2024/25', '2023/24', '2022/23']
+// campanas cargadas dinámicamente desde Supabase
 const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Roturación', 'Rastreo', 'Flete', 'Otro']
 const CULTIVOS = ['Maíz', 'Soja', 'Trigo', 'Sorgo', 'Girasol', 'Cebada', 'Otro']
 const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' } }
@@ -27,6 +27,9 @@ const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, cheque
 export default function Servicios({ usuario }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
+  const [campanas, setCampanas] = useState([])
+  const [showNuevaCampana, setShowNuevaCampana] = useState(false)
+  const [nuevaCampana, setNuevaCampana] = useState('')
   const [servicios, setServicios] = useState([])
   const [manoObra, setManoObra] = useState({})
   const [contactos, setContactos] = useState([])
@@ -39,7 +42,7 @@ export default function Servicios({ usuario }) {
 
   // Form nuevo servicio
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ campania: '2026/27', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+  const [form, setForm] = useState({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   // Mano de obra
@@ -91,6 +94,8 @@ export default function Servicios({ usuario }) {
   }, [])
 
   async function cargar() {
+    const { data: camps } = await supabase.from('campanas').select('*').eq('activa', true).order('nombre', { ascending: false })
+    setCampanas(camps || [])
     const [{ data: s }, { data: ct }, { data: ch }, { data: regs }] = await Promise.all([
       supabase.from('servicios_terceros').select('*').order('fecha', { ascending: false }),
       supabase.from('contactos').select('id, nombre').order('nombre'),
@@ -146,7 +151,7 @@ export default function Servicios({ usuario }) {
       estado: 'pendiente',
     })
     setShowForm(false)
-    setForm({ campania: '2026/27', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
     setGuardando(false)
     await cargar()
   }
@@ -294,12 +299,53 @@ export default function Servicios({ usuario }) {
     <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div style={{ fontSize: 20, fontWeight: 600 }}>Servicios</div>
-        {!esBrian && tab === 'servicios' && (
-          <button onClick={() => setShowForm(!showForm)}
-            style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-            + Nuevo servicio
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!esBrian && (
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowNuevaCampana(!showNuevaCampana)}
+                style={{ padding: '8px 14px', fontSize: 13, fontWeight: 500, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                📅 Campañas
+              </button>
+              {showNuevaCampana && (
+                <div style={{ position: 'absolute', right: 0, top: '110%', background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', minWidth: 220, zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: S.muted, marginBottom: 8 }}>Campañas activas</div>
+                  {campanas.map(c => (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 13 }}>
+                      <span>{c.nombre}</span>
+                      <button onClick={async () => {
+                        if (!confirm(`¿Desactivar campaña ${c.nombre}?`)) return
+                        await supabase.from('campanas').update({ activa: false }).eq('id', c.id)
+                        await cargar()
+                      }} style={{ fontSize: 10, padding: '2px 6px', background: S.redLight, border: 'none', color: S.red, borderRadius: 3, cursor: 'pointer' }}>✕</button>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: `1px solid ${S.border}`, marginTop: 8, paddingTop: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, marginBottom: 4 }}>+ Nueva campaña</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input type="text" value={nuevaCampana} onChange={e => setNuevaCampana(e.target.value)}
+                        placeholder="ej. 2027/28"
+                        style={{ ...inp, padding: '5px 8px', fontSize: 12, flex: 1 }} />
+                      <button onClick={async () => {
+                        if (!nuevaCampana.trim()) return
+                        await supabase.from('campanas').insert({ nombre: nuevaCampana.trim(), activa: true })
+                        setNuevaCampana('')
+                        await cargar()
+                      }} style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
+                        Agregar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {!esBrian && tab === 'servicios' && (
+            <button onClick={() => setShowForm(!showForm)}
+              style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              + Nuevo servicio
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -323,7 +369,7 @@ export default function Servicios({ usuario }) {
                 <div>
                   <Lbl>Campaña *</Lbl>
                   <select value={form.campania} onChange={e => setForm({ ...form, campania: e.target.value })} style={inp}>
-                    {CAMPANAS.map(c => <option key={c}>{c}</option>)}
+                    {campanas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                 </div>
                 <div>
@@ -405,7 +451,7 @@ export default function Servicios({ usuario }) {
                 <Lbl>Campaña</Lbl>
                 <select value={filtros.campania} onChange={e => setFiltros({ ...filtros, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
                   <option value="">Todas</option>
-                  {CAMPANAS.map(c => <option key={c}>{c}</option>)}
+                  {campanas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                 </select>
               </div>
               <div>
@@ -475,7 +521,7 @@ export default function Servicios({ usuario }) {
                     <tr key={s.id} style={{ background: S.accentLight }}>
                       <td style={td_} colSpan={17}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 8 }}>
-                          <div><Lbl>Campaña</Lbl><select value={formEdit.campania} onChange={e => setFormEdit({ ...formEdit, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{CAMPANAS.map(c => <option key={c}>{c}</option>)}</select></div>
+                          <div><Lbl>Campaña</Lbl><select value={formEdit.campania} onChange={e => setFormEdit({ ...formEdit, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{campanas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></div>
                           <div><Lbl>Tipo</Lbl><select value={formEdit.tipo_servicio} onChange={e => setFormEdit({ ...formEdit, tipo_servicio: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="tercero">Tercero</option><option value="propio">Propio</option></select></div>
                           <div><Lbl>Servicio</Lbl><select value={formEdit.labor} onChange={e => setFormEdit({ ...formEdit, labor: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{LABORES.map(l => <option key={l}>{l}</option>)}</select></div>
                           <div><Lbl>Cultivo</Lbl><select value={formEdit.cultivo} onChange={e => setFormEdit({ ...formEdit, cultivo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{CULTIVOS.map(c => <option key={c}>{c}</option>)}</select></div>
@@ -846,7 +892,7 @@ export default function Servicios({ usuario }) {
                   </select>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div><Lbl>Campaña</Lbl><select value={filtrosMO.campania} onChange={e => setFiltrosMO({ ...filtrosMO, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">Todas</option>{CAMPANAS.map(c => <option key={c}>{c}</option>)}</select></div>
+                  <div><Lbl>Campaña</Lbl><select value={filtrosMO.campania} onChange={e => setFiltrosMO({ ...filtrosMO, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">Todas</option>{campanas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></div>
                   <div><Lbl>Cultivo</Lbl><select value={filtrosMO.cultivo} onChange={e => setFiltrosMO({ ...filtrosMO, cultivo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">Todo</option>{CULTIVOS.map(c => <option key={c}>{c}</option>)}</select></div>
                   <div><Lbl>Tipo</Lbl><select value={filtrosMO.tipo} onChange={e => setFiltrosMO({ ...filtrosMO, tipo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">Todo</option><option value="tercero">Tercero</option><option value="propio">Propio</option></select></div>
                   <div><Lbl>Estado</Lbl><select value={filtrosMO.estado} onChange={e => setFiltrosMO({ ...filtrosMO, estado: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">Todo</option><option value="Pendiente">Pendiente</option><option value="Cobrado">Cobrado</option></select></div>
