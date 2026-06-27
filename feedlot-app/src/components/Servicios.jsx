@@ -195,9 +195,7 @@ export default function Servicios({ usuario }) {
       let monto_negro = 0
       for (const p of formPago.pagos.filter(p => p.monto)) {
         const monto = parseFloat(p.monto) || 0
-        if (p.es_negro) {
-          monto_negro += monto
-        } else if (p.es_paralelo) {
+        if (p.es_paralelo) {
           const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
           caja_paralela_id = cp?.id
         } else {
@@ -233,14 +231,14 @@ export default function Servicios({ usuario }) {
       const precioHa = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s?.precio_ha
       const neto = precioHa && s?.hectareas ? Math.round(precioHa * s.hectareas) : (s?.total || 0)
       const conIva = Math.round(neto * (1 + ivaPct / 100))
-      return `<tr><td>${s?.fecha || ''}</td><td>${s?.campo || ''}${s?.nro_lote ? ' · ' + s.nro_lote : ''}</td><td>${s?.labor} ${s?.cultivo || ''}</td><td>${s?.hectareas} ha</td><td>$${(precioHa || 0).toLocaleString('es-AR')}</td><td>$${neto.toLocaleString('es-AR')}</td><td>$${conIva.toLocaleString('es-AR')}</td></tr>`
+      return `<tr><td>${s?.fecha || ''}</td><td>${s?.campo || ''}${s?.nro_lote ? ' · ' + s.nro_lote : ''}</td><td>${s?.labor} ${s?.cultivo || ''}</td><td>${s?.hectareas} ha</td><td>$${(precioHa || 0).toLocaleString('es-AR')}</td><td>$${neto.toLocaleString('es-AR')}</td><td>$${conIva.toLocaleString('es-AR')}</td><td>${s?.caja_paralela_id ? '✓ Paralelo' : ''}</td></tr>`
     }).join('')
     const totalNeto = seleccionadas.reduce((a, id) => { const s = servicios.find(x => x.id === id); const p = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s?.precio_ha; return a + (p && s?.hectareas ? Math.round(p * s.hectareas) : (s?.total || 0)) }, 0)
     const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
     win.document.write(`<!DOCTYPE html><html><head><title>Recibo Servicios</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px}h2{margin-bottom:1rem}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5;font-weight:600}tfoot td{font-weight:700;background:#e8f4eb}.total{font-size:16px;font-weight:700;margin-top:1rem}@media print{button{display:none}}</style></head><body>
       <h2>Recibo de Servicios — Ramonda Hnos S.A.</h2>
       <p>Fecha: ${formPago.fecha} | Cliente: ${servicios.find(x => x.id === seleccionadas[0])?.cliente || ''}</p>
-      <table><thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Servicio/Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>Total c/IVA</th></tr></thead>
+      <table><thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Servicio/Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>Total c/IVA</th><th>Paralelo</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="5">TOTAL</td><td>$${totalNeto.toLocaleString('es-AR')}</td><td>$${totalConIva.toLocaleString('es-AR')}</td></tr></tfoot>
       </table>
@@ -506,10 +504,19 @@ export default function Servicios({ usuario }) {
                         </span>
                       </td>
                       <td style={{ ...td_, whiteSpace: 'nowrap' }}>
-                        <button onClick={() => { setEditandoId(s.id); setFormEdit({ ...s, hectareas: String(s.hectareas) }) }}
-                          style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>
-                          ✏
-                        </button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => { setEditandoId(s.id); setFormEdit({ ...s, hectareas: String(s.hectareas) }) }}
+                            style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>
+                            ✏
+                          </button>
+                          <button onClick={async () => {
+                            if (!confirm(`¿Eliminar servicio de ${s.cliente} - ${s.labor}?`)) return
+                            await supabase.from('servicios_terceros').delete().eq('id', s.id)
+                            await cargar()
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 4, cursor: 'pointer' }}>
+                            🗑
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -568,7 +575,7 @@ export default function Servicios({ usuario }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr>
-                      {['Fecha cobro', 'Cliente', 'Campo/Lote', 'Servicio', 'Cultivo', 'Ha', '$/Ha', 'Neto', 'IVA %', 'Total', 'En negro'].map(h => (
+                      {['Fecha cobro', 'Cliente', 'Campo/Lote', 'Servicio', 'Cultivo', 'Ha', '$/Ha', 'Neto', 'IVA %', 'Total'].map(h => (
                         <th key={h} style={th}>{h}</th>
                       ))}
                     </tr>
@@ -592,7 +599,6 @@ export default function Servicios({ usuario }) {
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{neto ? `$${neto.toLocaleString('es-AR')}` : '—'}</td>
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.muted }}>{ivaPct ? `${ivaPct}%` : '—'}</td>
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>{totalConIva ? `$${totalConIva.toLocaleString('es-AR')}` : '—'}</td>
-                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: s.monto_negro ? S.amber : S.hint }}>{s.monto_negro ? `$${s.monto_negro.toLocaleString('es-AR')}` : '—'}</td>
                         </tr>
                       )
                     })}
@@ -705,16 +711,10 @@ export default function Servicios({ usuario }) {
                           <Lbl>Monto $</Lbl>
                           <input type="number" value={p.monto} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, monto: e.target.value } : x); setFormPago({ ...formPago, pagos }) }} style={inpMono} />
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
-                            <input type="checkbox" checked={p.es_paralelo} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, es_paralelo: e.target.checked, es_negro: false } : x); setFormPago({ ...formPago, pagos }) }} />
-                            Paralelo
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
-                            <input type="checkbox" checked={p.es_negro || false} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, es_negro: e.target.checked, es_paralelo: false } : x); setFormPago({ ...formPago, pagos }) }} />
-                            <span style={{ color: p.es_negro ? S.amber : S.muted }}>En negro</span>
-                          </label>
-                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 2 }}>
+                          <input type="checkbox" checked={p.es_paralelo} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, es_paralelo: e.target.checked } : x); setFormPago({ ...formPago, pagos }) }} />
+                          Paralelo
+                        </label>
                       </div>
                       {p.tipo === 'cheque_propio' && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
