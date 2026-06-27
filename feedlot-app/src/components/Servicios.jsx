@@ -1111,7 +1111,14 @@ export default function Servicios({ usuario }) {
                 <button onClick={async () => {
                   if (!formReg.campo) { alert('Ingresá el campo'); return }
                   setGuardandoReg(true)
-                  const { data } = await supabase.from('registros_mercaderia').insert({ campo: formReg.campo, cliente: formReg.cliente || null, nro_lote: formReg.nro_lote || null, cultivo: formReg.cultivo, fecha: formReg.fecha, registrado_por: usuario?.id }).select().single()
+                  const { data, error } = await supabase.from('registros_mercaderia').insert({
+                    campo: formReg.campo,
+                    cliente: formReg.cliente || null,
+                    nro_lote: formReg.nro_lote || null,
+                    cultivo: formReg.cultivo || null,
+                    fecha: formReg.fecha || null,
+                  }).select().single()
+                  if (error) { alert('Error: ' + error.message); setGuardandoReg(false); return }
                   if (data) {
                     setRegistros(prev => [data, ...prev])
                     setRegistroActivo(data)
@@ -1242,4 +1249,4 @@ export default function Servicios({ usuario }) {
       )}
     </div>
   )
-}
+} 
