@@ -514,7 +514,7 @@ export default function Servicios({ usuario }) {
               {serviciosFiltrados.length > 0 && (
                 <tfoot>
                   <tr style={{ background: S.accentLight }}>
-                    <td colSpan={9} style={{ ...td_, fontWeight: 700 }}>TOTAL ({serviciosFiltrados.length} servicios)</td>
+                    <td colSpan={7} style={{ ...td_, fontWeight: 700 }}>TOTAL ({serviciosFiltrados.length} servicios)</td>
                     <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700 }}>
                       {serviciosFiltrados.reduce((a, s) => a + (s.hectareas || 0), 0).toLocaleString('es-AR')} ha
                     </td>
@@ -522,12 +522,72 @@ export default function Servicios({ usuario }) {
                     <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>
                       ${serviciosFiltrados.reduce((a, s) => a + (s.total || 0), 0).toLocaleString('es-AR')}
                     </td>
-                    <td colSpan={7}></td>
+                    <td colSpan={2}></td>
                   </tr>
                 </tfoot>
               )}
             </table>
           </div>
+
+          {/* Historial de cobros */}
+          {serviciosFiltrados.filter(s => s.estado_pago === 'cobrado').length > 0 && (
+            <div style={{ marginTop: '1.5rem' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Cobros registrados</div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      {['Fecha cobro', 'Cliente', 'Campo/Lote', 'Servicio', 'Cultivo', 'Ha', '$/Ha', 'Neto', 'IVA %', 'Total'].map(h => (
+                        <th key={h} style={th}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serviciosFiltrados.filter(s => s.estado_pago === 'cobrado').map(s => {
+                      const neto = s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas) : null
+                      const ivaPct = s.iva_pct || 0
+                      const totalConIva = s.total || (neto ? Math.round(neto * (1 + ivaPct / 100)) : null)
+                      return (
+                        <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                          <td style={{ ...td_, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>
+                            {s.fecha_cobro ? new Date(s.fecha_cobro+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                          </td>
+                          <td style={{ ...td_, fontWeight: 600 }}>{s.cliente || '—'}</td>
+                          <td style={td_}>{s.campo || '—'}{s.nro_lote ? ` · ${s.nro_lote}` : ''}</td>
+                          <td style={td_}><span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{s.labor}</span></td>
+                          <td style={{ ...td_, color: S.muted }}>{s.cultivo || '—'}</td>
+                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{s.hectareas}</td>
+                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
+                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{neto ? `$${neto.toLocaleString('es-AR')}` : '—'}</td>
+                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.muted }}>{ivaPct ? `${ivaPct}%` : '—'}</td>
+                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>{totalConIva ? `$${totalConIva.toLocaleString('es-AR')}` : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: S.greenLight }}>
+                      <td colSpan={5} style={{ ...td_, fontWeight: 700, color: S.green }}>TOTAL COBRADO</td>
+                      <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700 }}>
+                        {serviciosFiltrados.filter(s => s.estado_pago === 'cobrado').reduce((a, s) => a + (s.hectareas || 0), 0).toLocaleString('es-AR')} ha
+                      </td>
+                      <td></td>
+                      <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700 }}>
+                        ${serviciosFiltrados.filter(s => s.estado_pago === 'cobrado').reduce((a, s) => {
+                          const neto = s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas) : (s.total || 0)
+                          return a + neto
+                        }, 0).toLocaleString('es-AR')}
+                      </td>
+                      <td></td>
+                      <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>
+                        ${serviciosFiltrados.filter(s => s.estado_pago === 'cobrado').reduce((a, s) => a + (s.total || 0), 0).toLocaleString('es-AR')}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Banner pago */}
           {seleccionadas.length > 0 && (
