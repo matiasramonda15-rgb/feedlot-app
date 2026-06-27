@@ -53,7 +53,7 @@ export default function Servicios({ usuario }) {
   const [guardandoPagoMO, setGuardandoPagoMO] = useState(false)
   const [formMO, setFormMO] = useState({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
   const [guardandoMO, setGuardandoMO] = useState(false)
-  const [subTabMO, setSubTabMO] = useState('cosecha')
+  const [subTabMO, setSubTabMO] = useState('')
   const [filtroEmpleadoMO, setFiltroEmpleadoMO] = useState('')
 
   // Pago
