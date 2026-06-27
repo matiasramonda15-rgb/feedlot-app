@@ -769,8 +769,12 @@ export default function Servicios({ usuario }) {
       {tab === 'mano_obra' && (() => {
         const ROLES_COSECHA = ['Maquinista', 'Tolvero', 'Ayudante']
         const ROLES_SIEMBRA = ['Sembrador 1', 'Sembrador 2', 'Sembrador 3', 'Ayudante']
-        const rolesActuales = !subTabMO ? [...ROLES_COSECHA, ...ROLES_SIEMBRA] : subTabMO === 'cosecha' ? ROLES_COSECHA : ROLES_SIEMBRA
-        const configActual = !subTabMO ? configMO : configMO.filter(c => subTabMO === 'cosecha' ? ['Maquinista', 'Tolvero', 'Ayudante'].includes(c.rol) : ['Sembrador 1', 'Sembrador 2', 'Sembrador 3', 'Ayudante'].includes(c.rol))
+        const rolesActuales = subTabMO === 'Cosecha' ? ROLES_COSECHA : subTabMO === 'Siembra' ? ROLES_SIEMBRA : [...ROLES_COSECHA, ...ROLES_SIEMBRA]
+        const configActual = subTabMO === 'Cosecha' 
+          ? configMO.filter(c => ['Maquinista', 'Tolvero', 'Ayudante'].includes(c.rol))
+          : subTabMO === 'Siembra'
+          ? configMO.filter(c => ['Sembrador 1', 'Sembrador 2', 'Sembrador 3', 'Ayudante'].includes(c.rol))
+          : configMO
         const serviciosMO = servicios.filter(s => {
           if (filtrosMO.campania && s.campania !== filtrosMO.campania) return false
 
@@ -784,7 +788,7 @@ export default function Servicios({ usuario }) {
             const moList = manoObra[s.id] || []
             if (!moList.some(mo => mo.trabajador === filtrosMO.empleado)) return false
           }
-          return !subTabMO || ['Cosecha', 'Siembra'].includes(s.labor)
+          return !subTabMO || s.labor === subTabMO
         })
 
         // Calcular montos usando config
@@ -813,8 +817,7 @@ export default function Servicios({ usuario }) {
                   <Lbl>Servicio</Lbl>
                   <select value={subTabMO} onChange={e => setSubTabMO(e.target.value)} style={{ ...inp, padding: '6px 8px' }}>
                     <option value="">Todo</option>
-                    <option value="cosecha">🌽 Cosecha</option>
-                    <option value="siembra">🌱 Siembra</option>
+                    {LABORES.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -829,7 +832,7 @@ export default function Servicios({ usuario }) {
               {/* Config empleados */}
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem' }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>
-                  Empleados — {subTabMO === 'cosecha' ? 'Cosecha' : 'Siembra'}
+                  Empleados — {subTabMO || 'Todos los servicios'}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 60px', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                   <div style={{ fontSize: 10, fontWeight: 600, color: S.hint, textTransform: 'uppercase' }}>Rol / Nombre</div>
@@ -880,6 +883,7 @@ export default function Servicios({ usuario }) {
                         <th style={th}>$/Ha</th>
                         <th style={th}>$Total</th>
                         <th style={th}>Estado</th>
+                        <th style={th}></th>
                       </React.Fragment>
                     ))}
                   </tr>
@@ -919,6 +923,34 @@ export default function Servicios({ usuario }) {
                               <td style={td_}>
                                 {mo && <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 10, fontWeight: 600, background: mo.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo.estado_pago === 'pagado' ? S.green : S.amber }}>{mo.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pend.'}</span>}
                               </td>
+                              <td style={{ ...td_, whiteSpace: 'nowrap' }}>
+                                {mo ? (
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    <button onClick={async () => {
+                                      const nuevoPct = prompt(`Porcentaje para ${mo.trabajador}:`, mo.porcentaje)
+                                      if (!nuevoPct) return
+                                      const nuevoMonto = s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas * parseFloat(nuevoPct) / 100) : null
+                                      await supabase.from('mano_obra_servicios').update({ porcentaje: parseFloat(nuevoPct), monto_calculado: nuevoMonto }).eq('id', mo.id)
+                                      await cargar()
+                                    }} style={{ padding: '3px 7px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>✏</button>
+                                    <button onClick={async () => {
+                                      if (!confirm(`¿Eliminar a ${mo.trabajador}?`)) return
+                                      await supabase.from('mano_obra_servicios').delete().eq('id', mo.id)
+                                      await cargar()
+                                    }} style={{ padding: '3px 7px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>🗑</button>
+                                  </div>
+                                ) : (
+                                  <button onClick={async () => {
+                                    const nombre = cfg.nombre || prompt(`Nombre del ${cfg.rol}:`, '')
+                                    if (!nombre) return
+                                    const pctDefault = s.tipo_servicio === 'propio' ? cfg.pct_propio : cfg.pct_tercero
+                                    const pct = parseFloat(prompt(`% para ${nombre}:`, pctDefault) || pctDefault)
+                                    const monto = s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas * pct / 100) : null
+                                    await supabase.from('mano_obra_servicios').insert({ servicio_id: s.id, trabajador: nombre, rol: cfg.rol, porcentaje: pct, monto_calculado: monto })
+                                    await cargar()
+                                  }} style={{ padding: '3px 7px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer' }}>+ Asignar</button>
+                                )}
+                              </td>
                             </React.Fragment>
                           )
                         })}
@@ -942,7 +974,7 @@ export default function Servicios({ usuario }) {
                           <React.Fragment key={cfg.id}>
                             <td></td><td></td>
                             <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>${totalCfg.toLocaleString('es-AR')}</td>
-                            <td></td>
+                            <td></td><td></td>
                           </React.Fragment>
                         )
                       })}
