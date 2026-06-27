@@ -59,7 +59,7 @@ export default function Servicios({ usuario }) {
   // Pago
   const [seleccionadas, setSeleccionadas] = useState([])
   const [showPago, setShowPago] = useState(false)
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', pagos: [{ ...PAGO_INIT }] })
+  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const reciboRef = useRef(null)
 
@@ -192,9 +192,12 @@ export default function Servicios({ usuario }) {
       const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
       const desc = `Servicio ${s.labor} ${s.cultivo ? `(${s.cultivo})` : ''} — ${s.cliente} · ${s.campo || ''} · ${s.hectareas} ha`
       let caja_oficial_id = null, caja_paralela_id = null
+      let monto_negro = 0
       for (const p of formPago.pagos.filter(p => p.monto)) {
         const monto = parseFloat(p.monto) || 0
-        if (p.es_paralelo) {
+        if (p.es_negro) {
+          monto_negro += monto
+        } else if (p.es_paralelo) {
           const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
           caja_paralela_id = cp?.id
         } else {
@@ -209,6 +212,7 @@ export default function Servicios({ usuario }) {
         fecha_cobro: formPago.fecha,
         caja_oficial_id,
         caja_paralela_id,
+        monto_negro: (parseFloat(formPago.sin_factura) || 0) > 0 ? (parseFloat(formPago.sin_factura) || 0) : null,
       }
       if (precioHa) updateData.precio_ha = precioHa
       if (totalConIva > 0) updateData.total = totalConIva
@@ -216,7 +220,7 @@ export default function Servicios({ usuario }) {
     }
     setSeleccionadas([])
     setShowPago(false)
-    setFormPago({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', pagos: [{ ...PAGO_INIT }] })
+    setFormPago({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
     setGuardandoPago(false)
     await cargar()
   }
@@ -532,12 +536,39 @@ export default function Servicios({ usuario }) {
           {/* Historial de cobros */}
           {serviciosFiltrados.filter(s => s.estado_pago === 'cobrado').length > 0 && (
             <div style={{ marginTop: '1.5rem' }}>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Cobros registrados</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.75rem' }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>Cobros registrados</div>
+                <button onClick={() => {
+                  const cobrados = serviciosFiltrados.filter(s => s.estado_pago === 'cobrado')
+                  const win = window.open('', '_blank')
+                  const rows = cobrados.map(s => {
+                    const neto = s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas) : (s.total || 0)
+                    const iva = s.iva_pct || 0
+                    const total = s.total || 0
+                    const negro = s.monto_negro || 0
+                    return `<tr><td>${s.fecha_cobro ? new Date(s.fecha_cobro+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td><td>${s.cliente || '—'}</td><td>${s.campo || '—'}${s.nro_lote ? ' · '+s.nro_lote : ''}</td><td>${s.labor}</td><td>${s.cultivo || '—'}</td><td>${s.hectareas}</td><td>${s.precio_ha ? '$'+s.precio_ha.toLocaleString('es-AR') : '—'}</td><td>$${neto.toLocaleString('es-AR')}</td><td>${iva ? iva+'%' : '—'}</td><td>$${total.toLocaleString('es-AR')}</td><td>${negro ? '$'+negro.toLocaleString('es-AR') : '—'}</td></tr>`
+                  }).join('')
+                  const totalHa = cobrados.reduce((a,s) => a+(s.hectareas||0), 0)
+                  const totalNeto = cobrados.reduce((a,s) => { const n = s.precio_ha&&s.hectareas ? Math.round(s.precio_ha*s.hectareas) : (s.total||0); return a+n }, 0)
+                  const totalTotal = cobrados.reduce((a,s) => a+(s.total||0), 0)
+                  const totalNegro = cobrados.reduce((a,s) => a+(s.monto_negro||0), 0)
+                  win.document.write(`<!DOCTYPE html><html><head><title>Resumen Cobros</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:12px}h2{margin-bottom:.5rem}p{color:#666;margin-bottom:1rem}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f5f5f5;font-weight:600;font-size:11px;text-transform:uppercase}tfoot td{font-weight:700;background:#e8f4eb}.negro{color:#7A4500;font-weight:600}@media print{button{display:none}}</style></head><body>
+                    <h2>Resumen de Cobros — Ramonda Hnos S.A.</h2>
+                    <p>Generado el ${new Date().toLocaleDateString('es-AR')}</p>
+                    <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Campo/Lote</th><th>Servicio</th><th>Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>IVA</th><th>Total</th><th>Sin factura</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                    <tfoot><tr><td colspan="5">TOTAL</td><td>${totalHa} ha</td><td></td><td>$${totalNeto.toLocaleString('es-AR')}</td><td></td><td>$${totalTotal.toLocaleString('es-AR')}</td><td class="negro">${totalNegro ? '$'+totalNegro.toLocaleString('es-AR') : '—'}</td></tr></tfoot>
+                    </table><br><button onclick="window.print()">🖨 Imprimir</button></body></html>`)
+                  win.document.close()
+                }} style={{ padding: '5px 12px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  🖨 Imprimir resumen
+                </button>
+              </div>
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr>
-                      {['Fecha cobro', 'Cliente', 'Campo/Lote', 'Servicio', 'Cultivo', 'Ha', '$/Ha', 'Neto', 'IVA %', 'Total'].map(h => (
+                      {['Fecha cobro', 'Cliente', 'Campo/Lote', 'Servicio', 'Cultivo', 'Ha', '$/Ha', 'Neto', 'IVA %', 'Total', 'En negro'].map(h => (
                         <th key={h} style={th}>{h}</th>
                       ))}
                     </tr>
@@ -561,6 +592,7 @@ export default function Servicios({ usuario }) {
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{neto ? `$${neto.toLocaleString('es-AR')}` : '—'}</td>
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.muted }}>{ivaPct ? `${ivaPct}%` : '—'}</td>
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>{totalConIva ? `$${totalConIva.toLocaleString('es-AR')}` : '—'}</td>
+                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: s.monto_negro ? S.amber : S.hint }}>{s.monto_negro ? `$${s.monto_negro.toLocaleString('es-AR')}` : '—'}</td>
                         </tr>
                       )
                     })}
@@ -641,6 +673,12 @@ export default function Servicios({ usuario }) {
                       </div>
                     </div>
                     <div>
+                      <Lbl>Sin factura $</Lbl>
+                      <input type="number" value={formPago.sin_factura} onChange={e => setFormPago({ ...formPago, sin_factura: e.target.value })}
+                        placeholder="Monto cobrado sin factura"
+                        style={{ ...inpMono, background: '#FDF8E8', border: `1px solid ${S.amber}`, color: S.amber, fontWeight: 600 }} />
+                    </div>
+                    <div>
                       <Lbl>Fecha cobro</Lbl>
                       <input type="date" value={formPago.fecha} onChange={e => setFormPago({ ...formPago, fecha: e.target.value })} style={inp} />
                     </div>
@@ -667,10 +705,16 @@ export default function Servicios({ usuario }) {
                           <Lbl>Monto $</Lbl>
                           <input type="number" value={p.monto} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, monto: e.target.value } : x); setFormPago({ ...formPago, pagos }) }} style={inpMono} />
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 2 }}>
-                          <input type="checkbox" checked={p.es_paralelo} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, es_paralelo: e.target.checked } : x); setFormPago({ ...formPago, pagos }) }} />
-                          Paralelo
-                        </label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={p.es_paralelo} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, es_paralelo: e.target.checked, es_negro: false } : x); setFormPago({ ...formPago, pagos }) }} />
+                            Paralelo
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={p.es_negro || false} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, es_negro: e.target.checked, es_paralelo: false } : x); setFormPago({ ...formPago, pagos }) }} />
+                            <span style={{ color: p.es_negro ? S.amber : S.muted }}>En negro</span>
+                          </label>
+                        </div>
                       </div>
                       {p.tipo === 'cheque_propio' && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
@@ -681,10 +725,20 @@ export default function Servicios({ usuario }) {
                       )}
                     </div>
                   ))}
-                  <div style={{ padding: '8px 12px', background: S.greenLight, borderRadius: 6, fontSize: 13, color: S.green, fontWeight: 600, marginTop: 8, marginBottom: 10 }}>
-                    Total pagos: ${formPago.pagos.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0).toLocaleString('es-AR')}
-                    {' · '}Saldo: ${(totalConIva - formPago.pagos.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0)).toLocaleString('es-AR')}
-                  </div>
+                  {(() => {
+                    const totalPagos = formPago.pagos.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0)
+                    const sinFactura = parseFloat(formPago.sin_factura) || 0
+                    const totalACobrar = totalConIva + sinFactura
+                    const saldo = totalACobrar - totalPagos
+                    return (
+                      <div style={{ padding: '8px 12px', background: S.greenLight, borderRadius: 6, fontSize: 13, color: S.green, fontWeight: 600, marginTop: 8, marginBottom: 10 }}>
+                        Total pagos: ${totalPagos.toLocaleString('es-AR')}
+                        {sinFactura > 0 && <span style={{ color: S.amber }}> · Sin factura: ${sinFactura.toLocaleString('es-AR')}</span>}
+                        {' · '}Total a cobrar: ${totalACobrar.toLocaleString('es-AR')}
+                        {' · '}Saldo: ${saldo.toLocaleString('es-AR')}
+                      </div>
+                    )
+                  })()}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={registrarPago} disabled={guardandoPago}
                       style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
