@@ -28,6 +28,7 @@ export default function Servicios({ usuario }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
   const [campanas, setCampanas] = useState([])
+  const [empleados, setEmpleados] = useState([])
   const [showNuevaCampana, setShowNuevaCampana] = useState(false)
   const [nuevaCampana, setNuevaCampana] = useState('')
   const [servicios, setServicios] = useState([])
@@ -97,6 +98,8 @@ export default function Servicios({ usuario }) {
   async function cargar() {
     const { data: camps } = await supabase.from('campanas').select('*').eq('activa', true).order('nombre', { ascending: false })
     setCampanas(camps || [])
+    const { data: emps } = await supabase.from('empleados').select('*').eq('activo', true).order('nombre')
+    setEmpleados(emps || [])
     const [{ data: s }, { data: ct }, { data: ch }, { data: regs }] = await Promise.all([
       supabase.from('servicios_terceros').select('*').order('fecha', { ascending: false }),
       supabase.from('contactos').select('id, nombre').order('nombre'),
@@ -282,11 +285,7 @@ export default function Servicios({ usuario }) {
     return true
   })
 
-  const todosEmpleados = [...new Set([
-    ...servicios.map(s => s.empleado1).filter(Boolean),
-    ...servicios.map(s => s.empleado2).filter(Boolean),
-    ...Object.values(manoObra).flat().map(mo => mo.trabajador).filter(Boolean),
-  ])].sort()
+  const todosEmpleados = empleados.map(e => e.nombre)
 
   const totalSeleccionadas = seleccionadas.reduce((a, id) => {
     const s = servicios.find(x => x.id === id)
@@ -426,11 +425,17 @@ export default function Servicios({ usuario }) {
                 </div>
                 <div>
                   <Lbl>Empleado 1</Lbl>
-                  <input type="text" value={form.empleado1} onChange={e => setForm({ ...form, empleado1: e.target.value })} placeholder="ej. Martín" style={inp} />
+                  <select value={form.empleado1} onChange={e => setForm({ ...form, empleado1: e.target.value })} style={inp}>
+                    <option value="">— Sin asignar —</option>
+                    {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                  </select>
                 </div>
                 <div>
                   <Lbl>Empleado 2</Lbl>
-                  <input type="text" value={form.empleado2} onChange={e => setForm({ ...form, empleado2: e.target.value })} placeholder="ej. Brian" style={inp} />
+                  <select value={form.empleado2} onChange={e => setForm({ ...form, empleado2: e.target.value })} style={inp}>
+                    <option value="">— Sin asignar —</option>
+                    {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                  </select>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -532,8 +537,8 @@ export default function Servicios({ usuario }) {
                           <div><Lbl>Campo</Lbl><input type="text" value={formEdit.campo || ''} onChange={e => setFormEdit({ ...formEdit, campo: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>N° Lote</Lbl><input type="text" value={formEdit.nro_lote || ''} onChange={e => setFormEdit({ ...formEdit, nro_lote: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>Hectáreas</Lbl><input type="number" value={formEdit.hectareas} onChange={e => setFormEdit({ ...formEdit, hectareas: e.target.value })} style={{ ...inpMono, padding: '6px 8px' }} /></div>
-                          <div><Lbl>Empleado 1</Lbl><input type="text" value={formEdit.empleado1 || ''} onChange={e => setFormEdit({ ...formEdit, empleado1: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
-                          <div><Lbl>Empleado 2</Lbl><input type="text" value={formEdit.empleado2 || ''} onChange={e => setFormEdit({ ...formEdit, empleado2: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
+                          <div><Lbl>Empleado 1</Lbl><select value={formEdit.empleado1 || ''} onChange={e => setFormEdit({ ...formEdit, empleado1: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Sin asignar —</option>{empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}</select></div>
+                          <div><Lbl>Empleado 2</Lbl><select value={formEdit.empleado2 || ''} onChange={e => setFormEdit({ ...formEdit, empleado2: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Sin asignar —</option>{empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}</select></div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button onClick={guardarEdit} style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>Guardar</button>
