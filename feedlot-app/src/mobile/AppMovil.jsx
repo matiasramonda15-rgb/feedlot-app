@@ -2215,6 +2215,7 @@ function ServiciosMovil({ nav, usuario }) {
   var [formDesc, setFormDesc] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
   var [guardandoDesc, setGuardandoDesc] = useState(false)
   var [guardandoReg, setGuardandoReg] = useState(false)
+  var [serviciosRecientes, setServiciosRecientes] = useState([])
 
   useEffect(() => {
     Promise.all([
@@ -2223,12 +2224,14 @@ function ServiciosMovil({ nav, usuario }) {
       supabase.from('campanas').select('*').eq('activa', true).order('nombre', { ascending: false }),
       supabase.from('maquinaria').select('*').eq('activo', true).order('nombre'),
       supabase.from('registros_mercaderia').select('*').order('created_at', { ascending: false }),
-    ]).then(([{ data: ct }, { data: em }, { data: ca }, { data: mq }, { data: regs }]) => {
+      supabase.from('servicios_terceros').select('id, campania, cliente, labor, cultivo, campo, nro_lote, hectareas, fecha, empleado1, empleado2').order('fecha', { ascending: false }).limit(10),
+    ]).then(([{ data: ct }, { data: em }, { data: ca }, { data: mq }, { data: regs }, { data: svcs }]) => {
       setContactos(ct || [])
       setEmpleados(em || [])
       setCampanas(ca || [])
       setMaquinaria(mq || [])
       setRegistros(regs || [])
+      setServiciosRecientes(svcs || [])
       if (ca && ca.length > 0) setForm(f => ({ ...f, campania: ca[0].nombre }))
     })
   }, [])
@@ -2265,6 +2268,9 @@ function ServiciosMovil({ nav, usuario }) {
     })
     setGuardando(false)
     if (error) { alert('Error: ' + error.message); return }
+    // Recargar lista
+    var { data: svcs } = await supabase.from('servicios_terceros').select('id, campania, cliente, labor, cultivo, campo, nro_lote, hectareas, fecha, empleado1, empleado2').order('fecha', { ascending: false }).limit(10)
+    setServiciosRecientes(svcs || [])
     setOk('servicio')
     setTimeout(() => {
       setOk('')
@@ -2411,9 +2417,42 @@ function ServiciosMovil({ nav, usuario }) {
             <div style={{ height: 16 }} />
 
             <button onClick={guardarServicio} disabled={guardando}
-              style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: C.accent, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans, marginBottom: 32 }}>
+              style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: C.accent, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans, marginBottom: 24 }}>
               {guardando ? 'Guardando...' : '💾 Guardar servicio'}
             </button>
+
+            {/* Últimos servicios registrados */}
+            {serviciosRecientes.length > 0 && (
+              <div style={{ marginBottom: 32 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>
+                  Últimos registros
+                </div>
+                {serviciosRecientes.map(s => (
+                  <div key={s.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                          {s.campo || s.cliente || '—'}
+                          {s.nro_lote ? <span style={{ fontWeight: 400, color: C.muted, fontSize: 12 }}> · {s.nro_lote}</span> : ''}
+                        </div>
+                        <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
+                          {s.labor} {s.cultivo ? `· ${s.cultivo}` : ''} · {s.hectareas} ha
+                          {s.cliente && s.campo ? ` · ${s.cliente}` : ''}
+                        </div>
+                        {(s.empleado1 || s.empleado2) && (
+                          <div style={{ fontSize: 11, color: C.accent, marginTop: 3 }}>
+                            👷 {[s.empleado1, s.empleado2].filter(Boolean).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: C.muted, marginLeft: 8, whiteSpace: 'nowrap' }}>
+                        {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -2496,17 +2535,61 @@ function ServiciosMovil({ nav, usuario }) {
                     <div style={{ borderTop: `1px solid ${C.border}`, padding: '1rem', background: C.surface2 }}>
                       {desc.length > 0 && (
                         <div style={{ marginBottom: 16 }}>
-                          {desc.map(d => (
-                            <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-                              <div>
-                                <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'camion' ? '#1A3D6B44' : d.tipo === 'bolsa' ? '#1E5C2E44' : '#7A450044', color: d.tipo === 'camion' ? C.accent : d.tipo === 'bolsa' ? C.green : C.amber }}>
-                                  {d.tipo === 'camion' ? '🚛' : d.tipo === 'bolsa' ? '🌾' : '📦'} {d.tipo}
-                                </span>
-                                {(d.patente || d.observaciones) && <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>{d.patente || d.observaciones}</span>}
-                              </div>
-                              <span style={{ fontFamily: C.mono, fontWeight: 700, fontSize: 14 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</span>
+                          {desc.map(d => {
+                            var [editando, setEditando] = useState(false)
+                            var [editKg, setEditKg] = useState(String(d.kg || ''))
+                            var [editPatente, setEditPatente] = useState(d.patente || d.observaciones || '')
+                            return (
+                            <div key={d.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                              {!editando ? (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div>
+                                    <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'camion' ? '#1A3D6B44' : d.tipo === 'bolsa' ? '#1E5C2E44' : '#7A450044', color: d.tipo === 'camion' ? C.accent : d.tipo === 'bolsa' ? C.green : C.amber }}>
+                                      {d.tipo === 'camion' ? '🚛' : d.tipo === 'bolsa' ? '🌾' : '📦'} {d.tipo}
+                                    </span>
+                                    {(d.patente || d.observaciones) && <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>{d.patente || d.observaciones}</span>}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ fontFamily: C.mono, fontWeight: 700, fontSize: 14 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</span>
+                                    <button onClick={() => { setEditando(true); setEditKg(String(d.kg || '')); setEditPatente(d.patente || d.observaciones || '') }}
+                                      style={{ padding: '4px 8px', fontSize: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, cursor: 'pointer' }}>✏</button>
+                                    <button onClick={async () => {
+                                      if (!confirm('¿Eliminar esta descarga?')) return
+                                      await supabase.from('descargas_mercaderia').delete().eq('id', d.id)
+                                      await cargarDescargas(reg.id)
+                                    }} style={{ padding: '4px 8px', fontSize: 12, background: '#3D1A1A', border: `1px solid ${C.red}`, color: C.red, borderRadius: 6, cursor: 'pointer' }}>🗑</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>{d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}</div>
+                                  {d.tipo === 'camion' && (
+                                    <input type="text" value={editPatente} onChange={e => setEditPatente(e.target.value.toUpperCase())}
+                                      placeholder="Patente" style={{ ...inp, marginBottom: 8 }} />
+                                  )}
+                                  <input type="number" value={editKg} onChange={e => setEditKg(e.target.value)}
+                                    placeholder="Kg" inputMode="decimal" style={{ ...inp, marginBottom: 8 }} />
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button onClick={async () => {
+                                      await supabase.from('descargas_mercaderia').update({
+                                        kg: parseFloat(editKg) || d.kg,
+                                        patente: d.tipo === 'camion' ? (editPatente || null) : d.patente,
+                                        observaciones: d.tipo !== 'camion' ? (editPatente || null) : d.observaciones,
+                                      }).eq('id', d.id)
+                                      setEditando(false)
+                                      await cargarDescargas(reg.id)
+                                    }} style={{ flex: 1, padding: '10px', fontSize: 13, fontWeight: 600, background: C.green, border: 'none', color: '#fff', borderRadius: 8, cursor: 'pointer', fontFamily: C.sans }}>
+                                      Guardar
+                                    </button>
+                                    <button onClick={() => setEditando(false)}
+                                      style={{ padding: '10px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: 'pointer', fontFamily: C.sans }}>
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          ))}
+                          )})}
                           {kgTotal > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', fontWeight: 700, color: C.accent, fontSize: 15 }}>
                               <span>TOTAL</span>
