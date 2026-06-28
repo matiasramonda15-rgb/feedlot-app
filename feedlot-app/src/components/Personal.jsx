@@ -28,11 +28,12 @@ export default function Personal({ usuario }) {
   const [empleados, setEmpleados] = useState([])
   const [pagos, setPagos] = useState([])
   const [empleadoSelId, setEmpleadoSelId] = useState('')
+  const [editandoEmp, setEditandoEmp] = useState(null) // { id, nombre, rol, sueldo_base, tipo, aparece_en_servicios }
   const [showFormEmp, setShowFormEmp] = useState(false)
   const [showFormPago, setShowFormPago] = useState(false)
   const [guardando, setGuardando] = useState(false)
 
-  const [formEmp, setFormEmp] = useState({ nombre: '', rol: '', sueldo_base: '' })
+  const [formEmp, setFormEmp] = useState({ nombre: '', rol: '', sueldo_base: '', tipo: 'fijo', aparece_en_servicios: true })
   const [formPago, setFormPago] = useState({
     empleado_id: '', fecha: new Date().toISOString().split('T')[0],
     monto: '', concepto: '', tipo: 'sueldo'
@@ -50,10 +51,23 @@ export default function Personal({ usuario }) {
     setLoading(false)
   }
 
+  async function guardarEditEmpleado() {
+    if (!editandoEmp?.nombre?.trim()) { alert('Ingresá el nombre'); return }
+    await supabase.from('empleados').update({
+      nombre: editandoEmp.nombre.trim(),
+      rol: editandoEmp.rol || null,
+      sueldo_base: editandoEmp.sueldo_base ? parseFloat(editandoEmp.sueldo_base) : null,
+      tipo: editandoEmp.tipo || 'fijo',
+      aparece_en_servicios: editandoEmp.aparece_en_servicios !== false,
+    }).eq('id', editandoEmp.id)
+    setEditandoEmp(null)
+    await cargarDatos()
+  }
+
   async function guardarEmpleado() {
     if (!formEmp.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    await supabase.from('empleados').insert({ ...formEmp, sueldo_base: formEmp.sueldo_base ? parseFloat(formEmp.sueldo_base) : null, activo: true })
+    await supabase.from('empleados').insert({ nombre: formEmp.nombre, rol: formEmp.rol || null, sueldo_base: formEmp.sueldo_base ? parseFloat(formEmp.sueldo_base) : null, tipo: formEmp.tipo || 'fijo', aparece_en_servicios: formEmp.aparece_en_servicios !== false, activo: true })
     await cargar()
     setShowFormEmp(false)
     setFormEmp({ nombre: '', rol: '', sueldo_base: '' })
@@ -129,6 +143,17 @@ export default function Personal({ usuario }) {
                 <div><Label>Nombre</Label><input type="text" value={formEmp.nombre} onChange={e => setFormEmp({...formEmp, nombre: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Rol / cargo</Label><input type="text" value={formEmp.rol} onChange={e => setFormEmp({...formEmp, rol: e.target.value})} style={inputStyle} placeholder="ej. Encargado" /></div>
                 <div><Label>Sueldo base $</Label><input type="number" value={formEmp.sueldo_base} onChange={e => setFormEmp({...formEmp, sueldo_base: e.target.value})} style={inputStyle} /></div>
+                <div>
+                  <Label>Tipo</Label>
+                  <select value={formEmp.tipo} onChange={e => setFormEmp({...formEmp, tipo: e.target.value})} style={inputStyle}>
+                    <option value="fijo">Fijo</option>
+                    <option value="temporal">Temporal</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={formEmp.aparece_en_servicios} onChange={e => setFormEmp({...formEmp, aparece_en_servicios: e.target.checked})} id="aparece_svc" />
+                  <label htmlFor="aparece_svc" style={{ fontSize: 13, cursor: 'pointer' }}>Aparece en Servicios</label>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setShowFormEmp(false)} style={{ flex: 1, padding: '7px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -148,17 +173,55 @@ export default function Personal({ usuario }) {
             const totalEmp = pagosEmp.filter(p => new Date(p.fecha).getFullYear() === anio).reduce((s, p) => s + (p.monto || 0), 0)
             const isSel = String(e.id) === String(empleadoSelId)
             return (
-              <div key={e.id} onClick={() => setEmpleadoSelId(String(e.id))}
-                style={{ border: `1px solid ${isSel ? S.accent : S.border}`, borderRadius: 8, padding: '.75rem', marginBottom: 6, cursor: 'pointer', background: isSel ? S.accentLight : e.activo ? S.surface : S.bg, opacity: e.activo ? 1 : 0.6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{e.nombre}</div>
-                  <span style={{ fontSize: 10, color: e.activo ? S.green : S.hint }}>{e.activo ? 'Activo' : 'Inactivo'}</span>
-                </div>
-                <div style={{ fontSize: 11, color: S.muted }}>{e.rol || '—'}</div>
-                <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: S.muted }}>Base: ${e.sueldo_base?.toLocaleString('es-AR') || '—'}</span>
-                  <span style={{ color: S.green }}>${totalEmp.toLocaleString('es-AR')} {anio}</span>
-                </div>
+              <div key={e.id} style={{ border: `1px solid ${editandoEmp?.id === e.id ? S.accent : isSel ? S.accent : S.border}`, borderRadius: 8, marginBottom: 6, overflow: 'hidden', opacity: e.activo ? 1 : 0.6 }}>
+                {editandoEmp?.id !== e.id ? (
+                  <div onClick={() => setEmpleadoSelId(String(e.id))}
+                    style={{ padding: '.75rem', cursor: 'pointer', background: isSel ? S.accentLight : e.activo ? S.surface : S.bg }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{e.nombre}</span>
+                          {e.tipo === 'temporal' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: S.amberLight, color: S.amber }}>Temporal</span>}
+                          {e.aparece_en_servicios && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: S.accentLight, color: S.accent }}>Servicios</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: S.muted }}>{e.rol || '—'}</div>
+                        <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: S.muted }}>Base: ${e.sueldo_base?.toLocaleString('es-AR') || '—'}</span>
+                          <span style={{ color: S.green }}>${totalEmp.toLocaleString('es-AR')} {anio}</span>
+                        </div>
+                      </div>
+                      <button onClick={ev => { ev.stopPropagation(); setEditandoEmp({ id: e.id, nombre: e.nombre, rol: e.rol || '', sueldo_base: e.sueldo_base ? String(e.sueldo_base) : '', tipo: e.tipo || 'fijo', aparece_en_servicios: e.aparece_en_servicios !== false }) }}
+                        style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer', marginLeft: 8, flexShrink: 0 }}>
+                        ✏ Editar
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 10, color: e.activo ? S.green : S.hint, marginTop: 4 }}>{e.activo ? '● Activo' : '○ Inactivo'}</div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '1rem', background: S.accentLight }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: S.accent, marginBottom: 10 }}>Editar empleado</div>
+                    <div style={{ display: 'grid', gap: '.75rem', marginBottom: '.75rem' }}>
+                      <div><Label>Nombre</Label><input type="text" value={editandoEmp.nombre} onChange={ev => setEditandoEmp({...editandoEmp, nombre: ev.target.value})} style={inputStyle} /></div>
+                      <div><Label>Rol / cargo</Label><input type="text" value={editandoEmp.rol} onChange={ev => setEditandoEmp({...editandoEmp, rol: ev.target.value})} style={inputStyle} /></div>
+                      <div><Label>Sueldo base $</Label><input type="number" value={editandoEmp.sueldo_base} onChange={ev => setEditandoEmp({...editandoEmp, sueldo_base: ev.target.value})} style={inputStyle} /></div>
+                      <div>
+                        <Label>Tipo</Label>
+                        <select value={editandoEmp.tipo} onChange={ev => setEditandoEmp({...editandoEmp, tipo: ev.target.value})} style={inputStyle}>
+                          <option value="fijo">Fijo</option>
+                          <option value="temporal">Temporal</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="checkbox" checked={editandoEmp.aparece_en_servicios} onChange={ev => setEditandoEmp({...editandoEmp, aparece_en_servicios: ev.target.checked})} id={`svc_${e.id}`} />
+                        <label htmlFor={`svc_${e.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>Aparece en Servicios</label>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => setEditandoEmp(null)} style={{ flex: 1, padding: '7px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                      <button onClick={guardarEditEmpleado} style={{ flex: 1, padding: '7px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
