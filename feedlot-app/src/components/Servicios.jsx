@@ -825,7 +825,9 @@ export default function Servicios({ usuario }) {
           if (filtrosMO.tipo && s.tipo_servicio !== filtrosMO.tipo) return false
           if (filtrosMO.empleado) {
             const moList = manoObra[s.id] || []
-            if (!moList.some(mo => mo.trabajador === filtrosMO.empleado)) return false
+            const enMO = moList.some(mo => mo.trabajador === filtrosMO.empleado)
+            const enServicio = s.empleado1 === filtrosMO.empleado || s.empleado2 === filtrosMO.empleado
+            if (!enMO && !enServicio) return false
           }
           return true
         })
@@ -835,7 +837,9 @@ export default function Servicios({ usuario }) {
         const totalPagoMO = seleccionadasMO.reduce((a, id) => {
           const s = servicios.find(x => x.id === id)
           const mo = (manoObra[s?.id] || []).find(m => m.trabajador === empleadoSeleccionado)
-          const monto = mo?.monto_calculado || (s?.precio_ha && s?.hectareas && mo?.porcentaje ? Math.round(s.precio_ha * s.hectareas * mo.porcentaje / 100) : 0)
+          const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
+          const pct = mo?.porcentaje || (s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0))
+          const monto = mo?.monto_calculado || (s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : 0)
           return a + monto
         }, 0)
 
@@ -917,13 +921,14 @@ export default function Servicios({ usuario }) {
                     const mo2 = moList[1]
                     const isSelected = seleccionadasMO.includes(s.id)
                     const moEmp = empleadoSeleccionado ? moList.find(m => m.trabajador === empleadoSeleccionado) : null
+        const esEmpleadoDelServicio = empleadoSeleccionado && (s.empleado1 === empleadoSeleccionado || s.empleado2 === empleadoSeleccionado)
                     const isOpen = manoObraOpen === s.id
 
                     return (
                       <React.Fragment key={s.id}>
                         <tr style={{ background: isSelected ? S.accentLight : S.surface }}>
                           <td style={{ ...td_, textAlign: 'center' }}>
-                            {empleadoSeleccionado && moEmp && moEmp.estado_pago !== 'pagado' && (
+                            {empleadoSeleccionado && esEmpleadoDelServicio && (!moEmp || moEmp.estado_pago !== 'pagado') && (
                               <input type="checkbox" checked={isSelected} onChange={() => setSeleccionadasMO(prev => isSelected ? prev.filter(x => x !== s.id) : [...prev, s.id])} />
                             )}
                           </td>
@@ -1040,13 +1045,16 @@ export default function Servicios({ usuario }) {
                       {seleccionadasMO.map(id => {
                         const s = servicios.find(x => x.id === id)
                         const mo = (manoObra[s?.id] || []).find(m => m.trabajador === empleadoSeleccionado)
-                        const monto = mo?.monto_calculado || (s?.precio_ha && s?.hectareas && mo?.porcentaje ? Math.round(s.precio_ha * s.hectareas * mo.porcentaje / 100) : 0)
+                        const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
+                        const pctDefault = s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0)
+                        const pct = mo?.porcentaje || pctDefault
+                        const monto = mo?.monto_calculado || (s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : 0)
                         return (
-                          <div key={id} style={{ fontSize: 12, color: S.muted, display: 'flex', gap: 12, marginBottom: 2 }}>
+                          <div key={id} style={{ fontSize: 12, color: S.muted, display: 'flex', gap: 12, marginBottom: 2, alignItems: 'center' }}>
                             <span style={{ fontWeight: 600 }}>{s?.campo || s?.cliente}</span>
-                            <span>{s?.hectareas} ha × ${s?.precio_ha?.toLocaleString('es-AR')}/ha</span>
-                            <span>{mo?.porcentaje}%</span>
-                            <span style={{ fontWeight: 600, color: S.green }}>${monto.toLocaleString('es-AR')}</span>
+                            <span>{s?.hectareas} ha × ${s?.precio_ha?.toLocaleString('es-AR') || '?'}/ha</span>
+                            <span style={{ color: S.accent }}>{pct}%</span>
+                            <span style={{ fontWeight: 600, color: S.green }}>{monto ? `$${monto.toLocaleString('es-AR')}` : 'sin precio'}</span>
                           </div>
                         )
                       })}
@@ -1120,12 +1128,26 @@ export default function Servicios({ usuario }) {
                               await supabase.from('caja_oficial').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', categoria: 'Mano de obra', descripcion: desc, monto, forma_pago: p.tipo })
                             }
                           }
-                          // Marcar como pagado solo los registros del empleado seleccionado
+                          // Marcar como pagado — crear entrada si no existe
                           for (const id of seleccionadasMO) {
+                            const s = servicios.find(x => x.id === id)
                             const moList = manoObra[id] || []
                             const mo = moList.find(m => m.trabajador === empleadoSeleccionado)
                             if (mo) {
                               await supabase.from('mano_obra_servicios').update({ estado_pago: 'pagado' }).eq('id', mo.id)
+                            } else {
+                              // Crear entrada con % de config
+                              const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
+                              const pct = s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0)
+                              const monto = s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : null
+                              await supabase.from('mano_obra_servicios').insert({
+                                servicio_id: id,
+                                trabajador: empleadoSeleccionado,
+                                rol: cfg?.rol || 'Otro',
+                                porcentaje: pct,
+                                monto_calculado: monto,
+                                estado_pago: 'pagado',
+                              })
                             }
                           }
                           setSeleccionadasMO([])
