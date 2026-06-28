@@ -344,4 +344,4 @@ export default function Personal({ usuario }) {
       </div>
     </div>
   )
-}
+} 
