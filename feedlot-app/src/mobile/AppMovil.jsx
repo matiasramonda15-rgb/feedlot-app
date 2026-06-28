@@ -2456,7 +2456,7 @@ function ServiciosMovil({ nav, usuario }) {
                             {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}
                           </div>
                           <button onClick={() => { setEditandoSvcId(s.id); setEditSvc({ campo: s.campo || '', nro_lote: s.nro_lote || '', cliente: s.cliente || '', labor: s.labor || 'Siembra', cultivo: s.cultivo || 'Maíz', hectareas: String(s.hectareas || ''), empleado1: s.empleado1 || '', empleado2: s.empleado2 || '', fecha: s.fecha || '' }) }}
-                            style={{ padding: '4px 8px', fontSize: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, cursor: 'pointer' }}>✏</button>
+                            style={{ padding: '6px 12px', fontSize: 13, background: C.surface2, border: `1px solid ${C.accent}`, color: C.accent, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>✏ Editar</button>
                         </div>
                       </div>
                     ) : (
