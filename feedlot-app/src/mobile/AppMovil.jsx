@@ -2633,12 +2633,14 @@ function ServiciosMovil({ nav, usuario }) {
                               ) : (
                                 <div>
                                   <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>{d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}</div>
-                                  {d.tipo === 'camion' && (
-                                    <input type="text" value={editDescPatente} onChange={e => setEditDescPatente(e.target.value.toUpperCase())}
-                                      placeholder="Patente" style={{ ...inp, marginBottom: 8 }} />
-                                  )}
+                                  <label style={{ ...lbl, marginBottom: 4 }}>{d.tipo === 'camion' ? 'Patente' : 'Detalle / N° bolsa'}</label>
+                                  <input type="text" value={editDescPatente} 
+                                    onChange={e => setEditDescPatente(d.tipo === 'camion' ? e.target.value.toUpperCase() : e.target.value)}
+                                    placeholder={d.tipo === 'camion' ? 'ej. ABC 123' : 'ej. Bolsa 8'}
+                                    style={{ ...inp, marginBottom: 8 }} />
+                                  <label style={{ ...lbl, marginBottom: 4 }}>Kg</label>
                                   <input type="number" value={editDescKg} onChange={e => setEditDescKg(e.target.value)}
-                                    placeholder="Kg" inputMode="decimal" style={{ ...inp, marginBottom: 8 }} />
+                                    placeholder="ej. 28500" inputMode="decimal" style={{ ...inp, marginBottom: 8 }} />
                                   <div style={{ display: 'flex', gap: 8 }}>
                                     <button onClick={async () => {
                                       await supabase.from('descargas_mercaderia').update({
