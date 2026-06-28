@@ -54,6 +54,7 @@ export default function Servicios({ usuario }) {
   const [showPagoMO, setShowPagoMO] = useState(false)
   const [formPagoMO, setFormPagoMO] = useState({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', pagos: [{ ...PAGO_INIT }] })
   const [guardandoPagoMO, setGuardandoPagoMO] = useState(false)
+  const [pctPagoMO, setPctPagoMO] = useState({}) // { [servicio_id]: pct } editable en el banner
   const [formMO, setFormMO] = useState({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
   const [guardandoMO, setGuardandoMO] = useState(false)
   const [subTabMO, setSubTabMO] = useState('')
@@ -838,8 +839,9 @@ export default function Servicios({ usuario }) {
           const s = servicios.find(x => x.id === id)
           const mo = (manoObra[s?.id] || []).find(m => m.trabajador === empleadoSeleccionado)
           const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
-          const pct = mo?.porcentaje || (s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0))
-          const monto = mo?.monto_calculado || (s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : 0)
+          const pctDefault = mo?.porcentaje || (s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0))
+          const pct = pctPagoMO[id] !== undefined ? pctPagoMO[id] : pctDefault
+          const monto = s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : 0
           return a + monto
         }, 0)
 
@@ -917,8 +919,8 @@ export default function Servicios({ usuario }) {
                   )}
                   {serviciosMO.map(s => {
                     const moList = manoObra[s.id] || []
-                    const mo1 = moList[0]
-                    const mo2 = moList[1]
+                    const mo1 = moList[0] || (s.empleado1 ? { trabajador: s.empleado1, porcentaje: null, monto_calculado: null, estado_pago: 'pendiente' } : null)
+                    const mo2 = moList[1] || (s.empleado2 ? { trabajador: s.empleado2, porcentaje: null, monto_calculado: null, estado_pago: 'pendiente' } : null)
                     const isSelected = seleccionadasMO.includes(s.id)
                     const moEmp = empleadoSeleccionado ? moList.find(m => m.trabajador === empleadoSeleccionado) : null
         const esEmpleadoDelServicio = empleadoSeleccionado && (s.empleado1 === empleadoSeleccionado || s.empleado2 === empleadoSeleccionado)
@@ -1046,15 +1048,20 @@ export default function Servicios({ usuario }) {
                         const s = servicios.find(x => x.id === id)
                         const mo = (manoObra[s?.id] || []).find(m => m.trabajador === empleadoSeleccionado)
                         const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
-                        const pctDefault = s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0)
-                        const pct = mo?.porcentaje || pctDefault
-                        const monto = mo?.monto_calculado || (s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : 0)
+                        const pctDefault = mo?.porcentaje || (s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0))
+                        const pct = pctPagoMO[id] !== undefined ? pctPagoMO[id] : pctDefault
+                        const monto = s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : 0
                         return (
-                          <div key={id} style={{ fontSize: 12, color: S.muted, display: 'flex', gap: 12, marginBottom: 2, alignItems: 'center' }}>
-                            <span style={{ fontWeight: 600 }}>{s?.campo || s?.cliente}</span>
-                            <span>{s?.hectareas} ha × ${s?.precio_ha?.toLocaleString('es-AR') || '?'}/ha</span>
-                            <span style={{ color: S.accent }}>{pct}%</span>
-                            <span style={{ fontWeight: 600, color: S.green }}>{monto ? `$${monto.toLocaleString('es-AR')}` : 'sin precio'}</span>
+                          <div key={id} style={{ display: 'flex', gap: 10, marginBottom: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>{s?.campo || s?.cliente}</span>
+                            <span style={{ fontSize: 12, color: S.muted }}>{s?.hectareas} ha × {s?.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}/ha` : 'sin precio'}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <input type="number" value={pct} min="0" max="100" step="0.5"
+                                onChange={e => setPctPagoMO(prev => ({ ...prev, [id]: parseFloat(e.target.value) || 0 }))}
+                                style={{ width: 60, padding: '4px 6px', border: `1px solid ${S.accent}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', textAlign: 'center', background: S.surface }} />
+                              <span style={{ fontSize: 12, color: S.muted }}>%</span>
+                            </div>
+                            <span style={{ fontWeight: 700, color: S.green, fontSize: 13 }}>{monto ? `$${monto.toLocaleString('es-AR')}` : '—'}</span>
                           </div>
                         )
                       })}
@@ -1064,6 +1071,37 @@ export default function Servicios({ usuario }) {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => {
+                      const win = window.open('', '_blank')
+                      const rows = seleccionadasMO.map(id => {
+                        const s = servicios.find(x => x.id === id)
+                        const mo = (manoObra[s?.id] || []).find(m => m.trabajador === empleadoSeleccionado)
+                        const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
+                        const pctDefault = mo?.porcentaje || (s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0))
+                        const pct = pctPagoMO[id] !== undefined ? pctPagoMO[id] : pctDefault
+                        const monto = s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : 0
+                        return `<tr><td>${s?.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td><td>${s?.campo || '—'}${s?.nro_lote ? ' · '+s.nro_lote : ''}</td><td>${s?.cliente || '—'}</td><td>${s?.labor} ${s?.cultivo || ''}</td><td style="text-align:right">${s?.hectareas}</td><td style="text-align:right">${s?.precio_ha ? '$'+s.precio_ha.toLocaleString('es-AR') : '—'}</td><td style="text-align:right">${pct}%</td><td style="text-align:right;font-weight:700">$${monto.toLocaleString('es-AR')}</td></tr>`
+                      }).join('')
+                      win.document.write(`<!DOCTYPE html><html><head><title>Liquidación — ${empleadoSeleccionado}</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px;color:#1A1916}h2{margin-bottom:.25rem}p{color:#6B6760;margin-bottom:1.5rem;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #E2DDD6;padding:8px 12px;text-align:left}th{background:#F7F5F0;font-weight:600;font-size:11px;text-transform:uppercase}tfoot td{background:#E8F4EB;font-weight:700}@media print{button{display:none}}</style></head><body>
+                        <h2>Liquidación de Mano de Obra — Ramonda Hnos S.A.</h2>
+                        <p>Empleado: <strong>${empleadoSeleccionado}</strong> · Fecha: ${new Date().toLocaleDateString('es-AR')}</p>
+                        <table>
+                          <thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Cliente</th><th>Servicio</th><th style="text-align:right">Ha</th><th style="text-align:right">$/Ha</th><th style="text-align:right">%</th><th style="text-align:right">Total</th></tr></thead>
+                          <tbody>${rows}</tbody>
+                          <tfoot><tr>
+                            <td colspan="4">TOTAL</td>
+                            <td style="text-align:right">${seleccionadasMO.reduce((a,id) => { const s = servicios.find(x=>x.id===id); return a+(s?.hectareas||0) }, 0)} ha</td>
+                            <td></td><td></td>
+                            <td style="text-align:right">$${totalPagoMO.toLocaleString('es-AR')}</td>
+                          </tr></tfoot>
+                        </table>
+                        <br><p style="font-size:11px;color:#9E9A94">Firma: ______________________________ · Aclaración: ______________________________</p>
+                        <button onclick="window.print()" style="padding:8px 16px;background:#1E5C2E;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir</button>
+                      </body></html>`)
+                      win.document.close()
+                    }} style={{ padding: '8px 14px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                      🖨 Ver liquidación
+                    </button>
                     <button onClick={() => setShowPagoMO(!showPagoMO)}
                       style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                       💳 Registrar pago
@@ -1138,7 +1176,8 @@ export default function Servicios({ usuario }) {
                             } else {
                               // Crear entrada con % de config
                               const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
-                              const pct = s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0)
+                              const pctCfg = s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0)
+                              const pct = pctPagoMO[id] !== undefined ? pctPagoMO[id] : pctCfg
                               const monto = s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : null
                               await supabase.from('mano_obra_servicios').insert({
                                 servicio_id: id,
@@ -1152,6 +1191,7 @@ export default function Servicios({ usuario }) {
                           }
                           setSeleccionadasMO([])
                           setShowPagoMO(false)
+                          setPctPagoMO({})
                           setFormPagoMO({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', pagos: [{ ...PAGO_INIT }] })
                           await cargar()
                         } catch(e) {
@@ -1265,13 +1305,28 @@ export default function Servicios({ usuario }) {
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 12 }}>
                     {isActivo && kgTotal > 0 && (
                       <button onClick={() => {
-                        const csv = `Campo,${reg.campo}\nCliente,${reg.cliente || '—'}\nLote,${reg.nro_lote || '—'}\nCultivo,${reg.cultivo || '—'}\n\nFecha,Tipo,Patente/Detalle,Kg\n` +
-                          desc.map(d => `${d.fecha || ''},${d.tipo},${d.patente || d.observaciones || ''},${d.kg}`).join('\n') +
-                          `\n\nRESUMEN\nCamión,${kgCamion}\nBolsa,${kgBolsa}\nOtro,${kgOtro}\nTOTAL,${kgTotal}`
-                        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
-                        a.download = `mercaderia_${reg.campo}_${reg.fecha}.csv`; a.click()
+                        const win = window.open('', '_blank')
+                        const rows = desc.map(d => `<tr><td>${d.fecha ? new Date(d.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td><td>${d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}</td><td>${d.patente || d.observaciones || '—'}</td><td style="text-align:right;font-family:monospace;font-weight:600">${(d.kg||0).toLocaleString('es-AR')} kg</td></tr>`).join('')
+                        win.document.write(`<!DOCTYPE html><html><head><title>Mercadería — ${reg.campo}</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px;color:#1A1916}h2{margin-bottom:.25rem}p{color:#6B6760;margin-bottom:1.5rem;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #E2DDD6;padding:8px 12px;text-align:left}th{background:#F7F5F0;font-weight:600;font-size:11px;text-transform:uppercase}tfoot tr{background:#E8F4EB;font-weight:700}.resumen{margin-top:1.5rem;padding:1rem;background:#F7F5F0;border-radius:8px}@media print{button{display:none}}</style></head><body>
+                          <h2>Registro de Mercadería</h2>
+                          <p>Campo: <strong>${reg.campo}</strong> · Cliente: ${reg.cliente || '—'} · Lote: ${reg.nro_lote || '—'} · Cultivo: ${reg.cultivo || '—'}</p>
+                          <table>
+                            <thead><tr><th>Fecha</th><th>Tipo</th><th>Patente / Detalle</th><th>Kg</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                            <tfoot><tr><td colspan="3">TOTAL</td><td style="text-align:right;font-family:monospace">${kgTotal.toLocaleString('es-AR')} kg</td></tr></tfoot>
+                          </table>
+                          <div class="resumen">
+                            <strong>Resumen:</strong><br>
+                            ${kgCamion > 0 ? `🚛 Camión: <strong>${kgCamion.toLocaleString('es-AR')} kg</strong><br>` : ''}
+                            ${kgBolsa > 0 ? `🌾 Bolsa: <strong>${kgBolsa.toLocaleString('es-AR')} kg</strong><br>` : ''}
+                            ${kgOtro > 0 ? `📦 Otro: <strong>${kgOtro.toLocaleString('es-AR')} kg</strong><br>` : ''}
+                            <br>Total: <strong>${kgTotal.toLocaleString('es-AR')} kg</strong>
+                          </div>
+                          <br><button onclick="window.print()" style="padding:8px 16px;background:#1A3D6B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir</button>
+                        </body></html>`)
+                        win.document.close()
                       }} style={{ padding: '6px 12px', fontSize: 12, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
-                        ⬇ Exportar
+                        🖨 Imprimir
                       </button>
                     )}
                     <button onClick={async () => {
