@@ -2219,6 +2219,8 @@ function ServiciosMovil({ nav, usuario }) {
   var [editandoDescId, setEditandoDescId] = useState(null)
   var [editDescKg, setEditDescKg] = useState('')
   var [editDescPatente, setEditDescPatente] = useState('')
+  var [editandoSvcId, setEditandoSvcId] = useState(null)
+  var [editSvc, setEditSvc] = useState({})
 
   useEffect(() => {
     Promise.all([
@@ -2431,27 +2433,96 @@ function ServiciosMovil({ nav, usuario }) {
                   Últimos registros
                 </div>
                 {serviciosRecientes.map(s => (
-                  <div key={s.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>
-                          {s.campo || s.cliente || '—'}
-                          {s.nro_lote ? <span style={{ fontWeight: 400, color: C.muted, fontSize: 12 }}> · {s.nro_lote}</span> : ''}
-                        </div>
-                        <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
-                          {s.labor} {s.cultivo ? `· ${s.cultivo}` : ''} · {s.hectareas} ha
-                          {s.cliente && s.campo ? ` · ${s.cliente}` : ''}
-                        </div>
-                        {(s.empleado1 || s.empleado2) && (
-                          <div style={{ fontSize: 11, color: C.accent, marginTop: 3 }}>
-                            👷 {[s.empleado1, s.empleado2].filter(Boolean).join(', ')}
+                  <div key={s.id} style={{ background: C.surface, border: `1px solid ${editandoSvcId === s.id ? C.accent : C.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    {editandoSvcId !== s.id ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>
+                            {s.campo || s.cliente || '—'}
+                            {s.nro_lote ? <span style={{ fontWeight: 400, color: C.muted, fontSize: 12 }}> · {s.nro_lote}</span> : ''}
                           </div>
-                        )}
+                          <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
+                            {s.labor} {s.cultivo ? `· ${s.cultivo}` : ''} · {s.hectareas} ha
+                            {s.cliente && s.campo ? ` · ${s.cliente}` : ''}
+                          </div>
+                          {(s.empleado1 || s.empleado2) && (
+                            <div style={{ fontSize: 11, color: C.accent, marginTop: 3 }}>
+                              👷 {[s.empleado1, s.empleado2].filter(Boolean).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 8 }}>
+                          <div style={{ fontSize: 11, color: C.muted, whiteSpace: 'nowrap' }}>
+                            {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}
+                          </div>
+                          <button onClick={() => { setEditandoSvcId(s.id); setEditSvc({ campo: s.campo || '', nro_lote: s.nro_lote || '', cliente: s.cliente || '', labor: s.labor || 'Siembra', cultivo: s.cultivo || 'Maíz', hectareas: String(s.hectareas || ''), empleado1: s.empleado1 || '', empleado2: s.empleado2 || '', fecha: s.fecha || '' }) }}
+                            style={{ padding: '4px 8px', fontSize: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, cursor: 'pointer' }}>✏</button>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: C.muted, marginLeft: 8, whiteSpace: 'nowrap' }}>
-                        {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: C.accent, marginBottom: 10 }}>Editar servicio</div>
+                        <label style={lbl}>Campo</label>
+                        <input type="text" value={editSvc.campo} onChange={e => setEditSvc({...editSvc, campo: e.target.value})} style={inp} />
+                        <label style={lbl}>N° Lote</label>
+                        <input type="text" value={editSvc.nro_lote} onChange={e => setEditSvc({...editSvc, nro_lote: e.target.value})} style={inp} />
+                        <label style={lbl}>Cliente</label>
+                        <select value={editSvc.cliente} onChange={e => setEditSvc({...editSvc, cliente: e.target.value})} style={inp}>
+                          <option value="">— Sin especificar —</option>
+                          {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                        </select>
+                        <label style={lbl}>Servicio</label>
+                        <select value={editSvc.labor} onChange={e => setEditSvc({...editSvc, labor: e.target.value})} style={inp}>
+                          {LABORES.map(l => <option key={l}>{l}</option>)}
+                        </select>
+                        <label style={lbl}>Cultivo</label>
+                        <select value={editSvc.cultivo} onChange={e => setEditSvc({...editSvc, cultivo: e.target.value})} style={inp}>
+                          {CULTIVOS_M.map(c => <option key={c}>{c}</option>)}
+                        </select>
+                        <label style={lbl}>Hectáreas</label>
+                        <input type="number" value={editSvc.hectareas} onChange={e => setEditSvc({...editSvc, hectareas: e.target.value})} style={inp} inputMode="decimal" />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <label style={lbl}>Empleado 1</label>
+                            <select value={editSvc.empleado1} onChange={e => setEditSvc({...editSvc, empleado1: e.target.value})} style={{ ...inp, marginBottom: 0 }}>
+                              <option value="">— Sin asignar —</option>
+                              {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={lbl}>Empleado 2</label>
+                            <select value={editSvc.empleado2} onChange={e => setEditSvc({...editSvc, empleado2: e.target.value})} style={{ ...inp, marginBottom: 0 }}>
+                              <option value="">— Sin asignar —</option>
+                              {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ height: 12 }} />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={async () => {
+                            await supabase.from('servicios_terceros').update({
+                              campo: editSvc.campo || null,
+                              nro_lote: editSvc.nro_lote || null,
+                              cliente: editSvc.cliente || null,
+                              labor: editSvc.labor,
+                              cultivo: editSvc.cultivo,
+                              hectareas: parseFloat(editSvc.hectareas) || s.hectareas,
+                              empleado1: editSvc.empleado1 || null,
+                              empleado2: editSvc.empleado2 || null,
+                            }).eq('id', s.id)
+                            var { data: svcs } = await supabase.from('servicios_terceros').select('id, campania, cliente, labor, cultivo, campo, nro_lote, hectareas, fecha, empleado1, empleado2').order('fecha', { ascending: false }).limit(10)
+                            setServiciosRecientes(svcs || [])
+                            setEditandoSvcId(null)
+                          }} style={{ flex: 1, padding: '11px', fontSize: 13, fontWeight: 600, background: C.accent, border: 'none', color: '#fff', borderRadius: 8, cursor: 'pointer', fontFamily: C.sans }}>
+                            Guardar
+                          </button>
+                          <button onClick={() => setEditandoSvcId(null)}
+                            style={{ padding: '11px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: 'pointer', fontFamily: C.sans }}>
+                            Cancelar
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
