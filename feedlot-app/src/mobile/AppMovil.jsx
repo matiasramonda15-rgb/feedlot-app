@@ -2391,20 +2391,27 @@ function ServiciosMovil({ nav, usuario }) {
             <label style={lbl}>Hectáreas *</label>
             <input type="number" value={form.hectareas} onChange={e => setForm({...form, hectareas: e.target.value})} style={inp} placeholder="ej. 120" inputMode="decimal" />
 
-            <label style={lbl}>Empleado 1</label>
-            <select value={form.empleado1} onChange={e => setForm({...form, empleado1: e.target.value})} style={inp}>
-              <option value="">— Sin asignar —</option>
-              {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
-            </select>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label style={lbl}>Empleado 1</label>
+                <select value={form.empleado1} onChange={e => setForm({...form, empleado1: e.target.value})} style={{ ...inp, marginBottom: 0 }}>
+                  <option value="">— Sin asignar —</option>
+                  {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={lbl}>Empleado 2</label>
+                <select value={form.empleado2} onChange={e => setForm({...form, empleado2: e.target.value})} style={{ ...inp, marginBottom: 0 }}>
+                  <option value="">— Sin asignar —</option>
+                  {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                </select>
+              </div>
+            </div>
 
-            <label style={lbl}>Empleado 2</label>
-            <select value={form.empleado2} onChange={e => setForm({...form, empleado2: e.target.value})} style={inp}>
-              <option value="">— Sin asignar —</option>
-              {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
-            </select>
+            <div style={{ height: 16 }} />
 
             <button onClick={guardarServicio} disabled={guardando}
-              style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: C.accent, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans, marginTop: 4 }}>
+              style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: C.accent, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans, marginBottom: 32 }}>
               {guardando ? 'Guardando...' : '💾 Guardar servicio'}
             </button>
           </div>
@@ -2442,7 +2449,7 @@ function ServiciosMovil({ nav, usuario }) {
                 <label style={lbl}>Fecha inicio</label>
                 <input type="date" value={formReg.fecha} onChange={e => setFormReg({...formReg, fecha: e.target.value})} style={inp} />
                 <button onClick={guardarRegistroMercaderia} disabled={guardandoReg}
-                  style={{ width: '100%', padding: '12px', fontSize: 14, fontWeight: 600, background: C.green, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans }}>
+                  style={{ width: '100%', padding: '12px', fontSize: 14, fontWeight: 600, background: C.green, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans, marginBottom: 16 }}>
                   {guardandoReg ? 'Guardando...' : '💾 Crear registro'}
                 </button>
               </div>
@@ -2538,7 +2545,7 @@ function ServiciosMovil({ nav, usuario }) {
                       <label style={lbl}>Fecha</label>
                       <input type="date" value={formDesc.fecha} onChange={e => setFormDesc({...formDesc, fecha: e.target.value})} style={inp} />
                       <button onClick={() => guardarDescarga(reg.id)} disabled={guardandoDesc}
-                        style={{ width: '100%', padding: '13px', fontSize: 14, fontWeight: 600, background: C.green, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans }}>
+                        style={{ width: '100%', padding: '13px', fontSize: 14, fontWeight: 600, background: C.green, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: C.sans, marginBottom: 32 }}>
                         {guardandoDesc ? 'Guardando...' : '+ Registrar descarga'}
                       </button>
                     </div>
