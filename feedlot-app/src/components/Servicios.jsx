@@ -1221,7 +1221,7 @@ export default function Servicios({ usuario }) {
 
             {/* Historial de pagos MO */}
             {(() => {
-              const pagados = serviciosMO.filter(s => {
+              const pagados = servicios.filter(s => {
                 const moList = manoObra[s.id] || []
                 const mo = empleadoSeleccionado
                   ? moList.find(m => m.trabajador === empleadoSeleccionado && m.estado_pago === 'pagado')
@@ -1399,6 +1399,15 @@ export default function Servicios({ usuario }) {
                     }} style={{ padding: '6px 12px', fontSize: 12, background: isActivo ? S.accentLight : S.bg, border: `1px solid ${isActivo ? S.accent : S.border}`, color: isActivo ? S.accent : S.muted, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
                       {isActivo ? '▲ Cerrar' : '📦 Ver / Registrar'}
                     </button>
+                    <button onClick={async () => {
+                      if (!confirm(`¿Eliminar el registro de "${reg.campo}"? Se borrarán también todas las descargas.`)) return
+                      await supabase.from('descargas_mercaderia').delete().eq('registro_id', reg.id)
+                      await supabase.from('registros_mercaderia').delete().eq('id', reg.id)
+                      setRegistros(prev => prev.filter(r => r.id !== reg.id))
+                      if (registroActivo?.id === reg.id) setRegistroActivo(null)
+                    }} style={{ padding: '6px 10px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>
+                      🗑
+                    </button>
                   </div>
                 </div>
                 {isActivo && (
@@ -1413,6 +1422,13 @@ export default function Servicios({ usuario }) {
                               <td style={{ padding: '7px 10px' }}><span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'camion' ? S.accentLight : d.tipo === 'bolsa' ? S.greenLight : S.amberLight, color: d.tipo === 'camion' ? S.accent : d.tipo === 'bolsa' ? S.green : S.amber }}>{d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}</span></td>
                               <td style={{ padding: '7px 10px', color: S.muted, fontFamily: 'monospace' }}>{d.patente || d.observaciones || '—'}</td>
                               <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 700 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</td>
+                              <td style={{ padding: '7px 10px' }}>
+                                <button onClick={async () => {
+                                  if (!confirm('¿Eliminar esta descarga?')) return
+                                  await supabase.from('descargas_mercaderia').delete().eq('id', d.id)
+                                  await cargarDescargasReg(reg.id)
+                                }} style={{ padding: '3px 7px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>🗑</button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
