@@ -947,74 +947,7 @@ export default function Servicios({ usuario }) {
                           <td style={td_}>{mo1 && <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 10, fontWeight: 600, background: mo1.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo1.estado_pago === 'pagado' ? S.green : S.amber }}>{mo1.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pend.'}</span>}</td>
                           <td style={td_}><div style={{ fontWeight: 600, fontSize: 12 }}>{mo2?.trabajador || '—'}</div>{mo2 && <div style={{ fontSize: 11, color: S.muted }}>{mo2.porcentaje}% · {mo2.monto_calculado ? `$${mo2.monto_calculado.toLocaleString('es-AR')}` : '—'}</div>}</td>
                           <td style={td_}>{mo2 && <span style={{ padding: '2px 5px', borderRadius: 3, fontSize: 10, fontWeight: 600, background: mo2.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo2.estado_pago === 'pagado' ? S.green : S.amber }}>{mo2.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pend.'}</span>}</td>
-                          <td style={{ ...td_, whiteSpace: 'nowrap' }}>
-                            <button onClick={async () => {
-                              if (manoObraOpen === s.id) { setManoObraOpen(null); return }
-                              setManoObraOpen(s.id)
-                            }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer' }}>
-                              👷
-                            </button>
-                          </td>
                         </tr>
-                        {isOpen && (
-                          <tr>
-                            <td colSpan={15} style={{ padding: 0 }}>
-                              <div style={{ padding: '1rem', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
-                                {moList.length > 0 && (
-                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1rem' }}>
-                                    <thead><tr>{['Empleado', 'Rol', '%', '$/Ha', '$Total', 'Estado', ''].map(h => (
-                                      <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                                    ))}</tr></thead>
-                                    <tbody>
-                                      {moList.map(mo => {
-                                        const pct = mo.porcentaje || 0
-                                        const precioHaEmp = s.precio_ha ? Math.round(s.precio_ha * pct / 100) : null
-                                        const montoCalc = mo.monto_calculado || (s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas * pct / 100) : null)
-                                        return (
-                                          <tr key={mo.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                                            <td style={{ padding: '7px 10px', fontWeight: 600 }}>{mo.trabajador}</td>
-                                            <td style={{ padding: '7px 10px', color: S.muted }}>{mo.rol}</td>
-                                            <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{pct}%</td>
-                                            <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: S.muted }}>{precioHaEmp ? `$${precioHaEmp.toLocaleString('es-AR')}` : '—'}</td>
-                                            <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{montoCalc ? `$${montoCalc.toLocaleString('es-AR')}` : '—'}</td>
-                                            <td style={{ padding: '7px 10px' }}>
-                                              <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: mo.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: mo.estado_pago === 'pagado' ? S.green : S.amber }}>
-                                                {mo.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
-                                              </span>
-                                            </td>
-                                            <td style={{ padding: '7px 10px' }}>
-                                              <div style={{ display: 'flex', gap: 4 }}>
-                                                <button onClick={async () => {
-                                                  const nuevoPct = prompt(`Nuevo % para ${mo.trabajador}:`, pct)
-                                                  if (!nuevoPct) return
-                                                  const nuevoMonto = s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas * parseFloat(nuevoPct) / 100) : null
-                                                  await supabase.from('mano_obra_servicios').update({ porcentaje: parseFloat(nuevoPct), monto_calculado: nuevoMonto }).eq('id', mo.id)
-                                                  await cargar()
-                                                }} style={{ padding: '3px 7px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>✏</button>
-                                                <button onClick={async () => {
-                                                  if (!confirm(`¿Eliminar a ${mo.trabajador}?`)) return
-                                                  await supabase.from('mano_obra_servicios').delete().eq('id', mo.id)
-                                                  await cargar()
-                                                }} style={{ padding: '3px 7px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>🗑</button>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        )
-                                      })}
-                                    </tbody>
-                                  </table>
-                                )}
-                                <div style={{ fontSize: 12, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>+ Asignar empleado</div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
-                                  <div><Lbl>Nombre</Lbl><input type="text" value={formMO.trabajador} onChange={e => setFormMO({ ...formMO, trabajador: e.target.value })} placeholder="ej. Martín" style={inp} /></div>
-                                  <div><Lbl>Rol</Lbl><select value={formMO.rol} onChange={e => setFormMO({ ...formMO, rol: e.target.value })} style={inp}>{rolesActuales.map(r => <option key={r}>{r}</option>)}</select></div>
-                                  <div><Lbl>%</Lbl><input type="number" value={formMO.porcentaje} onChange={e => setFormMO({ ...formMO, porcentaje: e.target.value })} style={inpMono} /></div>
-                                  <button onClick={() => guardarMO(s.id, s)} disabled={guardandoMO} style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>+ Agregar</button>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
                       </React.Fragment>
                     )
                   })}
@@ -1233,7 +1166,39 @@ export default function Servicios({ usuario }) {
               if (pagados.length === 0) return null
               return (
                 <div style={{ marginTop: '1.5rem' }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Pagos registrados</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.75rem' }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>Pagos registrados</div>
+                  <button onClick={() => {
+                    const win = window.open('', '_blank')
+                    const allRows = pagados.map(s => {
+                      const moList = manoObra[s.id] || []
+                      const mosPagados = empleadoSeleccionado
+                        ? moList.filter(m => m.trabajador === empleadoSeleccionado && m.estado_pago === 'pagado')
+                        : moList.filter(m => m.estado_pago === 'pagado')
+                      return mosPagados.map(mo => {
+                        const montoCalc = mo.monto_calculado || (s.precio_ha && s.hectareas && mo.porcentaje ? Math.round(s.precio_ha * s.hectareas * mo.porcentaje / 100) : 0)
+                        return `<tr><td>${s.campo || '—'}${s.nro_lote ? ' · '+s.nro_lote : ''}</td><td>${s.cliente || '—'}</td><td>${s.labor} ${s.cultivo || ''}</td><td style="text-align:right">${s.hectareas}</td><td style="text-align:right">${s.precio_ha ? '$'+s.precio_ha.toLocaleString('es-AR') : '—'}</td><td style="text-align:right">${mo.trabajador}</td><td style="text-align:right">${mo.porcentaje || '—'}%</td><td style="text-align:right;font-weight:700">$${montoCalc.toLocaleString('es-AR')}</td></tr>`
+                      }).join('')
+                    }).join('')
+                    const totalPagado = pagados.reduce((a, s) => {
+                      const moList = manoObra[s.id] || []
+                      const mosPagados = empleadoSeleccionado ? moList.filter(m => m.trabajador === empleadoSeleccionado && m.estado_pago === 'pagado') : moList.filter(m => m.estado_pago === 'pagado')
+                      return a + mosPagados.reduce((b, mo) => b + (mo.monto_calculado || 0), 0)
+                    }, 0)
+                    win.document.write(`<!DOCTYPE html><html><head><title>Liquidación Mano de Obra</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px}h2{margin-bottom:.25rem}p{color:#6B6760;font-size:12px;margin-bottom:1.5rem}table{width:100%;border-collapse:collapse}th,td{border:1px solid #E2DDD6;padding:8px 12px;text-align:left}th{background:#F7F5F0;font-weight:600;font-size:11px;text-transform:uppercase}tfoot td{background:#E8F4EB;font-weight:700}@media print{button{display:none}}</style></head><body>
+                      <h2>Liquidación de Mano de Obra — Ramonda Hnos S.A.</h2>
+                      <p>${empleadoSeleccionado ? 'Empleado: <strong>'+empleadoSeleccionado+'</strong> · ' : ''}Generado: ${new Date().toLocaleDateString('es-AR')}</p>
+                      <table><thead><tr><th>Campo/Lote</th><th>Cliente</th><th>Servicio</th><th style="text-align:right">Ha</th><th style="text-align:right">$/Ha</th><th>Empleado</th><th style="text-align:right">%</th><th style="text-align:right">Total</th></tr></thead>
+                      <tbody>${allRows}</tbody>
+                      <tfoot><tr><td colspan="7">TOTAL PAGADO</td><td style="text-align:right">$${totalPagado.toLocaleString('es-AR')}</td></tr></tfoot>
+                      </table>
+                      <br><button onclick="window.print()" style="padding:8px 16px;background:#1E5C2E;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir</button>
+                    </body></html>`)
+                    win.document.close()
+                  }} style={{ padding: '5px 12px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                    🖨 Imprimir liquidación
+                  </button>
+                </div>
                   <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
@@ -1486,4 +1451,4 @@ export default function Servicios({ usuario }) {
       )}
     </div>
   )
-} 
+}
