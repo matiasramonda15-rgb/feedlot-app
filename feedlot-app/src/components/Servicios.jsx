@@ -1218,6 +1218,69 @@ export default function Servicios({ usuario }) {
                 💡 Filtrá por empleado para poder seleccionar trabajos y registrar el pago.
               </div>
             )}
+
+            {/* Historial de pagos MO */}
+            {(() => {
+              const pagados = serviciosMO.filter(s => {
+                const moList = manoObra[s.id] || []
+                const mo = empleadoSeleccionado
+                  ? moList.find(m => m.trabajador === empleadoSeleccionado && m.estado_pago === 'pagado')
+                  : moList.find(m => m.estado_pago === 'pagado')
+                return !!mo
+              })
+              if (pagados.length === 0) return null
+              return (
+                <div style={{ marginTop: '1.5rem' }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Pagos registrados</div>
+                  <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr>{['Campo/Lote', 'Cliente', 'Servicio', 'Ha', '$/Ha', 'Empleado', '%', 'Total pagado'].map(h => (
+                          <th key={h} style={th}>{h}</th>
+                        ))}</tr>
+                      </thead>
+                      <tbody>
+                        {pagados.map(s => {
+                          const moList = manoObra[s.id] || []
+                          const mosPagados = empleadoSeleccionado
+                            ? moList.filter(m => m.trabajador === empleadoSeleccionado && m.estado_pago === 'pagado')
+                            : moList.filter(m => m.estado_pago === 'pagado')
+                          return mosPagados.map(mo => {
+                            const montoCalc = mo.monto_calculado || (s.precio_ha && s.hectareas && mo.porcentaje ? Math.round(s.precio_ha * s.hectareas * mo.porcentaje / 100) : null)
+                            return (
+                              <tr key={mo.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                <td style={{ ...td_, fontWeight: 600 }}>{s.campo || '—'}{s.nro_lote ? <span style={{ fontWeight: 400, color: S.muted }}> · {s.nro_lote}</span> : ''}</td>
+                                <td style={{ ...td_, color: S.muted }}>{s.cliente || '—'}</td>
+                                <td style={td_}><span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{s.labor}</span></td>
+                                <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{s.hectareas}</td>
+                                <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.muted }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
+                                <td style={{ ...td_, fontWeight: 600 }}>{mo.trabajador}</td>
+                                <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{mo.porcentaje}%</td>
+                                <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>{montoCalc ? `$${montoCalc.toLocaleString('es-AR')}` : '—'}</td>
+                              </tr>
+                            )
+                          })
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background: S.greenLight }}>
+                          <td colSpan={7} style={{ ...td_, fontWeight: 700, color: S.green }}>TOTAL PAGADO</td>
+                          <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>
+                            ${pagados.reduce((a, s) => {
+                              const moList = manoObra[s.id] || []
+                              const mosPagados = empleadoSeleccionado
+                                ? moList.filter(m => m.trabajador === empleadoSeleccionado && m.estado_pago === 'pagado')
+                                : moList.filter(m => m.estado_pago === 'pagado')
+                              return a + mosPagados.reduce((b, mo) => b + (mo.monto_calculado || (s.precio_ha && s.hectareas && mo.porcentaje ? Math.round(s.precio_ha * s.hectareas * mo.porcentaje / 100) : 0)), 0)
+                            }, 0).toLocaleString('es-AR')}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )
       })()}
