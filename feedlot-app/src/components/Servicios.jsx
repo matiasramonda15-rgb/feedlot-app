@@ -928,8 +928,8 @@ export default function Servicios({ usuario }) {
                   )}
                   {serviciosMO.map(s => {
                     const moList = manoObra[s.id] || []
-                    const mo1 = moList[0] || (s.empleado1 ? { trabajador: s.empleado1, porcentaje: null, monto_calculado: null, estado_pago: 'pendiente' } : null)
-                    const mo2 = moList[1] || (s.empleado2 ? { trabajador: s.empleado2, porcentaje: null, monto_calculado: null, estado_pago: 'pendiente' } : null)
+                    const mo1 = (s.empleado1 ? moList.find(m => m.trabajador === s.empleado1) : moList[0]) || (s.empleado1 ? { trabajador: s.empleado1, porcentaje: null, monto_calculado: null, estado_pago: 'pendiente' } : null)
+                    const mo2 = (s.empleado2 ? moList.find(m => m.trabajador === s.empleado2) : moList[1]) || (s.empleado2 ? { trabajador: s.empleado2, porcentaje: null, monto_calculado: null, estado_pago: 'pendiente' } : null)
                     const isSelected = seleccionadasMO.includes(s.id)
                     const moEmp = empleadoSeleccionado ? moList.find(m => m.trabajador === empleadoSeleccionado) : null
         const esEmpleadoDelServicio = empleadoSeleccionado && (s.empleado1 === empleadoSeleccionado || s.empleado2 === empleadoSeleccionado)
