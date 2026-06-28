@@ -44,7 +44,7 @@ export default function Activos({ usuario }) {
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
 
   const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '' })
-  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '' })
+  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false })
 
   useEffect(() => { cargar() }, [])
 
@@ -77,10 +77,20 @@ export default function Activos({ usuario }) {
   async function guardarRetiro() {
     if (!formRetiro.socio || !formRetiro.monto) { alert('Completá socio y monto'); return }
     setGuardando(true)
-    await supabase.from('retiros_socios').insert({ ...formRetiro, monto: parseFloat(formRetiro.monto), registrado_por: usuario?.id })
+    const monto = parseFloat(formRetiro.monto)
+    const desc = `Retiro socio — ${formRetiro.socio}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
+    let caja_oficial_id = null, caja_paralela_id = null
+    if (formRetiro.es_paralelo) {
+      const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+      caja_paralela_id = cp?.id
+    } else {
+      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto, forma_pago: formRetiro.forma_pago }).select().single()
+      caja_oficial_id = co?.id
+    }
+    await supabase.from('retiros_socios').insert({ ...formRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
     await cargar()
     setShowFormRetiro(false)
-    setFormRetiro({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '' })
+    setFormRetiro({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false })
     setGuardando(false)
   }
 
@@ -292,6 +302,10 @@ export default function Activos({ usuario }) {
                   </select>
                 </div>
                 <div><Label>Observaciones</Label><input type="text" value={formRetiro.observaciones} onChange={e => setFormRetiro({...formRetiro, observaciones: e.target.value})} style={inputStyle} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" id="paralelo_retiro" checked={formRetiro.es_paralelo} onChange={e => setFormRetiro({...formRetiro, es_paralelo: e.target.checked})} />
+                  <label htmlFor="paralelo_retiro" style={{ fontSize: 13, cursor: 'pointer' }}>Paralelo (caja paralela)</label>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowFormRetiro(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -376,7 +390,35 @@ export default function Activos({ usuario }) {
                       <td style={{ padding: '9px 12px', color: S.muted }}>{r.concepto || '—'}</td>
                       <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{r.forma_pago}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>-${r.monto?.toLocaleString('es-AR')}</td>
-                      <td style={{ padding: '9px 12px' }}><button onClick={() => eliminar('retiros_socios', r.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => {
+                            const win = window.open('', '_blank')
+                            win.document.write(`<!DOCTYPE html><html><head><title>Comprobante de Retiro</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2.5rem;font-size:13px;max-width:600px;margin:0 auto}h2{margin-bottom:.25rem;font-size:18px}p{color:#6B6760;font-size:12px;margin-bottom:1.5rem}.box{border:1px solid #E2DDD6;border-radius:8px;padding:1rem;margin-bottom:1rem}.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0}.row:last-child{border-bottom:none}.label{color:#6B6760;font-size:12px}.val{font-weight:600}.monto{font-size:22px;font-weight:700;color:#7A1A1A;font-family:monospace}.firma{margin-top:3rem;display:flex;gap:3rem}.firma-line{flex:1;border-top:1px solid #ccc;padding-top:8px;font-size:11px;color:#9E9A94}@media print{button{display:none}}</style></head><body>
+                              <h2>Comprobante de Retiro — Ramonda Hnos S.A.</h2>
+                              <p>Fecha de emisión: ${new Date().toLocaleDateString('es-AR')}</p>
+                              <div class="box">
+                                <div class="row"><span class="label">Socio</span><span class="val">${r.socio}</span></div>
+                                <div class="row"><span class="label">Fecha</span><span class="val">${new Date(r.fecha+'T12:00:00').toLocaleDateString('es-AR')}</span></div>
+                                <div class="row"><span class="label">Concepto</span><span class="val">${r.concepto || '—'}</span></div>
+                                <div class="row"><span class="label">Forma de pago</span><span class="val">${r.forma_pago}${r.caja_paralela_id ? ' (paralelo)' : ''}</span></div>
+                                ${r.observaciones ? `<div class="row"><span class="label">Observaciones</span><span class="val">${r.observaciones}</span></div>` : ''}
+                              </div>
+                              <div style="text-align:center;padding:1.5rem;border:2px solid #7A1A1A;border-radius:8px;margin-bottom:2rem">
+                                <div style="color:#6B6760;font-size:12px;margin-bottom:4px">MONTO RETIRADO</div>
+                                <div class="monto">-$${r.monto?.toLocaleString('es-AR')}</div>
+                              </div>
+                              <div class="firma">
+                                <div class="firma-line">Firma socio</div>
+                                <div class="firma-line">Firma responsable</div>
+                              </div>
+                              <br><button onclick="window.print()" style="padding:8px 16px;background:#1A3D6B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir</button>
+                            </body></html>`)
+                            win.document.close()
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨 Recibo</button>
+                          <button onClick={() => eliminar('retiros_socios', r.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
