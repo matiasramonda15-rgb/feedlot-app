@@ -300,6 +300,65 @@ export default function Activos({ usuario }) {
             </Card>
           )}
 
+          {/* Proyección proporcional */}
+          {totalRetiros > 0 && (() => {
+            // Encontrar el socio que más retiró en proporción a sus acciones
+            // El "retiro base" es el mayor retiro/pct de todos los socios
+            const ratios = SOCIOS.map(s => ({ ...s, retirado: porSocio[s.nombre] || 0, ratio: s.pct > 0 ? (porSocio[s.nombre] || 0) / s.pct : 0 }))
+            const maxRatio = Math.max(...ratios.map(r => r.ratio))
+            return (
+              <Card>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>Proyección de retiros proporcionales — {filtroAnio}</div>
+                <div style={{ fontSize: 12, color: S.muted, marginBottom: '1rem' }}>
+                  Basado en el socio que más retiró en proporción a sus acciones. Total de referencia: ${(maxRatio * 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })} por 1% de acciones.
+                </div>
+                <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: S.bg }}>
+                        {['Socio', '% Acc.', 'Ya retiró', 'Debería retirar', 'Diferencia', 'Estado'].map(h => (
+                          <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Socio' || h === 'Estado' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ratios.map(s => {
+                        const deberiaRetirar = Math.round(maxRatio * s.pct)
+                        const diferencia = s.retirado - deberiaRetirar
+                        const ok = diferencia >= 0
+                        return (
+                          <tr key={s.nombre} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '9px 12px', fontWeight: 600 }}>{s.nombre}</td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.accent }}>{s.pct}%</td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.red }}>-${s.retirado.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>${deberiaRetirar.toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: ok ? S.green : S.amber }}>
+                              {ok ? `+$${diferencia.toLocaleString('es-AR')}` : `-$${Math.abs(diferencia).toLocaleString('es-AR')}`}
+                            </td>
+                            <td style={{ padding: '9px 12px' }}>
+                              {ok
+                                ? <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.greenLight, color: S.green }}>✓ Al día</span>
+                                : <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber }}>⏳ Pendiente ${Math.abs(diferencia).toLocaleString('es-AR')}</span>
+                              }
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: S.accentLight }}>
+                        <td colSpan={2} style={{ padding: '9px 12px', fontWeight: 700 }}>TOTAL</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.red }}>-${totalRetiros.toLocaleString('es-AR')}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.muted }}>${Math.round(maxRatio * 100).toLocaleString('es-AR')}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </Card>
+            )
+          })()}
+
           <Card>
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

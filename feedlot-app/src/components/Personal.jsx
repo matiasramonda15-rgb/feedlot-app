@@ -75,12 +75,39 @@ export default function Personal({ usuario }) {
   }
 
   async function guardarPago() {
-    if (!formPago.empleado_id || !formPago.monto) { alert('Completá empleado y monto'); return }
+    if (!formPago.empleado_id) { alert('Seleccioná un empleado'); return }
+    const totalPagos = pagosForm.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0)
+    if (!totalPagos) { alert('Ingresá al menos una forma de pago con monto'); return }
     setGuardando(true)
-    await supabase.from('pagos_empleados').insert({ ...formPago, monto: parseFloat(formPago.monto), empleado_id: parseInt(formPago.empleado_id), registrado_por: usuario?.id })
+    const emp = empleados.find(e => String(e.id) === String(formPago.empleado_id))
+    const desc = `Personal — ${emp?.nombre || ''} · ${formPago.tipo}${formPago.concepto ? ' · ' + formPago.concepto : ''}`
+    let caja_oficial_id = null, caja_paralela_id = null
+    for (const p of pagosForm.filter(p => p.monto)) {
+      const monto = parseFloat(p.monto) || 0
+      if (!monto) continue
+      if (p.es_paralelo) {
+        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+        caja_paralela_id = cp?.id
+      } else {
+        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Personal', descripcion: desc, monto, forma_pago: p.tipo }).select().single()
+        caja_oficial_id = co?.id
+        if (p.tipo === 'cheque_propio' && p.cheque_propio?.fecha_vencimiento) {
+          await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, librador: emp?.nombre || null, estado: 'emitido', caja_oficial_id })
+        }
+      }
+    }
+    await supabase.from('pagos_empleados').insert({
+      ...formPago,
+      monto: totalPagos,
+      empleado_id: parseInt(formPago.empleado_id),
+      registrado_por: usuario?.id,
+      caja_oficial_id,
+      caja_paralela_id,
+    })
     await cargar()
     setShowFormPago(false)
     setFormPago({ empleado_id: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', tipo: 'sueldo' })
+    setPagosForm([{ ...PAGO_INIT_P }])
     setGuardando(false)
   }
 
@@ -266,7 +293,7 @@ export default function Personal({ usuario }) {
           {showFormPago && (
             <Card>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Nuevo pago</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div><Label>Empleado</Label>
                   <select value={formPago.empleado_id} onChange={e => setFormPago({...formPago, empleado_id: e.target.value})} style={inputStyle}>
                     <option value="">— Seleccioná —</option>
@@ -279,12 +306,48 @@ export default function Personal({ usuario }) {
                   </select>
                 </div>
                 <div><Label>Fecha</Label><input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Monto $</Label><input type="number" value={formPago.monto} onChange={e => setFormPago({...formPago, monto: e.target.value})} style={inputStyle} /></div>
-                <div style={{ gridColumn: '2/-1' }}><Label>Concepto</Label><input type="text" value={formPago.concepto} onChange={e => setFormPago({...formPago, concepto: e.target.value})} placeholder="ej. Sueldo abril, % cosecha..." style={inputStyle} /></div>
+                <div style={{ gridColumn: '1/-1' }}><Label>Concepto</Label><input type="text" value={formPago.concepto} onChange={e => setFormPago({...formPago, concepto: e.target.value})} placeholder="ej. Sueldo abril, % cosecha..." style={inputStyle} /></div>
+              </div>
+
+              {/* Formas de pago */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Label>Formas de pago</Label>
+                <button onClick={() => setPagosForm([...pagosForm, { ...PAGO_INIT_P }])}
+                  style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
+              </div>
+              {pagosForm.map((p, pi) => (
+                <div key={pi} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.75rem', marginBottom: 6 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                    <div><Label>Forma de pago</Label>
+                      <select value={p.tipo} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, tipo: e.target.value} : x); setPagosForm(pf) }} style={inputStyle}>
+                        {['transferencia','efectivo','cheque_propio','cheque_tercero'].map(t => (
+                          <option key={t} value={t}>{t === 'cheque_propio' ? 'E-cheq propio' : t === 'cheque_tercero' ? 'Cheque tercero' : t.charAt(0).toUpperCase()+t.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div><Label>Monto $</Label>
+                      <input type="number" value={p.monto} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, monto: e.target.value} : x); setPagosForm(pf) }} style={inputStyle} />
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 2 }}>
+                      <input type="checkbox" checked={p.es_paralelo} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, es_paralelo: e.target.checked} : x); setPagosForm(pf) }} />
+                      Paralelo
+                    </label>
+                  </div>
+                  {p.tipo === 'cheque_propio' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                      <div><Label>N° Cheque</Label><input type="text" value={p.cheque_propio?.numero || ''} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, cheque_propio: {...x.cheque_propio, numero: e.target.value}} : x); setPagosForm(pf) }} style={inputStyle} /></div>
+                      <div><Label>Banco</Label><input type="text" value={p.cheque_propio?.banco || ''} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, cheque_propio: {...x.cheque_propio, banco: e.target.value}} : x); setPagosForm(pf) }} style={inputStyle} /></div>
+                      <div><Label>Vencimiento</Label><input type="date" value={p.cheque_propio?.fecha_vencimiento || ''} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, cheque_propio: {...x.cheque_propio, fecha_vencimiento: e.target.value}} : x); setPagosForm(pf) }} style={inputStyle} /></div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div style={{ padding: '8px 12px', background: S.greenLight, borderRadius: 6, fontSize: 13, color: S.green, fontWeight: 600, marginTop: 8, marginBottom: 12 }}>
+                Total: ${pagosForm.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0).toLocaleString('es-AR')}
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFormPago(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
-                <button onClick={guardarPago} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+                <button onClick={() => { setShowFormPago(false); setPagosForm([{ ...PAGO_INIT_P }]) }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={guardarPago} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar pago'}</button>
               </div>
             </Card>
           )}
@@ -344,4 +407,4 @@ export default function Personal({ usuario }) {
       </div>
     </div>
   )
-} 
+}
