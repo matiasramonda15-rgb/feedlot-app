@@ -269,6 +269,7 @@ export default function Servicios({ usuario }) {
     if (filtros.cliente && s.cliente !== filtros.cliente) return false
     if (filtros.labor && filtros.labor !== 'Todo' && s.labor !== filtros.labor) return false
     if (filtros.cultivo && filtros.cultivo !== 'Todo' && s.cultivo !== filtros.cultivo) return false
+    if (filtros.tipo && s.tipo_servicio !== filtros.tipo) return false
     if (filtros.tipo && filtros.tipo !== 'Todo' && s.tipo_servicio !== filtros.tipo) return false
     if (filtros.estado && filtros.estado !== 'Todo') {
       if (filtros.estado === 'Pendiente' && s.estado_pago === 'cobrado') return false
@@ -447,7 +448,7 @@ export default function Servicios({ usuario }) {
 
           {/* Filtros */}
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem', marginBottom: '1rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
               <div>
                 <Lbl>Campaña</Lbl>
                 <select value={filtros.campania} onChange={e => setFiltros({ ...filtros, campania: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
@@ -474,6 +475,14 @@ export default function Servicios({ usuario }) {
                 <select value={filtros.cultivo} onChange={e => setFiltros({ ...filtros, cultivo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
                   <option value="">Todo</option>
                   {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <Lbl>Tipo</Lbl>
+                <select value={filtros.tipo} onChange={e => setFiltros({ ...filtros, tipo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>
+                  <option value="">Todo</option>
+                  <option value="tercero">Tercero</option>
+                  <option value="propio">Propio</option>
                 </select>
               </div>
             </div>
