@@ -2307,7 +2307,7 @@ function ServiciosMovil({ nav, usuario }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: C.sans, color: C.text }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.bg, fontFamily: C.sans, color: C.text }}>
       <Topbar titulo="Servicios" sub={tab === 'mercaderia' ? 'Registro de mercadería' : 'Registrar trabajo'} onBack={() => nav('home')} />
 
       {/* Tabs */}
