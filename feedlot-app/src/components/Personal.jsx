@@ -306,7 +306,34 @@ export default function Personal({ usuario }) {
                       <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{p.tipo}</span></td>
                       <td style={{ padding: '9px 12px', color: S.muted }}>{p.concepto || '—'}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>${p.monto?.toLocaleString('es-AR')}</td>
-                      <td style={{ padding: '9px 12px' }}><button onClick={() => eliminarPago(p.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button></td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => {
+                            const win = window.open('', '_blank')
+                            win.document.write(`<!DOCTYPE html><html><head><title>Recibo de Pago</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2.5rem;font-size:13px;max-width:600px;margin:0 auto}h2{margin-bottom:.25rem;font-size:18px}p{color:#6B6760;font-size:12px;margin-bottom:1.5rem}.box{border:1px solid #E2DDD6;border-radius:8px;padding:1rem;margin-bottom:1rem}.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0}.row:last-child{border-bottom:none}.label{color:#6B6760;font-size:12px}.val{font-weight:600}.monto{font-size:22px;font-weight:700;color:#1E5C2E;font-family:monospace}.firma{margin-top:3rem;display:flex;gap:3rem}.firma-line{flex:1;border-top:1px solid #ccc;padding-top:8px;font-size:11px;color:#9E9A94}@media print{button{display:none}}</style></head><body>
+                              <h2>Recibo de Pago — Ramonda Hnos S.A.</h2>
+                              <p>Fecha de emisión: ${new Date().toLocaleDateString('es-AR')}</p>
+                              <div class="box">
+                                <div class="row"><span class="label">Empleado</span><span class="val">${p.empleados?.nombre || '—'}</span></div>
+                                <div class="row"><span class="label">Fecha de pago</span><span class="val">${new Date(p.fecha).toLocaleDateString('es-AR')}</span></div>
+                                <div class="row"><span class="label">Tipo</span><span class="val">${p.tipo}</span></div>
+                                <div class="row"><span class="label">Concepto</span><span class="val">${p.concepto || '—'}</span></div>
+                              </div>
+                              <div style="text-align:center;padding:1.5rem;border:2px solid #1E5C2E;border-radius:8px;margin-bottom:2rem">
+                                <div style="color:#6B6760;font-size:12px;margin-bottom:4px">TOTAL ABONADO</div>
+                                <div class="monto">$${p.monto?.toLocaleString('es-AR')}</div>
+                              </div>
+                              <div class="firma">
+                                <div class="firma-line">Firma empleado</div>
+                                <div class="firma-line">Firma empleador</div>
+                              </div>
+                              <br><button onclick="window.print()" style="padding:8px 16px;background:#1A3D6B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir recibo</button>
+                            </body></html>`)
+                            win.document.close()
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨 Recibo</button>
+                          <button onClick={() => eliminarPago(p.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
