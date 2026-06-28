@@ -1172,21 +1172,23 @@ export default function Servicios({ usuario }) {
                             const moList = manoObra[id] || []
                             const mo = moList.find(m => m.trabajador === empleadoSeleccionado)
                             if (mo) {
-                              await supabase.from('mano_obra_servicios').update({ estado_pago: 'pagado' }).eq('id', mo.id)
+                              const { error: eu } = await supabase.from('mano_obra_servicios').update({ estado_pago: 'pagado' }).eq('id', mo.id)
+                              if (eu) { alert('Error al actualizar: ' + eu.message); return }
                             } else {
-                              // Crear entrada con % de config
+                              // Crear entrada con % ingresado en el banner
                               const cfg = configMO.find(c => s?.labor === 'Cosecha' ? ['Maquinista','Tolvero','Ayudante'].includes(c.rol) : ['Sembrador 1','Sembrador 2','Sembrador 3'].includes(c.rol))
                               const pctCfg = s?.tipo_servicio === 'propio' ? (cfg?.pct_propio || 0) : (cfg?.pct_tercero || 0)
-                              const pct = pctPagoMO[id] !== undefined ? pctPagoMO[id] : pctCfg
-                              const monto = s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : null
-                              await supabase.from('mano_obra_servicios').insert({
+                              const pct = pctPagoMO[id] !== undefined ? parseFloat(pctPagoMO[id]) : pctCfg
+                              const montoCalc = s?.precio_ha && s?.hectareas && pct ? Math.round(s.precio_ha * s.hectareas * pct / 100) : null
+                              const { error: ei } = await supabase.from('mano_obra_servicios').insert({
                                 servicio_id: id,
                                 trabajador: empleadoSeleccionado,
                                 rol: cfg?.rol || 'Otro',
-                                porcentaje: pct,
-                                monto_calculado: monto,
+                                porcentaje: pct || null,
+                                monto_calculado: montoCalc,
                                 estado_pago: 'pagado',
                               })
+                              if (ei) { alert('Error al crear registro: ' + ei.message); return }
                             }
                           }
                           setSeleccionadasMO([])
