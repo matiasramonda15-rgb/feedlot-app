@@ -176,7 +176,9 @@ export default function Comercial({ usuario }) {
       monto_ars,
       registrado_por: usuario?.id,
     })
-    if (error) { alert('Error: ' + error.message); setGuardandoDolar(false); return }
+    console.log('INSERT RESULT:', { error, data: null })
+    if (error) { alert('Error al guardar: ' + error.message + ' | Code: ' + error.code); setGuardandoDolar(false); return }
+    alert('Guardado OK')
     setShowFormDolar(false)
     setFormDolar({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
     setGuardandoDolar(false)
