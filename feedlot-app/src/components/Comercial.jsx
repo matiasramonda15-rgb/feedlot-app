@@ -111,6 +111,11 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque,
 
 export default function Comercial({ usuario }) {
   const [tab, setTab] = useState('caja_oficial')
+  const [dolares, setDolares] = useState([])
+  const [showFormDolar, setShowFormDolar] = useState(false)
+  const [formDolar, setFormDolar] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
+  const [guardandoDolar, setGuardandoDolar] = useState(false)
+  const [tcActual, setTcActual] = useState('')
   const [loading, setLoading] = useState(true)
   const [cajaOficial, setCajaOficial] = useState([])
   const [cajaParalela, setCajaParalela] = useState([])
@@ -152,6 +157,28 @@ export default function Comercial({ usuario }) {
     setContactos(ct || [])
     } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack) }
     setLoading(false)
+  }
+
+  async function guardarDolar() {
+    if (!formDolar.monto_usd) { alert('Ingresá el monto en USD'); return }
+    setGuardandoDolar(true)
+    const tc = parseFloat(formDolar.tipo_cambio) || null
+    const monto_ars = tc ? Math.round(parseFloat(formDolar.monto_usd) * tc) : null
+    const { error } = await supabase.from('caja_dolares').insert({
+      fecha: formDolar.fecha,
+      tipo: formDolar.tipo,
+      categoria: formDolar.categoria,
+      descripcion: formDolar.descripcion || null,
+      monto_usd: parseFloat(formDolar.monto_usd),
+      tipo_cambio: tc,
+      monto_ars,
+      registrado_por: usuario?.id,
+    })
+    if (error) { alert('Error: ' + error.message); setGuardandoDolar(false); return }
+    setShowFormDolar(false)
+    setFormDolar({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
+    setGuardandoDolar(false)
+    await cargar()
   }
 
   async function guardarCajaOf() {
@@ -262,6 +289,7 @@ export default function Comercial({ usuario }) {
     { key: 'caja_paralela', label: 'Caja paralela' },
     { key: 'cheques_oficial', label: `Cheques oficial${chVence7Of.length > 0 ? ` ⚠${chVence7Of.length}` : ''}` },
     { key: 'cheques_paralelo', label: `Cheques paralelo${chVence7Par.length > 0 ? ` ⚠${chVence7Par.length}` : ''}` },
+    { key: 'dolares', label: '💵 Dólares' },
   ]
 
   const FiltrosPeriodo = () => (
@@ -507,6 +535,150 @@ export default function Comercial({ usuario }) {
         <TablaCheques items={chFiltradosPar} chVence7={chVence7Par} filtro={filtroChequePar} setFiltro={setFiltroChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
+
+      {tab === 'dolares' && (() => {
+        const saldoUSD = dolares.reduce((a, d) => a + (d.tipo === 'ingreso' ? (d.monto_usd || 0) : -(d.monto_usd || 0)), 0)
+        const CATS = ['Compra de dólares', 'Venta de dólares', 'Inversión', 'Rendimiento', 'Retiro socios', 'Otro']
+        const inp = { padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, width: '100%', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }
+        const Lbl = ({ children }) => <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{children}</div>
+        return (
+          <div>
+            {/* Saldo */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Saldo USD</div>
+                <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'monospace', color: saldoUSD >= 0 ? S.green : S.red }}>
+                  {saldoUSD >= 0 ? '' : '-'}U$S {Math.abs(saldoUSD).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>TC referencia</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, color: S.muted }}>$</span>
+                  <input type="number" value={tcActual} onChange={e => setTcActual(e.target.value)} placeholder="ej. 1250" style={{ ...inp, width: 120, fontSize: 18, fontWeight: 700, fontFamily: 'monospace' }} />
+                </div>
+              </div>
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Equivalente ARS</div>
+                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: S.accent }}>
+                  {tcActual ? `$${Math.round(saldoUSD * parseFloat(tcActual)).toLocaleString('es-AR')}` : '—'}
+                </div>
+              </div>
+            </div>
+
+            {/* Botón nuevo */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+              <button onClick={() => setShowFormDolar(!showFormDolar)}
+                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                + Movimiento
+              </button>
+            </div>
+
+            {/* Formulario */}
+            {showFormDolar && (
+              <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>Nuevo movimiento</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <Lbl>Tipo</Lbl>
+                    <select value={formDolar.tipo} onChange={e => setFormDolar({...formDolar, tipo: e.target.value})} style={inp}>
+                      <option value="ingreso">Ingreso</option>
+                      <option value="egreso">Egreso</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Lbl>Categoría</Lbl>
+                    <select value={formDolar.categoria} onChange={e => setFormDolar({...formDolar, categoria: e.target.value})} style={inp}>
+                      {CATS.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Lbl>Fecha</Lbl>
+                    <input type="date" value={formDolar.fecha} onChange={e => setFormDolar({...formDolar, fecha: e.target.value})} style={inp} />
+                  </div>
+                  <div>
+                    <Lbl>Monto U$S</Lbl>
+                    <input type="number" value={formDolar.monto_usd} onChange={e => setFormDolar({...formDolar, monto_usd: e.target.value})} style={{ ...inp, fontFamily: 'monospace', fontWeight: 600 }} placeholder="ej. 5000" />
+                  </div>
+                  <div>
+                    <Lbl>Tipo de cambio $</Lbl>
+                    <input type="number" value={formDolar.tipo_cambio} onChange={e => setFormDolar({...formDolar, tipo_cambio: e.target.value, monto_ars: e.target.value && formDolar.monto_usd ? String(Math.round(parseFloat(formDolar.monto_usd) * parseFloat(e.target.value))) : ''})} style={{ ...inp, fontFamily: 'monospace' }} placeholder="ej. 1250" />
+                  </div>
+                  <div>
+                    <Lbl>Equivalente ARS</Lbl>
+                    <input type="number" value={formDolar.monto_ars} onChange={e => setFormDolar({...formDolar, monto_ars: e.target.value})} style={{ ...inp, fontFamily: 'monospace', background: '#F7F5F0' }} placeholder="calculado automático" />
+                  </div>
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <Lbl>Descripción</Lbl>
+                    <input type="text" value={formDolar.descripcion} onChange={e => setFormDolar({...formDolar, descripcion: e.target.value})} style={inp} placeholder="ej. Compra dólares blue, Plazo fijo USD..." />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setShowFormDolar(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                  <button onClick={guardarDolar} disabled={guardandoDolar} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardandoDolar ? 'Guardando...' : 'Guardar'}</button>
+                </div>
+              </div>
+            )}
+
+            {/* Tabla movimientos */}
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: S.bg }}>
+                    {['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Monto U$S', 'TC $', 'Equiv. ARS', ''].map(h => (
+                      <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dolares.length === 0 && (
+                    <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>Sin movimientos registrados</td></tr>
+                  )}
+                  {dolares.map(d => (
+                    <tr key={d.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(d.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'ingreso' ? S.greenLight : S.redLight, color: d.tipo === 'ingreso' ? S.green : S.red }}>
+                          {d.tipo === 'ingreso' ? '↑ Ingreso' : '↓ Egreso'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{d.categoria}</td>
+                      <td style={{ padding: '9px 12px' }}>{d.descripcion || '—'}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: d.tipo === 'ingreso' ? S.green : S.red }}>
+                        {d.tipo === 'ingreso' ? '+' : '-'}U$S {(d.monto_usd || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right', color: S.muted }}>{d.tipo_cambio ? `$${d.tipo_cambio.toLocaleString('es-AR')}` : '—'}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right', color: S.muted }}>{d.monto_ars ? `$${d.monto_ars.toLocaleString('es-AR')}` : '—'}</td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <button onClick={async () => {
+                          if (!confirm('¿Eliminar este movimiento?')) return
+                          await supabase.from('caja_dolares').delete().eq('id', d.id)
+                          await cargar()
+                        }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {dolares.length > 0 && (
+                  <tfoot>
+                    <tr style={{ background: S.accentLight }}>
+                      <td colSpan={4} style={{ padding: '9px 12px', fontWeight: 700 }}>SALDO</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: saldoUSD >= 0 ? S.green : S.red }}>
+                        {saldoUSD >= 0 ? '+' : ''}U$S {saldoUSD.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td></td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: S.accent }}>
+                        {tcActual ? `$${Math.round(saldoUSD * parseFloat(tcActual)).toLocaleString('es-AR')}` : '—'}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )

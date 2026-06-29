@@ -43,7 +43,7 @@ export default function Activos({ usuario }) {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
 
-  const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '' })
+  const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0 })
   const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false })
 
   useEffect(() => { cargar() }, [])
@@ -193,6 +193,27 @@ export default function Activos({ usuario }) {
                 <div><Label>Valor de compra $</Label><input type="number" value={formActivo.valor_compra} onChange={e => setFormActivo({...formActivo, valor_compra: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Valor actual $</Label><input type="number" value={formActivo.valor_actual} onChange={e => setFormActivo({...formActivo, valor_actual: e.target.value})} style={inputStyle} placeholder="Si difiere del de compra" /></div>
                 <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={formActivo.observaciones} onChange={e => setFormActivo({...formActivo, observaciones: e.target.value})} style={inputStyle} /></div>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <Label>Distribución por actividad (debe sumar 100%)</Label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                    {[{ key: 'pct_feedlot', label: 'Feed Lot' }, { key: 'pct_agricultura', label: 'Agricultura' }, { key: 'pct_servicios', label: 'Servicios' }, { key: 'pct_alfalfa', label: 'Alfalfa' }].map(act => {
+                      const total = (parseFloat(formActivo.pct_feedlot)||0) + (parseFloat(formActivo.pct_agricultura)||0) + (parseFloat(formActivo.pct_servicios)||0) + (parseFloat(formActivo.pct_alfalfa)||0)
+                      return (
+                        <div key={act.key}>
+                          <div style={{ fontSize: 11, color: S.muted, marginBottom: 4 }}>{act.label}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input type="number" min="0" max="100" value={formActivo[act.key]} onChange={e => setFormActivo({...formActivo, [act.key]: parseFloat(e.target.value) || 0})} style={{ ...inputStyle, textAlign: 'right', fontFamily: 'monospace' }} />
+                            <span style={{ color: S.muted, fontSize: 12 }}>%</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {(() => {
+                    const total = (parseFloat(formActivo.pct_feedlot)||0) + (parseFloat(formActivo.pct_agricultura)||0) + (parseFloat(formActivo.pct_servicios)||0) + (parseFloat(formActivo.pct_alfalfa)||0)
+                    return total !== 100 && total > 0 ? <div style={{ fontSize: 12, color: S.amber, marginTop: 6 }}>⚠ Suma {total}% — debe ser 100%</div> : null
+                  })()}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowFormActivo(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -231,6 +252,16 @@ export default function Activos({ usuario }) {
                     {a.valor_compra && <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: S.text, marginTop: 3 }}>Compra: ${a.valor_compra.toLocaleString('es-AR')}</div>}
                     {a.valor_actual && <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: S.green, marginTop: 2 }}>Actual: ${a.valor_actual.toLocaleString('es-AR')}</div>}
                     {depreciacion !== null && <div style={{ fontSize: 11, color: depreciacion > 30 ? S.red : S.amber, marginTop: 2 }}>Depreciación: {depreciacion}%</div>}
+                    {/* Distribución por actividad */}
+                    {(a.pct_feedlot > 0 || a.pct_agricultura > 0 || a.pct_servicios > 0 || a.pct_alfalfa > 0) && (
+                      <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {[{ key: 'pct_feedlot', label: 'Feed Lot', color: S.accent }, { key: 'pct_agricultura', label: 'Agro', color: S.green }, { key: 'pct_servicios', label: 'Servicios', color: S.purple }, { key: 'pct_alfalfa', label: 'Alfalfa', color: S.amber }].filter(act => a[act.key] > 0).map(act => (
+                          <span key={act.key} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600, background: act.color + '22', color: act.color }}>
+                            {act.label} {a[act.key]}%
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {a.observaciones && <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>{a.observaciones}</div>}
                   </div>
 
