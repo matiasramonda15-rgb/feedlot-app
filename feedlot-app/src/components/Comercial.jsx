@@ -165,7 +165,26 @@ export default function Comercial({ usuario }) {
     if (!formDolar.monto_usd) { alert('Ingresá el monto en USD'); return }
     setGuardandoDolar(true)
     const tc = parseFloat(formDolar.tipo_cambio) || null
-    const monto_ars = tc ? Math.round(parseFloat(formDolar.monto_usd) * tc) : null
+    const monto_ars = tc ? Math.round(parseFloat(formDolar.monto_usd) * tc) : (formDolar.monto_ars ? parseFloat(formDolar.monto_ars) : null)
+    const desc = `${formDolar.categoria} · U$S ${parseFloat(formDolar.monto_usd).toLocaleString('es-AR')}${formDolar.descripcion ? ' · ' + formDolar.descripcion : ''}`
+
+    // Registrar en caja paralela si hay monto en ARS
+    let caja_paralela_id = null
+    if (monto_ars) {
+      // Compra de USD = egreso de pesos de caja paralela
+      // Venta de USD = ingreso de pesos a caja paralela
+      const tipoCaja = formDolar.categoria === 'Compra de dólares' ? 'egreso' : formDolar.categoria === 'Venta de dólares' ? 'ingreso' : null
+      if (tipoCaja) {
+        const { data: cp } = await supabase.from('caja_paralela').insert({
+          fecha: formDolar.fecha,
+          tipo: tipoCaja,
+          descripcion: desc,
+          monto: monto_ars,
+        }).select().single()
+        caja_paralela_id = cp?.id
+      }
+    }
+
     const { error } = await supabase.from('caja_dolares').insert({
       fecha: formDolar.fecha,
       tipo: formDolar.tipo,
@@ -174,11 +193,10 @@ export default function Comercial({ usuario }) {
       monto_usd: parseFloat(formDolar.monto_usd),
       tipo_cambio: tc,
       monto_ars,
+      caja_paralela_id,
       registrado_por: usuario?.id,
     })
-    console.log('INSERT RESULT:', { error, data: null })
-    if (error) { alert('Error al guardar: ' + error.message + ' | Code: ' + error.code); setGuardandoDolar(false); return }
-    alert('Guardado OK')
+    if (error) { alert('Error: ' + error.message); setGuardandoDolar(false); return }
     setShowFormDolar(false)
     setFormDolar({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
     setGuardandoDolar(false)
