@@ -1661,6 +1661,9 @@ function StockTab({ usuario, onDone }) {
 
   return (
     <>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: '1rem', padding: '8px 12px', background: C.surface, borderRadius: 8, border: `1px solid ${C.border}` }}>
+        📋 Solo lectura — los ingresos se registran desde la PC en Alimentación.
+      </div>
       {stock.map(s => {
         const bajo = s.cantidad_kg <= s.minimo_kg
         const color = bajo ? C.amber : C.green
@@ -1677,33 +1680,7 @@ function StockTab({ usuario, onDone }) {
             <div style={{ height: 4, background: C.surface2, borderRadius: 2, overflow: 'hidden', marginBottom: 5 }}>
               <div style={{ height: '100%', borderRadius: 2, background: color, width: `${pct}%` }} />
             </div>
-            {bajo && <div style={{ fontSize: 11, color: C.amber, marginBottom: 5 }}>Bajo minimo ({s.minimo_kg.toLocaleString('es-AR')} kg) - reponer</div>}
-            {editando === s.id ? (
-              <div style={{ marginTop: 6 }}>
-                <input type="number" inputMode="numeric" placeholder="Cantidad en kg" value={cantidad}
-                  onChange={e => setCantidad(e.target.value)}
-                  style={{ width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 14, fontFamily: C.mono, color: C.green, boxSizing: 'border-box', marginBottom: 6 }} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => actualizar(s.id, 'agregar')} disabled={guardando}
-                    style={{ flex: 1, padding: '8px', background: '#1A3D26', border: `1px solid ${C.green}`, borderRadius: 8, color: C.green, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
-                    + Agregar
-                  </button>
-                  <button onClick={() => actualizar(s.id, 'descontar')} disabled={guardando}
-                    style={{ flex: 1, padding: '8px', background: '#3D2A00', border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans }}>
-                    - Descontar
-                  </button>
-                  <button onClick={() => { setEditando(null); setCantidad('') }}
-                    style={{ padding: '8px 12px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: C.sans }}>
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => { setEditando(s.id); setCantidad('') }}
-                style={{ width: '100%', padding: '6px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: C.sans, marginTop: 4 }}>
-                Actualizar stock
-              </button>
-            )}
+            {bajo && <div style={{ fontSize: 11, color: C.amber }}>⚠ Bajo mínimo ({s.minimo_kg.toLocaleString('es-AR')} kg) — avisar para reponer</div>}
           </div>
         )
       })}
@@ -2194,7 +2171,7 @@ function ServiciosMovil({ nav, usuario }) {
   var inp = { width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 15, background: C.surface2, boxSizing: 'border-box', fontFamily: C.sans, color: C.text, marginBottom: 12 }
   var lbl = { fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 5 }
 
-  var esBrian = usuario?.nombre?.toLowerCase().includes('brian') || usuario?.email?.toLowerCase().includes('brian')
+  var esBrian = usuario?.nombre?.toLowerCase().includes('brian') || usuario?.email?.toLowerCase().includes('braian') || usuario?.email?.toLowerCase().includes('brian')
   var [tab, setTab] = useState(esBrian ? 'mercaderia' : 'servicio')
   var [contactos, setContactos] = useState([])
   var [empleados, setEmpleados] = useState([])

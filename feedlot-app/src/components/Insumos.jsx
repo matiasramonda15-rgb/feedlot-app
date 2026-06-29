@@ -239,8 +239,6 @@ export default function Insumos({ usuario }) {
 
   const TABS = [
     { key: 'compras', label: 'Historial de compras' },
-    { key: 'stock_alim', label: 'Stock alimentación' },
-    { key: 'stock_san', label: 'Stock sanitario' },
   ]
 
   return (
