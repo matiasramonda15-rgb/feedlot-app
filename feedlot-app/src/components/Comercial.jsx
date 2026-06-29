@@ -141,13 +141,14 @@ export default function Comercial({ usuario }) {
 
   async function cargar() {
     try {
-    const [{ data: co }, { data: cp }, { data: ch }, { data: vt }, { data: lt }, { data: ct }] = await Promise.all([
+    const [{ data: co }, { data: cp }, { data: ch }, { data: vt }, { data: lt }, { data: ct }, { data: dol }] = await Promise.all([
       supabase.from('caja_oficial').select('*, contactos(nombre)').order('fecha', { ascending: false }),
       supabase.from('caja_paralela').select('*').order('fecha', { ascending: false }),
       supabase.from('cheques').select('*').order('fecha_vencimiento', { ascending: true }),
       supabase.from('ventas').select('*, corrales(numero), pagos_ventas(monto)').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*, pagos_compras(monto)').order('created_at', { ascending: false }),
       supabase.from('contactos').select('*').eq('activo', true).order('nombre'),
+      supabase.from('caja_dolares').select('*').order('fecha', { ascending: false }),
     ])
     setCajaOficial(co || [])
     setCajaParalela(cp || [])
@@ -155,6 +156,7 @@ export default function Comercial({ usuario }) {
     setVentasCta(vt || [])
     setLotesCta(lt || [])
     setContactos(ct || [])
+    setDolares(dol || [])
     } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack) }
     setLoading(false)
   }
