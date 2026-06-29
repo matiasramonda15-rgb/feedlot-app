@@ -107,17 +107,17 @@ function PantallaInicio({ usuario, setModulo }) {
       </div>
 
       {/* Dos paneles */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', width: '100%', maxWidth: 900 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', width: '100%', maxWidth: 1100 }}>
 
         {/* PANEL PRODUCTIVO */}
         <div
           onClick={() => setModulo('tablero')}
-          style={{ background: S.surface, border: `2px solid ${S.accent}`, borderRadius: 16, padding: '2rem', cursor: 'pointer', transition: 'all .2s', position: 'relative', overflow: 'hidden' }}
+          style={{ background: S.surface, border: `2px solid ${S.accent}`, borderRadius: 16, padding: '2.5rem', cursor: 'pointer', transition: 'all .2s', position: 'relative', overflow: 'hidden' }}
           onMouseEnter={e => e.currentTarget.style.background = S.accentLight}
           onMouseLeave={e => e.currentTarget.style.background = S.surface}
         >
           <div style={{ fontSize: 11, fontWeight: 700, color: S.accent, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '1rem' }}>🐄 Área Productiva</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: S.text, marginBottom: '.5rem', fontFamily: 'monospace' }}>
+          <div style={{ fontSize: 36, fontWeight: 700, color: S.text, marginBottom: '.5rem', fontFamily: 'monospace' }}>
             {datos ? datos.totalAnimales.toLocaleString('es-AR') : '—'}
           </div>
           <div style={{ fontSize: 13, color: S.muted, marginBottom: '1.5rem' }}>
@@ -159,7 +159,7 @@ function PantallaInicio({ usuario, setModulo }) {
         {esAdmin ? (
           <div
             onClick={() => setModulo('comercial')}
-            style={{ background: S.surface, border: `2px solid ${totalAlertas > 0 ? S.red : S.green}`, borderRadius: 16, padding: '2rem', cursor: 'pointer', transition: 'all .2s', position: 'relative', overflow: 'hidden' }}
+            style={{ background: S.surface, border: `2px solid ${totalAlertas > 0 ? S.red : S.green}`, borderRadius: 16, padding: '2.5rem', cursor: 'pointer', transition: 'all .2s', position: 'relative', overflow: 'hidden' }}
             onMouseEnter={e => e.currentTarget.style.background = totalAlertas > 0 ? S.redLight : S.greenLight}
             onMouseLeave={e => e.currentTarget.style.background = S.surface}
           >

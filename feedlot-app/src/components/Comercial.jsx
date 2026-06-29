@@ -168,21 +168,25 @@ export default function Comercial({ usuario }) {
     const monto_ars = tc ? Math.round(parseFloat(formDolar.monto_usd) * tc) : (formDolar.monto_ars ? parseFloat(formDolar.monto_ars) : null)
     const desc = `${formDolar.categoria} · U$S ${parseFloat(formDolar.monto_usd).toLocaleString('es-AR')}${formDolar.descripcion ? ' · ' + formDolar.descripcion : ''}`
 
-    // Registrar en caja paralela si hay monto en ARS
+    // Registrar en caja paralela para compras y ventas de USD
     let caja_paralela_id = null
-    if (monto_ars) {
-      // Compra de USD = egreso de pesos de caja paralela
-      // Venta de USD = ingreso de pesos a caja paralela
-      const tipoCaja = formDolar.categoria === 'Compra de dólares' ? 'egreso' : formDolar.categoria === 'Venta de dólares' ? 'ingreso' : null
-      if (tipoCaja) {
-        const { data: cp } = await supabase.from('caja_paralela').insert({
-          fecha: formDolar.fecha,
-          tipo: tipoCaja,
-          descripcion: desc,
-          monto: monto_ars,
-        }).select().single()
-        caja_paralela_id = cp?.id
-      }
+    // Compra USD → egreso de pesos (sale plata para comprar dólares)
+    // Venta USD → ingreso de pesos (entra plata al vender dólares)
+    const CAJA_TIPO = {
+      'Compra de dólares': 'egreso',
+      'Venta de dólares': 'ingreso',
+    }
+    const tipoCaja = CAJA_TIPO[formDolar.categoria] || null
+    if (tipoCaja && monto_ars) {
+      const { data: cp } = await supabase.from('caja_paralela').insert({
+        fecha: formDolar.fecha,
+        tipo: tipoCaja,
+        descripcion: desc,
+        monto: monto_ars,
+      }).select().single()
+      caja_paralela_id = cp?.id
+    } else if (tipoCaja && !monto_ars) {
+      alert('⚠ Atención: no se ingresó tipo de cambio, por lo que no se registró movimiento en caja paralela. Podés registrarlo manualmente.')
     }
 
     const { error } = await supabase.from('caja_dolares').insert({

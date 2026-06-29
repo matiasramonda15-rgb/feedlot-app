@@ -90,6 +90,29 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
 
       {/* Menú */}
       <nav style={{ flex: 1, padding: '1rem 0' }}>
+        {/* Botón inicio */}
+        <button
+          onClick={() => setModulo('inicio')}
+          style={{
+            width: '100%', textAlign: 'left',
+            padding: '8px 1rem 8px 1.5rem',
+            fontSize: 12.5, fontWeight: modulo === 'inicio' ? 600 : 500,
+            color: modulo === 'inicio' ? S.accent : S.text,
+            background: modulo === 'inicio' ? S.bgActive : 'transparent',
+            border: 'none',
+            borderLeft: modulo === 'inicio' ? `3px solid ${S.accent}` : '3px solid transparent',
+            borderBottom: `1px solid ${S.border}`,
+            cursor: 'pointer',
+            fontFamily: "'IBM Plex Sans', sans-serif",
+            display: 'block',
+            marginBottom: '.75rem',
+            paddingBottom: '10px',
+          }}
+          onMouseEnter={e => { if (modulo !== 'inicio') e.currentTarget.style.background = S.bgHover }}
+          onMouseLeave={e => { if (modulo !== 'inicio') e.currentTarget.style.background = 'transparent' }}
+        >
+          🏠 Inicio
+        </button>
         {MENU.map(grupo => {
           const itemsFiltrados = grupo.items.filter(item => {
             if (!item.roles.includes(rol)) return false
