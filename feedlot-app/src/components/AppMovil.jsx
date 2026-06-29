@@ -191,7 +191,7 @@ function Home({ usuario, nav, onLogout, datos }) {
             { icon: '🌾', label: 'Alimentacion', p: 'alimentacion' },
             { icon: '💊', label: 'Sanidad', p: 'sanidad' },
             { icon: '💰', label: 'Carga venta', p: 'venta' },
-            ...(['matias_eu@hotmail.com','martin@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
+            ...(['matias_eu@hotmail.com','martin@campo.com','braian@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
           ].map((a, i) => (
             <div key={i} onClick={() => nav(a.p)}
               style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.85rem', cursor: 'pointer', textAlign: 'center' }}>
@@ -1619,9 +1619,6 @@ function PlaceholderMovil({ titulo, nav }) {
 function StockTab({ usuario, onDone }) {
   const [stock, setStock] = useState([])
   const [loading, setLoading] = useState(true)
-  const [editando, setEditando] = useState(null)
-  const [cantidad, setCantidad] = useState('')
-  const [guardando, setGuardando] = useState(false)
   const COLORES = { 'Rollo (heno)': '#639922', 'Maiz grano seco': '#E8A020', 'Vitaminas': '#5090E0', 'Urea': '#9060C0', 'Soja (expeller)': '#20A060' }
 
   useEffect(() => { cargar() }, [])
@@ -1630,31 +1627,6 @@ function StockTab({ usuario, onDone }) {
     const { data } = await supabase.from('stock_insumos').select('*').order('insumo')
     setStock(data || [])
     setLoading(false)
-  }
-
-  async function actualizar(id, tipo) {
-    if (!cantidad || isNaN(parseFloat(cantidad))) { alert('Ingresa una cantidad valida'); return }
-    setGuardando(true)
-    const item = stock.find(s => s.id === id)
-    const nuevaCantidad = tipo === 'agregar'
-      ? (item.cantidad_kg || 0) + parseFloat(cantidad)
-      : Math.max(0, (item.cantidad_kg || 0) - parseFloat(cantidad))
-    await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', id)
-
-    // Si es ingreso, registrar en ingresos_stock sin precio para que secretaria/dueño completen después
-    if (tipo === 'agregar') {
-      await supabase.from('ingresos_stock').insert({
-        insumo_id: id,
-        insumo_nombre: item.insumo,
-        cantidad_kg: parseFloat(cantidad),
-        registrado_por: usuario?.nombre || usuario?.email || 'empleado',
-      })
-    }
-
-    await cargar()
-    setEditando(null)
-    setCantidad('')
-    setGuardando(false)
   }
 
   if (loading) return <div style={{ padding: '1rem', color: C.muted, fontSize: 13 }}>Cargando...</div>
