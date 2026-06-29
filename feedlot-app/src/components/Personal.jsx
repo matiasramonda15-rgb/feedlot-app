@@ -38,6 +38,7 @@ export default function Personal({ usuario }) {
     empleado_id: '', fecha: new Date().toISOString().split('T')[0],
     monto: '', concepto: '', tipo: 'sueldo'
   })
+  const [pagosForm, setPagosForm] = useState([{ ...PAGO_INIT_P }])
 
   useEffect(() => { cargar() }, [])
 
@@ -407,4 +408,4 @@ export default function Personal({ usuario }) {
       </div>
     </div>
   )
-} 
+}
