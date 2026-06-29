@@ -605,18 +605,20 @@ export default function Comercial({ usuario }) {
               <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>Nuevo movimiento</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
-                  <div>
-                    <Lbl>Tipo</Lbl>
-                    <select value={formDolar.tipo} onChange={e => setFormDolar({...formDolar, tipo: e.target.value})} style={inp}>
-                      <option value="ingreso">Ingreso</option>
-                      <option value="egreso">Egreso</option>
-                    </select>
-                  </div>
-                  <div>
+                  <div style={{ gridColumn: '1/2' }}>
                     <Lbl>Categoría</Lbl>
-                    <select value={formDolar.categoria} onChange={e => setFormDolar({...formDolar, categoria: e.target.value})} style={inp}>
+                    <select value={formDolar.categoria} onChange={e => {
+                      const cat = e.target.value
+                      const TIPO_MAP = { 'Compra de dólares': 'ingreso', 'Venta de dólares': 'egreso', 'Inversión': 'egreso', 'Rendimiento': 'ingreso', 'Retiro socios': 'egreso', 'Otro': 'ingreso' }
+                      setFormDolar({...formDolar, categoria: cat, tipo: TIPO_MAP[cat] || 'ingreso'})
+                    }} style={inp}>
                       {CATS.map(c => <option key={c}>{c}</option>)}
                     </select>
+                    <div style={{ fontSize: 11, color: formDolar.tipo === 'ingreso' ? '#1E5C2E' : '#7A1A1A', marginTop: 4, fontWeight: 600 }}>
+                      {formDolar.tipo === 'ingreso' ? '↑ Ingreso USD' : '↓ Egreso USD'}
+                      {formDolar.categoria === 'Compra de dólares' && ' · Egreso de pesos'}
+                      {formDolar.categoria === 'Venta de dólares' && ' · Ingreso de pesos'}
+                    </div>
                   </div>
                   <div>
                     <Lbl>Fecha</Lbl>
