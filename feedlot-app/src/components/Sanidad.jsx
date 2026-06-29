@@ -44,6 +44,7 @@ function Badge({ children, color, bg, border }) {
 
 export default function Sanidad({ usuario }) {
   const [tab, setTab] = useState('alertas')
+  const [historialSan, setHistorialSan] = useState([])
   const [loading, setLoading] = useState(true)
   const [alertas, setAlertas] = useState([])
   const [corrales, setCorrales] = useState([])
@@ -199,8 +200,12 @@ export default function Sanidad({ usuario }) {
   }, [])
 
   async function cargarProductos() {
-    const { data } = await supabase.from('stock_sanitario').select('*').order('producto')
+    const [{ data }, { data: compras }] = await Promise.all([
+      supabase.from('stock_sanitario').select('*').order('producto'),
+      supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'sanitario').order('fecha', { ascending: false }).limit(50),
+    ])
     if (data) setProductos(data.map(p => ({ n: p.producto, tipo: p.tipo, id: p.id, cantidad_ml: p.cantidad_ml, unidad: p.unidad || 'ml', lab: p.laboratorio || '', car: p.carencia_dias || 0, minimo: p.minimo_stock || 0 })))
+    setHistorialSan(compras || [])
   }
 
   useEffect(() => { cargarDatos() }, [])

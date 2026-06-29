@@ -142,6 +142,7 @@ export default function Alimentacion({ usuario }) {
   const [stockDB, setStockDB] = useState([])
   const [historial, setHistorial] = useState([])
   const [historialArchivo, setHistorialArchivo] = useState([])
+  const [historialInsumos, setHistorialInsumos] = useState([])
   const [archivoOffset, setArchivoOffset] = useState(100)
   const [cargandoArchivo, setCargandoArchivo] = useState(false)
 
@@ -172,7 +173,7 @@ export default function Alimentacion({ usuario }) {
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
   const [editando, setEditando] = useState({})
   const [showFormIngreso, setShowFormIngreso] = useState(false)
-  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
+  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '' })
   const [guardando, setGuardando] = useState(false)
   const [confirmado, setConfirmado] = useState(false)
   const [kgsHoy, setKgsHoy] = useState([[800, 2400], [840, 900], [1160, 1225]])
@@ -191,7 +192,7 @@ export default function Alimentacion({ usuario }) {
     hace7dias.setDate(hace7dias.getDate() - 7)
     const hace7diasISO = hace7dias.toISOString()
 
-    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }, { data: compras }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
@@ -199,10 +200,12 @@ export default function Alimentacion({ usuario }) {
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion', 'fecha_term_c']),
       supabase.from('raciones_app').select('*, corrales(numero)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
+      supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'alimentacion').order('fecha', { ascending: false }).limit(50),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
     setHistorial(rapp || [])
+    setHistorialInsumos(compras || [])
     setHistorialArchivo([])
     setArchivoOffset(100)
     // Cargar capacidades desde BD
@@ -926,10 +929,31 @@ export default function Alimentacion({ usuario }) {
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Cantidad (kg)</label>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Kg materia fresca</label>
                   <input type="number" placeholder="ej. 5000" value={formIngreso.cantidad} onChange={e => setFormIngreso({...formIngreso, cantidad: e.target.value})}
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
                 </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>% Materia seca</label>
+                  <input type="number" min="0" max="100" step="0.1" placeholder="ej. 87.5" value={formIngreso.pct_ms} onChange={e => setFormIngreso({...formIngreso, pct_ms: e.target.value})}
+                    style={{ width: '100%', border: `1px solid ${S.accent}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+                </div>
+                {formIngreso.cantidad && formIngreso.pct_ms && (
+                  <div style={{ gridColumn: '1/-1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: S.green, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Kg materia seca</label>
+                      <div style={{ padding: '9px 12px', background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 6, fontFamily: 'monospace', fontSize: 15, fontWeight: 700, color: S.green }}>
+                        {(parseFloat(formIngreso.cantidad) * parseFloat(formIngreso.pct_ms) / 100).toFixed(1)} kg MS
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>$/kg MS (se calcula al pagar)</label>
+                      <div style={{ padding: '9px 12px', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, fontFamily: 'monospace', fontSize: 13, color: S.muted }}>
+                        Disponible al registrar pago
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Proveedor</label>
                   <input type="text" value={formIngreso.proveedor} onChange={e => setFormIngreso({...formIngreso, proveedor: e.target.value})}
@@ -952,7 +976,7 @@ export default function Alimentacion({ usuario }) {
 
 
 
-          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} />
+          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} historialInsumos={historialInsumos} />
         </div>
       )}
 
@@ -1143,7 +1167,7 @@ export default function Alimentacion({ usuario }) {
   )
 }
 
-function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formulaActiva }) {
+function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formulaActiva, historialInsumos = [] }) {
   const kgDiaPorInsumo = {}
   if (historial && historial.length > 0 && formulas && formulaActiva) {
     const porFecha = {}
@@ -1327,6 +1351,52 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
           </div>
         )
       })}
+
+      {/* Historial de ingresos */}
+      {historialInsumos.length > 0 && (
+        <div style={{ marginTop: '1.5rem', borderTop: '1px solid #E2DDD6', paddingTop: '1.25rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.75rem' }}>Historial de ingresos</div>
+          <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#F7F5F0' }}>
+                  {['Fecha', 'Insumo', 'Kg MF', '% MS', 'Kg MS', 'Proveedor', 'Remito', '$/kg MF', '$/kg MS', 'Estado'].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', borderBottom: '1px solid #E2DDD6', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {historialInsumos.map(c => {
+                  const pctMs = c.pct_ms
+                  const kgMs = c.kg_ms || (pctMs && c.cantidad ? Math.round(c.cantidad * pctMs / 100 * 10) / 10 : null)
+                  const precioKgMf = c.precio_unitario
+                  const precioKgMs = (precioKgMf && pctMs) ? Math.round(precioKgMf / (pctMs / 100)) : null
+                  return (
+                    <tr key={c.id} style={{ borderBottom: '1px solid #E2DDD6' }}>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {c.fecha ? new Date(c.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>{c.insumo_nombre || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right' }}>{c.cantidad ? `${c.cantidad.toLocaleString('es-AR')} kg` : '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right', color: '#1A3D6B' }}>{pctMs ? `${pctMs}%` : '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right', color: '#1E5C2E', fontWeight: 600 }}>{kgMs ? `${kgMs.toLocaleString('es-AR')} kg` : '—'}</td>
+                      <td style={{ padding: '8px 12px', color: '#6B6760', fontSize: 12 }}>{c.proveedor || '—'}</td>
+                      <td style={{ padding: '8px 12px', color: '#6B6760', fontSize: 12 }}>{c.numero_factura || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right' }}>{precioKgMf ? `$${precioKgMf.toLocaleString('es-AR')}` : '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right', color: '#1A3D6B', fontWeight: 600 }}>{precioKgMs ? `$${precioKgMs.toLocaleString('es-AR')}` : '—'}</td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.estado_pago === 'pagado' ? '#E8F4EB' : '#FDF0E0', color: c.estado_pago === 'pagado' ? '#1E5C2E' : '#7A4500' }}>
+                          {c.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
