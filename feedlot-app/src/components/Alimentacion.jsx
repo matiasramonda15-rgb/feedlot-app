@@ -355,19 +355,37 @@ export default function Alimentacion({ usuario }) {
     setGuardando(true)
     const item = stockDB.find(s => s.insumo === formIngreso.insumo)
     if (item) {
+      const cant = parseFloat(formIngreso.cantidad)
+      // Actualizar stock
       await supabase.from('stock_insumos').update({
-        cantidad_kg: (item.cantidad_kg || 0) + parseFloat(formIngreso.cantidad),
+        cantidad_kg: (item.cantidad_kg || 0) + cant,
         actualizado_en: new Date().toISOString(),
       }).eq('id', item.id)
+      // Registrar en ingresos_stock (legacy)
       await supabase.from('ingresos_stock').insert({
         insumo_id: item.id,
         insumo_nombre: formIngreso.insumo,
-        cantidad_kg: parseFloat(formIngreso.cantidad),
+        cantidad_kg: cant,
         precio_por_kg: null,
         total: null,
         registrado_por: usuario?.nombre || usuario?.email,
         precio_cargado_por: null,
         precio_cargado_en: null,
+      })
+      // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
+      await supabase.from('compras_insumos').insert({
+        fecha: formIngreso.fecha,
+        insumo_id: item.id,
+        insumo_tipo: 'alimentacion',
+        insumo_nombre: formIngreso.insumo,
+        cantidad: cant,
+        unidad: 'kg',
+        proveedor: formIngreso.proveedor || null,
+        numero_factura: formIngreso.remito || null,
+        precio_unitario: null,
+        total: null,
+        estado_pago: 'pendiente',
+        registrado_por: usuario?.id,
       })
     }
     await cargarDatos()
