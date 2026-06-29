@@ -39,7 +39,7 @@ const ACTIVIDAD_COLORS = {
 const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
 const FORM_INIT = {
-  actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '',
+  actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', activo_id: '',
   fecha: new Date().toISOString().split('T')[0],
   proveedor: '', comprobante: '',
   // Datos proveedor para recibo
@@ -253,6 +253,7 @@ function generarRecibo(gasto, pagos) {
 export default function Gastos({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [gastos, setGastos] = useState([])
+  const [activosList, setActivosList] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
   const [contactos, setContactos] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -264,14 +265,16 @@ export default function Gastos({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: g }, { data: ch }, { data: ct }] = await Promise.all([
+    const [{ data: g }, { data: ch }, { data: ct }, { data: acts }] = await Promise.all([
       supabase.from('gastos_generales').select('*').order('fecha', { ascending: false }),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
       supabase.from('contactos').select('*').order('nombre'),
+      supabase.from('activos').select('id, nombre, tipo, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa').eq('estado', 'activo').order('nombre'),
     ])
     setGastos(g || [])
     setChequesCartera(ch || [])
     setContactos(ct || [])
+    setActivosList(acts || [])
     setLoading(false)
   }
 
@@ -370,6 +373,7 @@ export default function Gastos({ usuario }) {
 
     await supabase.from('gastos_generales').insert({
       actividad: form.actividad,
+      activo_id: form.activo_id ? parseInt(form.activo_id) : null,
       categoria: form.categoria,
       descripcion: form.descripcion || null,
       monto: montoTotal,
@@ -528,6 +532,52 @@ export default function Gastos({ usuario }) {
             <div>
               <Label>Monto total $</Label>
               <input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} />
+            </div>
+            <div style={{ gridColumn: '1/-1' }}>
+              <Label>Activo relacionado (opcional)</Label>
+              <select value={form.activo_id} onChange={e => {
+                const act = activosList.find(a => String(a.id) === e.target.value)
+                if (act) {
+                  // Sugerir la actividad principal del activo
+                  const maxAct = [
+                    { key: 'Feedlot', pct: act.pct_feedlot || 0 },
+                    { key: 'Agricultura', pct: act.pct_agricultura || 0 },
+                    { key: 'Servicios', pct: act.pct_servicios || 0 },
+                    { key: 'Alfalfa', pct: act.pct_alfalfa || 0 },
+                  ].sort((a, b) => b.pct - a.pct)[0]
+                  setForm({...form, activo_id: e.target.value, actividad: maxAct?.pct > 0 ? maxAct.key : form.actividad, categoria: 'Reparación y mantenimiento'})
+                } else {
+                  setForm({...form, activo_id: ''})
+                }
+              }} style={inputStyle}>
+                <option value="">— Sin activo relacionado —</option>
+                {activosList.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.tipo})</option>)}
+              </select>
+              {(() => {
+                const act = activosList.find(a => String(a.id) === form.activo_id)
+                if (!act) return null
+                const dist = [
+                  { label: 'Feed Lot', pct: act.pct_feedlot || 0, color: S.accent },
+                  { label: 'Agricultura', pct: act.pct_agricultura || 0, color: S.green },
+                  { label: 'Servicios', pct: act.pct_servicios || 0, color: S.purple },
+                  { label: 'Alfalfa', pct: act.pct_alfalfa || 0, color: S.amber },
+                ].filter(d => d.pct > 0)
+                if (dist.length === 0) return null
+                const monto = parseFloat(form.monto) || 0
+                return (
+                  <div style={{ marginTop: 8, padding: '10px 12px', background: S.accentLight, borderRadius: 6, border: `1px solid ${S.accent}` }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, marginBottom: 6 }}>Distribución automática del gasto:</div>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {dist.map(d => (
+                        <div key={d.label} style={{ fontSize: 12 }}>
+                          <span style={{ fontWeight: 600, color: d.color }}>{d.label} ({d.pct}%)</span>
+                          {monto > 0 && <span style={{ color: S.muted }}> → ${Math.round(monto * d.pct / 100).toLocaleString('es-AR')}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
             <div>
               <Label>Fecha</Label>
@@ -702,7 +752,13 @@ export default function Gastos({ usuario }) {
                 return (
                   <tr key={g.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                     <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(g.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                    <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: cs.bg, color: cs.color }}>{g.actividad || '—'}</span></td>
+                    <td style={{ padding: '9px 12px' }}>
+                      <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: cs.bg, color: cs.color }}>{g.actividad || '—'}</span>
+                      {g.activo_id && (() => {
+                        const act = activosList.find(a => a.id === g.activo_id)
+                        return act ? <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>🔧 {act.nombre}</div> : null
+                      })()}
+                    </td>
                     <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber }}>{g.categoria}</span></td>
                     <td style={{ padding: '9px 12px', color: S.muted }}>{g.descripcion || '—'}</td>
                     <td style={{ padding: '9px 12px', color: S.muted }}>{g.proveedor || '—'}</td>

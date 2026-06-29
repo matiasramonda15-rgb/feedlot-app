@@ -39,6 +39,7 @@ export default function Activos({ usuario }) {
   const [retiros, setRetiros] = useState([])
   const [guardando, setGuardando] = useState(false)
   const [showFormActivo, setShowFormActivo] = useState(false)
+  const [editandoActivo, setEditandoActivo] = useState(null)
   const [showFormRetiro, setShowFormRetiro] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
@@ -92,6 +93,27 @@ export default function Activos({ usuario }) {
     setShowFormRetiro(false)
     setFormRetiro({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false })
     setGuardando(false)
+  }
+
+  async function guardarEditActivo() {
+    if (!editandoActivo?.nombre?.trim()) { alert('Ingresá el nombre'); return }
+    await supabase.from('activos').update({
+      nombre: editandoActivo.nombre,
+      tipo: editandoActivo.tipo,
+      marca: editandoActivo.marca || null,
+      modelo: editandoActivo.modelo || null,
+      anio: editandoActivo.anio ? parseInt(editandoActivo.anio) : null,
+      fecha_compra: editandoActivo.fecha_compra || null,
+      valor_compra: editandoActivo.valor_compra ? parseFloat(editandoActivo.valor_compra) : null,
+      valor_actual: editandoActivo.valor_actual ? parseFloat(editandoActivo.valor_actual) : null,
+      observaciones: editandoActivo.observaciones || null,
+      pct_feedlot: parseFloat(editandoActivo.pct_feedlot) || 0,
+      pct_agricultura: parseFloat(editandoActivo.pct_agricultura) || 0,
+      pct_servicios: parseFloat(editandoActivo.pct_servicios) || 0,
+      pct_alfalfa: parseFloat(editandoActivo.pct_alfalfa) || 0,
+    }).eq('id', editandoActivo.id)
+    setEditandoActivo(null)
+    await cargar()
   }
 
   async function cambiarEstado(id, estado) {
@@ -265,14 +287,74 @@ export default function Activos({ usuario }) {
                     {a.observaciones && <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>{a.observaciones}</div>}
                   </div>
 
-                  <button onClick={() => eliminar('activos', a.id)}
-                    style={{ marginTop: 10, width: '100%', padding: '5px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
-                    Eliminar
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                    <button onClick={() => setEditandoActivo({
+                      id: a.id, nombre: a.nombre, tipo: a.tipo, marca: a.marca || '', modelo: a.modelo || '',
+                      anio: a.anio ? String(a.anio) : '', fecha_compra: a.fecha_compra || '',
+                      valor_compra: a.valor_compra ? String(a.valor_compra) : '',
+                      valor_actual: a.valor_actual ? String(a.valor_actual) : '',
+                      observaciones: a.observaciones || '',
+                      pct_feedlot: a.pct_feedlot || 0, pct_agricultura: a.pct_agricultura || 0,
+                      pct_servicios: a.pct_servicios || 0, pct_alfalfa: a.pct_alfalfa || 0,
+                    })}
+                      style={{ flex: 1, padding: '5px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                      ✏ Editar
+                    </button>
+                    <button onClick={() => eliminar('activos', a.id)}
+                      style={{ flex: 1, padding: '5px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                      Eliminar
+                    </button>
+                  </div>
                 </div>
               )
             })}
           </div>
+
+          {/* Modal editar activo */}
+          {editandoActivo && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+              <div style={{ background: S.surface, borderRadius: 12, padding: '1.5rem', width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: '1.25rem' }}>Editar activo</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                  <div style={{ gridColumn: '1/3' }}><Label>Nombre</Label><input type="text" value={editandoActivo.nombre} onChange={e => setEditandoActivo({...editandoActivo, nombre: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Tipo</Label>
+                    <select value={editandoActivo.tipo} onChange={e => setEditandoActivo({...editandoActivo, tipo: e.target.value})} style={inputStyle}>
+                      {TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+                    </select>
+                  </div>
+                  <div><Label>Marca</Label><input type="text" value={editandoActivo.marca} onChange={e => setEditandoActivo({...editandoActivo, marca: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Modelo</Label><input type="text" value={editandoActivo.modelo} onChange={e => setEditandoActivo({...editandoActivo, modelo: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Año</Label><input type="number" value={editandoActivo.anio} onChange={e => setEditandoActivo({...editandoActivo, anio: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Fecha de compra</Label><input type="date" value={editandoActivo.fecha_compra} onChange={e => setEditandoActivo({...editandoActivo, fecha_compra: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Valor de compra $</Label><input type="number" value={editandoActivo.valor_compra} onChange={e => setEditandoActivo({...editandoActivo, valor_compra: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Valor actual $</Label><input type="number" value={editandoActivo.valor_actual} onChange={e => setEditandoActivo({...editandoActivo, valor_actual: e.target.value})} style={inputStyle} /></div>
+                  <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={editandoActivo.observaciones} onChange={e => setEditandoActivo({...editandoActivo, observaciones: e.target.value})} style={inputStyle} /></div>
+                </div>
+                <div style={{ marginBottom: '1rem' }}>
+                  <Label>Distribución por actividad (debe sumar 100%)</Label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                    {[{ key: 'pct_feedlot', label: 'Feed Lot' }, { key: 'pct_agricultura', label: 'Agricultura' }, { key: 'pct_servicios', label: 'Servicios' }, { key: 'pct_alfalfa', label: 'Alfalfa' }].map(act => (
+                      <div key={act.key}>
+                        <div style={{ fontSize: 11, color: S.muted, marginBottom: 4 }}>{act.label}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input type="number" min="0" max="100" value={editandoActivo[act.key]} onChange={e => setEditandoActivo({...editandoActivo, [act.key]: parseFloat(e.target.value) || 0})} style={{ ...inputStyle, textAlign: 'right', fontFamily: 'monospace' }} />
+                          <span style={{ color: S.muted, fontSize: 12 }}>%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const total = (editandoActivo.pct_feedlot||0) + (editandoActivo.pct_agricultura||0) + (editandoActivo.pct_servicios||0) + (editandoActivo.pct_alfalfa||0)
+                    return total !== 100 && total > 0 ? <div style={{ fontSize: 12, color: S.amber, marginTop: 6 }}>⚠ Suma {total}% — debe ser 100%</div> : null
+                  })()}
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setEditandoActivo(null)} style={{ padding: '8px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                  <button onClick={guardarEditActivo} style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
