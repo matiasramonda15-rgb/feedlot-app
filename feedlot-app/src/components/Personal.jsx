@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
 
+const PAGO_INIT_P = { tipo: 'transferencia', monto: '', es_paralelo: false, cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' } }
+
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
   text: '#1A1916', muted: '#6B6760', hint: '#9E9A94',
