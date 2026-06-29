@@ -95,10 +95,14 @@ function PantallaInicio({ usuario, setModulo }) {
   const totalAlertas = datos ? (datos.chequesPorVencer.length + datos.cuotasPorVencer.length + datos.lotesVenc.length) : 0
 
   return (
-    <div style={{ minHeight: '100vh', background: S.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+    <div style={{ minHeight: '100vh', background: S.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', fontFamily: "'IBM Plex Sans', sans-serif", position: 'relative', overflow: 'hidden' }}>
+      {/* Logo de fondo */}
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 0 }}>
+        <img src="/LOGO_SA.png" alt="" style={{ width: '60%', maxWidth: 700, opacity: 0.04, filter: 'grayscale(100%)' }} />
+      </div>
 
       {/* Logo */}
-      <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+      <div style={{ textAlign: 'center', marginBottom: '3rem', position: 'relative', zIndex: 1 }}>
         <img src="/LOGO_SA.png" alt="Ramonda Hnos. S.A." style={{ maxWidth: 200, maxHeight: 100, marginBottom: 12 }}
           onError={e => { e.target.style.display = 'none' }} />
         <div style={{ fontSize: 13, color: S.muted, letterSpacing: '.08em', textTransform: 'uppercase' }}>
@@ -107,7 +111,7 @@ function PantallaInicio({ usuario, setModulo }) {
       </div>
 
       {/* Dos paneles */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', width: '100%', maxWidth: 1100 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', width: '100%', maxWidth: 1100, position: 'relative', zIndex: 1 }}>
 
         {/* PANEL PRODUCTIVO */}
         <div
@@ -239,7 +243,7 @@ function PantallaInicio({ usuario, setModulo }) {
       </div>
 
       {/* Bienvenida */}
-      <div style={{ marginTop: '2rem', fontSize: 12, color: S.muted }}>
+      <div style={{ marginTop: '2rem', fontSize: 12, color: S.muted, position: 'relative', zIndex: 1 }}>
         Bienvenido/a, <strong>{usuario?.nombre || usuario?.email?.split('@')[0]}</strong>
       </div>
     </div>
