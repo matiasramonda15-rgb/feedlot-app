@@ -343,6 +343,147 @@ export default function Insumos({ usuario }) {
           <div style={{ fontSize: 12, color: S.red, marginBottom: '1rem' }}>
             Total gastado: <strong style={{ fontFamily: 'monospace' }}>${totalCompras.toLocaleString('es-AR')}</strong>
           </div>
+
+          {/* Formulario pago grupal */}
+          {showPagosPend && seleccionadas.length > 0 && (() => {
+            const totalSel2 = seleccionadas.reduce((s, id) => { const c = compras.find(x => x.id === id); return s + (c?.total || 0) }, 0)
+            const totalPagGrupal2 = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+            const inp = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
+            return (
+              <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: S.green, marginBottom: '1.25rem' }}>
+                  💳 Pagar {seleccionadas.length} compra{seleccionadas.length !== 1 ? 's' : ''} · Total: ${totalSel2.toLocaleString('es-AR')}
+                </div>
+
+                {/* Contacto y Fecha */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 12, marginBottom: '1rem' }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Contacto / Proveedor</div>
+                    <select value={formPagoGrupal.contacto_id} onChange={e => setFormPagoGrupal({...formPagoGrupal, contacto_id: e.target.value})}
+                      style={{ ...inp, border: `1px solid ${S.accent}` }}>
+                      <option value="">— Sin contacto —</option>
+                      {contactos.map(ct => <option key={ct.id} value={ct.id}>{ct.nombre}{ct.localidad ? ` (${ct.localidad})` : ''}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Fecha de pago</div>
+                    <input type="date" value={formPagoGrupal.fecha} onChange={e => setFormPagoGrupal({...formPagoGrupal, fecha: e.target.value})} style={inp} />
+                  </div>
+                </div>
+
+                {/* Formas de pago */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
+                  <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: [...formPagoGrupal.pagos, { ...PAGO_INIT }]})}
+                    style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
+                </div>
+                {formPagoGrupal.pagos.map((pago, idx) => (
+                  <div key={idx} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end' }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Forma de pago</div>
+                        <select value={pago.tipo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inp}>
+                          <option value="transferencia">Transferencia</option>
+                          <option value="efectivo">Efectivo</option>
+                          <option value="e-cheq">E-cheq</option>
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Monto $</div>
+                        <input type="number" value={pago.monto} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={{ ...inp, fontFamily: 'monospace', fontWeight: 600 }} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.muted, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={pago.es_paralelo || false} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
+                          Paralelo
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+                        {formPagoGrupal.pagos.length > 1 && <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: formPagoGrupal.pagos.filter((_,i)=>i!==idx)})}
+                          style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>}
+                      </div>
+                    </div>
+                    {pago.tipo === 'e-cheq' && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 10 : 0 }}>
+                          {['propio', 'tercero'].map(t => (
+                            <button key={t} onClick={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque === t ? '' : t} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
+                              style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque === t ? S.accent : S.border}`, background: pago.subtipo_cheque === t ? S.accentLight : 'transparent', color: pago.subtipo_cheque === t ? S.accent : S.muted }}>
+                              {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
+                            </button>
+                          ))}
+                        </div>
+                        {pago.subtipo_cheque === 'propio' && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>N° cheque</div>
+                              <input type="text" value={pago.cheque_propio?.numero || ''} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), numero: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inp} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Banco</div>
+                              <input type="text" value={pago.cheque_propio?.banco || ''} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), banco: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inp} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 4 }}>Vencimiento *</div>
+                              <input type="date" value={pago.cheque_propio?.fecha_vencimiento || ''} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...(p.cheque_propio||{}), fecha_vencimiento: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={{ ...inp, border: `1px solid ${S.amber}` }} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Resumen */}
+                <div style={{ background: Math.abs(totalSel2 - totalPagGrupal2) < 0.5 || totalSel2 === 0 ? S.accentLight : S.amberLight, border: `1px solid ${Math.abs(totalSel2 - totalPagGrupal2) < 0.5 || totalSel2 === 0 ? S.accent : S.amber}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, margin: '1rem 0' }}>
+                  <span>Total seleccionado: <strong>${totalSel2.toLocaleString('es-AR')}</strong></span>
+                  <span style={{ margin: '0 12px', color: S.muted }}>|</span>
+                  <span>Total pagos: <strong>${totalPagGrupal2.toLocaleString('es-AR')}</strong></span>
+                  {Math.abs(totalSel2 - totalPagGrupal2) >= 0.5 && totalSel2 > 0 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${Math.abs(totalSel2 - totalPagGrupal2).toLocaleString('es-AR')}</span>}
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button onClick={() => { setShowPagosPend(false); setSeleccionadas([]) }}
+                    style={{ padding: '8px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                  <button onClick={async () => {
+                    if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
+                    if (totalPagGrupal2 === 0) { alert('Ingresá el monto a pagar'); return }
+                    if (totalSel2 > 0 && Math.abs(totalSel2 - totalPagGrupal2) > 0.5) { alert('El total de pagos no coincide con el total de las compras'); return }
+                    setGuardandoPago(true)
+                    let caja_oficial_id = null, caja_paralela_id = null
+                    const desc = `Pago insumos${formPagoGrupal.contacto_id ? ' — ' + (contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre || '') : ''}`
+                    for (const pago of formPagoGrupal.pagos) {
+                      const monto = parseFloat(pago.monto) || 0
+                      if (!monto) continue
+                      const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+                      if (pago.es_paralelo) {
+                        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+                        if (!caja_paralela_id) caja_paralela_id = cp?.id || null
+                      } else {
+                        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null }).select().single()
+                        if (!caja_oficial_id) caja_oficial_id = co?.id || null
+                      }
+                      if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
+                        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+                      }
+                    }
+                    for (const id of seleccionadas) {
+                      await supabase.from('compras_insumos').update({ estado_pago: 'pagado', caja_oficial_id, caja_paralela_id, pagos_detalle: formPagoGrupal.pagos, forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'), es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo), contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null }).eq('id', id)
+                    }
+                    setSeleccionadas([])
+                    setShowPagosPend(false)
+                    setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
+                    setGuardandoPago(false)
+                    await cargar()
+                  }} disabled={guardandoPago}
+                    style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                    {guardandoPago ? 'Guardando...' : '✓ Confirmar pago'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 800 }}>
               <thead>

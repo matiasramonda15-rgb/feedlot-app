@@ -54,6 +54,8 @@ export default function Ventas({ usuario }) {
   const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
   const [filtroArchivadas, setFiltroArchivadas] = useState({ comprador: '', desde: '', hasta: '' })
+  const [filtroVentas, setFiltroVentas] = useState('')
+  const [filtroGestion, setFiltroGestion] = useState('')
   const [filtroCuentas, setFiltroCuentas] = useState('')
   const [showDetalleMeses, setShowDetalleMeses] = useState(false)
   const [showDetalleKg, setShowDetalleKg] = useState(false)
@@ -828,10 +830,18 @@ export default function Ventas({ usuario }) {
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Historial de ventas</div>
-              <button onClick={() => { setTab('nueva-venta'); setPaso(1); setVentaConfirmada(null) }}
-                style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                + Nueva venta
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select value={filtroVentas} onChange={e => setFiltroVentas(e.target.value)}
+                  style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroVentas ? S.accent : S.muted, fontWeight: filtroVentas ? 600 : 400 }}>
+                  <option value="">Todos los compradores</option>
+                  {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {filtroVentas && <button onClick={() => setFiltroVentas('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>}
+                <button onClick={() => { setTab('nueva-venta'); setPaso(1); setVentaConfirmada(null) }}
+                  style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                  + Nueva venta
+                </button>
+              </div>
             </div>
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -851,7 +861,7 @@ export default function Ventas({ usuario }) {
                     // Agrupar por grupo_venta_id — solo ventas recientes
                     const grupos = {}
                     const ventasOrden = []
-                    ventas.filter(v => new Date(v.creado_en) >= hoy40v).forEach(v => {
+                    ventas.filter(v => new Date(v.creado_en) >= hoy40v).filter(v => !filtroVentas || v.comprador === filtroVentas).forEach(v => {
                       if (v.grupo_venta_id) {
                         if (!grupos[v.grupo_venta_id]) {
                           grupos[v.grupo_venta_id] = []
@@ -862,10 +872,10 @@ export default function Ventas({ usuario }) {
                         ventasOrden.push({ tipo: 'simple', venta: v })
                       }
                     })
-                    // Deduplicar grupos
+                    // Deduplicar grupos — solo ventas recientes
                     const vistos = new Set()
                     const filas = []
-                    ventas.forEach(v => {
+                    ventas.filter(v => new Date(v.creado_en) >= hoy40v).filter(v => !filtroVentas || v.comprador === filtroVentas).forEach(v => {
                       if (v.grupo_venta_id) {
                         if (!vistos.has(v.grupo_venta_id)) {
                           vistos.add(v.grupo_venta_id)
@@ -906,6 +916,33 @@ export default function Ventas({ usuario }) {
                               return `$${neto.toLocaleString('es-AR')}`
                             })()}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
+                              <button onClick={() => {
+                                const fecha = new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
+                                const total = v.monto_total_con_iva || v.total || 0
+                                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumen venta</title>
+                                  <style>body{font-family:Arial,sans-serif;padding:2rem;max-width:600px;margin:auto}h2{margin-bottom:.5rem}table{width:100%;border-collapse:collapse;margin-top:1rem}td,th{padding:8px 12px;border:1px solid #ddd;font-size:13px}th{background:#f5f5f5;font-weight:600;text-align:left}.total{font-size:15px;font-weight:700;text-align:right;margin-top:1rem}</style>
+                                  </head><body>
+                                  <h2>Ramonda Hnos. S.A. — Resumen de Venta</h2>
+                                  <p style="color:#666;font-size:13px">Fecha: ${fecha} &nbsp;|&nbsp; Corral: C-${v.corrales?.numero || v.corral_id}</p>
+                                  <table>
+                                    <tr><th>Comprador</th><td>${v.comprador || '—'}</td></tr>
+                                    <tr><th>Cantidad</th><td>${v.cantidad} animales</td></tr>
+                                    <tr><th>Kg vivos</th><td>${v.kg_vivo_total?.toLocaleString('es-AR') || '—'} kg</td></tr>
+                                    <tr><th>Desbaste</th><td>${v.desbaste_pct || 8}%</td></tr>
+                                    <tr><th>Kg netos</th><td>${v.kg_neto?.toLocaleString('es-AR') || '—'} kg</td></tr>
+                                    <tr><th>$/kg</th><td>${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') : '—'}</td></tr>
+                                    <tr><th>Total</th><td><strong>$${total.toLocaleString('es-AR')}</strong></td></tr>
+                                    ${v.observaciones ? `<tr><th>Observaciones</th><td>${v.observaciones}</td></tr>` : ''}
+                                  </table>
+                                  <p style="margin-top:2rem;font-size:11px;color:#999">Generado ${new Date().toLocaleDateString('es-AR')}</p>
+                                  <script>window.onload=()=>{window.print();window.close()}</script>
+                                  </body></html>`
+                                const w = window.open('','_blank','width=700,height=600')
+                                w.document.write(html)
+                                w.document.close()
+                              }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0F0F0', border: '1px solid #CCC', color: '#333', borderRadius: 5, cursor: 'pointer' }}>
+                                🖨️ Imprimir
+                              </button>
                               <button onClick={() => { setEditandoComercial(null); setEditandoVenta({ id: v.id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: v.monto_total_con_iva ? String(v.monto_total_con_iva) : (v.total ? String(v.total) : ''), comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 ✏️ Editar
@@ -985,6 +1022,29 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
+                              <button onClick={() => {
+                                const fecha = new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
+                                const filas = (g || []).map(gv => `<tr><td>C-${gv.corrales?.numero || gv.corral_id}</td><td>${gv.cantidad} anim.</td><td>${gv.kg_vivo_total?.toLocaleString('es-AR') || '—'} kg</td><td>${gv.kg_neto?.toLocaleString('es-AR') || '—'} kg</td><td>$${(gv.monto_total_con_iva||gv.total||0).toLocaleString('es-AR')}</td></tr>`).join('')
+                                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumen venta</title>
+                                  <style>body{font-family:Arial,sans-serif;padding:2rem;max-width:700px;margin:auto}h2{margin-bottom:.5rem}table{width:100%;border-collapse:collapse;margin-top:1rem}td,th{padding:8px 12px;border:1px solid #ddd;font-size:13px}th{background:#f5f5f5;font-weight:600;text-align:left}</style>
+                                  </head><body>
+                                  <h2>Ramonda Hnos. S.A. — Resumen de Venta Multi-corral</h2>
+                                  <p style="color:#666;font-size:13px">Fecha: ${fecha} &nbsp;|&nbsp; Comprador: ${v0.comprador || '—'}</p>
+                                  <table>
+                                    <thead><tr><th>Corral</th><th>Animales</th><th>Kg vivos</th><th>Kg netos</th><th>Total</th></tr></thead>
+                                    <tbody>${filas}</tbody>
+                                    <tfoot><tr style="font-weight:700;background:#f5f5f5"><td colspan="2">TOTAL</td><td>${totalKgVivo.toLocaleString('es-AR')} kg</td><td>${totalKgNeto.toLocaleString('es-AR')} kg</td><td>$${totalMonto.toLocaleString('es-AR')}</td></tr></tfoot>
+                                  </table>
+                                  <p style="margin-top:.5rem;font-size:12px;color:#666">$/kg: ${v0.precio_kg ? '$' + v0.precio_kg.toLocaleString('es-AR') : '—'} &nbsp;|&nbsp; Desbaste: ${v0.desbaste_pct || 8}%</p>
+                                  <p style="margin-top:2rem;font-size:11px;color:#999">Generado ${new Date().toLocaleDateString('es-AR')}</p>
+                                  <script>window.onload=()=>{window.print();window.close()}</script>
+                                  </body></html>`
+                                const w = window.open('','_blank','width=750,height=650')
+                                w.document.write(html)
+                                w.document.close()
+                              }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0F0F0', border: '1px solid #CCC', color: '#333', borderRadius: 5, cursor: 'pointer' }}>
+                                🖨️ Imprimir
+                              </button>
                               <button onClick={() => { setEditandoComercial(null); const mt = v0.monto_total_grupo || (g || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg ? String(v0.precio_kg) : '', monto_total_con_iva: String(mt), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                                 ✏️ Editar
@@ -1564,6 +1624,14 @@ export default function Ventas({ usuario }) {
             </div>
           )}
 
+          <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select value={filtroGestion} onChange={e => setFiltroGestion(e.target.value)}
+              style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #E2DDD6', borderRadius: 6, background: '#fff', color: filtroGestion ? '#1A3D6B' : '#6B6760', fontWeight: filtroGestion ? 600 : 400 }}>
+              <option value="">Todos los compradores</option>
+              {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {filtroGestion && <button onClick={() => setFiltroGestion('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer' }}>✕</button>}
+          </div>
           <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
               <thead><tr style={{ background: '#F7F5F0' }}>
@@ -1574,8 +1642,12 @@ export default function Ventas({ usuario }) {
               <tbody>
                 {ventas.length === 0 && <tr><td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: '#9E9A94' }}>No hay ventas.</td></tr>}
                 {(() => {
+                  const hoy40g = new Date(Date.now() - 40 * 86400000)
                   const vistos = new Set()
                   return ventas.filter(v => {
+                    // Excluir archivadas (cobradas y más de 40 días)
+                    if (v.estado_comercial === 'cobrado' && new Date(v.creado_en) < hoy40g) return false
+                    if (filtroGestion && v.comprador !== filtroGestion) return false
                     if (v.grupo_venta_id) {
                       if (vistos.has(v.grupo_venta_id)) return false
                       vistos.add(v.grupo_venta_id)
