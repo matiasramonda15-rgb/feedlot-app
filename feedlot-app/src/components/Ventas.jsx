@@ -1099,25 +1099,26 @@ export default function Ventas({ usuario }) {
                               <div style={{ display: 'flex', gap: 6 }}>
                               <button onClick={async () => {
                                 const fecha = new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
-                                const filasCorrales = (g || []).map(gv => [
-                                  `C-${gv.corrales?.numero || gv.corral_id}`,
-                                  `${gv.cantidad} anim.`,
-                                  `${(gv.kg_vivo_total || 0).toLocaleString('es-AR')} kg`,
-                                  `${(gv.kg_neto || 0).toLocaleString('es-AR')} kg`,
-                                  `$${(gv.monto_total_con_iva || gv.total || 0).toLocaleString('es-AR')}`,
-                                ])
+                                const corralesStr = (g || []).map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
                                 await generarPdfVenta(
-                                  `Venta Multi-corral — ${v0.comprador || '—'}`,
+                                  `Venta ${corralesStr}`,
                                   [
-                                    ['Corral', 'Animales', 'Kg vivos', 'Kg netos', 'Total'],
-                                    ...filasCorrales,
-                                    ['TOTAL', `${totalAnim} anim.`, `${totalKgVivo.toLocaleString('es-AR')} kg`, `${totalKgNeto.toLocaleString('es-AR')} kg`, `$${totalMonto.toLocaleString('es-AR')}`],
+                                    ['Campo', 'Dato'],
+                                    ['Fecha', fecha],
+                                    ['Corrales', corralesStr],
+                                    ['Comprador', v0.comprador || '—'],
+                                    ['Cantidad', `${totalAnim} animales`],
+                                    ['Kg vivos', `${totalKgVivo.toLocaleString('es-AR')} kg`],
+                                    ['Desbaste', `${v0.desbaste_pct || 8}%`],
+                                    ['Kg netos', `${totalKgNeto.toLocaleString('es-AR')} kg`],
+                                    ['$/kg', v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'],
+                                    ['Total', `$${totalMonto.toLocaleString('es-AR')}`],
+                                    ...(v0.observaciones ? [['Observaciones', v0.observaciones]] : []),
                                   ],
                                   [
                                     ['Comprador', v0.comprador],
                                     ['Fecha', fecha],
-                                    ['$/kg', v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'],
-                                    ['Desbaste', `${v0.desbaste_pct || 8}%`],
+                                    ['Corrales', corralesStr],
                                   ]
                                 )
                               }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0F0F0', border: '1px solid #CCC', color: '#333', borderRadius: 5, cursor: 'pointer' }}>
