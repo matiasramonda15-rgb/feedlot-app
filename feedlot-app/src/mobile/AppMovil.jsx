@@ -16,7 +16,7 @@ export default function AppMovil({ usuario, onLogout }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }, { data: movimientos }] = await Promise.all([
+    const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }, { data: movimientos }, { data: stockSan }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
@@ -24,6 +24,7 @@ export default function AppMovil({ usuario, onLogout }) {
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*'),
       supabase.from('movimientos').select('corral_destino_id, fecha').order('fecha', { ascending: false }),
+      supabase.from('stock_sanitario').select('*'),
     ])
     const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
     const ayerStr = ayer.toISOString().split('T')[0]
@@ -69,7 +70,7 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0)), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0)), stockSanitario: stockSan || [], formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
   }
 
   const pantallas = {
@@ -105,7 +106,7 @@ function Scroll({ children }) {
   return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>{children}</div>
 }
 function Home({ usuario, nav, onLogout, datos }) {
-  const { proximaPesada, alertas, corrales, stockBajo } = datos
+  const { proximaPesada, alertas, corrales, stockBajo, stockSanitario } = datos
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
   const totalAnimales = corrales.reduce((s, c) => s + (c.animales || 0), 0)
