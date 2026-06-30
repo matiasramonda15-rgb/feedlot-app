@@ -63,7 +63,7 @@ export default function Sanidad({ usuario }) {
   const [showFormStockSan, setShowFormStockSan] = useState(false)
   const [formStockSan, setFormStockSan] = useState({ producto_id: '', cantidad: '', unidad: 'ml', proveedor: '', remito: '' })
   const [guardandoStockSan, setGuardandoStockSan] = useState(false)
-  const [historialSan, setHistorialIngresosSan] = useState([])
+  // historialSan already declared above
   const [showNuevoProd, setShowNuevoProd] = useState(false)
   const [formNuevoProd, setFormNuevoProd] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml', minimo: '' })
   const [editProd, setEditProd] = useState(null)
