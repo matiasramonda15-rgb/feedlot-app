@@ -1170,7 +1170,8 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                                   <button disabled={!vacSeleccionadas.some(vs => vs.prod_id) || vac.guardando}
                                     onClick={async () => {
                                       const validas = vacSeleccionadas.filter(vs => vs.prod_id)
-                                      if (!loteC || validas.length === 0) return
+                                      if (!loteC) { alert('No se encontró el lote de ingreso para este corral. Revisá que el corral tenga un lote cargado con corral_cuarentena_id = ' + c.id); return }
+                                      if (validas.length === 0) { alert('Seleccioná al menos una vacuna'); return }
                                       setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: true}}))
                                       try {
                                         const resumen = []
