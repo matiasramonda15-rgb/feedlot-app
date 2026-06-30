@@ -132,7 +132,7 @@ function Home({ usuario, nav, onLogout, datos }) {
   }
 
   // Corrales en cuarentena próximos a vencer (ingresados hace más de 8 días)
-  const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena')
+  const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0)
   corralesCuarentena.forEach(c => {
     // Usar fecha del último lote en ese corral (más reciente primero)
     const ultimoLote = (datos.lotes || []).find(l => l.corral_cuarentena_id === c.id)
@@ -1069,9 +1069,9 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                 </div>
               </div>
             )}
-            {alertas.length === 0 && corrales.filter(c => c.rol === 'cuarentena').length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
+            {alertas.length === 0 && corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0).length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: C.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
             {/* Cuarentenas */}
-            {corrales.filter(c => c.rol === 'cuarentena').map(c => {
+            {corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0).map(c => {
               // Usar fecha del último lote en ese corral
               const ultimoLote = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
               const ultimaFecha = ultimoLote?.fecha_ingreso || (movimientos || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0] || null
