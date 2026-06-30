@@ -365,17 +365,7 @@ export default function Alimentacion({ usuario }) {
         actualizado_en: new Date().toISOString(),
         pedido_realizado: false,
       }).eq('id', item.id)
-      // Registrar en ingresos_stock (legacy)
-      await supabase.from('ingresos_stock').insert({
-        insumo_id: item.id,
-        insumo_nombre: formIngreso.insumo,
-        cantidad_kg: cant,
-        precio_por_kg: null,
-        total: null,
-        registrado_por: usuario?.nombre || usuario?.email,
-        precio_cargado_por: null,
-        precio_cargado_en: null,
-      })
+      // Nota: ya no se usa ingresos_stock — todo va a compras_insumos
       // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
       await supabase.from('compras_insumos').insert({
         fecha: formIngreso.fecha,
@@ -1361,7 +1351,7 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: '#F7F5F0' }}>
-                  {['Fecha', 'Insumo', 'Kg MF', '% MS', 'Kg MS', 'Proveedor', 'Remito', '$/kg MF', '$/kg MS', 'Estado'].map(h => (
+                  {['Fecha', 'Insumo', 'Kg MF', '% MS', 'Kg MS', 'Proveedor', 'Remito', '$/kg MF', '$/kg MS', 'Estado', ''].map(h => (
                     <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', borderBottom: '1px solid #E2DDD6', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -1389,6 +1379,26 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                         <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.estado_pago === 'pagado' ? '#E8F4EB' : '#FDF0E0', color: c.estado_pago === 'pagado' ? '#1E5C2E' : '#7A4500' }}>
                           {c.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
                         </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={async () => {
+                            const nuevaCant = prompt('Nueva cantidad (kg):', c.cantidad)
+                            if (!nuevaCant) return
+                            const nuevoPct = prompt('% Materia seca:', c.pct_ms || '')
+                            const nuevoProveedor = prompt('Proveedor:', c.proveedor || '')
+                            const nuevoRemito = prompt('N° Remito:', c.numero_factura || '')
+                            const pctMsNew = parseFloat(nuevoPct) || null
+                            const kgMsNew = pctMsNew ? Math.round(parseFloat(nuevaCant) * pctMsNew / 100 * 10) / 10 : null
+                            await supabase.from('compras_insumos').update({ cantidad: parseFloat(nuevaCant), pct_ms: pctMsNew, kg_ms: kgMsNew, proveedor: nuevoProveedor || null, numero_factura: nuevoRemito || null }).eq('id', c.id)
+                            onReload()
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>✏</button>
+                          <button onClick={async () => {
+                            if (!confirm(`¿Eliminar ingreso de ${c.insumo_nombre}?`)) return
+                            await supabase.from('compras_insumos').delete().eq('id', c.id)
+                            onReload()
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer' }}>🗑</button>
+                        </div>
                       </td>
                     </tr>
                   )

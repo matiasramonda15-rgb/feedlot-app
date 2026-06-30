@@ -1142,7 +1142,7 @@ export default function Sanidad({ usuario }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ background: S.bg }}>
-                      {['Fecha', 'Producto', 'Cantidad', 'Proveedor', 'Remito', 'Estado'].map(h => (
+                      {['Fecha', 'Producto', 'Cantidad', 'Proveedor', 'Remito', 'Estado', ''].map(h => (
                         <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                       ))}
                     </tr>
@@ -1161,6 +1161,23 @@ export default function Sanidad({ usuario }) {
                           <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: ing.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: ing.estado_pago === 'pagado' ? S.green : S.amber }}>
                             {ing.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
                           </span>
+                        </td>
+                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button onClick={async () => {
+                              const nuevaCant = prompt('Nueva cantidad:', ing.cantidad)
+                              if (!nuevaCant) return
+                              const nuevoProveedor = prompt('Proveedor:', ing.proveedor || '')
+                              const nuevoRemito = prompt('N° Remito/Factura:', ing.numero_factura || '')
+                              await supabase.from('compras_insumos').update({ cantidad: parseFloat(nuevaCant), proveedor: nuevoProveedor || null, numero_factura: nuevoRemito || null }).eq('id', ing.id)
+                              await cargarProductos()
+                            }} style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>✏</button>
+                            <button onClick={async () => {
+                              if (!confirm(`¿Eliminar ingreso de ${ing.insumo_nombre}?`)) return
+                              await supabase.from('compras_insumos').delete().eq('id', ing.id)
+                              await cargarProductos()
+                            }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>🗑</button>
+                          </div>
                         </td>
                       </tr>
                     ))}
