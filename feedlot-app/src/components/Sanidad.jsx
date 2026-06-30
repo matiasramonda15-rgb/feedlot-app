@@ -66,7 +66,10 @@ export default function Sanidad({ usuario }) {
   const [historialIngresosSan, setHistorialIngresosSan] = useState([])
   const [showNuevoProd, setShowNuevoProd] = useState(false)
   const [formNuevoProd, setFormNuevoProd] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml', minimo: '' })
-  const [editProd, setEditProd] = useState(null) // { id, nombre, tipo, lab, car, unidad, minimo }
+  const [editProd, setEditProd] = useState(null)
+  const [tipoCustomNuevo, setTipoCustomNuevo] = useState('')
+  const [filtroTipoStock, setFiltroTipoStock] = useState('')
+  const [tipoCustomEdit, setTipoCustomEdit] = useState('') // { id, nombre, tipo, lab, car, unidad, minimo }
   const [guardandoProd, setGuardandoProd] = useState(false)
 
   async function guardarMortalidad() {
@@ -877,7 +880,12 @@ export default function Sanidad({ usuario }) {
               <div style={{ fontSize: 16, fontWeight: 600 }}>Stock sanitario</div>
               <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Registrá el remito cuando ingresa mercadería. La factura y el pago se completan desde Insumos.</div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select value={filtroTipoStock} onChange={e => setFiltroTipoStock(e.target.value)}
+                style={{ padding: '7px 12px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroTipoStock ? S.accent : S.muted, fontWeight: filtroTipoStock ? 600 : 400 }}>
+                <option value="">Todos los tipos</option>
+                {[...new Set(productos.map(p => p.tipo))].sort().map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
               <button onClick={() => { setShowNuevoProd(!showNuevoProd); setShowFormStockSan(false) }}
                 style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 + Nuevo producto
@@ -904,8 +912,14 @@ export default function Sanidad({ usuario }) {
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Tipo *</div>
                   <select value={formNuevoProd.tipo} onChange={e => setFormNuevoProd({...formNuevoProd, tipo: e.target.value})}
                     style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
-                    {['Vacuna', 'Antibiotico', 'Antiparasitario', 'Vitamina', 'Antiinflamatorio', 'Otro'].map(t => <option key={t}>{t}</option>)}
+                    {[...new Set(['Vacuna', 'Antibiotico', 'Antiparasitario', 'Vitamina', 'Antiinflamatorio', ...productos.map(p => p.tipo), 'Otro'])].map(t => <option key={t}>{t}</option>)}
+                    <option value="__nuevo__">+ Nuevo tipo...</option>
                   </select>
+                  {formNuevoProd.tipo === '__nuevo__' && (
+                    <input type="text" value={tipoCustomNuevo} onChange={e => { setTipoCustomNuevo(e.target.value); setFormNuevoProd({...formNuevoProd, tipo: e.target.value}) }}
+                      placeholder="Escribí el nuevo tipo" autoFocus
+                      style={{ width: '100%', marginTop: 6, padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                  )}
                 </div>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Unidad</div>
@@ -1006,10 +1020,12 @@ export default function Sanidad({ usuario }) {
                 </tr>
               </thead>
               <tbody>
-                {productos.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay productos. Usá "+ Nuevo producto" para agregar.</td></tr>
+                {productos.filter(p => !filtroTipoStock || p.tipo === filtroTipoStock).length === 0 && (
+                  <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>
+                    {filtroTipoStock ? `No hay productos de tipo "${filtroTipoStock}".` : 'No hay productos. Usá "+ Nuevo producto" para agregar.'}
+                  </td></tr>
                 )}
-                {productos.map((p, i) => {
+                {productos.filter(p => !filtroTipoStock || p.tipo === filtroTipoStock).map((p, i) => {
                   const tc = TIPO_BADGE[p.tipo] || TIPO_BADGE.Otro
                   const cant = p.cantidad_ml || p.cantidad_kg || 0
                   const bajo = cant < 50
@@ -1056,8 +1072,14 @@ export default function Sanidad({ usuario }) {
                               <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Tipo</div>
                               <select value={editProd.tipo} onChange={e => setEditProd({...editProd, tipo: e.target.value})}
                                 style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
-                                {['Vacuna', 'Antibiotico', 'Antiparasitario', 'Vitamina', 'Antiinflamatorio', 'Otro'].map(t => <option key={t}>{t}</option>)}
+                                {[...new Set(['Vacuna', 'Antibiotico', 'Antiparasitario', 'Vitamina', 'Antiinflamatorio', ...productos.map(p => p.tipo), 'Otro'])].map(t => <option key={t}>{t}</option>)}
+                                <option value="__nuevo__">+ Nuevo tipo...</option>
                               </select>
+                              {editProd.tipo === '__nuevo__' && (
+                                <input type="text" value={tipoCustomEdit} onChange={e => { setTipoCustomEdit(e.target.value); setEditProd({...editProd, tipo: e.target.value}) }}
+                                  placeholder="Escribí el nuevo tipo" autoFocus
+                                  style={{ width: '100%', marginTop: 6, padding: '7px 10px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                              )}
                             </div>
                             <div>
                               <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Laboratorio</div>
