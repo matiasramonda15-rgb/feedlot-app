@@ -121,6 +121,8 @@ export default function Sanidad({ usuario }) {
       carencia_dias: parseInt(editProd.car) || 0,
       unidad: editProd.unidad,
       minimo_stock: parseFloat(editProd.minimo) || 0,
+      cantidad_ml: parseFloat(editProd.cantidad_actual) || 0,
+      actualizado_en: new Date().toISOString(),
     }).eq('id', editProd.id)
     setEditProd(null)
     setGuardandoProd(false)
@@ -201,7 +203,7 @@ export default function Sanidad({ usuario }) {
 
   async function cargarProductos() {
     const [{ data }, { data: compras }] = await Promise.all([
-      supabase.from('stock_sanitario').select('*').order('producto'),
+      supabase.from('stock_sanitario').select('*').eq('activo', true).order('producto'),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'sanitario').order('fecha', { ascending: false }).limit(50),
     ])
     if (data) setProductos(data.map(p => ({ n: p.producto, tipo: p.tipo, id: p.id, cantidad_ml: p.cantidad_ml, unidad: p.unidad || 'ml', lab: p.laboratorio || '', car: p.carencia_dias || 0, minimo: p.minimo_stock || 0 })))
@@ -1030,7 +1032,7 @@ export default function Sanidad({ usuario }) {
                       <td style={{ padding: '10px 14px', color: S.muted }}>{p.unidad || 'ml'}</td>
                       <td style={{ padding: '10px 14px' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => setEditProd(editProd?.id === p.id ? null : { id: p.id, nombre: p.n, tipo: p.tipo, lab: p.lab || '', car: String(p.car || 0), unidad: p.unidad || 'ml', minimo: String(p.minimo || 0) })}
+                          <button onClick={() => setEditProd(editProd?.id === p.id ? null : { id: p.id, nombre: p.n, tipo: p.tipo, lab: p.lab || '', car: String(p.car || 0), unidad: p.unidad || 'ml', minimo: String(p.minimo || 0), cantidad_actual: String(p.cantidad_ml || 0) })}
                             style={{ padding: '4px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                             {editProd?.id === p.id ? 'Cancelar' : 'Editar'}
                           </button>
@@ -1044,7 +1046,7 @@ export default function Sanidad({ usuario }) {
                     {editProd?.id === p.id && (
                       <tr style={{ borderBottom: `1px solid ${S.border}` }}>
                         <td colSpan={8} style={{ padding: '1rem', background: S.accentLight }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, marginBottom: '.75rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, marginBottom: '.75rem' }}>
                             <div>
                               <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Nombre</div>
                               <input type="text" value={editProd.nombre} onChange={e => setEditProd({...editProd, nombre: e.target.value})}
@@ -1078,6 +1080,11 @@ export default function Sanidad({ usuario }) {
                                 style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
                                 {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
                               </select>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: S.green, textTransform: 'uppercase', marginBottom: 3 }}>Stock actual</div>
+                              <input type="number" value={editProd.cantidad_actual} onChange={e => setEditProd({...editProd, cantidad_actual: e.target.value})}
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${S.green}`, borderRadius: 6, fontSize: 13, fontWeight: 600, color: S.green, background: S.surface, boxSizing: 'border-box' }} />
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
