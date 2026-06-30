@@ -99,6 +99,7 @@ export default function Insumos({ usuario }) {
   const [pagarInline, setPagarInline] = useState(null)
   const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
+  const [showPagosPend, setShowPagosPend] = useState(false)
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({
@@ -315,7 +316,12 @@ export default function Insumos({ usuario }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
                     ⏳ {pendientes.length} compra{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} · ${pendientes.reduce((s,c)=>s+(c.total||0),0).toLocaleString('es-AR')}
                   </div>
-
+                  {seleccionadas.length > 0 && (
+                    <button onClick={() => setShowPagosPend(!showPagosPend)}
+                      style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                      💳 Pagar {seleccionadas.length} seleccionada{seleccionadas.length !== 1 ? 's' : ''} · ${totalSel.toLocaleString('es-AR')}
+                    </button>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 0 }}>
                   {pendientes.map(c => (
