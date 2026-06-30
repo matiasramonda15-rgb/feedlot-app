@@ -363,6 +363,7 @@ export default function Alimentacion({ usuario }) {
       await supabase.from('stock_insumos').update({
         cantidad_kg: (item.cantidad_kg || 0) + cant,
         actualizado_en: new Date().toISOString(),
+        pedido_realizado: false,
       }).eq('id', item.id)
       // Registrar en ingresos_stock (legacy)
       await supabase.from('ingresos_stock').insert({

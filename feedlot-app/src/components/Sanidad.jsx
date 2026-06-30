@@ -97,10 +97,12 @@ export default function Sanidad({ usuario }) {
 
   async function guardarNuevoProd() {
     if (!formNuevoProd.nombre.trim()) { alert('Ingresá el nombre'); return }
+    const tipoFinal = formNuevoProd.tipo === '__nuevo__' ? tipoCustomNuevo.trim() : formNuevoProd.tipo
+    if (!tipoFinal) { alert('Ingresá el tipo'); return }
     setGuardandoProd(true)
     await supabase.from('stock_sanitario').insert({
       producto: formNuevoProd.nombre.trim(),
-      tipo: formNuevoProd.tipo,
+      tipo: tipoFinal,
       laboratorio: formNuevoProd.lab || null,
       carencia_dias: parseInt(formNuevoProd.car) || 0,
       unidad: formNuevoProd.unidad,
@@ -109,6 +111,7 @@ export default function Sanidad({ usuario }) {
       activo: true,
     })
     setFormNuevoProd({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml', minimo: '' })
+    setTipoCustomNuevo('')
     setShowNuevoProd(false)
     setGuardandoProd(false)
     await cargarProductos()
@@ -116,10 +119,12 @@ export default function Sanidad({ usuario }) {
 
   async function guardarEditProd() {
     if (!editProd?.nombre?.trim()) { alert('Ingresá el nombre'); return }
+    const tipoFinal = editProd.tipo === '__nuevo__' ? tipoCustomEdit.trim() : editProd.tipo
+    if (!tipoFinal) { alert('Ingresá el tipo'); return }
     setGuardandoProd(true)
     await supabase.from('stock_sanitario').update({
       producto: editProd.nombre.trim(),
-      tipo: editProd.tipo,
+      tipo: tipoFinal,
       laboratorio: editProd.lab || null,
       carencia_dias: parseInt(editProd.car) || 0,
       unidad: editProd.unidad,
@@ -128,6 +133,7 @@ export default function Sanidad({ usuario }) {
       actualizado_en: new Date().toISOString(),
     }).eq('id', editProd.id)
     setEditProd(null)
+    setTipoCustomEdit('')
     setGuardandoProd(false)
     await cargarProductos()
   }
@@ -150,6 +156,7 @@ export default function Sanidad({ usuario }) {
       await supabase.from('stock_sanitario').update({
         [campoCant]: valorActual + cant,
         actualizado_en: new Date().toISOString(),
+        pedido_realizado: false,
       }).eq('id', prod.id)
       // Registrar en ingresos_stock (legacy)
       await supabase.from('ingresos_stock').insert({
@@ -916,7 +923,7 @@ export default function Sanidad({ usuario }) {
                     <option value="__nuevo__">+ Nuevo tipo...</option>
                   </select>
                   {formNuevoProd.tipo === '__nuevo__' && (
-                    <input type="text" value={tipoCustomNuevo} onChange={e => { setTipoCustomNuevo(e.target.value); setFormNuevoProd({...formNuevoProd, tipo: e.target.value}) }}
+                    <input type="text" value={tipoCustomNuevo} onChange={e => setTipoCustomNuevo(e.target.value)}
                       placeholder="Escribí el nuevo tipo" autoFocus
                       style={{ width: '100%', marginTop: 6, padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                   )}
@@ -1076,7 +1083,7 @@ export default function Sanidad({ usuario }) {
                                 <option value="__nuevo__">+ Nuevo tipo...</option>
                               </select>
                               {editProd.tipo === '__nuevo__' && (
-                                <input type="text" value={tipoCustomEdit} onChange={e => { setTipoCustomEdit(e.target.value); setEditProd({...editProd, tipo: e.target.value}) }}
+                                <input type="text" value={tipoCustomEdit} onChange={e => setTipoCustomEdit(e.target.value)}
                                   placeholder="Escribí el nuevo tipo" autoFocus
                                   style={{ width: '100%', marginTop: 6, padding: '7px 10px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                               )}
