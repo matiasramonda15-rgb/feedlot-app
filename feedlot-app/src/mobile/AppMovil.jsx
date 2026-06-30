@@ -70,7 +70,7 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0)), stockSanitario: stockSan || [], formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0) && !s.pedido_realizado), stockSanitario: (stockSan || []).filter(p => !p.pedido_realizado), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
   }
 
   const pantallas = {
@@ -121,13 +121,13 @@ function Home({ usuario, nav, onLogout, datos }) {
   // Stock bajo mínimo — Alimentos
   if (stockBajo && stockBajo.length > 0) {
     stockBajo.forEach(s => {
-      tareas.push({ icon: '📦', titulo: `Stock bajo: ${s.insumo}`, sub: `${s.cantidad_kg?.toLocaleString('es-AR')} kg · mínimo ${s.minimo_kg?.toLocaleString('es-AR')} kg · Avisar para reponer`, pantalla: 'alimentacion', urgente: true })
+      tareas.push({ icon: '📦', titulo: `Stock bajo: ${s.insumo}`, sub: `${s.cantidad_kg?.toLocaleString('es-AR')} kg · mínimo ${s.minimo_kg?.toLocaleString('es-AR')} kg · Avisar para reponer`, pantalla: 'alimentacion', tabDestino: 'stock', urgente: true, stockId: s.id, stockTabla: 'stock_insumos' })
     })
   }
   // Stock bajo mínimo — Sanitario
   if (stockSanitario && stockSanitario.length > 0) {
     stockSanitario.filter(p => p.activo !== false && (p.cantidad_ml || 0) <= (p.minimo_stock || 0) && p.minimo_stock > 0).forEach(p => {
-      tareas.push({ icon: '💊', titulo: `Stock bajo: ${p.producto}`, sub: `${(p.cantidad_ml||0).toLocaleString('es-AR')} ${p.unidad||'ml'} · mínimo ${(p.minimo_stock||0).toLocaleString('es-AR')} ${p.unidad||'ml'} · Avisar para reponer`, pantalla: 'sanidad', urgente: true })
+      tareas.push({ icon: '💊', titulo: `Stock bajo: ${p.producto}`, sub: `${(p.cantidad_ml||0).toLocaleString('es-AR')} ${p.unidad||'ml'} · mínimo ${(p.minimo_stock||0).toLocaleString('es-AR')} ${p.unidad||'ml'} · Avisar para reponer`, pantalla: 'sanidad', tabDestino: 'stock', urgente: true, stockId: p.id, stockTabla: 'stock_sanitario' })
     })
   }
 
@@ -173,7 +173,7 @@ function Home({ usuario, nav, onLogout, datos }) {
           <div key={i}
             style={{ background: C.surface, border: `1px solid ${t.urgente ? C.amber : C.border}`, borderRadius: 12, padding: '.9rem', marginBottom: '.65rem', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div onClick={() => { 
-                  if (t.tabDestino) window.__sanidadTab = t.tabDestino
+                  if (t.tabDestino) { window.__sanidadTab = t.tabDestino; window.__alimentacionTab = t.tabDestino }
                   nav(t.pantalla) 
                 }}
               style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}>
@@ -541,7 +541,11 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   }
   const [kgs, setKgs] = useState({})
   const [pils, setPils] = useState({})
-  const [tab, setTab] = useState('piletas')
+  const [tab, setTab] = useState(() => {
+    const t = window.__alimentacionTab || 'piletas'
+    window.__alimentacionTab = null
+    return t
+  })
   const [mostrarMixer, setMostrarMixer] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [mostrarConfirmReemplazo, setMostrarConfirmReemplazo] = useState(false)
