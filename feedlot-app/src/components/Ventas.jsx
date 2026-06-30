@@ -36,6 +36,81 @@ function Campo({ label, children, hint }) {
 const inputStyle = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
 const inputReadonly = { ...inputStyle, background: S.bg, color: S.muted, cursor: 'default' }
 
+// Carga jsPDF desde CDN y genera PDF descargable
+async function generarPdfVenta(titulo, filas, info) {
+  if (!window.jspdf) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+      script.onload = resolve
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+  }
+  const { jsPDF } = window.jspdf
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  // Header
+  doc.setFillColor(26, 61, 107)
+  doc.rect(0, 0, 210, 22, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(14)
+  doc.setFont('helvetica', 'bold')
+  doc.text('RAMONDA HNOS. S.A.', 14, 10)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Resumen de Venta', 14, 17)
+  doc.text(`Generado: ${new Date().toLocaleDateString('es-AR')}`, 196, 17, { align: 'right' })
+
+  // Título
+  doc.setTextColor(0, 0, 0)
+  doc.setFontSize(12)
+  doc.setFont('helvetica', 'bold')
+  doc.text(titulo, 14, 32)
+
+  // Info general
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(100, 100, 100)
+  let y = 40
+  info.forEach(([label, val]) => {
+    doc.setFont('helvetica', 'bold')
+    doc.text(label + ':', 14, y)
+    doc.setFont('helvetica', 'normal')
+    doc.text(String(val || '—'), 55, y)
+    y += 6
+  })
+
+  // Tabla
+  y += 4
+  doc.setFillColor(240, 240, 240)
+  doc.rect(14, y - 4, 182, 7, 'F')
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(60, 60, 60)
+  const cols = filas[0]
+  const colW = Math.floor(182 / cols.length)
+  cols.forEach((h, i) => doc.text(h, 14 + i * colW, y))
+  y += 6
+
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(0, 0, 0)
+  filas.slice(1).forEach((row, ri) => {
+    if (ri % 2 === 0) { doc.setFillColor(250, 250, 250); doc.rect(14, y - 4, 182, 6, 'F') }
+    row.forEach((cell, i) => doc.text(String(cell || '—'), 14 + i * colW, y))
+    y += 6
+    if (y > 270) { doc.addPage(); y = 20 }
+  })
+
+  // Footer
+  doc.setFontSize(7)
+  doc.setTextColor(150, 150, 150)
+  doc.text('Ramonda Hnos. S.A. — Sistema de gestión', 14, 285)
+
+  const nombreArchivo = titulo.replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().split('T')[0] + '.pdf'
+  doc.save(nombreArchivo)
+}
+
 export default function Ventas({ usuario }) {
   const [tab, setTab] = useState('ventas')
   const [loading, setLoading] = useState(true)
@@ -916,32 +991,32 @@ export default function Ventas({ usuario }) {
                               return `$${neto.toLocaleString('es-AR')}`
                             })()}</td>
                             <td style={{ padding: '9px 12px', display: 'flex', gap: 6 }}>
-                              <button onClick={() => {
+                              <button onClick={async () => {
                                 const fecha = new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
                                 const total = v.monto_total_con_iva || v.total || 0
-                                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumen venta</title>
-                                  <style>body{font-family:Arial,sans-serif;padding:2rem;max-width:600px;margin:auto}h2{margin-bottom:.5rem}table{width:100%;border-collapse:collapse;margin-top:1rem}td,th{padding:8px 12px;border:1px solid #ddd;font-size:13px}th{background:#f5f5f5;font-weight:600;text-align:left}.total{font-size:15px;font-weight:700;text-align:right;margin-top:1rem}</style>
-                                  </head><body>
-                                  <h2>Ramonda Hnos. S.A. — Resumen de Venta</h2>
-                                  <p style="color:#666;font-size:13px">Fecha: ${fecha} &nbsp;|&nbsp; Corral: C-${v.corrales?.numero || v.corral_id}</p>
-                                  <table>
-                                    <tr><th>Comprador</th><td>${v.comprador || '—'}</td></tr>
-                                    <tr><th>Cantidad</th><td>${v.cantidad} animales</td></tr>
-                                    <tr><th>Kg vivos</th><td>${v.kg_vivo_total?.toLocaleString('es-AR') || '—'} kg</td></tr>
-                                    <tr><th>Desbaste</th><td>${v.desbaste_pct || 8}%</td></tr>
-                                    <tr><th>Kg netos</th><td>${v.kg_neto?.toLocaleString('es-AR') || '—'} kg</td></tr>
-                                    <tr><th>$/kg</th><td>${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') : '—'}</td></tr>
-                                    <tr><th>Total</th><td><strong>$${total.toLocaleString('es-AR')}</strong></td></tr>
-                                    ${v.observaciones ? `<tr><th>Observaciones</th><td>${v.observaciones}</td></tr>` : ''}
-                                  </table>
-                                  <p style="margin-top:2rem;font-size:11px;color:#999">Generado ${new Date().toLocaleDateString('es-AR')}</p>
-                                  <script>window.onload=()=>{window.print();window.close()}</script>
-                                  </body></html>`
-                                const w = window.open('','_blank','width=700,height=600')
-                                w.document.write(html)
-                                w.document.close()
+                                await generarPdfVenta(
+                                  `Venta C-${v.corrales?.numero || v.corral_id}`,
+                                  [
+                                    ['Campo', 'Dato'],
+                                    ['Fecha', fecha],
+                                    ['Corral', `C-${v.corrales?.numero || v.corral_id}`],
+                                    ['Comprador', v.comprador || '—'],
+                                    ['Cantidad', `${v.cantidad} animales`],
+                                    ['Kg vivos', `${(v.kg_vivo_total || 0).toLocaleString('es-AR')} kg`],
+                                    ['Desbaste', `${v.desbaste_pct || 8}%`],
+                                    ['Kg netos', `${(v.kg_neto || 0).toLocaleString('es-AR')} kg`],
+                                    ['$/kg', v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : '—'],
+                                    ['Total', `$${total.toLocaleString('es-AR')}`],
+                                    ...(v.observaciones ? [['Observaciones', v.observaciones]] : []),
+                                  ],
+                                  [
+                                    ['Comprador', v.comprador],
+                                    ['Fecha', fecha],
+                                    ['Corral', `C-${v.corrales?.numero || v.corral_id}`],
+                                  ]
+                                )
                               }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0F0F0', border: '1px solid #CCC', color: '#333', borderRadius: 5, cursor: 'pointer' }}>
-                                🖨️ Imprimir
+                                📄 PDF
                               </button>
                               <button onClick={() => { setEditandoComercial(null); setEditandoVenta({ id: v.id, precio_kg: v.precio_kg ? String(v.precio_kg) : '', monto_total_con_iva: v.monto_total_con_iva ? String(v.monto_total_con_iva) : (v.total ? String(v.total) : ''), comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: String(v.desbaste_pct || 8), plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
@@ -1022,28 +1097,31 @@ export default function Ventas({ usuario }) {
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: totalMonto > 0 ? S.green : S.hint }}>{totalMonto > 0 ? `$${totalMonto.toLocaleString('es-AR')}` : '—'}</td>
                             <td style={{ padding: '9px 12px' }}>
                               <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => {
+                              <button onClick={async () => {
                                 const fecha = new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
-                                const filas = (g || []).map(gv => `<tr><td>C-${gv.corrales?.numero || gv.corral_id}</td><td>${gv.cantidad} anim.</td><td>${gv.kg_vivo_total?.toLocaleString('es-AR') || '—'} kg</td><td>${gv.kg_neto?.toLocaleString('es-AR') || '—'} kg</td><td>$${(gv.monto_total_con_iva||gv.total||0).toLocaleString('es-AR')}</td></tr>`).join('')
-                                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumen venta</title>
-                                  <style>body{font-family:Arial,sans-serif;padding:2rem;max-width:700px;margin:auto}h2{margin-bottom:.5rem}table{width:100%;border-collapse:collapse;margin-top:1rem}td,th{padding:8px 12px;border:1px solid #ddd;font-size:13px}th{background:#f5f5f5;font-weight:600;text-align:left}</style>
-                                  </head><body>
-                                  <h2>Ramonda Hnos. S.A. — Resumen de Venta Multi-corral</h2>
-                                  <p style="color:#666;font-size:13px">Fecha: ${fecha} &nbsp;|&nbsp; Comprador: ${v0.comprador || '—'}</p>
-                                  <table>
-                                    <thead><tr><th>Corral</th><th>Animales</th><th>Kg vivos</th><th>Kg netos</th><th>Total</th></tr></thead>
-                                    <tbody>${filas}</tbody>
-                                    <tfoot><tr style="font-weight:700;background:#f5f5f5"><td colspan="2">TOTAL</td><td>${totalKgVivo.toLocaleString('es-AR')} kg</td><td>${totalKgNeto.toLocaleString('es-AR')} kg</td><td>$${totalMonto.toLocaleString('es-AR')}</td></tr></tfoot>
-                                  </table>
-                                  <p style="margin-top:.5rem;font-size:12px;color:#666">$/kg: ${v0.precio_kg ? '$' + v0.precio_kg.toLocaleString('es-AR') : '—'} &nbsp;|&nbsp; Desbaste: ${v0.desbaste_pct || 8}%</p>
-                                  <p style="margin-top:2rem;font-size:11px;color:#999">Generado ${new Date().toLocaleDateString('es-AR')}</p>
-                                  <script>window.onload=()=>{window.print();window.close()}</script>
-                                  </body></html>`
-                                const w = window.open('','_blank','width=750,height=650')
-                                w.document.write(html)
-                                w.document.close()
+                                const filasCorrales = (g || []).map(gv => [
+                                  `C-${gv.corrales?.numero || gv.corral_id}`,
+                                  `${gv.cantidad} anim.`,
+                                  `${(gv.kg_vivo_total || 0).toLocaleString('es-AR')} kg`,
+                                  `${(gv.kg_neto || 0).toLocaleString('es-AR')} kg`,
+                                  `$${(gv.monto_total_con_iva || gv.total || 0).toLocaleString('es-AR')}`,
+                                ])
+                                await generarPdfVenta(
+                                  `Venta Multi-corral — ${v0.comprador || '—'}`,
+                                  [
+                                    ['Corral', 'Animales', 'Kg vivos', 'Kg netos', 'Total'],
+                                    ...filasCorrales,
+                                    ['TOTAL', `${totalAnim} anim.`, `${totalKgVivo.toLocaleString('es-AR')} kg`, `${totalKgNeto.toLocaleString('es-AR')} kg`, `$${totalMonto.toLocaleString('es-AR')}`],
+                                  ],
+                                  [
+                                    ['Comprador', v0.comprador],
+                                    ['Fecha', fecha],
+                                    ['$/kg', v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'],
+                                    ['Desbaste', `${v0.desbaste_pct || 8}%`],
+                                  ]
+                                )
                               }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0F0F0', border: '1px solid #CCC', color: '#333', borderRadius: 5, cursor: 'pointer' }}>
-                                🖨️ Imprimir
+                                📄 PDF
                               </button>
                               <button onClick={() => { setEditandoComercial(null); const mt = v0.monto_total_grupo || (g || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)||0; setEditandoVenta({ id: v0.id, grupo_venta_id: v0.grupo_venta_id, precio_kg: v0.precio_kg ? String(v0.precio_kg) : '', monto_total_con_iva: String(mt), comprador: v0.comprador || '', compradorNuevo: '', observaciones: v0.observaciones || '', desbaste: String(v0.desbaste_pct || 8), plazo_dias: v0.plazo_dias ? String(v0.plazo_dias) : '' }) }}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
