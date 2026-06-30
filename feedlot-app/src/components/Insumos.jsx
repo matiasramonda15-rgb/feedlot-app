@@ -99,6 +99,7 @@ export default function Insumos({ usuario }) {
   const [pagarInline, setPagarInline] = useState(null)
   const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
+  const [preciosGrupal, setPreciosGrupal] = useState({})
   const [showPagosPend, setShowPagosPend] = useState(false)
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
@@ -301,9 +302,26 @@ export default function Insumos({ usuario }) {
                 }
               }
               for (const id of seleccionadas) {
-                await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagGrupal || undefined, caja_oficial_id, caja_paralela_id, pagos_detalle: formPagoGrupal.pagos, forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'), es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo) }).eq('id', id)
+                const c = pendientes.find(x => x.id === id)
+                const precioUnit = preciosGrupal[id] ? parseFloat(preciosGrupal[id]) : null
+                const totalItem = precioUnit && c?.cantidad ? Math.round(precioUnit * c.cantidad) : null
+                await supabase.from('compras_insumos').update({
+                  estado_pago: 'pagado',
+                  total: totalItem || totalPagGrupal || undefined,
+                  precio_unitario: precioUnit,
+                  caja_oficial_id, caja_paralela_id,
+                  pagos_detalle: formPagoGrupal.pagos,
+                  forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'),
+                  es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo),
+                  contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null,
+                }).eq('id', id)
+                // Actualizar precio de referencia en stock
+                if (precioUnit && c?.insumo_id && c?.insumo_tipo === 'alimentacion') {
+                  await supabase.from('stock_insumos').update({ ultimo_precio_kg: precioUnit }).eq('id', c.insumo_id)
+                }
               }
               setSeleccionadas([])
+              setPreciosGrupal({})
               setShowPagosPend(false)
               setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
               setGuardandoPago(false)
@@ -325,15 +343,41 @@ export default function Insumos({ usuario }) {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 0 }}>
                   {pendientes.map(c => (
-                    <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${seleccionadas.includes(c.id) ? '#EF9F27' : S.border}`, borderRadius: 6, background: seleccionadas.includes(c.id) ? '#FFF8EC' : S.surface, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={seleccionadas.includes(c.id)} onChange={e => setSeleccionadas(e.target.checked ? [...seleccionadas, c.id] : seleccionadas.filter(id => id !== c.id))} />
-                      <div style={{ flex: 1, fontSize: 13 }}>
-                        <strong>{c.insumo_nombre}</strong>
-                        <span style={{ color: S.muted, marginLeft: 8 }}>{c.cantidad?.toLocaleString('es-AR')} {c.unidad} · {c.fecha ? new Date(c.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
-                        {c.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {c.proveedor}</span>}
-                      </div>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${c.total?.toLocaleString('es-AR')}</span>
-                    </label>
+                    <div key={c.id} style={{ border: `1px solid ${seleccionadas.includes(c.id) ? '#EF9F27' : S.border}`, borderRadius: 6, background: seleccionadas.includes(c.id) ? '#FFF8EC' : S.surface }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={seleccionadas.includes(c.id)} onChange={e => {
+                          setSeleccionadas(e.target.checked ? [...seleccionadas, c.id] : seleccionadas.filter(id => id !== c.id))
+                          if (!e.target.checked) { const np = {...preciosGrupal}; delete np[c.id]; setPreciosGrupal(np) }
+                        }} />
+                        <div style={{ flex: 1, fontSize: 13 }}>
+                          <strong>{c.insumo_nombre}</strong>
+                          <span style={{ color: S.muted, marginLeft: 8 }}>{c.cantidad?.toLocaleString('es-AR')} {c.unidad}</span>
+                          <span style={{ color: S.muted, marginLeft: 8 }}>· {c.fecha ? new Date(c.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                          {c.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {c.proveedor}</span>}
+                        </div>
+                        {c.total ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${c.total.toLocaleString('es-AR')}</span> : null}
+                      </label>
+                      {seleccionadas.includes(c.id) && c.insumo_tipo === 'alimentacion' && (
+                        <div style={{ padding: '0 12px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap' }}>$/kg:</div>
+                          <input type="number" value={preciosGrupal[c.id] || ''} onChange={e => {
+                            const precio = e.target.value
+                            const np = {...preciosGrupal, [c.id]: precio}
+                            setPreciosGrupal(np)
+                            const totalAuto = pendientes.filter(x => seleccionadas.includes(x.id)).reduce((s, x) => {
+                              const px = np[x.id] && x.cantidad ? Math.round(parseFloat(np[x.id]) * x.cantidad) : (x.total || 0)
+                              return s + px
+                            }, 0)
+                            if (totalAuto > 0) setFormPagoGrupal(prev => ({...prev, pagos: prev.pagos.map((pg, i) => i === 0 ? {...pg, monto: String(totalAuto)} : pg)}))
+                          }} placeholder="ej. 850" style={{ padding: '5px 8px', border: `1px solid ${S.accent}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', width: 120 }} />
+                          {preciosGrupal[c.id] && c.cantidad && (
+                            <span style={{ fontSize: 12, color: S.green, fontWeight: 600 }}>
+                              = ${Math.round(parseFloat(preciosGrupal[c.id]) * c.cantidad).toLocaleString('es-AR')}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
