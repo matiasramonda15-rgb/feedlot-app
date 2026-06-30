@@ -63,7 +63,7 @@ export default function Sanidad({ usuario }) {
   const [showFormStockSan, setShowFormStockSan] = useState(false)
   const [formStockSan, setFormStockSan] = useState({ producto_id: '', cantidad: '', unidad: 'ml', proveedor: '', remito: '' })
   const [guardandoStockSan, setGuardandoStockSan] = useState(false)
-  const [historialIngresosSan, setHistorialIngresosSan] = useState([])
+  const [historialSan, setHistorialIngresosSan] = useState([])
   const [showNuevoProd, setShowNuevoProd] = useState(false)
   const [formNuevoProd, setFormNuevoProd] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml', minimo: '' })
   const [editProd, setEditProd] = useState(null)
@@ -1135,7 +1135,7 @@ export default function Sanidad({ usuario }) {
           </div>
 
           {/* Historial de ingresos */}
-          {historialIngresosSan.length > 0 && (
+          {historialSan.length > 0 && (
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: '.75rem' }}>Últimos ingresos registrados</div>
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
@@ -1148,7 +1148,7 @@ export default function Sanidad({ usuario }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {historialIngresosSan.map(ing => (
+                    {historialSan.map(ing => (
                       <tr key={ing.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                         <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted, whiteSpace: 'nowrap' }}>
                           {ing.fecha ? new Date(ing.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
