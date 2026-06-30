@@ -97,9 +97,9 @@ export default function Insumos({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [pagarInline, setPagarInline] = useState(null)
-  const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }] })
+  const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }] })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({
     fecha: new Date().toISOString().split('T')[0],
@@ -288,7 +288,7 @@ export default function Insumos({ usuario }) {
                   const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
                   if (!caja_paralela_id) caja_paralela_id = cp?.id || null
                 } else {
-                  const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
+                  const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null }).select().single()
                   if (!caja_oficial_id) caja_oficial_id = co?.id || null
                 }
                 if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
@@ -304,7 +304,7 @@ export default function Insumos({ usuario }) {
               }
               setSeleccionadas([])
               setShowPagosPend(false)
-              setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }] })
+              setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
               setGuardandoPago(false)
               await cargar()
             }
@@ -414,11 +414,28 @@ export default function Insumos({ usuario }) {
                             {c.cantidad?.toLocaleString('es-AR')} {c.unidad || 'kg'} · Total: {c.total ? `$${c.total.toLocaleString('es-AR')}` : '—'}
                           </div>
 
-                          {/* Fecha */}
-                          <div style={{ marginBottom: '1rem', maxWidth: 200 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Fecha</div>
-                            <input type="date" value={formPagoInline.fecha} onChange={e => setFormPagoInline({...formPagoInline, fecha: e.target.value})}
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
+                          {/* Contacto y Fecha */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 12, marginBottom: '1rem' }}>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Contacto / Proveedor</div>
+                              <select value={formPagoInline.contacto_id} onChange={e => {
+                                const ct = contactos.find(x => String(x.id) === e.target.value)
+                                setFormPagoInline({...formPagoInline, contacto_id: e.target.value,
+                                  proveedor: ct?.nombre || formPagoInline.proveedor,
+                                  cuit: ct?.cuit || formPagoInline.cuit,
+                                  cbu: ct?.cbu || formPagoInline.cbu,
+                                  iva: ct?.iva || formPagoInline.iva,
+                                })
+                              }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
+                                <option value="">— Sin contacto / ingresar manual —</option>
+                                {contactos.map(ct => <option key={ct.id} value={ct.id}>{ct.nombre}{ct.localidad ? ` (${ct.localidad})` : ''}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Fecha</div>
+                              <input type="date" value={formPagoInline.fecha} onChange={e => setFormPagoInline({...formPagoInline, fecha: e.target.value})}
+                                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
+                            </div>
                           </div>
 
                         {/* Datos de factura */}
@@ -619,7 +636,7 @@ export default function Insumos({ usuario }) {
                                   const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
                                   if (!caja_paralela_id) caja_paralela_id = cp?.id
                                 } else {
-                                  const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
+                                  const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).select().single()
                                   if (!caja_oficial_id) caja_oficial_id = co?.id
                                 }
                                 if (pago.tipo === 'e-cheq' && pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
@@ -633,7 +650,7 @@ export default function Insumos({ usuario }) {
                               }
                               const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : c.precio_unitario || (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
                               const formaDesc = pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+')
-                              await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, numero_factura: formPagoInline.numero_factura || null, proveedor: formPagoInline.proveedor || c.proveedor || null, cuit: formPagoInline.cuit || null, iva: formPagoInline.iva || null, cbu: formPagoInline.cbu || null, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos }).eq('id', c.id)
+                              await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, numero_factura: formPagoInline.numero_factura || null, proveedor: formPagoInline.proveedor || c.proveedor || null, cuit: formPagoInline.cuit || null, iva: formPagoInline.iva || null, cbu: formPagoInline.cbu || null, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).eq('id', c.id)
                               if (precioUnit) {
                                 const tabla = c.insumo_tipo === 'sanitario' ? 'stock_sanitario' : 'stock_insumos'
                                 await supabase.from(tabla).update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
