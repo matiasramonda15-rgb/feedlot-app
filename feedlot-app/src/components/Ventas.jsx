@@ -305,7 +305,7 @@ export default function Ventas({ usuario }) {
       ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === venta.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
       : (venta.kg_vivo_total || 0)
     const kgNeto = Math.round(kgBrutoTotal * (1 - desbastePct / 100) * 10) / 10
-    const montoTotal = ep.monto_total_con_iva ? Math.round(parseFloat(ep.monto_total_con_iva)) : (precioKg ? Math.round(kgNeto * precioKg) : null)
+    const montoTotal = ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : (precioKg ? Math.round(kgNeto * precioKg * 100) / 100 : null)
     const plazo = parseInt(ep.plazo_dias || 0)
     const fechaBase = new Date(venta.creado_en)
     const fechaVto = plazo > 0 ? new Date(fechaBase.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
@@ -368,7 +368,7 @@ export default function Ventas({ usuario }) {
     const totalKgBruto = corralesValidos.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0)
     const totalKgNeto = Math.round(totalKgBruto * (1 - desbPct / 100))
     const precio = parseFloat(form.precio_kg) || 0
-    const montoTotal = precio ? Math.round(totalKgNeto * precio) : null
+    const montoTotal = precio ? Math.round(totalKgNeto * precio * 100) / 100 : null
     const montoFacturado = form.monto_facturado ? parseFloat(form.monto_facturado) : montoTotal
     const montoNegro = montoTotal && montoFacturado ? Math.max(0, montoTotal - montoFacturado) : 0
     const ivaPct = parseFloat(form.iva_pct || 10.5)
@@ -386,7 +386,7 @@ export default function Ventas({ usuario }) {
     let hasError = false
     for (const cv of corralesValidos) {
       const kgNetoCv = Math.round(parseFloat(cv.kg_vivo) * (1 - desbPct / 100) * 10) / 10
-      const montoTotalCv = precio ? Math.round(kgNetoCv * precio) : null
+      const montoTotalCv = precio ? Math.round(kgNetoCv * precio * 100) / 100 : null
       const montoFactCv = montoFacturado && montoTotal ? Math.round(montoFacturado * kgNetoCv / totalKgNeto) : montoTotalCv
       const montoNegroCv = montoTotalCv && montoFactCv ? Math.max(0, montoTotalCv - montoFactCv) : 0
       const { error } = await supabase.from('ventas').insert({
@@ -480,7 +480,7 @@ export default function Ventas({ usuario }) {
             <Lbl>Precio $/kg final</Lbl>
             <input type="number" placeholder="ej. 3100" value={editandoVenta?.precio_kg || ''} onChange={e => {
               const precio = e.target.value
-              const kgN = Math.round(kgBruto * (1 - parseFloat(editandoVenta?.desbaste || 8) / 100))
+              const kgN = Math.round(kgBruto * (1 - parseFloat(editandoVenta?.desbaste || 8) / 100) * 10) / 10
               const mt = precio && kgN ? String(Math.round(parseFloat(precio) * kgN)) : ''
               setEditandoVenta({...editandoVenta, precio_kg: precio, monto_total_con_iva: mt})
             }} style={{ ...inp, border: `1px solid ${S.accent}`, fontWeight: 600 }} />
@@ -1496,8 +1496,8 @@ export default function Ventas({ usuario }) {
 
               {/* PASO 3 */}
               {paso === 3 && (() => {
-                const kgNetoP3 = Math.round(corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0) * (1 - (parseFloat(form.desbaste) || 8) / 100))
-                const montoTotal = parseFloat(form.precio_kg || 0) * kgNetoP3
+                const kgNetoP3 = Math.round(corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0) * (1 - (parseFloat(form.desbaste) || 8) / 100) * 10) / 10
+                const montoTotal = Math.round(parseFloat(form.precio_kg || 0) * kgNetoP3 * 100) / 100
                 const montoFacturado = form.monto_facturado ? parseFloat(form.monto_facturado) : montoTotal
                 const montoNegro = montoTotal > 0 ? Math.max(0, montoTotal - montoFacturado) : 0
                 const ivaMonto = montoFacturado * ((parseFloat(form.iva_pct || 10.5)) / 100)
