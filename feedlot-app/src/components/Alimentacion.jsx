@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { Btn, Loader } from './UI'
 
@@ -167,6 +167,7 @@ export default function Alimentacion({ usuario }) {
 
   const [cfgCapState, setCfgCapState] = useState([])
   const [formulaActiva, setFormulaActiva] = useState('seco')
+  const primeraCargaRef = useRef(true)
   const [pctMS, setPctMS] = useState({}) // { [insumo_id]: pct_ms } editable por usuario
   const [formulaDieta, setFormulaDieta] = useState('seco')
   const [formulas, setFormulas] = useState(JSON.parse(JSON.stringify(FORMULAS)))
@@ -208,6 +209,24 @@ export default function Alimentacion({ usuario }) {
     setHistorialInsumos(compras || [])
     setHistorialArchivo([])
     setArchivoOffset(100)
+
+    // Al abrir la pantalla por primera vez, marcar como predeterminada la dieta
+    // (seco/húmedo) que más se usó el día más reciente con carga registrada,
+    // para no arrancar siempre en "seco" si en la práctica vienen usando húmedo.
+    if (primeraCargaRef.current && rapp && rapp.length > 0) {
+      primeraCargaRef.current = false
+      const fechas = [...new Set(rapp.map(r => r.fecha || (r.creado_en || '').split('T')[0]))].filter(Boolean).sort().reverse()
+      const fechaMasReciente = fechas[0]
+      if (fechaMasReciente) {
+        const kgPorDieta = {}
+        rapp.filter(r => (r.fecha || (r.creado_en || '').split('T')[0]) === fechaMasReciente).forEach(r => {
+          const d = r.tipo_dieta || 'seco'
+          kgPorDieta[d] = (kgPorDieta[d] || 0) + (r.kg_total || 0)
+        })
+        const dietaPredominante = Object.entries(kgPorDieta).sort((a, b) => b[1] - a[1])[0]?.[0]
+        if (dietaPredominante === 'seco' || dietaPredominante === 'humedo') setFormulaActiva(dietaPredominante)
+      }
+    }
     // Cargar capacidades desde BD
     if (cfgCap && cfgCap.length > 0) {
       setCfgCapState(cfgCap)
@@ -281,10 +300,9 @@ export default function Alimentacion({ usuario }) {
     let tienePrecio = false
     ings.forEach(ing => {
       // Busca el insumo en stockDB por nombre exacto o por coincidencia parcial
-      const stock = stockDB.find(s =>
-        s.insumo.toLowerCase() === ing.n.toLowerCase() ||
-        s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase())
-      )
+      const ingLower = ing.n.toLowerCase()
+      const stock = stockDB.find(s => s.insumo.toLowerCase() === ingLower)
+        || stockDB.find(s => s.insumo.toLowerCase().includes(ingLower.split(' ')[0]))
       if (stock?.precio_referencia) {
         costo += (ing.kg / 100) * totalKg * stock.precio_referencia
         tienePrecio = true
@@ -769,10 +787,9 @@ export default function Alimentacion({ usuario }) {
                     <tbody>
                       {ings.map((ing, ii) => {
                         acum += ing.kg
-                        const stockItem = stockDB.find(s =>
-                          s.insumo.toLowerCase() === ing.n.toLowerCase() ||
-                          s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase())
-                        )
+                        const ingLower = ing.n.toLowerCase()
+                        const stockItem = stockDB.find(s => s.insumo.toLowerCase() === ingLower)
+                          || stockDB.find(s => s.insumo.toLowerCase().includes(ingLower.split(' ')[0]))
                         return (
                           <tr key={ii} style={{ borderBottom: `1px solid ${S.border}` }}>
                             <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>
@@ -1256,10 +1273,13 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
         const barColor = bajo ? '#E24B4A' : pct < 40 ? '#EF9F27' : '#1E5C2E'
         const c = COLORES[s.insumo] || '#808080'
         const isEditing = editInsumo[s.id]
-        const kgDia = Object.entries(kgDiaPorInsumo).find(([k]) =>
-          k.toLowerCase() === s.insumo.toLowerCase() ||
-          s.insumo.toLowerCase().includes(k.toLowerCase().split(' ')[0]) ||
-          k.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0])
+        const insumoLower = s.insumo.toLowerCase()
+        const kgDia = (
+          Object.entries(kgDiaPorInsumo).find(([k]) => k.toLowerCase() === insumoLower) ||
+          Object.entries(kgDiaPorInsumo).find(([k]) =>
+            insumoLower.includes(k.toLowerCase().split(' ')[0]) ||
+            k.toLowerCase().includes(insumoLower.split(' ')[0])
+          )
         )?.[1]
         const diasRestantes = kgDia > 0 ? Math.floor(s.cantidad_kg / kgDia) : null
         return (
