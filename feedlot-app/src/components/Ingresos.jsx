@@ -1104,7 +1104,8 @@ function generarReciboCompra(lote, pagos, corrales) {
     const tipo = p.tipo || p.forma_pago || ''
     const subtipo = p.subtipo_cheque || ''
     const esParalelo = p.es_paralelo || p.es_negro
-    let desc = tipo === 'transferencia' ? 'TRANSFERENCIA' : tipo === 'efectivo' ? 'EFECTIVO' : tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : subtipo === 'propio' ? 'E-CHEQ PROPIO' : subtipo === 'tercero' ? 'E-CHEQ TERCERO' : tipo.toUpperCase()
+    const medioCheque = tipo === 'cheque' ? 'CHEQUE' : 'E-CHEQ'
+    let desc = tipo === 'transferencia' ? 'TRANSFERENCIA' : tipo === 'efectivo' ? 'EFECTIVO' : tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : subtipo === 'propio' ? `${medioCheque} PROPIO` : subtipo === 'tercero' ? `${medioCheque} TERCERO` : tipo.toUpperCase()
     if (esParalelo) desc += ' (PARALELO)'
 
     // E-cheq propio — usa cheque_propio (nuevo) o campos legacy
@@ -1445,7 +1446,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     for (const pago of formPago.pagos) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
-      const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      const formaPago = pago.tipo
       let desc = `Pago compra ${lote.procedencia || ''} C-${corrales.find(c => c.id === lote.corral_cuarentena_id)?.numero || lote.corral_cuarentena_id}`
       if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         const detalleCheques = pago.cheque_tercero_ids.map(chId => {
@@ -1488,7 +1489,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       }
 
       if (pago.subtipo_cheque === 'propio' && pago.cheque_propio.fecha_vencimiento) {
-        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: pago.es_paralela || false, caja_oficial_id: pagoCajaId, pago_compra_id: pagoInsertado?.id })
+        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: pago.es_paralela || false, es_electronico: pago.tipo === 'e-cheq', caja_oficial_id: pagoCajaId, pago_compra_id: pagoInsertado?.id })
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) {
           await supabase.from('cheques').update({ estado: 'entregado', beneficiario: lote.procedencia || null }).eq('id', parseInt(chId))
@@ -1808,11 +1809,12 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         })()}
                         {formPago.pagos.map((pago, idx) => (
                           <div key={idx} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 8 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 8 : 0 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: (pago.tipo === 'e-cheq' || pago.tipo === 'cheque') ? 8 : 0 }}>
                               <div><Lbl>Forma de pago</Lbl>
                                 <select value={pago.tipo} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPago({...formPago, pagos: n}) }} style={inp}>
                                   <option value="transferencia">Transferencia</option>
                                   <option value="efectivo">Efectivo</option>
+                                  <option value="cheque">Cheque</option>
                                   <option value="e-cheq">E-cheq</option>
                                   <option value="cuenta_corriente">Cuenta corriente</option>
                                 </select>
@@ -1830,8 +1832,11 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                 {formPago.pagos.length > 1 && <button onClick={() => setFormPago({...formPago, pagos: formPago.pagos.filter((_,i) => i!==idx)})} style={{ padding: '5px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
                               </div>
                             </div>
-                            {pago.tipo === 'e-cheq' && (
+                            {(pago.tipo === 'e-cheq' || pago.tipo === 'cheque') && (
                               <div style={{ marginTop: 8 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: S.hint, textTransform: 'uppercase', marginBottom: 6 }}>
+                                  {pago.tipo === 'e-cheq' ? '💻 E-cheq' : '📄 Cheque'}
+                                </div>
                                 <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
                                   {(pago.es_paralela ? ['tercero'] : ['propio', 'tercero']).map(t => (
                                     <button key={t} onClick={() => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque===t?'':t} : p); setFormPago({...formPago, pagos: n}) }}
@@ -1850,7 +1855,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                 {pago.subtipo_cheque === 'tercero' && (
                                   <div style={{ marginTop: 8 }}>
                                     {(() => {
-                                      const lista = chequesCartera.filter(ch => pago.es_paralela ? ch.es_paralelo : !ch.es_paralelo)
+                                      const lista = chequesCartera.filter(ch => (pago.es_paralela ? ch.es_paralelo : !ch.es_paralelo) && (ch.es_electronico === (pago.tipo === 'e-cheq') || ch.es_electronico == null))
                                       return lista.length === 0
                                         ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera.</div>
                                         : lista.map(ch => (

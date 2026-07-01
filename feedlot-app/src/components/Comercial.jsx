@@ -60,12 +60,12 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque,
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead><tr style={{ background: S.bg }}>
-                {['Tipo', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Vencimiento', 'Librador/Beneficiario', 'Estado', ''].map(h => (
+                {['Tipo', 'Medio', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Vencimiento', 'Librador/Beneficiario', 'Estado', ''].map(h => (
                   <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
-                {items.length === 0 && <tr><td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cheques.</td></tr>}
+                {items.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cheques.</td></tr>}
                 {items.map(c => {
                   const ec = ESTADOS_CHEQUE[c.estado] || ESTADOS_CHEQUE.en_cartera
                   const diasVence = Math.ceil((new Date(c.fecha_vencimiento + 'T12:00:00') - new Date()) / (1000 * 60 * 60 * 24))
@@ -75,6 +75,11 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque,
                       <td style={{ padding: '9px 12px' }}>
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.tipo === 'recibido' ? S.greenLight : S.amberLight, color: c.tipo === 'recibido' ? S.green : S.amber }}>
                           {c.tipo === 'recibido' ? '📥 Recibido' : '📤 Emitido'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: c.es_electronico ? S.purpleLight : S.bg, color: c.es_electronico ? S.purple : S.muted, border: c.es_electronico ? 'none' : `1px solid ${S.border}` }}>
+                          {c.es_electronico === true ? '💻 E-cheq' : c.es_electronico === false ? '📄 Físico' : '— Sin dato'}
                         </span>
                       </td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{c.numero || '—'}</td>
@@ -227,6 +232,7 @@ export default function Comercial({ usuario }) {
         librador: formOf.tipo === 'ingreso' ? (formOf.librador || null) : null,
         beneficiario: formOf.tipo === 'egreso' ? (formOf.beneficiario || null) : null,
         estado: 'en_cartera', caja_oficial_id: mov?.id || null, registrado_por: usuario?.id,
+        es_electronico: formOf.forma_pago === 'e-cheq',
       })
     }
     await cargar()
