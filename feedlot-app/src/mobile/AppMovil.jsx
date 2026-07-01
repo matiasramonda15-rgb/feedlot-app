@@ -425,7 +425,7 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
   )
 }
 function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
-  const [form, setForm] = useState({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos', cantidad: '', kg_bascula: '', observaciones: '', corral_id: '' })
+  const [form, setForm] = useState({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos', cantidad: '', kg_bascula: '', observaciones: '', corral_id: '', transportista: '' })
   const [guardando, setGuardando] = useState(false)
   const prom = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena' || c.rol === 'libre')
@@ -437,19 +437,30 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
     const codigo = `L-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
     const _hoy = new Date()
     const _fechaHoy = `${_hoy.getFullYear()}-${String(_hoy.getMonth()+1).padStart(2,'0')}-${String(_hoy.getDate()).padStart(2,'0')}`
-    const { error } = await supabase.from('lotes').insert({
+    const { data: lote, error } = await supabase.from('lotes').insert({
       codigo, fecha_ingreso: _fechaHoy,
       procedencia: procFinal, categoria: form.categoria,
       cantidad: parseInt(form.cantidad), kg_bascula: parseFloat(form.kg_bascula),
       peso_prom_ingreso: Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad) * 100) / 100,
       observaciones: form.observaciones || null, registrado_por: usuario?.id,
       corral_cuarentena_id: form.corral_id || null,
-    })
+    }).select().single()
     if (!error) {
       if (form.corral_id) {
         const { data: corral } = await supabase.from('corrales').select('animales, numero').eq('id', form.corral_id).single()
         await supabase.from('corrales').update({ animales: (corral?.animales || 0) + parseInt(form.cantidad), rol: 'cuarentena' }).eq('id', form.corral_id)
-
+      }
+      // Registrar flete si hay transportista
+      if (form.transportista.trim() && lote?.id) {
+        await supabase.from('fletes').insert({
+          lote_id: lote.id,
+          fecha: _fechaHoy,
+          transportista: form.transportista.trim(),
+          cantidad: parseInt(form.cantidad),
+          kg_bruto: parseFloat(form.kg_bascula),
+          estado_pago: 'pendiente',
+          registrado_por: usuario?.id,
+        })
       }
       onDone(); alert(`Lote ${codigo} registrado.`); nav('home')
     } else { alert('Error al guardar.') }
@@ -503,6 +514,12 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
           </div>
         )}
         {prom && <div style={{ background: C.surface2, borderRadius: 8, padding: '.75rem', marginBottom: '.85rem', fontSize: 13, color: C.green, fontFamily: C.mono }}>Peso prom: <strong>{prom} kg/animal</strong></div>}
+        <div style={{ marginBottom: '.85rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Transportista</div>
+          <input type="text" placeholder="Nombre del transportista (opcional)" value={form.transportista}
+            onChange={e => setForm({...form, transportista: e.target.value})}
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: C.text, fontFamily: C.sans, boxSizing: 'border-box' }} />
+        </div>
         <div style={{ marginBottom: '1rem' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
           <input type="text" placeholder="condicion, sanidad previa, etc." value={form.observaciones}
