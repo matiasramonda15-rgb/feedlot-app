@@ -139,7 +139,7 @@ export default function Ventas({ usuario }) {
   const [gcVersion, setGcVersion] = useState(0)
   const [formComercial, setFormComercial] = useState({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
   const [formPagoVto, setFormPagoVto] = useState('')
-  const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '' })
+  const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' })
   const [chequesParalelos, setChequesParalelos] = useState([])
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
@@ -1820,7 +1820,7 @@ export default function Ventas({ usuario }) {
                                 </div>
                               )}
                               {!isReg ? (
-                              <button onClick={() => { setRegistrandoPago(rowKey); setFormPago({ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '' }) }}
+                              <button onClick={() => { setRegistrandoPago(rowKey); setFormPago({ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }) }}
                                 style={{ fontSize: 10, padding: '3px 8px', background: '#E8EFF8', border: '1px solid #1A3D6B', color: '#1A3D6B', borderRadius: 4, cursor: 'pointer', width: '100%' }}>
                                 + Registrar pago
                               </button>
@@ -1858,6 +1858,22 @@ export default function Ventas({ usuario }) {
                                   {/* Cheque recibido - datos del cheque que nos entregan */}
                                   {['cheque','e-cheq'].includes(formPago.forma_pago) && (
                                     <>
+                                      <div style={{ gridColumn: '1/-1', display: 'flex', gap: 6, marginTop: 2 }}>
+                                        {['propio', 'tercero'].map(t => (
+                                          <button key={t} type="button" onClick={() => setFormPago({...formPago, subtipo_cheque: formPago.subtipo_cheque === t ? '' : t})}
+                                            style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${formPago.subtipo_cheque === t ? '#1A3D6B' : '#E2DDD6'}`, background: formPago.subtipo_cheque === t ? '#E8EFF8' : 'transparent', color: formPago.subtipo_cheque === t ? '#1A3D6B' : '#6B6760' }}>
+                                            {t === 'propio' ? 'Propio del comprador' : 'De tercero (endosado)'}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {formPago.subtipo_cheque === 'tercero' && (
+                                        <div style={{ gridColumn: '1/-1' }}>
+                                          <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Librador real (quién lo emitió)</div>
+                                          <input type="text" value={formPago.librador_real} onChange={e => setFormPago({...formPago, librador_real: e.target.value})}
+                                            placeholder="ej. otro cliente, no el comprador"
+                                            style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
+                                        </div>
+                                      )}
                                       <div>
                                         <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>N° cheque</div>
                                         <input type="text" value={formPago.numero_cheque} onChange={e => setFormPago({...formPago, numero_cheque: e.target.value})}
@@ -1889,12 +1905,13 @@ export default function Ventas({ usuario }) {
                                   <button onClick={async () => {
                                     if (!formPago.monto) return
                                     const monto = parseFloat(formPago.monto)
-                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null, es_paralelo: formPago.es_paralela || false }).select().single()
+                                    const esCheque = ['cheque','e-cheq'].includes(formPago.forma_pago)
+                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null, es_paralelo: formPago.es_paralela || false, subtipo_cheque: esCheque ? (formPago.subtipo_cheque || null) : null, librador_real: (esCheque && formPago.subtipo_cheque === 'tercero') ? (formPago.librador_real || null) : null }).select().single()
                                     const pagoId = pagoInsertado?.id || null
                                     const esParalela = formPago.es_paralela || (totalNegro > 0 && formPago.forma_pago === 'efectivo')
                                     if (esParalela) await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
                                     else await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: formPago.forma_pago, pago_venta_id: pagoId })
-                                    if (['cheque','e-cheq'].includes(formPago.forma_pago) && formPago.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: v.comprador || null, estado: 'en_cartera', es_paralelo: esParalela, pago_venta_id: pagoId })
+                                    if (esCheque && formPago.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: (formPago.subtipo_cheque === 'tercero' ? formPago.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: formPago.forma_pago === 'e-cheq', pago_venta_id: pagoId })
                                     const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)
                                     const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0) + monto
                                     if (totalPag >= totalGrupo * 0.99) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
