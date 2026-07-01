@@ -24,7 +24,7 @@ const MODULOS = {
   tablero: Tablero, corrales: Corrales, ingresos: Ingresos, pesada: Pesada,
   ventas: Ventas, alimentacion: Alimentacion, sanidad: Sanidad, reportes: Reportes,
   agricultura: Agricultura, servicios: Servicios, personal: Personal, gastos: Gastos,
-  comercial: Comercial, contactos: Contactos, activos: Activos, socios: Activos, insumos: Insumos,
+  comercial: Comercial, contactos: Contactos, activos: Activos, socios: Activos, insumos: Insumos, fletes: Fletes,
 }
 
 function LoadingModulo() {
