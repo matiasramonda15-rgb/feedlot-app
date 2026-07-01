@@ -311,10 +311,10 @@ export default function Comercial({ usuario }) {
   const isChecque = ['cheque', 'e-cheq'].includes(formOf.forma_pago)
 
   const TABS = [
-    { key: 'caja_oficial', label: 'Caja oficial' },
-    { key: 'caja_paralela', label: 'Caja paralela' },
-    { key: 'cheques_oficial', label: `Cheques oficial${chVence7Of.length > 0 ? ` ⚠${chVence7Of.length}` : ''}` },
-    { key: 'cheques_paralelo', label: `Cheques paralelo${chVence7Par.length > 0 ? ` ⚠${chVence7Par.length}` : ''}` },
+    { key: 'caja_oficial', label: 'Caja 1' },
+    { key: 'caja_paralela', label: 'Caja 2' },
+    { key: 'cheques_oficial', label: `Cheques Caja 1${chVence7Of.length > 0 ? ` ⚠${chVence7Of.length}` : ''}` },
+    { key: 'cheques_paralelo', label: `Cheques Caja 2${chVence7Par.length > 0 ? ` ⚠${chVence7Par.length}` : ''}` },
     { key: 'dolares', label: '💵 Dólares' },
   ]
 
@@ -333,12 +333,12 @@ export default function Comercial({ usuario }) {
   return (
     <div>
       <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 3 }}>Comercial</div>
-      <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', marginBottom: '1.5rem' }}>Caja oficial · caja paralela · cheques · contactos</div>
+      <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', marginBottom: '1.5rem' }}>Caja 1 · Caja 2 · cheques · contactos</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
         {[
-          { label: 'Saldo caja oficial', val: `$${((coIng - coEg) / 1000000).toFixed(1)}M`, sub: `+${(coIng/1000000).toFixed(1)}M / -${(coEg/1000000).toFixed(1)}M`, color: coIng - coEg >= 0 ? S.green : S.red },
-          { label: 'Saldo caja paralela', val: `$${((cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `+${(cpIng/1000000).toFixed(1)}M / -${(cpEg/1000000).toFixed(1)}M`, color: cpIng - cpEg >= 0 ? S.green : S.red, purple: true },
+          { label: 'Saldo Caja 1', val: `$${((coIng - coEg) / 1000000).toFixed(1)}M`, sub: `+${(coIng/1000000).toFixed(1)}M / -${(coEg/1000000).toFixed(1)}M`, color: coIng - coEg >= 0 ? S.green : S.red },
+          { label: 'Saldo Caja 2', val: `$${((cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `+${(cpIng/1000000).toFixed(1)}M / -${(cpEg/1000000).toFixed(1)}M`, color: cpIng - cpEg >= 0 ? S.green : S.red, purple: true },
           { label: 'Cheques en cartera', val: (chOficialRec.filter(c => c.estado === 'en_cartera').length + chParaleloRec.filter(c => c.estado === 'en_cartera').length), sub: `$${(chOficialRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0) + chParaleloRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0)).toLocaleString('es-AR')}`, color: S.amber },
           { label: 'Vencen en 7 días', val: (chVence7Of.length + chVence7Par.length), sub: (chVence7Of.length + chVence7Par.length) > 0 ? '⚠ Revisar urgente' : '✓ Sin vencimientos', color: (chVence7Of.length + chVence7Par.length) > 0 ? S.red : S.green },
         ].map((m, i) => (
@@ -482,7 +482,7 @@ export default function Comercial({ usuario }) {
 
           {showFormPar && (
             <Card style={{ border: '1px solid #9F8ED4' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: S.purple, textTransform: 'uppercase', marginBottom: '1rem' }}>Nuevo movimiento paralelo</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.purple, textTransform: 'uppercase', marginBottom: '1rem' }}>Nuevo movimiento Caja 2</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
                 <div><Label>Tipo</Label>
                   <select value={formPar.tipo} onChange={e => setFormPar({...formPar, tipo: e.target.value})} style={inputStyle}>

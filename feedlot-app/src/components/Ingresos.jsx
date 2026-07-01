@@ -1823,7 +1823,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                               <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                                   <input type="checkbox" checked={pago.es_paralela} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, es_paralela: e.target.checked} : p); setFormPago({...formPago, pagos: n}) }} />
-                                  Paralelo
+                                  Caja 2
                                 </label>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
