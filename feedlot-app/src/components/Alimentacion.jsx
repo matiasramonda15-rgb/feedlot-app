@@ -1165,8 +1165,9 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
     historial.forEach(h => {
       const fecha = new Date(h.creado_en || h.fecha).toDateString()
       if (!porFecha[fecha]) porFecha[fecha] = {}
-      const etapa = h.mixer?.toLowerCase().replace('mixer 1 - ', '').replace('mixer 2 - ', '').replace('mixer 3 - ', '') || 'recria'
-      const formula = formulas[formulaActiva]?.[etapa] || []
+      const etapa = (h.mezclador || h.mixer || '').toLowerCase().replace('mixer 1 - ', '').replace('mixer 2 - ', '').replace('mixer 3 - ', '') || 'recria'
+      const dietaRacion = h.tipo_dieta || formulaActiva
+      const formula = formulas[dietaRacion]?.[etapa] || []
       formula.forEach(ing => {
         const kgIng = Math.round(ing.kg * (h.kg_total || 0) / 100)
         if (!porFecha[fecha][ing.n]) porFecha[fecha][ing.n] = 0
