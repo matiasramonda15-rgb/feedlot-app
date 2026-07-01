@@ -22,6 +22,10 @@ const Btn = ({ onClick, disabled, ghost, red, children, style = {} }) => (
   </button>
 )
 
+// Lectura de factura con IA — desactivada por ahora (carga manual).
+// Cuando esté lista la integración con la suscripción, cambiar a true.
+const FACTURA_IA_HABILITADA = false
+
 const CATEGORIAS = ['Novillos 2-3 años', 'Novillos 3-4 años', 'Novillitos', 'Terneros', 'Vaquillonas', 'Vacas', 'Toros']
 const PROCEDENCIAS_DEFAULT = ['La Pampa', 'Córdoba', 'Buenos Aires', 'Santa Fe', 'Entre Ríos']
 
@@ -135,22 +139,12 @@ export default function Ingresos({ usuario }) {
         r.onerror = rej
         r.readAsDataURL(file)
       })
-      const prompt = 'Extraé los datos de esta factura de compra de hacienda argentina y respondé SOLO con JSON válido sin texto adicional ni backticks:\n{"nro_factura":"string","fecha":"YYYY-MM-DD","feria_nombre":"string","sublotes":[{"vendedor":"string","cuit":"string","cabezas":0,"categoria":"string","kg":0,"precio_kg":0,"subtotal":0}],"total_cabezas":0,"total_kg":0,"importe_bruto":0,"cuotas":[{"fecha":"YYYY-MM-DD","monto":0}],"gastos_feria":{"comision":0,"iva_pct":0,"iva_monto":0,"dte":0},"total_final":0}'
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6', max_tokens: 1000,
-          messages: [{ role: 'user', content: [
-            { type: 'image', source: { type: 'base64', media_type: file.type.startsWith('image/') ? file.type : 'image/jpeg', data: base64 } },
-            { type: 'text', text: prompt }
-          ]}]
-        })
+      const mediaType = file.type || (file.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
+      const { data: parsed, error: fnError } = await supabase.functions.invoke('leer-factura', {
+        body: { base64, mediaType },
       })
-      const data = await response.json()
-      const text = data.content?.find(b => b.type === 'text')?.text || ''
-      const clean = text.replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(clean)
+      if (fnError) throw new Error(fnError.message || 'Error al leer la factura')
+      if (parsed?.error) throw new Error(parsed.error)
       setEditandoPrecio(prev => ({
         ...prev,
         nro_factura: parsed.nro_factura || prev?.nro_factura || '',
@@ -553,7 +547,8 @@ export default function Ingresos({ usuario }) {
 
                 {isEdit && (
                   <div>
-                    {/* Botón leer factura con IA */}
+                    {/* Botón leer factura con IA — oculto hasta integrar la suscripción (carga manual por ahora) */}
+                    {FACTURA_IA_HABILITADA && (
                     <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 8, padding: '12px 16px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: S.accent }}>📎 Leer factura con IA</div>
@@ -566,6 +561,7 @@ export default function Ingresos({ usuario }) {
                         </div>
                       </label>
                     </div>
+                    )}
 
                     {/* N° Factura y Feria */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
