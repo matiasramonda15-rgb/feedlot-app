@@ -23,6 +23,7 @@ const MENU = [
       { id: 'alimentacion', label: 'Alimentación',        roles: ['dueno', 'secretaria', 'encargado'] },
       { id: 'ventas',       label: 'Ventas',              roles: ['dueno', 'secretaria'] },
       { id: 'insumos',      label: 'Insumos',             roles: ['dueno', 'secretaria'] },
+      { id: 'fletes',       label: 'Fletes',              roles: ['dueno', 'secretaria'] },
     ]
   },
   {

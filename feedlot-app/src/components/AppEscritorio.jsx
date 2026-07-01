@@ -18,6 +18,7 @@ var Comercial    = lazy(() => import('./Comercial'))
 var Contactos    = lazy(() => import('./Contactos'))
 var Activos      = lazy(() => import('./Activos'))
 var Insumos      = lazy(() => import('./Insumos'))
+var Fletes       = lazy(() => import('./Fletes'))
 
 const MODULOS = {
   tablero: Tablero, corrales: Corrales, ingresos: Ingresos, pesada: Pesada,
