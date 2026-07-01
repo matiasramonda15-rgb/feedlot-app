@@ -867,6 +867,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
+  const [costosPend, setCostosPend] = useState({})
 
   useEffect(() => {
     supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true })
@@ -933,7 +934,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   async function pagarSeleccionadas() {
     if (seleccionadas.length === 0) { alert('Seleccioná al menos una orden'); return }
     const pendientes = ordenes.filter(o => !o.es_propia && o.estado_pago === 'pendiente')
-    const totalSel = seleccionadas.reduce((s, id) => { const o = pendientes.find(x => x.id === id); return s + (o?.costo_total || 0) }, 0)
+    const montoOrden = o => o.costo_total || (costosPend[o.id] ? parseFloat(costosPend[o.id]) : 0)
+    const faltante = seleccionadas.some(id => { const o = pendientes.find(x => x.id === id); return o && !o.costo_total && !costosPend[id] })
+    if (faltante) { alert('Falta cargar el costo de alguna de las órdenes seleccionadas.'); return }
+    const totalSel = seleccionadas.reduce((s, id) => { const o = pendientes.find(x => x.id === id); return s + (o ? montoOrden(o) : 0) }, 0)
     const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     if (Math.abs(totalSel - totalPagGrupal) > 0.5) { alert(`El total de pagos ($${totalPagGrupal.toLocaleString('es-AR')}) no coincide con el total seleccionado ($${totalSel.toLocaleString('es-AR')})`); return }
     setGuardandoPago(true)
@@ -961,7 +965,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     }
 
     for (const id of seleccionadas) {
-      await supabase.from('ordenes_trabajo').update({ estado_pago: 'pagado', caja_oficial_id, caja_paralela_id, pagos_detalle: formPagoGrupal.pagos, domicilio: formPagoGrupal.domicilio || null, localidad: formPagoGrupal.localidad || null, cuit: formPagoGrupal.cuit || null, iva: formPagoGrupal.iva || null, cbu: formPagoGrupal.cbu || null }).eq('id', id)
+      const o = pendientes.find(x => x.id === id)
+      const upd = { estado_pago: 'pagado', caja_oficial_id, caja_paralela_id, pagos_detalle: formPagoGrupal.pagos, domicilio: formPagoGrupal.domicilio || null, localidad: formPagoGrupal.localidad || null, cuit: formPagoGrupal.cuit || null, iva: formPagoGrupal.iva || null, cbu: formPagoGrupal.cbu || null }
+      // Si la orden no tenía costo cargado, se define recién ahora al pagar
+      if (o && !o.costo_total && costosPend[id]) {
+        const costoFinal = parseFloat(costosPend[id])
+        upd.costo_total = costoFinal
+        upd.costo_ha = o.superficie_ha_real ? Math.round(costoFinal / o.superficie_ha_real) : null
+      }
+      await supabase.from('ordenes_trabajo').update(upd).eq('id', id)
     }
 
     const ordenesPagadas = seleccionadas.map(id => pendientes.find(o => o.id === id)).filter(Boolean)
@@ -969,6 +981,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     setSeleccionadas([])
     setShowPagos(false)
     setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
+    setCostosPend({})
     setGuardandoPago(false)
     await cargar()
     ordenesPagadas.forEach(o => {
@@ -985,8 +998,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     return true
   })
   const pendientes = ordenes.filter(o => !o.es_propia && o.estado_pago === 'pendiente')
-  const totalSelec = seleccionadas.reduce((s, id) => { const o = pendientes.find(x => x.id === id); return s + (o?.costo_total || 0) }, 0)
+  const montoOrden = o => o.costo_total || (costosPend[o.id] ? parseFloat(costosPend[o.id]) : 0)
+  const totalSelec = seleccionadas.reduce((s, id) => { const o = pendientes.find(x => x.id === id); return s + (o ? montoOrden(o) : 0) }, 0)
   const totalPagoGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+  const faltaCosto = seleccionadas.some(id => { const o = pendientes.find(x => x.id === id); return o && !o.costo_total && !costosPend[id] })
 
   return (
     <div>
@@ -1263,7 +1278,17 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           {o.productos?.length ? ` · ${o.productos.length} productos` : ''}
                         </div>
                       </div>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>${o.costo_total?.toLocaleString('es-AR')}</span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>
+                        {o.costo_total
+                          ? `$${o.costo_total.toLocaleString('es-AR')}`
+                          : (
+                            <div onClick={e => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 11, color: S.amber, fontWeight: 400 }}>Costo $:</span>
+                              <input type="number" value={costosPend[o.id] || ''} onChange={e => setCostosPend({...costosPend, [o.id]: e.target.value})}
+                                placeholder="ej. 45000" style={{ width: 100, padding: '4px 8px', border: `1px solid ${S.amber}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace' }} />
+                            </div>
+                          )}
+                      </span>
                     </label>
                   )
                 })}
@@ -1369,8 +1394,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     {Math.abs(totalSelec-totalPagoGrupal) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${(totalSelec-totalPagoGrupal).toLocaleString('es-AR')}</span>}
                   </div>
 
-                  <button onClick={pagarSeleccionadas} disabled={guardandoPago}
-                    style={{ padding: '9px 24px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                  {faltaCosto && <div style={{ fontSize: 12, color: S.amber, marginBottom: 10 }}>⚠ Cargá el costo de las órdenes marcadas en amarillo antes de pagar</div>}
+                  <button onClick={pagarSeleccionadas} disabled={guardandoPago || faltaCosto}
+                    style={{ padding: '9px 24px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: (guardandoPago || faltaCosto) ? 'default' : 'pointer', opacity: faltaCosto ? 0.6 : 1 }}>
                     {guardandoPago ? 'Registrando...' : `💾 Pagar ${seleccionadas.length} orden${seleccionadas.length !== 1 ? 'es' : ''} y generar recibos`}
                   </button>
                 </div>
@@ -2273,6 +2299,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_AGRO }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
+  const [preciosPend, setPreciosPend] = useState({})
   const [formCompra, setFormCompra] = useState({
     agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '',
     fecha: new Date().toISOString().split('T')[0], proveedor: '',
@@ -2301,10 +2328,11 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
   }
 
   async function guardarCompra() {
-    if (!formCompra.agroquimico_id || !formCompra.cantidad || !formCompra.precio_unitario) { alert('Completá insumo, cantidad y precio'); return }
+    if (!formCompra.agroquimico_id || !formCompra.cantidad) { alert('Completá insumo y cantidad'); return }
+    if (pagarAhora && !formCompra.precio_unitario) { alert('Para pagar ahora necesitás ingresar el precio unitario. Si todavía no llegó la factura, desmarcá "Pagar ahora" y cargá el remito sin precio.'); return }
     const cantidad = parseFloat(formCompra.cantidad)
-    const precioUnit = parseFloat(formCompra.precio_unitario)
-    const total = formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit)
+    const precioUnit = formCompra.precio_unitario ? parseFloat(formCompra.precio_unitario) : null
+    const total = precioUnit ? (formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit)) : null
     const totalPagos = formCompra.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     if (pagarAhora && Math.abs(total - totalPagos) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`); return }
     setGuardando(true)
@@ -2342,10 +2370,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
       estado_pago: pagarAhora ? 'pagado' : 'pendiente',
     })
 
-    // Actualizar stock
+    // Actualizar stock: la cantidad se suma siempre (el insumo llegó físicamente).
+    // El precio de referencia solo se actualiza si ya se conoce (remito con precio o pago realizado).
     const item = stock.find(s => s.id === parseInt(formCompra.agroquimico_id))
     if (item) {
-      await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + cantidad, precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      const upd = { cantidad: (item.cantidad || 0) + cantidad, actualizado_en: new Date().toISOString() }
+      if (precioUnit) upd.precio_referencia = precioUnit
+      await supabase.from('stock_agro').update(upd).eq('id', item.id)
     }
 
     setShowFormCompra(false)
@@ -2366,13 +2397,16 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
     <div>
       {/* Banner compras pendientes de pago */}
       {(() => {
-        const pendientes = ingresos.filter(i => i.estado_pago === 'pendiente' && i.total)
+        const pendientes = ingresos.filter(i => i.estado_pago === 'pendiente')
         if (pendientes.length === 0) return null
-        const totalSel = seleccionadas.reduce((s, id) => { const i = pendientes.find(x => x.id === id); return s + (i?.total || 0) }, 0)
+        const montoItem = i => i.total || (preciosPend[i.id] && i.cantidad ? Math.round(i.cantidad * parseFloat(preciosPend[i.id])) : 0)
+        const totalSel = seleccionadas.reduce((s, id) => { const i = pendientes.find(x => x.id === id); return s + (i ? montoItem(i) : 0) }, 0)
         const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+        const faltaPrecio = seleccionadas.some(id => { const i = pendientes.find(x => x.id === id); return i && !i.precio_unitario && !preciosPend[id] })
 
         async function pagarSeleccionadas() {
           if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
+          if (faltaPrecio) { alert('Falta cargar el precio de la factura en alguna de las compras seleccionadas.'); return }
           if (Math.abs(totalSel - totalPagGrupal) > 0.5) { alert(`El total de pagos no coincide`); return }
           setGuardandoPago(true)
           let caja_oficial_id = null, caja_paralela_id = null
@@ -2395,12 +2429,22 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
             }
           }
           for (const id of seleccionadas) {
-            await supabase.from('ingresos_agroquimicos').update({ estado_pago: 'pagado', caja_oficial_id, caja_paralela_id }).eq('id', id)
+            const i = pendientes.find(x => x.id === id)
+            const upd = { estado_pago: 'pagado', caja_oficial_id, caja_paralela_id }
+            // Si el remito se cargó sin precio, se define recién ahora, al pagar la factura
+            if (i && !i.precio_unitario && preciosPend[id]) {
+              const precioFinal = parseFloat(preciosPend[id])
+              upd.precio_unitario = precioFinal
+              upd.total = Math.round((i.cantidad || 0) * precioFinal)
+              await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.agroquimico_id)
+            }
+            await supabase.from('ingresos_agroquimicos').update(upd).eq('id', id)
           }
           setSeleccionadas([])
           setShowPagosPend(false)
           const comprasPagadas = seleccionadas.map(id => ingresos.find(i => i.id === id)).filter(Boolean)
           setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_AGRO }] })
+          setPreciosPend({})
           setGuardandoPago(false)
           await cargar()
           generarReciboAgro(comprasPagadas, formPagoGrupal.pagos, stock)
@@ -2411,6 +2455,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
                 ⏳ {pendientes.length} compra{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} de pago · ${pendientes.reduce((s,i)=>s+(i.total||0),0).toLocaleString('es-AR')}
+                {pendientes.some(i => !i.precio_unitario) && <span style={{ color: S.amber, fontWeight: 400 }}> · {pendientes.filter(i=>!i.precio_unitario).length} sin precio todavía</span>}
               </div>
               <button onClick={() => setShowPagosPend(!showPagosPend)}
                 style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.amber, border: `1px solid ${S.amber}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -2426,7 +2471,16 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
                     <span style={{ color: S.muted, marginLeft: 8 }}>{i.cantidad?.toLocaleString('es-AR')} {i.stock_agro?.unidad} · {i.fecha ? new Date(i.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
                     {i.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {i.proveedor}</span>}
                   </div>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${i.total?.toLocaleString('es-AR')}</span>
+                  {i.precio_unitario
+                    ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${i.total?.toLocaleString('es-AR')}</span>
+                    : (
+                      <div onClick={e => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 11, color: S.amber }}>Precio $/u:</span>
+                        <input type="number" value={preciosPend[i.id] || ''} onChange={e => setPreciosPend({...preciosPend, [i.id]: e.target.value})}
+                          placeholder="ej. 1500" style={{ width: 90, padding: '4px 8px', border: `1px solid ${S.amber}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace' }} />
+                        {preciosPend[i.id] && <span style={{ fontFamily: 'monospace', fontSize: 12, color: S.muted }}>= ${montoItem(i).toLocaleString('es-AR')}</span>}
+                      </div>
+                    )}
                 </label>
               ))}
             </div>
@@ -2434,6 +2488,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>
                   Pagar {seleccionadas.length} compra{seleccionadas.length !== 1 ? 's' : ''} · <span style={{ fontFamily: 'monospace', color: S.red }}>${totalSel.toLocaleString('es-AR')}</span>
+                  {faltaPrecio && <span style={{ display: 'block', fontSize: 11, color: S.amber, fontWeight: 400, marginTop: 4 }}>⚠ Cargá el precio de las compras marcadas arriba antes de pagar</span>}
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   <Label>Fecha de pago</Label>
@@ -2507,8 +2562,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
                   Total: <strong>${totalSel.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagGrupal.toLocaleString('es-AR')}</strong>
                   {Math.abs(totalSel-totalPagGrupal) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${(totalSel-totalPagGrupal).toLocaleString('es-AR')}</span>}
                 </div>
-                <button onClick={pagarSeleccionadas} disabled={guardandoPago}
-                  style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                <button onClick={pagarSeleccionadas} disabled={guardandoPago || faltaPrecio}
+                  style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: (guardandoPago || faltaPrecio) ? 'default' : 'pointer', opacity: faltaPrecio ? 0.6 : 1 }}>
                   {guardandoPago ? 'Registrando...' : `💾 Pagar ${seleccionadas.length} compra${seleccionadas.length !== 1 ? 's' : ''}`}
                 </button>
               </div>
@@ -2542,7 +2597,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
       {/* Banner sin precio */}
       {sinPrecio.length > 0 && (
         <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '1rem', marginBottom: '1rem', fontSize: 13, color: S.amber }}>
-          ⚠ {sinPrecio.length} ingreso{sinPrecio.length !== 1 ? 's' : ''} sin precio — registrá la compra para asignarlo
+          ⚠ {sinPrecio.length} remito{sinPrecio.length !== 1 ? 's' : ''} sin precio todavía — cargalo cuando llegue la factura, en "Registrar pago" más arriba
         </div>
       )}
 
@@ -2586,7 +2641,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
               </select>
             </div>
             <div><Label>Cantidad</Label><input type="number" value={formCompra.cantidad} onChange={e => { const c = e.target.value; const t = c && formCompra.precio_unitario ? String(Math.round(parseFloat(c) * parseFloat(formCompra.precio_unitario))) : formCompra.total; setFormCompra({...formCompra, cantidad: c, total: t}) }} style={inputStyle} /></div>
-            <div><Label>Precio unitario $</Label><input type="number" value={formCompra.precio_unitario} onChange={e => { const p = e.target.value; const t = p && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(p))) : formCompra.total; setFormCompra({...formCompra, precio_unitario: p, total: t}) }} style={inputStyle} /></div>
+            <div><Label>Precio unitario $ {!pagarAhora && <span style={{ fontWeight: 400, textTransform: 'none', color: S.hint }}>(opcional, si aún no llegó la factura)</span>}</Label><input type="number" value={formCompra.precio_unitario} onChange={e => { const p = e.target.value; const t = p && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(p))) : formCompra.total; setFormCompra({...formCompra, precio_unitario: p, total: t}) }} style={inputStyle} placeholder={pagarAhora ? '' : 'se puede cargar después, al pagar'} /></div>
             <div><Label>Total $</Label><input type="number" value={formCompra.total} onChange={e => setFormCompra({...formCompra, total: e.target.value})} style={inputStyle} /></div>
             <div><Label>Fecha</Label><input type="date" value={formCompra.fecha} onChange={e => setFormCompra({...formCompra, fecha: e.target.value})} style={inputStyle} /></div>
             <div><Label>N° Factura</Label><input type="text" value={formCompra.numero_factura} onChange={e => setFormCompra({...formCompra, numero_factura: e.target.value})} style={inputStyle} /></div>
