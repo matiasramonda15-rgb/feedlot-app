@@ -1445,6 +1445,48 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                       style={{ width: '100%', padding: '8px', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: C.sans, marginTop: 4 }}>
                       + Agregar otro animal
                     </button>
+                    <button onClick={async () => {
+                      if (guardando) return
+                      const enfs = c.enfermos.filter(e => e.prod || e.desc || e.diag)
+                      if (!enfs.length) { alert('Completá al menos un animal con diagnóstico o producto'); return }
+                      setGuardando(true)
+                      try {
+                        for (const enf of enfs) {
+                          const mlNum = parseFloat(enf.ml) || 0
+                          if (enf.prod_id && mlNum > 0) {
+                            const prod = stockSanitario.find(p => String(p.id) === String(enf.prod_id))
+                            if (prod) {
+                              const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlNum)
+                              await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
+                            }
+                          }
+                          await supabase.from('eventos_sanitarios').insert({
+                            tipo: 'revision',
+                            corral_id: corralesRev[i]?.id,
+                            producto: enf.prod || null,
+                            observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+                            cantidad_animales: 1,
+                            cantidad_ml: parseFloat(enf.ml) || null,
+                            mover_enfermeria: enf.mover_enfermeria || false,
+                            registrado_por: usuario?.id,
+                          })
+                        }
+                        // Marcar este corral como ok en revState
+                        const n = [...revState]
+                        n[i] = {...n[i], confirmado: true}
+                        setRevState(n)
+                        setGuardando(false)
+                      } catch(err) {
+                        alert('Error: ' + (err.message || JSON.stringify(err)))
+                        setGuardando(false)
+                      }
+                    }} disabled={guardando}
+                      style={{ width: '100%', padding: '10px', background: C.amber, border: 'none', borderRadius: 8, color: '#1A0A00', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: C.sans, marginTop: 8 }}>
+                      {guardando ? 'Guardando...' : '✓ Confirmar tratamiento'}
+                    </button>
+                    {c.confirmado && (
+                      <div style={{ textAlign: 'center', fontSize: 12, color: C.green, marginTop: 6, fontWeight: 600 }}>✓ Tratamiento registrado</div>
+                    )}
                   </div>
                 )}
               </div>
