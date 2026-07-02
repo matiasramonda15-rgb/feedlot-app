@@ -1417,7 +1417,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', observaciones: '' })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   async function guardar() {
@@ -1436,11 +1436,13 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       kg_totales: parseFloat(form.kg_totales),
       rendimiento_qq_ha: parseFloat(rendimiento) || null,
       humedad_pct: parseFloat(form.humedad_pct) || null,
+      destino: form.destino || null,
+      acopio: form.destino === 'acopio' ? (form.acopio || null) : null,
       observaciones: form.observaciones || null,
     })
     await cargar()
     setShowForm(false)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -1509,6 +1511,20 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
               <input type="number" value={form.rendimiento_qq_ha} onChange={e => setForm({...form, rendimiento_qq_ha: e.target.value})}
                 placeholder={form.kg_totales && campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha ? ((parseFloat(form.kg_totales) / 1000) / campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha * 100).toFixed(1) : ''} style={inputStyle} />
             </div>
+            <div style={{ gridColumn: form.destino === 'acopio' ? '1/2' : '1/-1' }}>
+              <Label>Destino</Label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[{ v: 'bolsa', l: '🎒 Bolsa (en el campo)' }, { v: 'acopio', l: '🏭 Entregado a acopio' }].map(opt => (
+                  <button key={opt.v} type="button" onClick={() => setForm({...form, destino: form.destino === opt.v ? '' : opt.v})}
+                    style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${form.destino === opt.v ? S.accent : S.border}`, background: form.destino === opt.v ? S.accentLight : 'transparent', color: form.destino === opt.v ? S.accent : S.muted }}>
+                    {opt.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {form.destino === 'acopio' && (
+              <div><Label>Acopio / Comprador</Label><input type="text" value={form.acopio} onChange={e => setForm({...form, acopio: e.target.value})} placeholder="ej. Cooperativa, acopio..." style={inputStyle} /></div>
+            )}
             <div style={{ gridColumn: '1/-1' }}>
               <Label>Observaciones</Label>
               <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} />
@@ -1524,12 +1540,12 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Campo', 'Lote', 'Campaña', 'Cultivo', 'Kg totales', 'Tn', 'Rend. qq/ha', 'Humedad', 'Obs.', ''].map(h => (
+            {['Fecha', 'Campo', 'Lote', 'Campaña', 'Cultivo', 'Kg totales', 'Tn', 'Rend. qq/ha', 'Humedad', 'Destino', 'Obs.', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
-            {cosechas.length === 0 && <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cosechas registradas.</td></tr>}
+            {cosechas.length === 0 && <tr><td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cosechas registradas.</td></tr>}
             {cosechas.map(c => {
               const loteC = campos.find(x => x.id === c.campo_id)?.lotes_agricolas?.find(l => l.id === c.lote_id)
               return (
@@ -1543,6 +1559,11 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.kg_totales ? (c.kg_totales / 1000).toLocaleString('es-AR') : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{c.rendimiento_qq_ha ? `${c.rendimiento_qq_ha} qq/ha` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.humedad_pct ? `${c.humedad_pct}%` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontSize: 12 }}>
+                  {c.destino === 'bolsa' && <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontWeight: 600 }}>🎒 Bolsa</span>}
+                  {c.destino === 'acopio' && <span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontWeight: 600 }}>🏭 {c.acopio || 'Acopio'}</span>}
+                  {!c.destino && '—'}
+                </td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{c.observaciones || '—'}</td>
                 <td style={{ padding: '8px 12px' }}>
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('cosechas').delete().eq('id', c.id); cargar() }}
