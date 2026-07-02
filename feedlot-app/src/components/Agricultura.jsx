@@ -99,6 +99,7 @@ export default function Agricultura({ usuario }) {
     { key: 'gastos', label: 'Gastos' },
     { key: 'stock', label: 'Stock agroquímicos' },
     { key: 'rentabilidad', label: '📊 Rentabilidad por lote' },
+    { key: 'lluvias', label: '🌧️ Lluvias' },
   ]
 
   // ── Métricas generales ──
@@ -155,6 +156,7 @@ export default function Agricultura({ usuario }) {
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} />}
+      {tab === 'lluvias' && <TabLluvias usuario={usuario} />}
     </div>
   )
 }
@@ -3112,6 +3114,196 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
           </Card>
         )
       })}
+    </div>
+  )
+}
+
+// ── TAB LLUVIAS ──
+const MESES_LLUVIA = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+function TabLluvias({ usuario }) {
+  const [lluvias, setLluvias] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ fecha: new Date().toISOString().split('T')[0], mm: '', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [filtroAnio, setFiltroAnio] = useState(new Date().getFullYear())
+
+  useEffect(() => { cargar() }, [])
+
+  async function cargar() {
+    setLoading(true)
+    const { data } = await supabase.from('lluvias').select('*').order('fecha', { ascending: false })
+    setLluvias(data || [])
+    setLoading(false)
+  }
+
+  async function guardar() {
+    if (!form.fecha || !form.mm) { alert('Completá la fecha y los milímetros'); return }
+    const yaExiste = lluvias.find(l => l.fecha === form.fecha)
+    if (yaExiste && !confirm(`Ya hay un registro para el ${new Date(form.fecha+'T12:00:00').toLocaleDateString('es-AR')} (${yaExiste.mm} mm). ¿Agregar otro de todas formas?`)) return
+    setGuardando(true)
+    await supabase.from('lluvias').insert({ fecha: form.fecha, mm: parseFloat(form.mm), observaciones: form.observaciones || null, registrado_por: usuario?.id })
+    await cargar()
+    setShowForm(false)
+    setForm({ fecha: new Date().toISOString().split('T')[0], mm: '', observaciones: '' })
+    setGuardando(false)
+  }
+
+  async function eliminar(id) {
+    if (!confirm('¿Eliminar este registro de lluvia?')) return
+    await supabase.from('lluvias').delete().eq('id', id)
+    await cargar()
+  }
+
+  if (loading) return <Loader />
+
+  const anios = [...new Set(lluvias.map(l => new Date(l.fecha + 'T12:00:00').getFullYear()))].sort((a, b) => b - a)
+  if (anios.length === 0) anios.push(new Date().getFullYear())
+
+  const delAnio = lluvias.filter(l => new Date(l.fecha + 'T12:00:00').getFullYear() === filtroAnio)
+  const totalAnio = delAnio.reduce((s, l) => s + (l.mm || 0), 0)
+  const hoy = new Date()
+  const totalMesActual = lluvias.filter(l => {
+    const f = new Date(l.fecha + 'T12:00:00')
+    return f.getFullYear() === hoy.getFullYear() && f.getMonth() === hoy.getMonth()
+  }).reduce((s, l) => s + (l.mm || 0), 0)
+  const ultimos30 = lluvias.filter(l => new Date(l.fecha + 'T12:00:00') >= new Date(Date.now() - 30 * 86400000)).reduce((s, l) => s + (l.mm || 0), 0)
+
+  // Totales por mes del año filtrado, para la tabla y el gráfico
+  const porMes = Array.from({ length: 12 }, (_, i) => ({
+    mes: i,
+    label: MESES_LLUVIA[i],
+    mm: delAnio.filter(l => new Date(l.fecha + 'T12:00:00').getMonth() === i).reduce((s, l) => s + (l.mm || 0), 0),
+  }))
+  const maxMm = Math.max(...porMes.map(m => m.mm), 10)
+
+  // Gráfico de barras simple, en SVG, sin librerías externas
+  const chartW = 700, chartH = 220, padL = 40, padB = 30, padT = 10
+  const barW = (chartW - padL - 10) / 12
+  const escalaY = (chartH - padT - padB) / maxMm
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Registro de lluvias</div>
+          <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Registro general del establecimiento</div>
+        </div>
+        <button onClick={() => setShowForm(!showForm)}
+          style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          + Registrar lluvia
+        </button>
+      </div>
+
+      {showForm && (
+        <Card titulo="Nuevo registro de lluvia">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div><Label>Fecha *</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Milímetros *</Label><input type="number" value={form.mm} onChange={e => setForm({...form, mm: e.target.value})} placeholder="ej. 25" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 600 }} /></div>
+            <div><Label>Observaciones</Label><input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} placeholder="opcional" style={inputStyle} /></div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      {/* Métricas rápidas */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: '1.25rem' }}>
+        {[
+          { label: 'Últimos 30 días', val: `${ultimos30.toLocaleString('es-AR')} mm` },
+          { label: `Este mes (${MESES_LLUVIA[hoy.getMonth()]})`, val: `${totalMesActual.toLocaleString('es-AR')} mm` },
+          { label: `Acumulado ${filtroAnio}`, val: `${totalAnio.toLocaleString('es-AR')} mm`, color: S.accent },
+        ].map((m, i) => (
+          <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+            <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: m.color || S.text }}>{m.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Selector de año */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem' }}>
+        <Label>Año</Label>
+        <select value={filtroAnio} onChange={e => setFiltroAnio(parseInt(e.target.value))} style={{ ...inputStyle, width: 120 }}>
+          {anios.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+
+      {/* Gráfico de barras por mes */}
+      <Card titulo={`Lluvia por mes — ${filtroAnio}`}>
+        <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+          {/* Líneas guía horizontales */}
+          {[0.25, 0.5, 0.75, 1].map(f => (
+            <line key={f} x1={padL} x2={chartW - 10} y1={chartH - padB - maxMm * f * escalaY} y2={chartH - padB - maxMm * f * escalaY} stroke={S.border} strokeWidth="1" />
+          ))}
+          {porMes.map((m, i) => {
+            const h = m.mm * escalaY
+            const x = padL + i * barW + barW * 0.15
+            const w = barW * 0.7
+            const y = chartH - padB - h
+            return (
+              <g key={i}>
+                <rect x={x} y={y} width={w} height={h} rx={3} fill={m.mes === hoy.getMonth() && filtroAnio === hoy.getFullYear() ? S.accent : '#6FA8DC'} />
+                {m.mm > 0 && <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="10" fill={S.muted} fontFamily="monospace">{m.mm}</text>}
+                <text x={x + w / 2} y={chartH - padB + 14} textAnchor="middle" fontSize="10" fill={S.muted}>{m.label}</text>
+              </g>
+            )
+          })}
+          <line x1={padL} x2={padL} y1={padT} y2={chartH - padB} stroke={S.border} strokeWidth="1" />
+          <line x1={padL} x2={chartW - 10} y1={chartH - padB} y2={chartH - padB} stroke={S.border} strokeWidth="1" />
+        </svg>
+      </Card>
+
+      {/* Tabla mensual */}
+      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: '1.5rem' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: S.bg }}>
+            {['Mes', 'Mm acumulados'].map(h => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Mm acumulados' ? 'right' : 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {porMes.map(m => (
+              <tr key={m.mes} style={{ borderBottom: `1px solid ${S.border}` }}>
+                <td style={{ padding: '7px 12px' }}>{m.label}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: m.mm > 0 ? 700 : 400, color: m.mm > 0 ? S.accent : S.hint }}>{m.mm > 0 ? `${m.mm.toLocaleString('es-AR')} mm` : '—'}</td>
+              </tr>
+            ))}
+            <tr style={{ background: S.bg, borderTop: `2px solid ${S.border}` }}>
+              <td style={{ padding: '7px 12px', fontWeight: 700 }}>Total {filtroAnio}</td>
+              <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>{totalAnio.toLocaleString('es-AR')} mm</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Listado de registros individuales */}
+      <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Registros individuales</div>
+      <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: S.bg }}>
+            {['Fecha', 'Mm', 'Observaciones', ''].map(h => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {lluvias.length === 0 && <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay lluvias registradas.</td></tr>}
+            {lluvias.map(l => (
+              <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+                <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>{l.mm} mm</td>
+                <td style={{ padding: '7px 12px', color: S.muted, fontSize: 12 }}>{l.observaciones || '—'}</td>
+                <td style={{ padding: '7px 12px' }}>
+                  <button onClick={() => eliminar(l.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
