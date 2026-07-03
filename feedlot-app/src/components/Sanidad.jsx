@@ -150,14 +150,10 @@ export default function Sanidad({ usuario }) {
     const prod = productos.find(p => String(p.id) === String(formStockSan.producto_id))
     if (prod) {
       const cant = parseFloat(formStockSan.cantidad)
-      const campoCant = formStockSan.unidad === 'kg' ? 'cantidad_kg' : 'cantidad_ml'
-      const valorActual = formStockSan.unidad === 'kg' ? (prod.cantidad_kg || 0) : (prod.cantidad_ml || 0)
-      // Actualizar stock
-      await supabase.from('stock_sanitario').update({
-        [campoCant]: valorActual + cant,
-        actualizado_en: new Date().toISOString(),
-        pedido_realizado: false,
-      }).eq('id', prod.id)
+      // Actualizar stock de forma atómica (suma en la base, no en la app) para
+      // no pisar otra operación que toque el mismo producto casi al mismo tiempo
+      await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: cant })
+      await supabase.from('stock_sanitario').update({ pedido_realizado: false }).eq('id', prod.id)
       // Registrar en ingresos_stock (legacy)
       await supabase.from('ingresos_stock').insert({
         insumo_id: prod.id,
@@ -267,11 +263,7 @@ export default function Sanidad({ usuario }) {
         if (enf.desc) {
           // Descontar del stock sanitario
           if (enf.prod_id && enf.ml) {
-            const prod = productos.find(p => p.id === enf.prod_id)
-            if (prod) {
-              const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - parseFloat(enf.ml))
-              await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', enf.prod_id)
-            }
+            await supabase.rpc('incrementar_stock_sanitario', { p_id: enf.prod_id, p_delta: -parseFloat(enf.ml) })
           }
           // Registrar en animales_enfermeria
           const corrEnf = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
@@ -575,8 +567,7 @@ export default function Sanidad({ usuario }) {
                                           return
                                         }
                                       }
-                                      const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlDesc)
-                                      await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
+                                      await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: -mlDesc })
                                       await supabase.from('eventos_sanitarios').insert({
                                         tipo: 'vacunacion', corral_id: l.corral_cuarentena_id,
                                         producto: prod.n, cantidad_ml: mlDesc,

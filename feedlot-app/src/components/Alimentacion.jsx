@@ -377,12 +377,10 @@ export default function Alimentacion({ usuario }) {
     const item = stockDB.find(s => s.insumo === formIngreso.insumo)
     if (item) {
       const cant = parseFloat(formIngreso.cantidad)
-      // Actualizar stock
-      await supabase.from('stock_insumos').update({
-        cantidad_kg: (item.cantidad_kg || 0) + cant,
-        actualizado_en: new Date().toISOString(),
-        pedido_realizado: false,
-      }).eq('id', item.id)
+      // Actualizar stock de forma atómica (suma en la base, no en la app) para
+      // no pisar otra operación que toque el mismo insumo casi al mismo tiempo
+      await supabase.rpc('incrementar_stock_insumo', { p_id: item.id, p_delta: cant })
+      await supabase.from('stock_insumos').update({ pedido_realizado: false }).eq('id', item.id)
       // Nota: ya no se usa ingresos_stock — todo va a compras_insumos
       // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
       await supabase.from('compras_insumos').insert({
