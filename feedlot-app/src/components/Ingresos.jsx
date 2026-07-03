@@ -29,6 +29,22 @@ const FACTURA_IA_HABILITADA = false
 const CATEGORIAS = ['Novillos 2-3 años', 'Novillos 3-4 años', 'Novillitos', 'Terneros', 'Vaquillonas', 'Vacas', 'Toros']
 const PROCEDENCIAS_DEFAULT = ['La Pampa', 'Córdoba', 'Buenos Aires', 'Santa Fe', 'Entre Ríos']
 
+// Convierte sublotes viejos (formato plano: un vendedor = una tropa) al formato
+// nuevo de dos niveles (un vendedor puede traer varias tropas con distinto precio).
+// Si ya vienen en formato nuevo, los deja igual. No pisa nada existente.
+function normalizarSublotes(raw) {
+  if (!raw?.length) return []
+  return raw.map(s => {
+    if (Array.isArray(s.tropas)) return s
+    // Formato viejo: {vendedor, cuit, cabezas, kg, precio_kg, subtotal}
+    return {
+      vendedor: s.vendedor || '',
+      cuit: s.cuit || '',
+      tropas: [{ cabezas: s.cabezas || '', kg: s.kg || '', precio_kg: s.precio_kg || '', subtotal: s.subtotal || '' }],
+    }
+  })
+}
+
 export default function Ingresos({ usuario }) {
   const [tab, setTab] = useState('lista')
   const [showDetalleMeses, setShowDetalleMeses] = useState(false)
@@ -152,7 +168,7 @@ export default function Ingresos({ usuario }) {
         kg_factura: parsed.total_kg ? String(parsed.total_kg) : (prev?.kg_factura || ''),
         monto_total: parsed.total_final ? String(parsed.total_final) : (prev?.monto_total || ''),
         importe_bruto: parsed.importe_bruto ? String(parsed.importe_bruto) : (prev?.importe_bruto || ''),
-        sublotes: parsed.sublotes?.length > 0 ? parsed.sublotes.map(s => ({...s, cabezas: String(s.cabezas||''), kg: String(s.kg||''), precio_kg: String(s.precio_kg||''), subtotal: String(s.subtotal||'')})) : (prev?.sublotes || []),
+        sublotes: parsed.sublotes?.length > 0 ? normalizarSublotes(parsed.sublotes) : (prev?.sublotes || []),
         gastos_feria: parsed.gastos_feria ? { comision: String(parsed.gastos_feria.comision||''), iva_pct: String(parsed.gastos_feria.iva_pct||''), iva_monto: String(parsed.gastos_feria.iva_monto||''), dte: String(parsed.gastos_feria.dte||'') } : (prev?.gastos_feria || {}),
         cuotas_pago: parsed.cuotas?.length > 0 ? parsed.cuotas.map((c, i) => ({ nro_factura: String(i+1), fecha: c.fecha, monto: String(c.monto) })) : (prev?.cuotas_pago || []),
       }))
@@ -164,22 +180,22 @@ export default function Ingresos({ usuario }) {
   }
 
   async function guardarPrecio(lote) {
-    if (!editandoPrecio?.monto_total && !editandoPrecio?.precio_compra) { alert('Ingresá el monto total o el precio'); return }
-    const kgFac = editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null
-    const precio = editandoPrecio.precio_compra ? parseFloat(editandoPrecio.precio_compra) : null
-    const montoTotal = editandoPrecio.monto_total ? parseFloat(editandoPrecio.monto_total) : (kgFac && precio ? Math.round(kgFac * precio) : null)
+    const hayTropas = editandoPrecio?.sublotes?.length > 0
+    const todasTropas = hayTropas ? editandoPrecio.sublotes.flatMap(p => p.tropas || []) : []
+    if (!hayTropas && !editandoPrecio?.monto_total && !editandoPrecio?.precio_compra) { alert('Ingresá el monto total o el precio'); return }
+    if (hayTropas && todasTropas.every(t => !t.subtotal)) { alert('Cargá los kilos y precio de al menos una tropa'); return }
+
+    // Si hay tropas cargadas, el monto y los kg salen de sumarlas (no del campo manual)
+    const kgFac = hayTropas
+      ? todasTropas.reduce((s, t) => s + (parseFloat(t.kg) || 0), 0) || null
+      : (editandoPrecio.kg_factura ? parseFloat(editandoPrecio.kg_factura) : null)
+    const montoTotal = hayTropas
+      ? todasTropas.reduce((s, t) => s + (parseFloat(t.subtotal) || 0), 0) || null
+      : (editandoPrecio.monto_total ? parseFloat(editandoPrecio.monto_total) : (kgFac && editandoPrecio.precio_compra ? Math.round(kgFac * parseFloat(editandoPrecio.precio_compra)) : null))
+    const precio = hayTropas
+      ? (kgFac && montoTotal ? Math.round(montoTotal / kgFac) : null)
+      : (editandoPrecio.precio_compra ? parseFloat(editandoPrecio.precio_compra) : null)
     const comMonto = editandoPrecio.comision_monto ? parseFloat(editandoPrecio.comision_monto) : 0
-
-    // Facturas — guardar con nro_factura, monto y fecha
-    const facturas = (editandoPrecio.cuotas_pago || [])
-      .filter(f => f.monto || f.fecha)
-      .map(f => ({ nro_factura: f.nro_factura || null, monto: parseFloat(f.monto) || 0, fecha: f.fecha || null }))
-
-    // Fecha de vencimiento = la más lejana de las facturas, o la ingresada manualmente
-    const fechasFacturas = facturas.map(f => f.fecha).filter(Boolean).sort()
-    const fechaVto = fechasFacturas.length > 0 
-      ? fechasFacturas[fechasFacturas.length - 1] 
-      : (editandoPrecio.fecha_vencimiento_pago || null)
 
     // Resolver procedencia
     let procFinal = editandoPrecio.procedencia !== 'Nuevo' ? (editandoPrecio.procedencia || lote.procedencia) : lote.procedencia
@@ -190,24 +206,23 @@ export default function Ingresos({ usuario }) {
       procFinal = nombre
     }
 
-    // Si no hay facturas y hay monto total, todo es monto negro (sin factura)
-    const montoNegro = facturas.length === 0 && montoTotal ? montoTotal : null
+    // Todavía no hay factura de la feria en este punto (eso lo carga Paula después,
+    // en Gestión Comercial) — por ahora el monto se registra como informal/negro.
+    const montoNegro = montoTotal
 
     await supabase.from('lotes').update({
       kg_factura: kgFac,
-      precio_compra: precio || (montoTotal && kgFac ? Math.round(montoTotal / kgFac) : null),
+      precio_compra: precio,
       monto_total_con_iva: montoTotal,
       monto_negro: montoNegro,
-      fecha_vencimiento_pago: fechaVto,
-      cuotas_pago: facturas.length > 0 ? facturas : (editandoPrecio.cuotas_pago?.length > 0 ? editandoPrecio.cuotas_pago.map(c => ({ nro_factura: c.nro_factura, fecha: c.fecha, monto: parseFloat(c.monto)||0 })) : null),
+      fecha_vencimiento_pago: editandoPrecio.fecha_vencimiento_pago || null,
       comision_monto: comMonto || null,
       comision_a_quien: editandoPrecio.comision_a_quien || null,
       comision_es_paralela: editandoPrecio.comision_es_paralela || false,
       procedencia: procFinal,
-      nro_factura: editandoPrecio.nro_factura || null,
-      feria_nombre: editandoPrecio.feria_nombre || null,
-      sublotes: editandoPrecio.sublotes?.length > 0 ? editandoPrecio.sublotes : null,
-      gastos_feria: (editandoPrecio.gastos_feria && Object.values(editandoPrecio.gastos_feria).some(v => v)) ? editandoPrecio.gastos_feria : null,
+      sublotes: hayTropas ? editandoPrecio.sublotes : null,
+      // nro_factura, feria_nombre, gastos_feria y cuotas_pago NO se tocan acá:
+      // esos se cargan y editan exclusivamente en la pestaña "Gestión comercial".
     }).eq('id', lote.id)
     setEditandoPrecio(null)
     await cargarDatos()
@@ -496,7 +511,8 @@ export default function Ingresos({ usuario }) {
           {lotesParaCompletar.map(l => {
             const isEdit = editandoPrecio?.id === l.id
             const kgBas = l.kg_bascula || 0
-            const kgFac = parseFloat(editandoPrecio?.kg_factura || l.kg_factura || 0)
+            const kgTropas = isEdit && editandoPrecio.sublotes?.length > 0 ? editandoPrecio.sublotes.flatMap(p=>p.tropas||[]).reduce((s,t)=>s+(parseFloat(t.kg)||0),0) : null
+            const kgFac = kgTropas || parseFloat(editandoPrecio?.kg_factura || l.kg_factura || 0)
             const diffKg = kgBas && kgFac ? kgBas - kgFac : null
             const diffPct = diffKg !== null && kgFac > 0 ? (diffKg / kgFac * 100) : null
             const alertaDiff = diffPct !== null && Math.abs(diffPct) > 3
@@ -534,7 +550,7 @@ export default function Ingresos({ usuario }) {
                       nro_factura: l.nro_factura || '',
                       feria_nombre: l.feria_nombre || '',
                       cuotas_pago: (l.cuotas_pago || []).map(c => ({ nro_factura: c.nro_factura || '', fecha: c.fecha || '', monto: String(c.monto || '') })),
-                      sublotes: l.sublotes || [],
+                      sublotes: normalizarSublotes(l.sublotes),
                       gastos_feria: l.gastos_feria || {},
                     })} style={{ fontSize: 12, padding: '5px 12px' }}>
                       Completar datos
@@ -563,81 +579,80 @@ export default function Ingresos({ usuario }) {
                     </div>
                     )}
 
-                    {/* N° Factura y Feria */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                      <div><Lbl>N° Factura</Lbl><input type="text" value={editandoPrecio.nro_factura || ''} onChange={e => setEditandoPrecio({...editandoPrecio, nro_factura: e.target.value})} placeholder="ej. 2104-00002337" style={inp} /></div>
-                      <div><Lbl>Feria / Remate</Lbl><input type="text" value={editandoPrecio.feria_nombre || ''} onChange={e => setEditandoPrecio({...editandoPrecio, feria_nombre: e.target.value})} placeholder="ej. Guillermo Lehmann" style={inp} /></div>
-                    </div>
-
-                    {/* Sublotes */}
+                    {/* Tropas por proveedor */}
                     {editandoPrecio.sublotes?.length > 0 && (
                       <div style={{ marginBottom: 14 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <Lbl>Sublotes (vendedores)</Lbl>
-                          <button onClick={() => setEditandoPrecio({...editandoPrecio, sublotes: [...(editandoPrecio.sublotes||[]), {vendedor:'',cabezas:'',kg:'',precio_kg:'',subtotal:''}]})}
-                            style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
+                          <Lbl>Proveedores y tropas</Lbl>
+                          <button onClick={() => setEditandoPrecio({...editandoPrecio, sublotes: [...(editandoPrecio.sublotes||[]), {vendedor:'',cuit:'',tropas:[{cabezas:'',kg:'',precio_kg:'',subtotal:''}]}]})}
+                            style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar proveedor</button>
                         </div>
-                        <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                            <thead><tr style={{ background: S.bg }}>
-                              {['Vendedor', 'CUIT', 'Cabezas', 'Kg', '$/kg', 'Subtotal', ''].map(h => (
-                                <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                              ))}
-                            </tr></thead>
-                            <tbody>
-                              {(editandoPrecio.sublotes||[]).map((sl, si) => (
-                                <tr key={si} style={{ borderBottom: `1px solid ${S.border}` }}>
-                                  <td style={{ padding: '4px 6px' }}><input value={sl.vendedor||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[si]={...n[si],vendedor:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' }} /></td>
-                                  <td style={{ padding: '4px 6px' }}><input value={sl.cuit||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[si]={...n[si],cuit:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: 110, boxSizing: 'border-box' }} /></td>
-                                  <td style={{ padding: '4px 6px' }}><input type="number" value={sl.cabezas||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[si]={...n[si],cabezas:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: 70, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} /></td>
-                                  <td style={{ padding: '4px 6px' }}><input type="number" value={sl.kg||''} onChange={e => { const n=[...editandoPrecio.sublotes]; const kg=parseFloat(e.target.value)||0; const sub=kg*(parseFloat(sl.precio_kg)||0); n[si]={...n[si],kg:e.target.value,subtotal:sub?String(Math.round(sub)):''}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: 80, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} /></td>
-                                  <td style={{ padding: '4px 6px' }}><input type="number" value={sl.precio_kg||''} onChange={e => { const n=[...editandoPrecio.sublotes]; const p=parseFloat(e.target.value)||0; const sub=(parseFloat(sl.kg)||0)*p; n[si]={...n[si],precio_kg:e.target.value,subtotal:sub?String(Math.round(sub)):''}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: 80, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} /></td>
-                                  <td style={{ padding: '4px 6px', fontFamily: 'monospace', fontSize: 12, color: S.accent, fontWeight: 600 }}>{sl.subtotal ? '$'+Number(sl.subtotal).toLocaleString('es-AR') : '—'}</td>
-                                  <td style={{ padding: '4px 6px' }}><button onClick={() => { const n=editandoPrecio.sublotes.filter((_,i)=>i!==si); setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr style={{ background: S.accentLight }}>
-                                <td colSpan={2} style={{ padding: '6px 10px', fontWeight: 700, fontSize: 12 }}>TOTAL</td>
-                                <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', fontSize: 12 }}>
-                                  {(editandoPrecio.sublotes||[]).reduce((s,sl)=>s+(parseInt(sl.cabezas)||0),0)} cab.
-                                </td>
-                                <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', fontSize: 12 }}>
-                                  {(editandoPrecio.sublotes||[]).reduce((s,sl)=>s+(parseFloat(sl.kg)||0),0).toLocaleString('es-AR')} kg
-                                </td>
-                                <td></td>
-                                <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: S.accent }}>
-                                  ${(editandoPrecio.sublotes||[]).reduce((s,sl)=>s+(parseFloat(sl.subtotal)||0),0).toLocaleString('es-AR')}
-                                </td>
-                                <td></td>
-                              </tr>
-                              {(() => {
-                                const sumKgSublotes = (editandoPrecio.sublotes||[]).reduce((s,sl)=>s+(parseFloat(sl.kg)||0),0)
-                                const kgCampo = l.kg_bascula || 0
-                                if (!sumKgSublotes || !kgCampo) return null
-                                const diff = Math.abs(sumKgSublotes - kgCampo) / kgCampo * 100
-                                return (
-                                  <tr style={{ background: diff > 3 ? S.redLight : S.greenLight }}>
-                                    <td colSpan={7} style={{ padding: '6px 10px', fontSize: 11, color: diff > 3 ? S.red : S.green, fontWeight: 600 }}>
-                                      {diff > 3 ? '⚠' : '✓'} Diferencia vs báscula campo: {diff.toFixed(1)}% ({kgCampo.toLocaleString('es-AR')} kg campo vs {sumKgSublotes.toLocaleString('es-AR')} kg sublotes)
+                        {(editandoPrecio.sublotes||[]).map((prov, pi) => (
+                          <div key={pi} style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px auto', gap: 8, marginBottom: 8 }}>
+                              <input placeholder="Vendedor / proveedor" value={prov.vendedor||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],vendedor:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                                style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, fontWeight: 600, boxSizing: 'border-box' }} />
+                              <input placeholder="CUIT" value={prov.cuit||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],cuit:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                                style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, boxSizing: 'border-box' }} />
+                              <button onClick={() => { const n=editandoPrecio.sublotes.filter((_,i)=>i!==pi); setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                                style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }} title="Quitar proveedor">✕</button>
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                              <thead><tr style={{ background: S.bg }}>
+                                {['Cabezas', 'Kg', '$/kg', 'Subtotal', ''].map(h => (
+                                  <th key={h} style={{ padding: '5px 8px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                                ))}
+                              </tr></thead>
+                              <tbody>
+                                {(prov.tropas||[]).map((tr, ti) => (
+                                  <tr key={ti} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                    <td style={{ padding: '4px 6px' }}><input type="number" value={tr.cabezas||''} onChange={e => { const n=[...editandoPrecio.sublotes]; const trs=[...n[pi].tropas]; trs[ti]={...trs[ti],cabezas:e.target.value}; n[pi]={...n[pi],tropas:trs}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: 70, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} /></td>
+                                    <td style={{ padding: '4px 6px' }}><input type="number" value={tr.kg||''} onChange={e => { const n=[...editandoPrecio.sublotes]; const trs=[...n[pi].tropas]; const kg=parseFloat(e.target.value)||0; const sub=kg*(parseFloat(trs[ti].precio_kg)||0); trs[ti]={...trs[ti],kg:e.target.value,subtotal:sub?String(Math.round(sub)):''}; n[pi]={...n[pi],tropas:trs}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: 90, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} /></td>
+                                    <td style={{ padding: '4px 6px' }}><input type="number" value={tr.precio_kg||''} onChange={e => { const n=[...editandoPrecio.sublotes]; const trs=[...n[pi].tropas]; const p=parseFloat(e.target.value)||0; const sub=(parseFloat(trs[ti].kg)||0)*p; trs[ti]={...trs[ti],precio_kg:e.target.value,subtotal:sub?String(Math.round(sub)):''}; n[pi]={...n[pi],tropas:trs}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ border: `1px solid ${S.border}`, borderRadius: 4, padding: '5px 8px', fontSize: 12, width: 90, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} /></td>
+                                    <td style={{ padding: '4px 6px', fontFamily: 'monospace', fontSize: 12, color: S.accent, fontWeight: 600 }}>{tr.subtotal ? '$'+Number(tr.subtotal).toLocaleString('es-AR') : '—'}</td>
+                                    <td style={{ padding: '4px 6px' }}>
+                                      {(prov.tropas||[]).length > 1 && <button onClick={() => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],tropas:n[pi].tropas.filter((_,i)=>i!==ti)}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }} title="Quitar tropa">✕</button>}
                                     </td>
                                   </tr>
-                                )
-                              })()}
-                            </tfoot>
-                          </table>
-                        </div>
+                                ))}
+                              </tbody>
+                            </table>
+                            <button onClick={() => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],tropas:[...(n[pi].tropas||[]),{cabezas:'',kg:'',precio_kg:'',subtotal:''}]}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                              style={{ marginTop: 6, padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+                              + Otra tropa de {prov.vendedor || 'este proveedor'}
+                            </button>
+                          </div>
+                        ))}
+                        {(() => {
+                          const todasTropas = (editandoPrecio.sublotes||[]).flatMap(p => p.tropas||[])
+                          const totCab = todasTropas.reduce((s,t)=>s+(parseInt(t.cabezas)||0),0)
+                          const totKg = todasTropas.reduce((s,t)=>s+(parseFloat(t.kg)||0),0)
+                          const totMonto = todasTropas.reduce((s,t)=>s+(parseFloat(t.subtotal)||0),0)
+                          const kgCampo = l.kg_bascula || 0
+                          const diff = (totKg && kgCampo) ? Math.abs(totKg - kgCampo) / kgCampo * 100 : null
+                          return (
+                            <div style={{ background: S.accentLight, borderRadius: 8, padding: '10px 12px' }}>
+                              <div style={{ fontSize: 12, fontWeight: 700 }}>
+                                TOTAL: {totCab} cab. · {totKg.toLocaleString('es-AR')} kg · <span style={{ color: S.accent }}>${totMonto.toLocaleString('es-AR')}</span>
+                              </div>
+                              {diff !== null && (
+                                <div style={{ fontSize: 11, marginTop: 4, color: diff > 3 ? S.red : S.green, fontWeight: 600 }}>
+                                  {diff > 3 ? '⚠' : '✓'} Diferencia vs báscula campo: {diff.toFixed(1)}% ({kgCampo.toLocaleString('es-AR')} kg campo vs {totKg.toLocaleString('es-AR')} kg tropas)
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                         <button onClick={() => setEditandoPrecio({...editandoPrecio, sublotes: []})}
-                          style={{ marginTop: 6, padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
-                          ✕ Quitar sublotes
+                          style={{ marginTop: 8, padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+                          ✕ Quitar desglose por proveedor
                         </button>
                       </div>
                     )}
                     {!editandoPrecio.sublotes?.length && (
-                      <button onClick={() => setEditandoPrecio({...editandoPrecio, sublotes: [{vendedor:'',cabezas:'',kg:'',precio_kg:'',subtotal:''}]})}
+                      <button onClick={() => setEditandoPrecio({...editandoPrecio, sublotes: [{vendedor:'',cuit:'',tropas:[{cabezas:'',kg:'',precio_kg:'',subtotal:''}]}]})}
                         style={{ padding: '6px 12px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', marginBottom: 12 }}>
-                        + Múltiples vendedores en este camión
+                        + ¿Vino más de un proveedor, o tropas con distinto precio, en este camión?
                       </button>
                     )}
 
@@ -665,8 +680,7 @@ export default function Ingresos({ usuario }) {
                           const monto = editandoPrecio.monto_total
                           const precio = monto && kgF ? String(Math.round(parseFloat(monto) / parseFloat(kgF))) : editandoPrecio.precio_compra
                           setEditandoPrecio({...editandoPrecio, kg_factura: kgF, precio_compra: precio})
-                        }} placeholder="Kg según factura" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} />
-                      </div>
+                        }} placeholder="Kg según factura" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} disabled={editandoPrecio.sublotes?.length > 0} /></div>
                       <div>
                         <Lbl>Kg Campo (báscula)</Lbl>
                         <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.muted, fontWeight: 600 }}>
@@ -682,16 +696,23 @@ export default function Ingresos({ usuario }) {
                       </div>
                     </div>
 
-                    {/* Fila 3: Monto Total */}
+                    {/* Fila 3: Monto Total — se calcula solo si hay tropas cargadas */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 10 }}>
                       <div>
                         <Lbl c={S.accent}>Monto Total Compra $</Lbl>
-                        <input type="number" value={editandoPrecio.monto_total} onChange={e => {
-                          const monto = e.target.value
-                          const kgF = parseFloat(editandoPrecio.kg_factura) || 0
-                          const precio = monto && kgF ? String(Math.round(parseFloat(monto) / kgF)) : editandoPrecio.precio_compra
-                          setEditandoPrecio({...editandoPrecio, monto_total: monto, precio_compra: precio})
-                        }} placeholder="Total a pagar" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600, maxWidth: 280}} />
+                        {editandoPrecio.sublotes?.length > 0 ? (
+                          <div style={{ padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', background: S.accentLight, fontWeight: 700, color: S.accent, maxWidth: 280 }}>
+                            ${(editandoPrecio.sublotes||[]).flatMap(p=>p.tropas||[]).reduce((s,t)=>s+(parseFloat(t.subtotal)||0),0).toLocaleString('es-AR')}
+                            <span style={{ fontSize: 10, fontWeight: 400, color: S.muted, marginLeft: 6 }}>(suma de las tropas de arriba)</span>
+                          </div>
+                        ) : (
+                          <input type="number" value={editandoPrecio.monto_total} onChange={e => {
+                            const monto = e.target.value
+                            const kgF = parseFloat(editandoPrecio.kg_factura) || 0
+                            const precio = monto && kgF ? String(Math.round(parseFloat(monto) / kgF)) : editandoPrecio.precio_compra
+                            setEditandoPrecio({...editandoPrecio, monto_total: monto, precio_compra: precio})
+                          }} placeholder="Total a pagar" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600, maxWidth: 280}} />
+                        )}
                       </div>
                     </div>
 
@@ -715,53 +736,8 @@ export default function Ingresos({ usuario }) {
                           style={inp} />
                       </div>
                     </div>
-                    {/* Gastos de feria */}
-                    <div style={{ background: S.amberLight, border: `1px solid #D4A054`, borderRadius: 8, padding: '12px', marginBottom: 12 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: S.amber, marginBottom: 10 }}>Retenciones y Cargos de Feria</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                        <div>
-                          <Lbl>Comisión $</Lbl>
-                          <input type="number" value={editandoPrecio.gastos_feria?.comision||''} onChange={e => setEditandoPrecio({...editandoPrecio, gastos_feria: {...(editandoPrecio.gastos_feria||{}), comision: e.target.value}})} style={{ ...inpMono, border: `1px solid ${S.amber}` }} />
-                        </div>
-                        <div>
-                          <Lbl>IVA %</Lbl>
-                          <input type="number" value={editandoPrecio.gastos_feria?.iva_pct||''} onChange={e => setEditandoPrecio({...editandoPrecio, gastos_feria: {...(editandoPrecio.gastos_feria||{}), iva_pct: e.target.value}})} style={inpMono} placeholder="ej. 10.5" />
-                        </div>
-                        <div>
-                          <Lbl>IVA $</Lbl>
-                          <input type="number" value={editandoPrecio.gastos_feria?.iva_monto||''} onChange={e => setEditandoPrecio({...editandoPrecio, gastos_feria: {...(editandoPrecio.gastos_feria||{}), iva_monto: e.target.value}})} style={{ ...inpMono, border: `1px solid ${S.amber}` }} />
-                        </div>
-                        <div>
-                          <Lbl>DTE $</Lbl>
-                          <input type="number" value={editandoPrecio.gastos_feria?.dte||''} onChange={e => setEditandoPrecio({...editandoPrecio, gastos_feria: {...(editandoPrecio.gastos_feria||{}), dte: e.target.value}})} style={inpMono} />
-                        </div>
-                      </div>
-                      {(() => {
-                        const g = editandoPrecio.gastos_feria || {}
-                        const totalGastos = (parseFloat(g.comision)||0) + (parseFloat(g.iva_monto)||0) + (parseFloat(g.dte)||0)
-                        return totalGastos > 0 ? (
-                          <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: S.amber }}>
-                            Total gastos feria: ${totalGastos.toLocaleString('es-AR')}
-                          </div>
-                        ) : null
-                      })()}
-                    </div>
-
-                    {/* Vencimientos */}
-                    <div style={{ marginBottom: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <Lbl>Vencimientos de pago</Lbl>
-                        <button onClick={() => setEditandoPrecio({...editandoPrecio, cuotas_pago: [...(editandoPrecio.cuotas_pago||[]), {nro_factura:'',fecha:'',monto:''}]})}
-                          style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Cuota</button>
-                      </div>
-                      {(editandoPrecio.cuotas_pago||[]).map((c, ci) => (
-                        <div key={ci} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr auto', gap: 8, marginBottom: 6 }}>
-                          <input placeholder="N°" value={c.nro_factura||''} onChange={e => { const n=[...editandoPrecio.cuotas_pago]; n[ci]={...n[ci],nro_factura:e.target.value}; setEditandoPrecio({...editandoPrecio,cuotas_pago:n}) }} style={inp} />
-                          <input type="date" value={c.fecha||''} onChange={e => { const n=[...editandoPrecio.cuotas_pago]; n[ci]={...n[ci],fecha:e.target.value}; setEditandoPrecio({...editandoPrecio,cuotas_pago:n}) }} style={inp} />
-                          <input type="number" placeholder="Monto $" value={c.monto||''} onChange={e => { const n=[...editandoPrecio.cuotas_pago]; n[ci]={...n[ci],monto:e.target.value}; setEditandoPrecio({...editandoPrecio,cuotas_pago:n}) }} style={inpMono} />
-                          <button onClick={() => setEditandoPrecio({...editandoPrecio,cuotas_pago:editandoPrecio.cuotas_pago.filter((_,i)=>i!==ci)})} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 16 }}>✕</button>
-                        </div>
-                      ))}
+                    <div style={{ fontSize: 11, color: S.hint, marginBottom: 12 }}>
+                      El N° de factura, la feria, las retenciones/cargos y las cuotas de pago se cargan después, en la pestaña "Gestión comercial", cuando llega la factura.
                     </div>
 
                                         <div style={{ display: 'flex', gap: 8 }}>
