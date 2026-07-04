@@ -53,6 +53,7 @@ export default function Sanidad({ usuario }) {
   const [corralesEnfermeria, setCorralesEnfermeria] = useState([])
   const [mortalidad, setMortalidad] = useState([])
   const [eventos, setEventos] = useState([])
+  const [eventosVacunacionIngreso, setEventosVacunacionIngreso] = useState([])
   const [revisiones, setRevisiones] = useState([])
   const [productos, setProductos] = useState([])
   const [revState, setRevState] = useState([])
@@ -219,7 +220,7 @@ export default function Sanidad({ usuario }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
-    const [{ data: al }, { data: c }, { data: l }, { data: enf }, { data: mort }, { data: ev }, { data: rev }] = await Promise.all([
+    const [{ data: al }, { data: c }, { data: l }, { data: enf }, { data: mort }, { data: ev }, { data: rev }, { data: vacIng }] = await Promise.all([
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('lotes').select('id, codigo, cantidad, fecha_ingreso, peso_prom_ingreso, corral_cuarentena_id').order('created_at', { ascending: false }).limit(10),
@@ -227,6 +228,7 @@ export default function Sanidad({ usuario }) {
       supabase.from('mortalidad').select('*, corrales(numero), lotes(codigo)').order('creado_en', { ascending: false }),
       supabase.from('eventos_sanitarios').select('*, corrales(numero), usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(30),
       supabase.from('revisiones').select('*, usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(10),
+      supabase.from('eventos_sanitarios').select('id, corral_id, lote_id, producto, cantidad_ml, cantidad_animales').eq('tipo', 'vacunacion').order('creado_en', { ascending: false }).limit(300),
     ])
     setAlertas(al || [])
     setCorrales(c || [])
@@ -235,6 +237,7 @@ export default function Sanidad({ usuario }) {
     setMortalidad(mort || [])
     setEventos(ev || [])
     setRevisiones(rev || [])
+    setEventosVacunacionIngreso(vacIng || [])
     setRevState((c || []).map(() => ({ ok: null, enfermos: [] })))
     setLoading(false)
   }
@@ -471,7 +474,14 @@ export default function Sanidad({ usuario }) {
                 {(() => {
                   const vac = vacunacionLote[l.id] || {}
                   const todosProductos = productos.filter(p => p.tipo === 'Vacuna')
-                  const confirmada = vac.confirmada
+                  // "Ya vacunado" se calcula desde los eventos guardados en la base (no solo de
+                  // esta sesión del navegador), para que se vea igual en cualquier PC/celular.
+                  const eventosVacunacion = eventosVacunacionIngreso.filter(e => e.lote_id === l.id || (!e.lote_id && e.corral_id === l.corral_cuarentena_id))
+                  const confirmada = vac.confirmada || eventosVacunacion.length > 0
+                  const resumenGuardado = eventosVacunacion.length > 0
+                    ? eventosVacunacion.map(e => ({ nombre: e.producto, dosis: e.cantidad_animales ? +(e.cantidad_ml / e.cantidad_animales).toFixed(1) : null, mlTotal: e.cantidad_ml || 0 }))
+                    : null
+                  const resumenMostrar = vac.resumen || resumenGuardado || []
                   const vacSeleccionadas = vac.vacunas || [{ prod_id: '', dosis: '5' }]
                   return (
                     <div style={{ padding: '.85rem 0', borderBottom: `1px solid ${S.border}`, display: 'flex', gap: '1rem' }}>
@@ -484,7 +494,7 @@ export default function Sanidad({ usuario }) {
                         </div>
                         {confirmada ? (
                           <div style={{ fontSize: 12, color: S.muted }}>
-                            {(vac.resumen || []).map(r => `${r.nombre} ${r.dosis}ml/animal (${r.mlTotal.toLocaleString('es-AR')} ml)`).join(' · ')}
+                            {resumenMostrar.map(r => `${r.nombre} ${r.dosis ? `${r.dosis}ml/animal ` : ''}(${r.mlTotal.toLocaleString('es-AR')} ml)`).join(' · ')}
                             {' · '}{new Date(l.fecha_ingreso).toLocaleDateString('es-AR')}
                           </div>
                         ) : (
@@ -569,7 +579,7 @@ export default function Sanidad({ usuario }) {
                                       }
                                       await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: -mlDesc })
                                       await supabase.from('eventos_sanitarios').insert({
-                                        tipo: 'vacunacion', corral_id: l.corral_cuarentena_id,
+                                        tipo: 'vacunacion', corral_id: l.corral_cuarentena_id, lote_id: l.id,
                                         producto: prod.n, cantidad_ml: mlDesc,
                                         cantidad_animales: l.cantidad,
                                         observaciones: `Ingreso lote ${l.codigo} — ${dosis} ml/animal`,
@@ -578,6 +588,7 @@ export default function Sanidad({ usuario }) {
                                       resumen.push({ nombre: prod.n, dosis, mlTotal: mlDesc })
                                     }
                                     await cargarProductos()
+                                    await cargarDatos()
                                     setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: false, confirmada: true, resumen}}))
                                   }}
                                   style={{ display: 'block', width: '100%', padding: '8px 14px', fontSize: 12, fontWeight: 600, background: vacSeleccionadas.some(vs => vs.prod_id) ? S.accent : S.bg, border: `1px solid ${vacSeleccionadas.some(vs => vs.prod_id) ? S.accent : S.border}`, color: vacSeleccionadas.some(vs => vs.prod_id) ? '#fff' : S.muted, borderRadius: 6, cursor: vacSeleccionadas.some(vs => vs.prod_id) ? 'pointer' : 'default' }}>
