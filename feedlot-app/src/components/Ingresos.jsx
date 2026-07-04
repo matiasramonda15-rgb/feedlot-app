@@ -206,6 +206,24 @@ export default function Ingresos({ usuario }) {
       procFinal = nombre
     }
 
+    // Si hay tropas por proveedor: crear los contactos nuevos que falten, y armar
+    // la procedencia general del lote juntando los nombres de todos los proveedores
+    let sublotesFinal = editandoPrecio.sublotes
+    if (hayTropas) {
+      sublotesFinal = []
+      for (const prov of editandoPrecio.sublotes) {
+        let nombreProv = prov.vendedor
+        if (prov.vendedor === 'Nuevo' && prov.nuevaProcedencia?.trim()) {
+          nombreProv = prov.nuevaProcedencia.trim()
+          const existente = contactos.find(c => c.nombre.toLowerCase() === nombreProv.toLowerCase())
+          if (!existente) await supabase.from('contactos').insert({ nombre: nombreProv, tipo: 'proveedor_hacienda', activo: true })
+        }
+        sublotesFinal.push({ ...prov, vendedor: nombreProv })
+      }
+      const nombresProveedores = [...new Set(sublotesFinal.map(p => p.vendedor).filter(Boolean))]
+      if (nombresProveedores.length > 0) procFinal = nombresProveedores.join(', ')
+    }
+
     // Todavía no hay factura de la feria en este punto (eso lo carga Paula después,
     // en Gestión Comercial) — por ahora el monto se registra como informal/negro.
     const montoNegro = montoTotal
@@ -220,7 +238,7 @@ export default function Ingresos({ usuario }) {
       comision_a_quien: editandoPrecio.comision_a_quien || null,
       comision_es_paralela: editandoPrecio.comision_es_paralela || false,
       procedencia: procFinal,
-      sublotes: hayTropas ? editandoPrecio.sublotes : null,
+      sublotes: hayTropas ? sublotesFinal : null,
       // nro_factura, feria_nombre, gastos_feria y cuotas_pago NO se tocan acá:
       // esos se cargan y editan exclusivamente en la pestaña "Gestión comercial".
     }).eq('id', lote.id)
@@ -589,14 +607,24 @@ export default function Ingresos({ usuario }) {
                         </div>
                         {(editandoPrecio.sublotes||[]).map((prov, pi) => (
                           <div key={pi} style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px auto', gap: 8, marginBottom: 8 }}>
-                              <input placeholder="Vendedor / proveedor" value={prov.vendedor||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],vendedor:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
-                                style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, fontWeight: 600, boxSizing: 'border-box' }} />
-                              <input placeholder="CUIT" value={prov.cuit||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],cuit:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
-                                style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, boxSizing: 'border-box' }} />
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: prov.vendedor === 'Nuevo' ? 6 : 8 }}>
+                              <select value={prov.vendedor||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],vendedor:e.target.value, nuevaProcedencia:''}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                                style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, fontWeight: 600, boxSizing: 'border-box' }}>
+                                <option value="">— Vendedor / proveedor —</option>
+                                {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                                <option value="Nuevo">+ Nuevo contacto...</option>
+                              </select>
                               <button onClick={() => { const n=editandoPrecio.sublotes.filter((_,i)=>i!==pi); setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
                                 style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }} title="Quitar proveedor">✕</button>
                             </div>
+                            {prov.vendedor === 'Nuevo' && (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8, marginBottom: 8 }}>
+                                <input placeholder="Nombre del nuevo vendedor" value={prov.nuevaProcedencia||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],nuevaProcedencia:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                                  style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, boxSizing: 'border-box' }} />
+                                <input placeholder="CUIT" value={prov.cuit||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],cuit:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                                  style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, boxSizing: 'border-box' }} />
+                              </div>
+                            )}
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                               <thead><tr style={{ background: S.bg }}>
                                 {['Cabezas', 'Kg', '$/kg', 'Subtotal', ''].map(h => (
@@ -619,7 +647,7 @@ export default function Ingresos({ usuario }) {
                             </table>
                             <button onClick={() => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],tropas:[...(n[pi].tropas||[]),{cabezas:'',kg:'',precio_kg:'',subtotal:''}]}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
                               style={{ marginTop: 6, padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
-                              + Otra tropa de {prov.vendedor || 'este proveedor'}
+                              + Otra tropa de {(prov.vendedor === 'Nuevo' ? prov.nuevaProcedencia : prov.vendedor) || 'este proveedor'}
                             </button>
                           </div>
                         ))}
@@ -656,7 +684,8 @@ export default function Ingresos({ usuario }) {
                       </button>
                     )}
 
-                    {/* Fila 1: Procedencia/Vendedor */}
+                    {/* Fila 1: Procedencia/Vendedor — solo si no hay desglose por proveedor (para eso ya está arriba) */}
+                    {!editandoPrecio.sublotes?.length && (
                     <div style={{ marginBottom: 12 }}>
                       <Lbl>Procedencia / Vendedor</Lbl>
                       <select value={editandoPrecio.procedencia || ''} onChange={e => setEditandoPrecio({...editandoPrecio, procedencia: e.target.value, nuevaProcedencia: ''})}
@@ -670,17 +699,26 @@ export default function Ingresos({ usuario }) {
                           onChange={e => setEditandoPrecio({...editandoPrecio, nuevaProcedencia: e.target.value})} style={inp} />
                       )}
                     </div>
+                    )}
 
                     {/* Fila 2: Kg Factura / Kg Campo / % dif */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                       <div>
                         <Lbl c={S.accent}>Kg Factura</Lbl>
-                        <input type="number" value={editandoPrecio.kg_factura} onChange={e => {
-                          const kgF = e.target.value
-                          const monto = editandoPrecio.monto_total
-                          const precio = monto && kgF ? String(Math.round(parseFloat(monto) / parseFloat(kgF))) : editandoPrecio.precio_compra
-                          setEditandoPrecio({...editandoPrecio, kg_factura: kgF, precio_compra: precio})
-                        }} placeholder="Kg según factura" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} disabled={editandoPrecio.sublotes?.length > 0} /></div>
+                        {editandoPrecio.sublotes?.length > 0 ? (
+                          <div style={{ padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.accentLight, fontWeight: 700, color: S.accent }}>
+                            {kgFac ? kgFac.toLocaleString('es-AR') : '—'}
+                            <span style={{ fontSize: 10, fontWeight: 400, color: S.muted, marginLeft: 6 }}>(suma tropas)</span>
+                          </div>
+                        ) : (
+                          <input type="number" value={editandoPrecio.kg_factura} onChange={e => {
+                            const kgF = e.target.value
+                            const monto = editandoPrecio.monto_total
+                            const precio = monto && kgF ? String(Math.round(parseFloat(monto) / parseFloat(kgF))) : editandoPrecio.precio_compra
+                            setEditandoPrecio({...editandoPrecio, kg_factura: kgF, precio_compra: precio})
+                          }} placeholder="Kg según factura" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600}} />
+                        )}
+                      </div>
                       <div>
                         <Lbl>Kg Campo (báscula)</Lbl>
                         <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.bg, color: S.muted, fontWeight: 600 }}>
