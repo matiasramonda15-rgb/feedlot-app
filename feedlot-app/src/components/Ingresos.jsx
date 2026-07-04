@@ -1095,6 +1095,16 @@ export default function Ingresos({ usuario }) {
 function generarReciboCompra(lote, pagos, corrales) {
   const fecha = pagos[0]?.fecha ? new Date(pagos[0].fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
   const proveedor = lote.procedencia || ''
+  // Datos fiscales del/los proveedor/es: si hay facturas cargadas por proveedor, se juntan;
+  // si no, se usa el dato viejo a nivel lote (compatibilidad con lotes cargados antes de este cambio)
+  const datosFiscales = (lote.facturas_feria?.length > 0)
+    ? {
+        iva: [...new Set(lote.facturas_feria.map(f => f.condicion_iva).filter(Boolean))].join(' / ') || lote.proveedor_iva || '',
+        localidad: [...new Set(lote.facturas_feria.map(f => f.localidad).filter(Boolean))].join(' / ') || lote.proveedor_localidad || '',
+        cuit: [...new Set(lote.facturas_feria.map(f => f.cuit).filter(Boolean))].join(' / ') || lote.proveedor_cuit || '',
+        cbu: [...new Set(lote.facturas_feria.map(f => f.cbu).filter(Boolean))].join(' / ') || lote.proveedor_cbu || '',
+      }
+    : { iva: lote.proveedor_iva || '', localidad: lote.proveedor_localidad || '', cuit: lote.proveedor_cuit || '', cbu: lote.proveedor_cbu || '' }
   const totalMonto = pagos.reduce((s, p) => s + (p.monto || 0), 0)
   const entero = Math.floor(totalMonto)
   const unidades = ['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE']
@@ -1163,9 +1173,9 @@ function generarReciboCompra(lote, pagos, corrales) {
     <hr style="border:1px solid #333;margin:8px 0;">
     <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
       <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;">Entrego a:</td></tr>
-      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${proveedor}</strong></td><td style="padding:4px 8px;">I.V.A.: ${lote.proveedor_iva || ''}</td></tr>
-      <tr><td style="padding:4px 8px;">Localidad: ${lote.proveedor_localidad || ''}</td><td style="padding:4px 8px;">CUIT/DNI: ${lote.proveedor_cuit || ''}</td></tr>
-      <tr><td style="padding:4px 8px;">C.B.U: ${lote.proveedor_cbu || ''}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
+      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${proveedor}</strong></td><td style="padding:4px 8px;">I.V.A.: ${datosFiscales.iva}</td></tr>
+      <tr><td style="padding:4px 8px;">Localidad: ${datosFiscales.localidad}</td><td style="padding:4px 8px;">CUIT/DNI: ${datosFiscales.cuit}</td></tr>
+      <tr><td style="padding:4px 8px;">C.B.U: ${datosFiscales.cbu}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
     </table>
     <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
       <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
@@ -1197,6 +1207,33 @@ function generarReciboCompra(lote, pagos, corrales) {
   win.document.close()
 }
 
+// Convierte/migra las facturas de un lote al formato nuevo (una factura por proveedor/tropa).
+// Si ya existen facturas_feria, las usa tal cual. Si hay datos del sistema viejo (una sola
+// factura general en cuotas_pago), arma un bloque por cada una. Si no hay nada, arranca un
+// bloque por cada proveedor de las tropas cargadas en Ingresos (si las hay).
+function normalizarFacturas(l) {
+  if (l.facturas_feria?.length > 0) {
+    return l.facturas_feria.map(f => ({
+      proveedor: f.proveedor || '', cuit: f.cuit || '', localidad: f.localidad || '', condicion_iva: f.condicion_iva || '', cbu: f.cbu || '',
+      nro_factura: f.nro_factura || '', feria_nombre: f.feria_nombre || '',
+      kg_factura: f.kg_factura != null ? String(f.kg_factura) : '', precio_neto: f.precio_neto != null ? String(f.precio_neto) : '',
+      comision: f.comision != null ? String(f.comision) : '', dte: f.dte != null ? String(f.dte) : '',
+      vencimientos: (f.vencimientos || [{ fecha: '', monto: '', pagado: false }]).map(v => ({ fecha: v.fecha || '', monto: String(v.monto || ''), pagado: v.pagado || false })),
+    }))
+  }
+  if (l.cuotas_pago?.length > 0) {
+    return l.cuotas_pago.map(c => ({
+      proveedor: l.procedencia || '', cuit: l.proveedor_cuit || '', nro_factura: c.nro_factura || '', feria_nombre: l.feria_nombre || '',
+      kg_factura: '', precio_neto: '', comision: '', dte: '',
+      vencimientos: (c.vencimientos || [{ fecha: c.fecha, monto: c.monto, pagado: false }]).map(v => ({ fecha: v.fecha || '', monto: String(v.monto || ''), pagado: v.pagado || false })),
+    }))
+  }
+  if (l.sublotes?.length > 0) {
+    return l.sublotes.map(s => ({ proveedor: s.vendedor || '', cuit: s.cuit || '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', comision: '', dte: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }))
+  }
+  return [{ proveedor: l.procedencia || '', cuit: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', comision: '', dte: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]
+}
+
 function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
   const S = {
     bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', muted: '#6B6760', hint: '#9E9A94', text: '#1A1916',
@@ -1206,8 +1243,9 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }
   const Lbl = ({ children, c }) => <label style={{ fontSize: 11, fontWeight: 600, color: c || S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>{children}</label>
 
+  const IVA_PCT = 10.5
   const [editandoFactura, setEditandoFactura] = useState(null)
-  const [formFactura, setFormFactura] = useState({ numero_factura: '', fecha_factura: '', monto_facturado: '', iva_pct: '10.5', observaciones_pago: '', proveedor: '', localidad: '', cuit: '', iva: '', cbu: '', cuotas_pago: [] })
+  const [formFactura, setFormFactura] = useState({ fecha_factura: '', observaciones_pago: '', facturas: [] })
   const [pagosMap, setPagosMap] = useState({})
   const [chequesCartera, setChequesCartera] = useState([])
   const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralela: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
@@ -1244,183 +1282,176 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   }
 
   async function guardarFactura(lote) {
-    const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
-    // Calcular totales desde las facturas
-    const facturas = (formFactura.cuotas_pago || []).filter(f => f.nro_factura || (f.vencimientos || []).some(v => v.monto))
-    const totalNeto = facturas.reduce((s, f) => s + (f.vencimientos || []).reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0), 0)
-    const ivaMonto = Math.round(totalNeto * ivaPct / 100)
-    const totalFacturado = totalNeto + ivaMonto
-    const montoTotal = lote.monto_total_con_iva || null
-    const montoNegro = montoTotal != null && totalFacturado > 0 ? Math.max(0, montoTotal - totalFacturado) : null
-    // N° de primera factura para compatibilidad
-    const primeraFactura = facturas[0]?.nro_factura || null
+    const bloques = (formFactura.facturas || []).filter(f => f.nro_factura || f.kg_factura || f.precio_neto || (f.vencimientos || []).some(v => v.monto))
+    const facturasCalc = bloques.map(f => {
+      const kg = parseFloat(f.kg_factura) || 0
+      const precioNeto = parseFloat(f.precio_neto) || 0
+      const vencsFiltrados = (f.vencimientos || []).filter(v => v.fecha || v.monto)
+      // El monto neto sale de kg×precio; si no cargaron eso, se toma de la suma de los vencimientos cargados
+      const montoNeto = (kg && precioNeto) ? Math.round(kg * precioNeto) : vencsFiltrados.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
+      const ivaMonto = Math.round(montoNeto * IVA_PCT / 100)
+      const gastos = (parseFloat(f.comision) || 0) + (parseFloat(f.dte) || 0)
+      const totalFactura = montoNeto + ivaMonto + gastos
+      return {
+        proveedor: f.proveedor || null, cuit: f.cuit || null, localidad: f.localidad || null, condicion_iva: f.condicion_iva || null, cbu: f.cbu || null,
+        nro_factura: f.nro_factura || null, feria_nombre: f.feria_nombre || null,
+        kg_factura: kg || null, precio_neto: precioNeto || null, monto_neto: montoNeto, iva_monto: ivaMonto,
+        comision: parseFloat(f.comision) || null, dte: parseFloat(f.dte) || null, gastos_total: gastos, total_factura: totalFactura,
+        vencimientos: vencsFiltrados.map(v => ({ fecha: v.fecha || null, monto: parseFloat(v.monto) || 0, pagado: v.pagado || false })),
+      }
+    })
+    const totalNeto = facturasCalc.reduce((s, f) => s + f.monto_neto, 0)
+    const totalIva = facturasCalc.reduce((s, f) => s + f.iva_monto, 0)
+    const totalFacturadoConTodo = facturasCalc.reduce((s, f) => s + f.total_factura, 0)
+    const montoTotalOriginal = lote.monto_total_con_iva || null
+    const montoNegro = montoTotalOriginal != null ? Math.max(0, montoTotalOriginal - totalFacturadoConTodo) : null
+    const primeraFactura = facturasCalc[0]?.nro_factura || null
+
+    // cuotas_pago (aplanado): se sigue completando para que el banner de vencimientos
+    // próximos y el resto del sistema, que ya lo leen, sigan funcionando sin cambios.
+    const cuotasPagoCompat = facturasCalc.map(f => ({ nro_factura: f.nro_factura, vencimientos: f.vencimientos }))
+
     await supabase.from('lotes').update({
       numero_factura: primeraFactura,
       fecha_factura: formFactura.fecha_factura || null,
       monto_facturado: totalNeto > 0 ? totalNeto : null,
-      iva_pct: ivaPct,
-      iva_monto: ivaMonto,
+      iva_pct: IVA_PCT,
+      iva_monto: totalIva,
       monto_negro: montoNegro,
       observaciones_pago: formFactura.observaciones_pago || null,
-      procedencia: formFactura.proveedor || lote.procedencia || null,
-      proveedor_localidad: formFactura.localidad || null,
-      proveedor_cuit: formFactura.cuit || null,
-      proveedor_iva: formFactura.iva || null,
-      proveedor_cbu: formFactura.cbu || null,
-      cuotas_pago: facturas.map(f => {
-        // Calcular el neto de esta factura
-        const netoFactura = (f.vencimientos || []).reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
-        const ivaFactura = Math.round(netoFactura * ivaPct / 100)
-        const totalFactura = netoFactura + ivaFactura
-        // Distribuir el IVA proporcionalmente entre los vencimientos
-        const vencsFiltrados = (f.vencimientos || []).filter(v => v.fecha || v.monto)
-        return {
-          nro_factura: f.nro_factura || null,
-          vencimientos: vencsFiltrados.map((v, vi) => {
-            const netoVenc = parseFloat(v.monto) || 0
-            // Al último vencimiento le asignamos el resto para evitar redondeos
-            const ivaVenc = vi === vencsFiltrados.length - 1
-              ? totalFactura - vencsFiltrados.slice(0, -1).reduce((s, vv) => s + Math.round((parseFloat(vv.monto) || 0) * (1 + ivaPct / 100)), 0)
-              : Math.round(netoVenc * (1 + ivaPct / 100))
-            return {
-              fecha: v.fecha || null,
-              monto: Math.round(netoVenc * (1 + ivaPct / 100)),
-              monto_neto: netoVenc,
-              pagado: v.pagado || false,
-            }
-          })
-        }
-      }),
+      facturas_feria: facturasCalc.length > 0 ? facturasCalc : null,
+      cuotas_pago: cuotasPagoCompat.length > 0 ? cuotasPagoCompat : null,
     }).eq('id', lote.id)
     setEditandoFactura(null)
     await cargarDatos()
   }
 
   function renderFormFactura(l) {
+    const facturas = formFactura.facturas || []
+    const totalOperacion = l.monto_total_con_iva || 0
+    const totalFacturadoTodo = facturas.reduce((s, f) => {
+      const kg = parseFloat(f.kg_factura) || 0
+      const precio = parseFloat(f.precio_neto) || 0
+      const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
+      const neto = (kg && precio) ? kg * precio : vencs.reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0)
+      const iva = neto * IVA_PCT / 100
+      const gastos = (parseFloat(f.comision) || 0) + (parseFloat(f.dte) || 0)
+      return s + neto + iva + gastos
+    }, 0)
+    const paralelo = totalOperacion > 0 ? Math.max(0, totalOperacion - totalFacturadoTodo) : 0
+    const nombresProveedoresTropas = [...new Set((l.sublotes || []).map(s => s.vendedor).filter(Boolean))]
+
     return (
       <div>
-        {/* IVA % — único para todas las facturas */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-          <div>
-            <Lbl>IVA % (aplica a todas las facturas)</Lbl>
-            <select value={formFactura.iva_pct} onChange={e => setFormFactura({...formFactura, iva_pct: e.target.value})} style={inp}>
-              <option value="0">Sin IVA</option>
-              <option value="10.5">10.5%</option>
-              <option value="21">21%</option>
-            </select>
-          </div>
-          <div>
-            <Lbl>Fecha factura</Lbl>
-            <input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={inp} />
-          </div>
+        <div style={{ marginBottom: 10 }}>
+          <Lbl>Fecha de factura</Lbl>
+          <input type="date" value={formFactura.fecha_factura} onChange={e => setFormFactura({...formFactura, fecha_factura: e.target.value})} style={{...inp, maxWidth: 200}} />
         </div>
 
-        {/* Resumen automático */}
-        {(formFactura.cuotas_pago || []).length > 0 && (() => {
-          const ivaPct = parseFloat(formFactura.iva_pct || 10.5)
-          const totalNeto = (formFactura.cuotas_pago || []).reduce((s, f) =>
-            s + (f.vencimientos || []).reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0), 0)
-          const totalIva = Math.round(totalNeto * ivaPct / 100)
-          const totalFacturado = totalNeto + totalIva
-          const totalCompra = l.monto_total_con_iva || 0
-          const paralelo = totalCompra > 0 ? Math.max(0, totalCompra - totalFacturado) : 0
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Facturas por proveedor (IVA {IVA_PCT}% incluido siempre)</div>
+          <button onClick={() => setFormFactura({...formFactura, facturas: [...facturas, { proveedor: '', cuit: '', localidad: '', condicion_iva: '', cbu: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', comision: '', dte: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]})}
+            style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+            + Agregar factura
+          </button>
+        </div>
+
+        {facturas.length === 0 && (
+          <div style={{ fontSize: 12, color: S.hint, padding: '6px 0', marginBottom: 8 }}>Sin facturas cargadas todavía.</div>
+        )}
+
+        {facturas.map((f, fi) => {
+          const kg = parseFloat(f.kg_factura) || 0
+          const precio = parseFloat(f.precio_neto) || 0
+          const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
+          const montoNeto = (kg && precio) ? kg * precio : vencs.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
+          const ivaMonto = Math.round(montoNeto * IVA_PCT / 100)
+          const gastos = (parseFloat(f.comision) || 0) + (parseFloat(f.dte) || 0)
+          const totalFactura = montoNeto + ivaMonto + gastos
+          const totalVencs = vencs.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
+          const set = patch => { const n = [...facturas]; n[fi] = { ...n[fi], ...patch }; setFormFactura({...formFactura, facturas: n}) }
+
           return (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px 12px', marginBottom: 10 }}>
-              <div>
-                <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total neto</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalNeto.toLocaleString('es-AR')}</div>
+            <div key={fi} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: 10, marginBottom: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px auto', gap: 8, marginBottom: 8 }}>
+                <select value={f.proveedor || ''} onChange={e => {
+                  const nombre = e.target.value
+                  const ct = (contactos || []).find(c => c.nombre === nombre)
+                  set(ct ? { proveedor: nombre, cuit: ct.cuit || f.cuit, localidad: ct.localidad || f.localidad, condicion_iva: ct.iva || f.condicion_iva, cbu: ct.cbu || f.cbu } : { proveedor: nombre })
+                }} style={{...inp, fontWeight: 600}}>
+                  <option value="">— Proveedor de esta factura —</option>
+                  {nombresProveedoresTropas.map(n => <option key={n} value={n}>{n} (tropa del ingreso)</option>)}
+                  {(contactos || []).filter(c => !nombresProveedoresTropas.includes(c.nombre)).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                </select>
+                <input placeholder="CUIT" value={f.cuit || ''} onChange={e => set({ cuit: e.target.value })} style={{...inp, fontSize: 12}} />
+                <button onClick={() => setFormFactura({...formFactura, facturas: facturas.filter((_, i) => i !== fi)})}
+                  style={{ padding: '5px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕ Quitar factura</button>
               </div>
-              <div>
-                <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>IVA {ivaPct}%</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalIva.toLocaleString('es-AR')}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total facturado</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalFacturado.toLocaleString('es-AR')}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: paralelo > 0 ? S.purple : S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Paralelo</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: paralelo > 0 ? S.purple : S.hint, background: paralelo > 0 ? '#F3E8FF' : 'transparent', padding: '2px 6px', borderRadius: 4 }}>
-                  {totalCompra > 0 ? `$${paralelo.toLocaleString('es-AR')}` : '—'}
-                </div>
-              </div>
-            </div>
-          )
-        })()}
 
-        <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: 10, marginBottom: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Seleccionar de contactos</div>
-          <select onChange={e => {
-            const ct = (contactos || []).find(c => String(c.id) === e.target.value)
-            if (ct) setFormFactura({...formFactura, proveedor: ct.nombre, cuit: ct.cuit || '', localidad: ct.localidad || '', iva: ct.iva || '', cbu: ct.cbu || ''})
-          }} style={inp} defaultValue="">
-            <option value="">— Seleccionar contacto —</option>
-            {(contactos || []).map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-          </select>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-            <div><Lbl>Nombre</Lbl><input type="text" value={formFactura.proveedor || ''} onChange={e => setFormFactura({...formFactura, proveedor: e.target.value})} style={inp} /></div>
-            <div><Lbl>Localidad</Lbl><input type="text" value={formFactura.localidad || ''} onChange={e => setFormFactura({...formFactura, localidad: e.target.value})} style={inp} /></div>
-            <div><Lbl>CUIT</Lbl><input type="text" value={formFactura.cuit || ''} onChange={e => setFormFactura({...formFactura, cuit: e.target.value})} style={inp} /></div>
-            <div><Lbl>IVA</Lbl><input type="text" value={formFactura.iva || ''} onChange={e => setFormFactura({...formFactura, iva: e.target.value})} style={inp} /></div>
-            <div><Lbl>CBU</Lbl><input type="text" value={formFactura.cbu || ''} onChange={e => setFormFactura({...formFactura, cbu: e.target.value})} style={inp} /></div>
-          </div>
-        </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <input placeholder="Localidad (opcional)" value={f.localidad || ''} onChange={e => set({ localidad: e.target.value })} style={{...inp, fontSize: 12}} />
+                <input placeholder="Condición IVA (ej. Resp. Inscripto)" value={f.condicion_iva || ''} onChange={e => set({ condicion_iva: e.target.value })} style={{...inp, fontSize: 12}} />
+                <input placeholder="CBU (opcional)" value={f.cbu || ''} onChange={e => set({ cbu: e.target.value })} style={{...inp, fontSize: 12}} />
+              </div>
 
-        <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: 10, marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Facturas</div>
-            <button onClick={() => setFormFactura({...formFactura, cuotas_pago: [...(formFactura.cuotas_pago || []), { nro_factura: '', vencimientos: [{ fecha: '', monto: '' }] }]})}
-              style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-              + Agregar factura
-            </button>
-          </div>
-          {(formFactura.cuotas_pago || []).length === 0 && (
-            <div style={{ fontSize: 12, color: S.hint, padding: '6px 0' }}>Sin facturas cargadas.</div>
-          )}
-          {(formFactura.cuotas_pago || []).map((factura, fi) => (
-            <div key={fi} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px', marginBottom: 8 }}>
-              {/* Header factura */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div><Lbl>N° Factura</Lbl><input type="text" value={f.nro_factura || ''} placeholder="0001-00012345" onChange={e => set({ nro_factura: e.target.value })} style={{...inp, fontFamily: 'monospace'}} /></div>
+                <div><Lbl>Feria / Remate</Lbl><input type="text" value={f.feria_nombre || ''} placeholder="ej. Guillermo Lehmann" onChange={e => set({ feria_nombre: e.target.value })} style={inp} /></div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div><Lbl c={S.accent}>Kg (según esta factura)</Lbl><input type="number" value={f.kg_factura || ''} onChange={e => set({ kg_factura: e.target.value })} style={{...inp, fontFamily: 'monospace', border: `1px solid ${S.accent}`}} /></div>
+                <div><Lbl c={S.accent}>Precio neto $/kg</Lbl><input type="number" value={f.precio_neto || ''} onChange={e => set({ precio_neto: e.target.value })} style={{...inp, fontFamily: 'monospace', border: `1px solid ${S.accent}`}} /></div>
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° Factura</div>
-                  <input type="text" value={factura.nro_factura || ''} placeholder="0001-00012345"
-                    onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, nro_factura: e.target.value} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
-                    style={{...inp, fontFamily: 'monospace'}} />
+                  <Lbl>Neto → c/IVA {IVA_PCT}%</Lbl>
+                  <div style={{ padding: '8px 10px', fontSize: 12, fontFamily: 'monospace', fontWeight: 600, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6 }}>
+                    ${montoNeto.toLocaleString('es-AR')} → ${(montoNeto + ivaMonto).toLocaleString('es-AR')}
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', fontWeight: 600, paddingBottom: 8 }}>
-                  Neto: ${((factura.vencimientos || []).reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)).toLocaleString('es-AR')}
-                  {' '}· c/IVA: ${Math.round((factura.vencimientos || []).reduce((s, v) => s + (parseFloat(v.monto) || 0), 0) * (1 + parseFloat(formFactura.iva_pct || 10.5) / 100)).toLocaleString('es-AR')}
-                </div>
-                <button onClick={() => setFormFactura({...formFactura, cuotas_pago: formFactura.cuotas_pago.filter((_,i) => i !== fi)})}
-                  style={{ padding: '5px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginTop: 18 }}>✕</button>
               </div>
-              {/* Vencimientos */}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div><Lbl>Comisión feria $ (si aplica)</Lbl><input type="number" value={f.comision || ''} placeholder="opcional" onChange={e => set({ comision: e.target.value })} style={{...inp, fontFamily: 'monospace'}} /></div>
+                <div><Lbl>DTE $ (si aplica)</Lbl><input type="number" value={f.dte || ''} placeholder="opcional" onChange={e => set({ dte: e.target.value })} style={{...inp, fontFamily: 'monospace'}} /></div>
+                <div>
+                  <Lbl c={S.purple}>Total esta factura</Lbl>
+                  <div style={{ padding: '8px 10px', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, background: S.purpleLight, color: S.purple, borderRadius: 6 }}>
+                    ${totalFactura.toLocaleString('es-AR')}
+                  </div>
+                </div>
+              </div>
+
               <div style={{ paddingLeft: 8, borderLeft: `2px solid ${S.amber}` }}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 6 }}>Vencimientos</div>
-                {(factura.vencimientos || []).map((v, vi) => (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase' }}>Fechas de pago</div>
+                  <div style={{ fontSize: 11, color: Math.abs(totalVencs - totalFactura) > 1 ? S.red : S.green, fontWeight: 600 }}>
+                    {totalVencs.toLocaleString('es-AR')} / {totalFactura.toLocaleString('es-AR')} {Math.abs(totalVencs - totalFactura) <= 1 && totalVencs > 0 ? '✓' : ''}
+                  </div>
+                </div>
+                {(f.vencimientos || []).map((v, vi) => (
                   <div key={vi} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: 6 }}>
                     <div>
                       {vi === 0 && <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Fecha</div>}
                       <input type="date" value={v.fecha || ''}
-                        onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: f.vencimientos.map((x,j) => j===vi ? {...x, fecha: e.target.value} : x)} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
+                        onChange={e => { const vs = f.vencimientos.map((x,j) => j===vi ? {...x, fecha: e.target.value} : x); set({ vencimientos: vs }) }}
                         style={{...inp, border: `1px solid ${v.pagado ? '#97C459' : S.amber}`, background: v.pagado ? S.greenLight : S.surface}} />
                     </div>
                     <div>
-                      {vi === 0 && <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Monto $</div>}
+                      {vi === 0 && <div style={{ fontSize: 10, color: S.muted, marginBottom: 3 }}>Monto $ (con IVA)</div>}
                       <input type="number" value={v.monto || ''} placeholder="0"
-                        onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: f.vencimientos.map((x,j) => j===vi ? {...x, monto: e.target.value} : x)} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
+                        onChange={e => { const vs = f.vencimientos.map((x,j) => j===vi ? {...x, monto: e.target.value} : x); set({ vencimientos: vs }) }}
                         style={{...inp, fontFamily: 'monospace', border: `1px solid ${v.pagado ? '#97C459' : S.accent}`, background: v.pagado ? S.greenLight : S.surface}} />
                     </div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: v.pagado ? S.green : S.muted, cursor: 'pointer', whiteSpace: 'nowrap', marginTop: vi === 0 ? 18 : 0, paddingBottom: 8 }}>
                       <input type="checkbox" checked={v.pagado || false}
-                        onChange={e => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: f.vencimientos.map((x,j) => j===vi ? {...x, pagado: e.target.checked} : x)} : f); setFormFactura({...formFactura, cuotas_pago: n}) }} />
+                        onChange={e => { const vs = f.vencimientos.map((x,j) => j===vi ? {...x, pagado: e.target.checked} : x); set({ vencimientos: vs }) }} />
                       {v.pagado ? '✓ Pagado' : 'Pagado'}
                     </label>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
-                      <button onClick={() => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: [...f.vencimientos, { fecha: '', monto: '' }]} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
+                      <button onClick={() => set({ vencimientos: [...f.vencimientos, { fecha: '', monto: '', pagado: false }] })}
                         style={{ padding: '7px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', marginTop: vi === 0 ? 18 : 0 }}>+</button>
-                      {(factura.vencimientos || []).length > 1 && (
-                        <button onClick={() => { const n = formFactura.cuotas_pago.map((f,i) => i===fi ? {...f, vencimientos: f.vencimientos.filter((_,j) => j !== vi)} : f); setFormFactura({...formFactura, cuotas_pago: n}) }}
+                      {(f.vencimientos || []).length > 1 && (
+                        <button onClick={() => set({ vencimientos: f.vencimientos.filter((_,j) => j !== vi) })}
                           style={{ padding: '7px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer', marginTop: vi === 0 ? 18 : 0 }}>✕</button>
                       )}
                     </div>
@@ -1428,13 +1459,27 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                 ))}
               </div>
             </div>
-          ))}
-          {(formFactura.cuotas_pago || []).length > 0 && (
-            <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>
-              Total todas las facturas: <strong>${(formFactura.cuotas_pago || []).reduce((s, f) => s + (f.vencimientos || []).reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0), 0).toLocaleString('es-AR')}</strong>
+          )
+        })}
+
+        {facturas.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: '10px 12px', marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total operación (Ingresos)</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>{totalOperacion ? `$${totalOperacion.toLocaleString('es-AR')}` : '—'}</div>
             </div>
-          )}
-        </div>
+            <div>
+              <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total facturado (todas)</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalFacturadoTodo.toLocaleString('es-AR')}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: paralelo > 0 ? S.purple : S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Paralelo</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: paralelo > 0 ? S.purple : S.hint, background: paralelo > 0 ? '#F3E8FF' : 'transparent', padding: '2px 6px', borderRadius: 4 }}>
+                {totalOperacion > 0 ? `$${paralelo.toLocaleString('es-AR')}` : '—'}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div>
           <Lbl>Observaciones</Lbl>
@@ -1614,6 +1659,27 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
         )
       })()}
 
+      {/* Pendientes de factura — precio ya cargado por Jesús/dueño, pero Paula todavía no cargó la factura de la feria */}
+      {(() => {
+        const pendientesFactura = lotesActivos.filter(l => estadoDeLote(l, 0, 0) === 'precio_cargado')
+        if (pendientesFactura.length === 0) return null
+        return (
+          <div style={{ background: S.amberLight, border: '1px solid #D4A054', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: 6 }}>📋 {pendientesFactura.length} lote{pendientesFactura.length !== 1 ? 's' : ''} con precio cargado, esperando la factura de la feria</div>
+            {pendientesFactura.map(l => {
+              const corralNum = corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id
+              const monto = l.monto_total_con_iva || l.precio_compra
+              return (
+                <div key={l.id} style={{ fontSize: 12, color: S.amber, marginBottom: 2 }}>
+                  C-{corralNum} · {l.procedencia || 'Sin proveedor'}{monto ? ` · $${monto.toLocaleString('es-AR')}` : ''}
+                  {l.fecha_ingreso ? ` · ingresó ${new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR')}` : ''}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
 
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
@@ -1653,12 +1719,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                       <span style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, border: `1px solid ${ec.color}`, borderRadius: 5, background: ec.bg, color: ec.color }}>{ec.label}</span>
                     </td>
                     <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                      <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ numero_factura: l.numero_factura || '', fecha_factura: l.fecha_factura || '', monto_facturado: l.monto_facturado != null ? String(l.monto_facturado) : '', iva_pct: String(l.iva_pct || '10.5'), observaciones_pago: l.observaciones_pago || '', proveedor: l.procedencia || '', localidad: l.proveedor_localidad || '', cuit: l.proveedor_cuit || '', iva: l.proveedor_iva || '', cbu: l.proveedor_cbu || '', cuotas_pago: (l.cuotas_pago || []).map(c => ({
-                          nro_factura: c.nro_factura || '',
-                          vencimientos: c.vencimientos
-                            ? c.vencimientos.map(v => ({ fecha: v.fecha || '', monto: String(v.monto || ''), pagado: v.pagado || false }))
-                            : [{ fecha: c.fecha || '', monto: String(c.monto || ''), pagado: false }]
-                        })) }) }}
+                      <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ fecha_factura: l.fecha_factura || '', observaciones_pago: l.observaciones_pago || '', facturas: normalizarFacturas(l) }) }}
                         style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         ✏️ Editar
                       </button>
