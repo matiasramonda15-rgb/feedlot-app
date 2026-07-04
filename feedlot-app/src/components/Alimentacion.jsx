@@ -373,31 +373,32 @@ export default function Alimentacion({ usuario }) {
 
   async function guardarIngreso() {
     if (!formIngreso.cantidad) { alert('Ingresa la cantidad'); return }
-    setGuardando(true)
     const item = stockDB.find(s => s.insumo === formIngreso.insumo)
-    if (item) {
-      const cant = parseFloat(formIngreso.cantidad)
-      // Actualizar stock de forma atómica (suma en la base, no en la app) para
-      // no pisar otra operación que toque el mismo insumo casi al mismo tiempo
-      await supabase.rpc('incrementar_stock_insumo', { p_id: item.id, p_delta: cant })
-      await supabase.from('stock_insumos').update({ pedido_realizado: false }).eq('id', item.id)
-      // Nota: ya no se usa ingresos_stock — todo va a compras_insumos
-      // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
-      await supabase.from('compras_insumos').insert({
-        fecha: formIngreso.fecha,
-        insumo_id: item.id,
-        insumo_tipo: 'alimentacion',
-        insumo_nombre: formIngreso.insumo,
-        cantidad: cant,
-        unidad: 'kg',
-        proveedor: formIngreso.proveedor || null,
-        numero_factura: formIngreso.remito || null,
-        precio_unitario: null,
-        total: null,
-        estado_pago: 'pendiente',
-        registrado_por: usuario?.id,
-      })
-    }
+    if (!item) { alert(`No se encontró el insumo "${formIngreso.insumo}" en el stock. Probá recargar la página y volver a intentar.`); return }
+    setGuardando(true)
+    const cant = parseFloat(formIngreso.cantidad)
+    // Actualizar stock de forma atómica (suma en la base, no en la app) para
+    // no pisar otra operación que toque el mismo insumo casi al mismo tiempo
+    const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: item.id, p_delta: cant })
+    if (errRpc) { alert('Error al actualizar el stock: ' + errRpc.message); setGuardando(false); return }
+    await supabase.from('stock_insumos').update({ pedido_realizado: false }).eq('id', item.id)
+    // Nota: ya no se usa ingresos_stock — todo va a compras_insumos
+    // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
+    const { error: errCompra } = await supabase.from('compras_insumos').insert({
+      fecha: formIngreso.fecha,
+      insumo_id: item.id,
+      insumo_tipo: 'alimentacion',
+      insumo_nombre: formIngreso.insumo,
+      cantidad: cant,
+      unidad: 'kg',
+      proveedor: formIngreso.proveedor || null,
+      numero_factura: formIngreso.remito || null,
+      precio_unitario: null,
+      total: null,
+      estado_pago: 'pendiente',
+      registrado_por: usuario?.id,
+    })
+    if (errCompra) { alert('El stock se actualizó, pero no se pudo guardar el registro de compra: ' + errCompra.message); setGuardando(false); return }
     await cargarDatos()
     setShowFormIngreso(false)
     setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
@@ -926,7 +927,7 @@ export default function Alimentacion({ usuario }) {
                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Insumo</label>
                   <select value={formIngreso.insumo} onChange={e => setFormIngreso({...formIngreso, insumo: e.target.value})}
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface }}>
-                    {stockDB.map(s => <option key={s.id}>{s.insumo}</option>)}
+                    {stockDB.map(s => <option key={s.id} value={s.insumo}>{s.insumo}</option>)}
                   </select>
                 </div>
                 <div>
