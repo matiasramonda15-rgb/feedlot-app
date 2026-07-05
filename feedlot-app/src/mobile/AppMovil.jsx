@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
+import { moverAnimalesEntreCorrales } from '../shared/corralesLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
   border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F',
@@ -249,26 +250,11 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
     setGuardando(true)
     const destinoId = parseInt(movForm.destino_id)
 
-    await supabase.from('movimientos').insert({
-      tipo: 'traslado', corral_origen_id: seleccionado.id,
-      corral_destino_id: destinoId, cantidad,
-      motivo: movForm.motivo || null, registrado_por: usuario?.id
+    const { error, loteMovidoAviso, quedoLibre } = await moverAnimalesEntreCorrales(supabase, {
+      corralOrigen: seleccionado, corralDestinoId: destinoId, cantidad,
+      motivo: movForm.motivo, rolDestino, subDestino, destinoEsLibre, usuario,
     })
-
-    // Actualizar origen
-    const nuevosOrigen = (seleccionado.animales || 0) - cantidad
-    const updateOrigen = { animales: nuevosOrigen }
-    if (nuevosOrigen === 0) updateOrigen.rol = 'libre' // auto-libre si quedó vacío
-    await supabase.from('corrales').update(updateOrigen).eq('id', seleccionado.id)
-
-    // Actualizar destino
-    const { data: dest } = await supabase.from('corrales').select('animales').eq('id', destinoId).single()
-    const updateDestino = { animales: (dest?.animales || 0) + cantidad }
-    if (destinoEsLibre) {
-      updateDestino.rol = rolDestino
-      if (rolDestino === 'clasificado') updateDestino.sub = subDestino
-    }
-    await supabase.from('corrales').update(updateDestino).eq('id', destinoId)
+    if (error) { alert(error.message); setGuardando(false); return }
 
     onDone()
     setMovForm({ destino_id: '', cantidad: '', motivo: '' })
@@ -277,7 +263,7 @@ function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
     setVista('lista')
     setSeleccionado(null)
     setGuardando(false)
-    alert(`${cantidad} animales movidos.${nuevosOrigen === 0 ? ' El corral origen quedó libre.' : ''}`)
+    alert(`${cantidad} animales movidos.${quedoLibre ? ' El corral origen quedó libre.' : ''}${loteMovidoAviso || ''}`)
   }
 
   if (vista === 'detalle' && seleccionado) {

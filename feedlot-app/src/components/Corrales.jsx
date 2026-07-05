@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { moverAnimalesEntreCorrales } from '../shared/corralesLogic'
 
 const ROL_COLOR = {
   libre:        { bg: '#E8F4EB', border: '#7BC67A', text: '#1E5C2E' },
@@ -70,7 +71,6 @@ export default function Corrales({ usuario }) {
     if (!movForm.destino_id) { alert('Selecciona el corral destino'); return }
     if (!movForm.cantidad || parseInt(movForm.cantidad) <= 0) { alert('Ingresa la cantidad'); return }
     const cantidad = parseInt(movForm.cantidad)
-    if (cantidad > (sel?.animales || 0)) { alert(`No hay suficientes animales. Disponibles: ${sel?.animales}`); return }
 
     const corralDestino = corrales.find(c => String(c.id) === String(movForm.destino_id))
     const destinoEsLibre = corralDestino?.rol === 'libre'
@@ -80,50 +80,18 @@ export default function Corrales({ usuario }) {
     setGuardando(true)
     const destinoId = parseInt(movForm.destino_id)
 
-    await supabase.from('movimientos').insert({
-      tipo: 'traslado',
-      corral_origen_id: sel.id,
-      corral_destino_id: destinoId,
-      cantidad,
-      motivo: movForm.motivo || null,
-      registrado_por: usuario?.id,
+    const { error, loteMovidoAviso, quedoLibre } = await moverAnimalesEntreCorrales(supabase, {
+      corralOrigen: sel, corralDestinoId: destinoId, cantidad,
+      motivo: movForm.motivo, rolDestino: movForm.rolDestino, subDestino: movForm.subDestino,
+      destinoEsLibre, usuario,
     })
-
-    // Actualizar origen — auto-libre si quedó vacío
-    const nuevosOrigen = (sel.animales || 0) - cantidad
-    const updateOrigen = { animales: nuevosOrigen }
-    if (nuevosOrigen === 0) { updateOrigen.rol = 'libre'; updateOrigen.sub = null }
-    await supabase.from('corrales').update(updateOrigen).eq('id', sel.id)
-
-    // Si se movieron TODOS los animales del corral origen (quedó en 0), el/los lotes
-    // que apuntaban a ese corral como corral_cuarentena_id ahora están físicamente en
-    // el destino — hay que actualizar el lote para que Sanidad los siga encontrando.
-    // Si fue un movimiento PARCIAL (quedaron animales en el origen), no se puede saber
-    // con certeza a qué lote pertenecen los que se movieron, así que no se toca nada
-    // automáticamente en ese caso.
-    let loteMovidoAviso = ''
-    if (nuevosOrigen === 0) {
-      const { data: lotesAfectados } = await supabase.from('lotes').select('id, codigo').eq('corral_cuarentena_id', sel.id)
-      if (lotesAfectados?.length > 0) {
-        await supabase.from('lotes').update({ corral_cuarentena_id: destinoId }).eq('corral_cuarentena_id', sel.id)
-        loteMovidoAviso = ` Lote${lotesAfectados.length !== 1 ? 's' : ''} actualizado${lotesAfectados.length !== 1 ? 's' : ''} al nuevo corral: ${lotesAfectados.map(l => l.codigo).join(', ')}.`
-      }
-    }
-
-    // Actualizar destino — asignar rol si era libre
-    const { data: dest } = await supabase.from('corrales').select('animales').eq('id', destinoId).single()
-    const updateDestino = { animales: (dest?.animales || 0) + cantidad }
-    if (destinoEsLibre) {
-      updateDestino.rol = movForm.rolDestino
-      updateDestino.sub = movForm.rolDestino === 'clasificado' ? movForm.subDestino : null
-    }
-    await supabase.from('corrales').update(updateDestino).eq('id', destinoId)
+    if (error) { alert(error.message); setGuardando(false); return }
 
     await cargarCorrales()
     setMovForm({ destino_id: '', cantidad: '', motivo: '', rolDestino: '', subDestino: '' })
     setVistaPanel('detalle')
     setGuardando(false)
-    alert(`${cantidad} animales movidos.${nuevosOrigen === 0 ? ' El corral origen quedó libre.' : ' Movimiento parcial: si corresponde a un lote distinto, revisá manualmente en Sanidad/Ingresos a qué corral está asociado.'}${loteMovidoAviso}`)
+    alert(`${cantidad} animales movidos.${quedoLibre ? ' El corral origen quedó libre.' : ' Movimiento parcial: si corresponde a un lote distinto, revisá manualmente en Sanidad/Ingresos a qué corral está asociado.'}${loteMovidoAviso}`)
   }
 
   async function eliminarMovimiento(id, mov) {
