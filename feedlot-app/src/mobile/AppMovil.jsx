@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
 import { moverAnimalesEntreCorrales } from '../shared/corralesLogic'
+import { registrarIngresoLote } from '../shared/ingresosLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
   border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F',
@@ -420,38 +421,18 @@ function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
 
   async function guardar() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completa cantidad y kg bascula.'); return }
-    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || 'Otro') : (form.procedencia || null)
     setGuardando(true)
-    const codigo = `L-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
-    const _hoy = new Date()
-    const _fechaHoy = `${_hoy.getFullYear()}-${String(_hoy.getMonth()+1).padStart(2,'0')}-${String(_hoy.getDate()).padStart(2,'0')}`
-    const { data: lote, error } = await supabase.from('lotes').insert({
-      codigo, fecha_ingreso: _fechaHoy,
-      procedencia: procFinal, categoria: form.categoria,
-      cantidad: parseInt(form.cantidad), kg_bascula: parseFloat(form.kg_bascula),
-      peso_prom_ingreso: Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad) * 100) / 100,
-      observaciones: form.observaciones || null, registrado_por: usuario?.id,
-      corral_cuarentena_id: form.corral_id || null,
-    }).select().single()
-    if (!error) {
-      if (form.corral_id) {
-        const { data: corral } = await supabase.from('corrales').select('animales, numero').eq('id', form.corral_id).single()
-        await supabase.from('corrales').update({ animales: (corral?.animales || 0) + parseInt(form.cantidad), rol: 'cuarentena' }).eq('id', form.corral_id)
-      }
-      // Registrar flete si hay transportista
-      if (form.transportista.trim() && lote?.id) {
-        await supabase.from('fletes').insert({
-          lote_id: lote.id,
-          fecha: _fechaHoy,
-          transportista: form.transportista.trim(),
-          cantidad: parseInt(form.cantidad),
-          kg_bruto: parseFloat(form.kg_bascula),
-          estado_pago: 'pendiente',
-          registrado_por: usuario?.id,
-        })
-      }
-      onDone(); alert(`Lote ${codigo} registrado.`); nav('home')
-    } else { alert('Error al guardar.') }
+    const { error, lote } = await registrarIngresoLote(supabase, {
+      procedencia: form.procedencia === 'Otro' ? form.otraProcedencia : form.procedencia,
+      categoria: form.categoria,
+      cantidad: form.cantidad,
+      kgBascula: form.kg_bascula,
+      observaciones: form.observaciones,
+      corralId: form.corral_id || null,
+      transportista: form.transportista,
+    }, usuario)
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
+    onDone(); alert(`Lote ${lote?.codigo || ''} registrado.`); nav('home')
     setGuardando(false)
   }
 

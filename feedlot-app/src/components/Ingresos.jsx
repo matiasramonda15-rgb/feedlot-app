@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { registrarIngresoLote } from '../shared/ingresosLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
@@ -95,34 +96,15 @@ export default function Ingresos({ usuario }) {
   async function guardarIngreso() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completá cantidad y kg báscula'); return }
     setGuardando(true)
-    // Resolver procedencia — si es nuevo, crear contacto
-    let procFinal = null
-    if (form.procedencia === 'Nuevo') {
-      const nombre = form.otraProcedencia?.trim()
-      if (nombre) {
-        const existente = contactos.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())
-        if (!existente) {
-          await supabase.from('contactos').insert({ nombre, tipo: 'proveedor_hacienda', activo: true })
-          await cargarDatos()
-        }
-        procFinal = nombre
-      }
-    } else {
-      procFinal = form.procedencia || null
-    }
-    const { data: nuevoLote } = await supabase.from('lotes').insert({
-      procedencia: procFinal, categoria: form.categoria,
-      cantidad: parseInt(form.cantidad), kg_bascula: parseFloat(form.kg_bascula),
-      observaciones: form.observaciones || null,
-      corral_cuarentena_id: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
-      estado: 'activo', fecha_ingreso: new Date().toISOString().split('T')[0],
-      peso_prom_ingreso: form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null,
-    }).select().single()
-    if (form.corral_cuarentena_id && nuevoLote) {
-      const corral = corrales.find(c => c.id === parseInt(form.corral_cuarentena_id))
-      const nuevosAnim = (corral?.animales || 0) + parseInt(form.cantidad)
-      await supabase.from('corrales').update({ animales: nuevosAnim, rol: 'cuarentena' }).eq('id', parseInt(form.corral_cuarentena_id))
-    }
+    const { error } = await registrarIngresoLote(supabase, {
+      procedencia: form.procedencia === 'Nuevo' ? form.otraProcedencia : form.procedencia,
+      categoria: form.categoria,
+      cantidad: form.cantidad,
+      kgBascula: form.kg_bascula,
+      observaciones: form.observaciones,
+      corralId: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
+    }, usuario)
+    if (error) { alert('Error al guardar el ingreso: ' + error.message); setGuardando(false); return }
     await cargarDatos()
     setVista('lista')
     setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
