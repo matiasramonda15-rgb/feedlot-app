@@ -7,6 +7,7 @@ import { moverAnimalesEntreCorrales } from '../shared/corralesLogic'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
 import { registrarVenta } from '../shared/ventasLogic'
 import { registrarServicioTercero } from '../shared/serviciosLogic'
+import Corrales from '../components/Corrales'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -82,7 +83,7 @@ export default function AppMovil({ usuario, onLogout }) {
 
   const pantallas = {
     home:        <Home usuario={usuario} nav={nav} onLogout={onLogout} datos={datos} onReload={cargarDatos} />,
-    corrales:    <Corrales nav={nav} corrales={datos.corrales} usuario={usuario} esEncargado={esEncargado} onDone={cargarDatos} />,
+    corrales:    <Corrales usuario={usuario} mobile={true} nav={nav} />,
     ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} dietaAyer={datos.dietaAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
@@ -225,7 +226,7 @@ function Home({ usuario, nav, onLogout, datos }) {
     </div>
   )
 }
-function Corrales({ nav, corrales, usuario, esEncargado, onDone }) {
+function Corrales_OLD_local_sin_usar({ nav, corrales, usuario, esEncargado, onDone }) {
   const [seleccionado, setSeleccionado] = useState(null)
   const [vista, setVista] = useState('lista')
   const [movForm, setMovForm] = useState({ destino_id: '', cantidad: '', motivo: '' })

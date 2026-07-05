@@ -2,6 +2,25 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { moverAnimalesEntreCorrales } from '../shared/corralesLogic'
 
+// Paleta y navegación para cuando este componente se muestra en el celular
+// (mobile=true) — es la misma que ya se usaba en la app móvil.
+const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', purple: '#B09ED4', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+
+function MobileTopbar({ titulo, sub, onBack }) {
+  return (
+    <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+      {onBack && <button onClick={onBack} style={{ background: 'none', border: 'none', color: CM.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>}
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: CM.text }}>{titulo}</div>
+        {sub && <div style={{ fontSize: 11, color: CM.muted, marginTop: 1 }}>{sub}</div>}
+      </div>
+    </div>
+  )
+}
+function MobileScroll({ children }) {
+  return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', background: CM.bg, color: CM.text }}>{children}</div>
+}
+
 const ROL_COLOR = {
   libre:        { bg: '#E8F4EB', border: '#7BC67A', text: '#1E5C2E' },
   cuarentena:   { bg: '#FDF0E0', border: '#EF9F27', text: '#7A4500' },
@@ -31,7 +50,7 @@ const LAYOUT = [
 
 const ROLES = ['libre','cuarentena','acumulacion','clasificado','enfermeria','transitorio','deshabilitado']
 
-export default function Corrales({ usuario }) {
+export default function Corrales({ usuario, mobile, nav }) {
   const [corrales, setCorrales] = useState([])
   const [seleccionado, setSeleccionado] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -42,6 +61,11 @@ export default function Corrales({ usuario }) {
   const [movArchivo, setMovArchivo] = useState([])
   const [verArchivoMov, setVerArchivoMov] = useState(false)
   const esDueno = ['dueno', 'encargado'].includes(usuario?.rol)
+
+  // Estados propios de la navegación del celular (lista → detalle → mover)
+  const [vistaM, setVistaM] = useState('lista')
+  const [rolDestinoM, setRolDestinoM] = useState('')
+  const [subDestinoM, setSubDestinoM] = useState('')
 
   useEffect(() => { cargarCorrales() }, [])
 
@@ -121,13 +145,199 @@ export default function Corrales({ usuario }) {
     await cargarCorrales()
   }
 
+  async function cambiarRolMobile(corralId, nuevoRol, sub = null) {
+    await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null }).eq('id', corralId)
+    await cargarCorrales()
+    setVistaM('lista')
+    setSeleccionado(null)
+  }
+
+  async function moverAnimalesMobile() {
+    if (!movForm.destino_id || !movForm.cantidad) { alert('Completa destino y cantidad'); return }
+    const cantidad = parseInt(movForm.cantidad)
+    if (cantidad > (sel?.animales || 0)) { alert(`Max: ${sel?.animales} animales`); return }
+    const corralDestino = corrales.find(c => String(c.id) === String(movForm.destino_id))
+    const destinoEsLibre = corralDestino?.rol === 'libre'
+    if (destinoEsLibre && !rolDestinoM) { alert('Seleccioná el rol del corral destino'); return }
+    if (destinoEsLibre && rolDestinoM === 'clasificado' && !subDestinoM) { alert('Seleccioná el rango del corral clasificado'); return }
+    setGuardando(true)
+    const destinoId = parseInt(movForm.destino_id)
+
+    const { error, loteMovidoAviso, quedoLibre } = await moverAnimalesEntreCorrales(supabase, {
+      corralOrigen: sel, corralDestinoId: destinoId, cantidad,
+      motivo: movForm.motivo, rolDestino: rolDestinoM, subDestino: subDestinoM, destinoEsLibre, usuario,
+    })
+    if (error) { alert(error.message); setGuardando(false); return }
+
+    await cargarCorrales()
+    setMovForm({ destino_id: '', cantidad: '', motivo: '', rolDestino: '', subDestino: '' })
+    setRolDestinoM(''); setSubDestinoM('')
+    setVistaM('lista')
+    setSeleccionado(null)
+    setGuardando(false)
+    alert(`${cantidad} animales movidos.${quedoLibre ? ' El corral origen quedó libre.' : ''}${loteMovidoAviso || ''}`)
+  }
+
   const [ajustando, setAjustando] = useState(null)
   const [ajusteValor, setAjusteValor] = useState('')
 
   const byNum = Object.fromEntries(corrales.map(c => [c.numero, c]))
   const sel = seleccionado ? corrales.find(c => c.id === seleccionado.id) : null
 
-  if (loading) return <div style={{ padding: '2rem', color: '#9E9A94', fontSize: 13 }}>Cargando...</div>
+  if (loading) return <div style={{ padding: '2rem', color: mobile ? CM.muted : '#9E9A94', fontSize: 13, background: mobile ? CM.bg : 'transparent', height: mobile ? '100%' : 'auto' }}>Cargando...</div>
+
+  // ── MODO CELULAR ──
+  if (mobile) {
+    const corralesActivos = corrales.filter(c => c.rol !== 'deshabilitado')
+    const colorsM = { cuarentena: CM.amber, acumulacion: CM.blue, enfermeria: CM.red, clasificado: CM.purple, libre: CM.muted }
+
+    if (vistaM === 'detalle' && sel) {
+      const pct = Math.round((sel.animales || 0) / (sel.capacidad || 100) * 100)
+      const color = colorsM[sel.rol] || CM.green
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <MobileTopbar titulo={`Corral ${sel.numero}`} sub={sel.rol === 'clasificado' && sel.sub ? `Clasificado · Rango ${sel.sub}` : sel.rol} onBack={() => { setVistaM('lista'); setSeleccionado(null) }} />
+          <MobileScroll>
+            <div style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: CM.muted, fontSize: 13 }}>Animales</span>
+                <span style={{ fontFamily: CM.mono, fontWeight: 700, fontSize: 18, color }}>{sel.animales || 0} / {sel.capacidad || 100}</span>
+              </div>
+              <div style={{ height: 6, background: CM.surface2, borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: pct > 90 ? CM.red : color, borderRadius: 3 }} />
+              </div>
+            </div>
+            {(sel.animales || 0) > 0 && (
+              <button onClick={() => setVistaM('mover')}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.blue}`, borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 600, color: CM.blue, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+                Mover animales a otro corral
+              </button>
+            )}
+            {esDueno && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, color: CM.muted, marginBottom: 8, textTransform: 'uppercase' }}>Cambiar rol</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {['libre','cuarentena','acumulacion','clasificado','enfermeria','transitorio','deshabilitado'].filter(r => r !== sel.rol).map(r => (
+                    <button key={r} onClick={() => {
+                      if (r === 'clasificado') {
+                        const rango = prompt('Ingresá el rango (A, B, C, D, E, F o G):')
+                        if (!rango || !['A','B','C','D','E','F','G'].includes(rango.toUpperCase())) { alert('Rango inválido'); return }
+                        cambiarRolMobile(sel.id, 'clasificado', rango.toUpperCase())
+                      } else {
+                        cambiarRolMobile(sel.id, r)
+                      }
+                    }}
+                      style={{ background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '8px', fontSize: 12, color: CM.text, cursor: 'pointer', fontFamily: CM.sans }}>
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </MobileScroll>
+        </div>
+      )
+    }
+
+    if (vistaM === 'mover' && sel) {
+      const destinosDisponibles = corrales.filter(c => c.id !== sel.id && c.rol !== 'deshabilitado')
+      const corralDestino = corrales.find(c => String(c.id) === String(movForm.destino_id))
+      const destinoEsLibre = corralDestino?.rol === 'libre'
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <MobileTopbar titulo="Mover animales" sub={`Desde Corral ${sel.numero} - ${sel.animales || 0} disp.`} onBack={() => setVistaM('detalle')} />
+          <MobileScroll>
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral destino</div>
+              <select value={movForm.destino_id} onChange={e => { setMovForm({...movForm, destino_id: e.target.value}); setRolDestinoM(''); setSubDestinoM('') }}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                <option value="">Selecciona destino</option>
+                {destinosDisponibles.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol === 'libre' ? 'LIBRE' : c.rol === 'clasificado' && c.sub ? `Rango ${c.sub}` : c.rol} - {c.animales || 0} anim.</option>)}
+              </select>
+            </div>
+            {destinoEsLibre && (
+              <div style={{ background: '#0F2040', border: `1px solid ${CM.blue}`, borderRadius: 10, padding: '1rem', marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: CM.blue, marginBottom: 8 }}>El corral destino está libre — ¿qué rol le asignás?</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: rolDestinoM === 'clasificado' ? 8 : 0 }}>
+                  {['cuarentena','acumulacion','clasificado','enfermeria'].map(r => (
+                    <button key={r} onClick={() => { setRolDestinoM(r); if (r !== 'clasificado') setSubDestinoM('') }}
+                      style={{ padding: '9px', background: rolDestinoM === r ? CM.blue : 'transparent', border: `1px solid ${rolDestinoM === r ? CM.blue : CM.border}`, borderRadius: 8, fontSize: 12, fontWeight: 600, color: rolDestinoM === r ? '#0A1A0A' : CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                {rolDestinoM === 'clasificado' && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: CM.blue, textTransform: 'uppercase', marginBottom: 6 }}>Rango</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                      {['A','B','C','D','E','F','G'].map(r => (
+                        <button key={r} onClick={() => setSubDestinoM(r)}
+                          style={{ padding: '8px', background: subDestinoM === r ? CM.green : 'transparent', border: `1px solid ${subDestinoM === r ? CM.green : CM.border}`, borderRadius: 8, fontSize: 13, fontWeight: 700, color: subDestinoM === r ? '#0A1A0A' : CM.muted, cursor: 'pointer', fontFamily: CM.mono }}>
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad (max {sel.animales || 0})</div>
+              <input type="number" inputMode="numeric" placeholder="0" value={movForm.cantidad}
+                onChange={e => setMovForm({...movForm, cantidad: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Motivo (opcional)</div>
+              <input type="text" placeholder="ej. clasificacion, enfermedad..." value={movForm.motivo}
+                onChange={e => setMovForm({...movForm, motivo: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+            </div>
+            <button onClick={moverAnimalesMobile} disabled={guardando}
+              style={{ width: '100%', background: CM.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+              {guardando ? 'Moviendo...' : 'Confirmar movimiento'}
+            </button>
+            <button onClick={() => setVistaM('detalle')}
+              style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+              Cancelar
+            </button>
+          </MobileScroll>
+        </div>
+      )
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <MobileTopbar titulo="Corrales" sub={`${corralesActivos.filter(c=>c.rol!=='libre').length} activos · ${corralesActivos.filter(c=>c.rol==='libre').length} libres`} onBack={() => nav && nav('home')} />
+        <MobileScroll>
+          {corralesActivos.length === 0 && <div style={{ textAlign: 'center', padding: '2rem', color: CM.muted, fontSize: 13 }}>No hay corrales activos.</div>}
+          {corralesActivos.map(c => {
+            const pct = Math.round((c.animales || 0) / (c.capacidad || 100) * 100)
+            const color = colorsM[c.rol] || CM.green
+            return (
+              <div key={c.id} onClick={() => { setSeleccionado(c); setVistaM('detalle') }}
+                style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem', cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: CM.text }}>Corral {c.numero}</div>
+                    <div style={{ fontSize: 12, color: CM.muted }}>{c.rol === 'clasificado' && c.sub ? `Clasificado · Rango ${c.sub}` : c.rol}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: CM.mono, color }}>{c.animales || 0}</div>
+                    <div style={{ fontSize: 11, color: CM.muted }}>de {c.capacidad || 100}</div>
+                  </div>
+                </div>
+                <div style={{ height: 4, background: CM.surface2, borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: pct > 90 ? CM.red : color, borderRadius: 2 }} />
+                </div>
+              </div>
+            )
+          })}
+        </MobileScroll>
+      </div>
+    )
+  }
+  // ── FIN MODO CELULAR — de acá para abajo sigue el modo PC, sin cambios ──
 
   return (
     <div>
