@@ -2,6 +2,7 @@ import React from 'react'
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { registrarVenta } from '../shared/ventasLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
@@ -365,71 +366,30 @@ export default function Ventas({ usuario }) {
     setGuardando(true)
 
     const desbPct = parseFloat(form.desbaste) || 8
-    const totalKgBruto = corralesValidos.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0)
-    const totalKgNeto = Math.round(totalKgBruto * (1 - desbPct / 100))
-    const precio = parseFloat(form.precio_kg) || 0
-    const montoTotal = precio ? Math.round(totalKgNeto * precio * 100) / 100 : null
-    const montoFacturado = form.monto_facturado ? parseFloat(form.monto_facturado) : montoTotal
-    const montoNegro = montoTotal && montoFacturado ? Math.max(0, montoTotal - montoFacturado) : 0
-    const ivaPct = parseFloat(form.iva_pct || 10.5)
-    const ivaMonto = montoFacturado ? Math.round(montoFacturado * ivaPct / 100) : 0
-    const plazo = parseInt(form.plazo_dias || 0)
-    const fechaVto = plazo > 0 ? new Date(Date.now() + plazo * 86400000).toISOString().split('T')[0] : null
     const compradorFinal = form.comprador === 'Otro' ? (form.comprador_otro || null) : (form.comprador || null)
-    const grupoId = corralesValidos.length > 1 ? crypto.randomUUID() : null
 
-    // Auto-guardar comprador nuevo como contacto
-    if (compradorFinal && !compradores.includes(compradorFinal)) {
-      await supabase.from('contactos').insert({ nombre: compradorFinal, tipo: 'comprador_hacienda', activo: true })
-    }
+    const { error, totalKgNeto, totalKgBruto, montoTotal } = await registrarVenta(supabase, {
+      corralesVenta: corralesValidos,
+      desbastePct: desbPct,
+      precioKg: form.precio_kg,
+      montoFacturado: form.monto_facturado,
+      ivaPct: parseFloat(form.iva_pct || 10.5),
+      plazoDias: parseInt(form.plazo_dias || 0),
+      comprador: compradorFinal,
+      observaciones: form.observaciones,
+      usuario,
+    })
+    if (error) { alert('Error al guardar la venta: ' + error.message); setGuardando(false); return }
 
-    let hasError = false
-    for (const cv of corralesValidos) {
-      const kgNetoCv = Math.round(parseFloat(cv.kg_vivo) * (1 - desbPct / 100) * 10) / 10
-      const montoTotalCv = precio ? Math.round(kgNetoCv * precio * 100) / 100 : null
-      const montoFactCv = montoFacturado && montoTotal ? Math.round(montoFacturado * kgNetoCv / totalKgNeto) : montoTotalCv
-      const montoNegroCv = montoTotalCv && montoFactCv ? Math.max(0, montoTotalCv - montoFactCv) : 0
-      const { error } = await supabase.from('ventas').insert({
-        corral_id: parseInt(cv.corral_id),
-        cantidad: parseInt(cv.cantidad),
-        kg_vivo_total: parseFloat(cv.kg_vivo),
-        desbaste_pct: desbPct,
-        kg_neto: kgNetoCv,
-        precio_kg: precio || null,
-        total: montoTotalCv,
-        monto_facturado: montoFactCv,
-        monto_negro: montoNegroCv,
-        iva_pct: ivaPct,
-        iva_monto: montoFactCv ? Math.round(montoFactCv * ivaPct / 100) : null,
-        plazo_dias: plazo || null,
-        fecha_vencimiento_cobro: fechaVto,
-        estado_comercial: precio ? 'precio_cargado' : 'pendiente',
-        comprador: compradorFinal,
-        observaciones: form.observaciones || null,
-        registrado_por: usuario?.id,
-        grupo_venta_id: grupoId,
-      })
-      if (error) { hasError = true; continue }
-      const { data: corral } = await supabase.from('corrales').select('animales').eq('id', cv.corral_id).single()
-      const nuevosAnimales = Math.max(0, (corral?.animales || 0) - parseInt(cv.cantidad))
-      const updateCorral = { animales: nuevosAnimales }
-      if (nuevosAnimales === 0) { updateCorral.rol = 'libre'; updateCorral.sub = null }
-      await supabase.from('corrales').update(updateCorral).eq('id', parseInt(cv.corral_id))
-    }
-
-    if (!hasError) {
-      const primCorral = corrales.find(c => String(c.id) === String(corralesValidos[0].corral_id))
-      setVentaConfirmada({
-        ...form, kgNeto: totalKgNeto, totalVenta: montoTotal,
-        kgDescuento: Math.round(totalKgBruto * desbPct / 100),
-        desbastePct: desbPct,
-        corralNumero: corralesValidos.length > 1 ? `${corralesValidos.length} corrales` : primCorral?.numero,
-        cantidad: corralesValidos.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
-      })
-      await cargar()
-    } else {
-      alert('Error al guardar alguna venta.')
-    }
+    const primCorral = corrales.find(c => String(c.id) === String(corralesValidos[0].corral_id))
+    setVentaConfirmada({
+      ...form, kgNeto: totalKgNeto, totalVenta: montoTotal,
+      kgDescuento: Math.round(totalKgBruto * desbPct / 100),
+      desbastePct: desbPct,
+      corralNumero: corralesValidos.length > 1 ? `${corralesValidos.length} corrales` : primCorral?.numero,
+      cantidad: corralesValidos.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
+    })
+    await cargar()
     setGuardando(false)
   }
 

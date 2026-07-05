@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { confirmarPesadaClasificacion, eliminarPesadaClasificacion } from '../shared/pesadaLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
@@ -120,129 +121,25 @@ export default function Pesada({ usuario }) {
     if (clasificables.length === 0) { alert('No hay animales pesados.'); return }
     setGuardando(true)
 
-    // 1. Registrar pesada
-    const { data: pesada, error } = await supabase.from('pesadas').insert({
-      corral_id: corralAcum?.id || null,
-      tipo: 'clasificacion',
-      registrado_por: usuario?.id,
-      fecha: fechaPesada,
-    }).select().single()
-    if (error || !pesada) { alert('Error al guardar la pesada.'); setGuardando(false); return }
-
-    // 2. Insertar pesada_animales
-    const animalesInsert = []
+    // Acá cada rango tiene la lista de pesos individuales cargados; la función
+    // compartida espera { cantidad, pesoPromedio } — se calcula el promedio acá.
+    const conteoRangosParaGuardar = {}
     Object.entries(conteoRangos).forEach(([rango, arr]) => {
-      if (arr.length > 0) animalesInsert.push({
-        pesada_id: pesada.id, rango, cantidad: arr.length,
-        peso_promedio: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length),
-      })
-    })
-    if (menores.length > 0) animalesInsert.push({
-      pesada_id: pesada.id, rango: 'menores', cantidad: menores.length,
-      peso_promedio: Math.round(menores.reduce((a, b) => a + b, 0) / menores.length),
-    })
-    if (animalesInsert.length > 0) await supabase.from('pesada_animales').insert(animalesInsert)
-
-    // 3. Snapshot ANTES de modificar nada — mapa rangoActual → corral completo
-    // Normalizar sub a solo la letra (A, B, C...)
-    const mapaRangoCorral = {}
-    corralesClasificados.forEach(c => {
-      const letra = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0)
-      if (letra) mapaRangoCorral[letra] = { ...c, sub: letra }
+      if (arr.length > 0) conteoRangosParaGuardar[rango] = { cantidad: arr.length, pesoPromedio: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) }
     })
 
-    // 4. Registrar movimientos para poder revertir
-    const movimientos = []
-
-    // Origen: acumulación pierde animales clasificables
-    if (corralAcum) {
-      movimientos.push({
-        pesada_id: pesada.id,
-        corral_id: corralAcum.id,
-        tipo: 'origen_acum',
-        animales: clasificables.length,
-        rango_antes: null,
-        rango_despues: null,
-      })
-    }
-
-    // Corrales existentes suben de rango — guardamos solo la letra
-    corralesClasificados.forEach(c => {
-      const letraAntes = (c.sub || 'A').length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
-      movimientos.push({
-        pesada_id: pesada.id,
-        corral_id: c.id,
-        tipo: 'subida_rango',
-        animales: c.animales || 0,
-        rango_antes: letraAntes,
-        rango_despues: subirRango(letraAntes, 2),
-      })
+    const { error } = await confirmarPesadaClasificacion(supabase, {
+      fecha: fechaPesada,
+      corralAcum,
+      corralesClasificados,
+      conteoRangos: conteoRangosParaGuardar,
+      menoresCantidad: menores.length,
+      menoresPesoPromedio: menores.length > 0 ? Math.round(menores.reduce((a, b) => a + b, 0) / menores.length) : null,
+      corralLibre1Id: parseInt(corralLibre1),
+      corralLibre2Id: parseInt(corralLibre2),
+      usuario,
     })
-
-    // Nuevos corrales A y B
-    const cantA = conteoRangos['A'].length
-    const cantB = conteoRangos['B'].length
-    if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre1), tipo: 'nuevo_clasificado', animales: cantA, rango_antes: 'libre', rango_despues: 'A' })
-    if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre2), tipo: 'nuevo_clasificado', animales: cantB, rango_antes: 'libre', rango_despues: 'B' })
-
-    // Animales C-G que se suman a corrales existentes
-    const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
-    Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
-      const cant = conteoRangos[letraNueva].length
-      if (cant === 0) return
-      const corralDest = mapaRangoCorral[letraAnterior]
-      if (corralDest) movimientos.push({
-        pesada_id: pesada.id,
-        corral_id: corralDest.id,
-        tipo: 'suma_existente',
-        animales: cant,
-        rango_antes: letraAnterior,
-        rango_despues: letraNueva,
-      })
-      else console.warn(`No se encontró corral para rango anterior ${letraAnterior} (nuevo ${letraNueva}). Mapa:`, mapaRangoCorral)
-    })
-
-    if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
-
-    // 5. Subir 2 rangos a corrales clasificados
-    for (const c of corralesClasificados) {
-      const letraActual = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
-      await supabase.from('corrales').update({ sub: subirRango(letraActual, 2) }).eq('id', c.id)
-    }
-
-    // 6. Asignar corrales libres para A y B
-    if (cantA > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'A', animales: cantA }).eq('id', parseInt(corralLibre1))
-    if (cantB > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB }).eq('id', parseInt(corralLibre2))
-
-    // 7. Sumar animales C-G a corrales que ERAN A-E (usando snapshot previo)
-    // Lee siempre fresco desde la BD para evitar valores stale
-    for (const [letraNueva, letraAnterior] of Object.entries(mapeoDestino)) {
-      const cant = conteoRangos[letraNueva].length
-      if (cant === 0) continue
-      const corralDest = mapaRangoCorral[letraAnterior]
-      if (!corralDest) continue
-      const { data: corralFresh } = await supabase.from('corrales').select('animales').eq('id', corralDest.id).single()
-      await supabase.from('corrales').update({ animales: (corralFresh?.animales || 0) + cant }).eq('id', corralDest.id)
-    }
-
-    // 8. Descontar animales de acumulación
-    if (corralAcum) {
-      const { data: acumActual } = await supabase.from('corrales').select('animales').eq('id', corralAcum.id).single()
-      await supabase.from('corrales').update({
-        animales: Math.max(0, (acumActual?.animales || 0) - clasificables.length),
-      }).eq('id', corralAcum.id)
-    }
-
-    // 9. Actualizar próxima pesada +40 días
-    const nuevaProxima = new Date()
-    nuevaProxima.setDate(nuevaProxima.getDate() + 40)
-    await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
-
-    // 9b. Registrar fecha en que rango C pasa a terminación (+20 días)
-    const fechaTermC = new Date()
-    fechaTermC.setDate(fechaTermC.getDate() + 20)
-    const fechaTermCStr = fechaTermC.toISOString().split('T')[0]
-    await supabase.from('configuracion').upsert({ clave: 'fecha_term_c', valor: fechaTermCStr }, { onConflict: 'clave' })
+    if (error) { alert('Error al guardar la pesada: ' + error.message); setGuardando(false); return }
 
     setPesadaConfirmada({
       clasificables: clasificables.length,
@@ -259,45 +156,8 @@ export default function Pesada({ usuario }) {
 
   async function eliminarPesada(pesadaId) {
     if (!confirm('¿Eliminar esta pesada y revertir todos los movimientos? Esta acción no se puede deshacer.')) return
-
-    // 1. Cargar movimientos registrados
-    const { data: movs } = await supabase.from('pesada_movimientos').select('*').eq('pesada_id', pesadaId)
-    if (!movs || movs.length === 0) {
-      // Si no hay movimientos registrados, solo borrar el registro
-      await supabase.from('pesadas').delete().eq('id', pesadaId)
-      await cargar()
-      return
-    }
-
-    // 2. Revertir en orden inverso
-    // a) Revertir sumas en corrales existentes (suma_existente)
-    const sumas = movs.filter(m => m.tipo === 'suma_existente')
-    for (const m of sumas) {
-      const { data: c } = await supabase.from('corrales').select('animales').eq('id', m.corral_id).single()
-      await supabase.from('corrales').update({ animales: Math.max(0, (c?.animales || 0) - m.animales) }).eq('id', m.corral_id)
-    }
-
-    // b) Revertir corrales nuevos A y B → vuelven a libre
-    const nuevos = movs.filter(m => m.tipo === 'nuevo_clasificado')
-    for (const m of nuevos) {
-      await supabase.from('corrales').update({ rol: 'libre', sub: null, animales: 0 }).eq('id', m.corral_id)
-    }
-
-    // c) Bajar 2 rangos a corrales que subieron
-    const subidas = movs.filter(m => m.tipo === 'subida_rango')
-    for (const m of subidas) {
-      await supabase.from('corrales').update({ sub: m.rango_antes }).eq('id', m.corral_id)
-    }
-
-    // d) Devolver animales a acumulación
-    const origen = movs.find(m => m.tipo === 'origen_acum')
-    if (origen) {
-      const { data: acum } = await supabase.from('corrales').select('animales').eq('id', origen.corral_id).single()
-      await supabase.from('corrales').update({ animales: (acum?.animales || 0) + origen.animales }).eq('id', origen.corral_id)
-    }
-
-    // e) Borrar la pesada (cascade borra pesada_animales y pesada_movimientos)
-    await supabase.from('pesadas').delete().eq('id', pesadaId)
+    const { error } = await eliminarPesadaClasificacion(supabase, pesadaId)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
     alert('Pesada eliminada y movimientos revertidos.')
   }

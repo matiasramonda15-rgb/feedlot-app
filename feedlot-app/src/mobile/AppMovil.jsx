@@ -5,6 +5,8 @@ import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockS
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
 import { moverAnimalesEntreCorrales } from '../shared/corralesLogic'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
+import { registrarVenta } from '../shared/ventasLogic'
+import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
   border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F',
@@ -1638,82 +1640,23 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
     if (totalClasif === 0) { alert('Ingresá al menos un animal clasificado'); return }
     setGuardando(true)
 
-    // 1. Registrar pesada
-    const { data: pesada, error } = await supabase.from('pesadas').insert({
-      corral_id: corralAcum?.id || null,
-      tipo: 'clasificacion',
-      registrado_por: usuario?.id,
+    const conteoRangosParaGuardar = {}
+    ORDEN_RANGOS.forEach(letra => {
+      const cant = parseInt(form[letra]) || 0
+      if (cant > 0) conteoRangosParaGuardar[letra] = { cantidad: cant }
+    })
+
+    const { error } = await confirmarPesadaClasificacion(supabase, {
       fecha: fechaPesada,
-    }).select().single()
-
-    if (error || !pesada) { alert('Error al guardar.'); setGuardando(false); return }
-
-    // 2. Insertar pesada_animales
-    const animalesInsert = []
-    ORDEN_RANGOS.forEach(rango => {
-      const cant = parseInt(form[rango]) || 0
-      if (cant > 0) animalesInsert.push({ pesada_id: pesada.id, rango, cantidad: cant })
+      corralAcum,
+      corralesClasificados,
+      conteoRangos: conteoRangosParaGuardar,
+      menoresCantidad: menores,
+      corralLibre1Id: parseInt(corralLibre1),
+      corralLibre2Id: parseInt(corralLibre2),
+      usuario,
     })
-    if (menores > 0) animalesInsert.push({ pesada_id: pesada.id, rango: 'menores', cantidad: menores })
-    if (animalesInsert.length > 0) await supabase.from('pesada_animales').insert(animalesInsert)
-
-    // 3. Snapshot rangos actuales ANTES de modificar
-    const mapaRangoCorral = {}
-    corralesClasificados.forEach(c => {
-      const letra = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0)
-      if (letra) mapaRangoCorral[letra] = { ...c, sub: letra }
-    })
-
-    // 4. Registrar movimientos
-    const movimientos = []
-    if (corralAcum) movimientos.push({ pesada_id: pesada.id, corral_id: corralAcum.id, tipo: 'origen_acum', animales: totalClasif, rango_antes: null, rango_despues: null })
-    corralesClasificados.forEach(c => {
-      const letraAntes = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
-      movimientos.push({ pesada_id: pesada.id, corral_id: c.id, tipo: 'subida_rango', animales: c.animales || 0, rango_antes: letraAntes, rango_despues: subirRango(letraAntes, 2) })
-    })
-    const cantA = parseInt(form.A) || 0
-    const cantB = parseInt(form.B) || 0
-    if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre1), tipo: 'nuevo_clasificado', animales: cantA, rango_antes: 'libre', rango_despues: 'A' })
-    if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: parseInt(corralLibre2), tipo: 'nuevo_clasificado', animales: cantB, rango_antes: 'libre', rango_despues: 'B' })
-    const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
-    Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
-      const cant = parseInt(form[letraNueva]) || 0
-      if (cant === 0) return
-      const corralDest = mapaRangoCorral[letraAnterior]
-      if (corralDest) movimientos.push({ pesada_id: pesada.id, corral_id: corralDest.id, tipo: 'suma_existente', animales: cant, rango_antes: letraAnterior, rango_despues: letraNueva })
-    })
-    if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
-
-    // 5. Subir 2 rangos a corrales clasificados
-    for (const c of corralesClasificados) {
-      const letraActual = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
-      await supabase.from('corrales').update({ sub: subirRango(letraActual, 2) }).eq('id', c.id)
-    }
-
-    // 6. Asignar corrales libres para A y B
-    if (cantA > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'A', animales: cantA }).eq('id', parseInt(corralLibre1))
-    if (cantB > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB }).eq('id', parseInt(corralLibre2))
-
-    // 7. Sumar C-G a corrales existentes
-    for (const [letraNueva, letraAnterior] of Object.entries(mapeoDestino)) {
-      const cant = parseInt(form[letraNueva]) || 0
-      if (cant === 0) continue
-      const corralDest = mapaRangoCorral[letraAnterior]
-      if (!corralDest) continue
-      const { data: corralFresh } = await supabase.from('corrales').select('animales').eq('id', corralDest.id).single()
-      await supabase.from('corrales').update({ animales: (corralFresh?.animales || 0) + cant }).eq('id', corralDest.id)
-    }
-
-    // 8. Descontar de acumulación
-    if (corralAcum) {
-      const { data: acumActual } = await supabase.from('corrales').select('animales').eq('id', corralAcum.id).single()
-      await supabase.from('corrales').update({ animales: Math.max(0, (acumActual?.animales || 0) - totalClasif) }).eq('id', corralAcum.id)
-    }
-
-    // 9. Actualizar próxima pesada +40 días
-    const nuevaProxima = new Date()
-    nuevaProxima.setDate(nuevaProxima.getDate() + 40)
-    await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
 
     onDone()
     alert(`Pesada confirmada. ${totalPesados} animales procesados.`)
@@ -1896,35 +1839,15 @@ function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
     if (validos.length === 0) { alert('Completá al menos un corral con cantidad y kg'); return }
     setGuardando(true)
 
-    const compradorFinal = comprador === 'Otro' ? (compradorNuevo || null) : (comprador || null)
-    const grupoId = validos.length > 1 ? crypto.randomUUID() : null
+    const compradorFinal = comprador === 'Otro' ? compradorNuevo : comprador
+    const { error, cantidadVentas } = await registrarVenta(supabase, {
+      corralesVenta: validos, desbastePct: 8,
+      comprador: compradorFinal, observaciones, usuario,
+    })
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
 
-    for (const cv of validos) {
-      const kgVivoCv = parseFloat(cv.kg_vivo)
-      const kgNetoCv = Math.round(kgVivoCv * 0.92 * 100) / 100
-      const { error } = await supabase.from('ventas').insert({
-        corral_id: parseInt(cv.corral_id),
-        cantidad: parseInt(cv.cantidad),
-        kg_vivo_total: kgVivoCv,
-        desbaste_pct: 8,
-        kg_neto: kgNetoCv,
-        precio_kg: null,
-        total: null,
-        comprador: compradorFinal,
-        observaciones: observaciones || null,
-        registrado_por: usuario?.id,
-        grupo_venta_id: grupoId,
-      })
-      if (!error) {
-        const { data: corral } = await supabase.from('corrales').select('animales').eq('id', cv.corral_id).single()
-        const nuevosAnimales = Math.max(0, (corral?.animales || 0) - parseInt(cv.cantidad))
-        const updateCorral = { animales: nuevosAnimales }
-        if (nuevosAnimales === 0) updateCorral.rol = 'libre'
-        await supabase.from('corrales').update(updateCorral).eq('id', parseInt(cv.corral_id))
-      }
-    }
     onDone()
-    alert(`${validos.length > 1 ? `${validos.length} ventas registradas` : 'Venta registrada'} correctamente.`)
+    alert(`${cantidadVentas > 1 ? `${cantidadVentas} ventas registradas` : 'Venta registrada'} correctamente.`)
     nav('home')
     setGuardando(false)
   }
