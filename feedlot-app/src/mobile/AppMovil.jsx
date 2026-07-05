@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
+import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
   border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F',
@@ -607,29 +608,10 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
     setGuardandoRollo(true)
     const ahora = new Date()
     const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
-    const corralesRollo = corralesAlim.filter(c => (kgsRolloExtra[c.id] || 0) > 0)
-    const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
-    let kgRolloTotal = 0
-    for (const c of corralesRollo) {
-      const kg = parseInt(kgsRolloExtra[c.id]) || 0
-      if (!kg) continue
-      kgRolloTotal += kg
-      // Actualizar o insertar ración de rollo extra para este corral
-      const { data: racionExist } = await supabase.from('raciones_app').select('id, kg_total').eq('fecha', hoy).eq('corral_id', c.id).single()
-      if (racionExist) {
-        await supabase.from('raciones_app').update({ kg_total: (racionExist.kg_total || 0) + kg }).eq('id', racionExist.id)
-      } else {
-        await supabase.from('raciones_app').insert({ corral_id: c.id, fecha: hoy, kg_total: kg, mezclador: 'Acostumbramiento', solo_rollo: true, tipo_dieta: dieta })
-      }
-    }
-    // Descontar rollo del stock
-    if (kgRolloTotal > 0 && stockItemsFresh) {
-      const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
-      if (rolloItem) {
-        const nuevaCant = Math.max(0, (rolloItem.cantidad_kg || 0) - kgRolloTotal)
-        await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
-      }
-    }
+    const corralesConKg = corralesAlim
+      .filter(c => (kgsRolloExtra[c.id] || 0) > 0)
+      .map(c => ({ corralId: c.id, kg: parseInt(kgsRolloExtra[c.id]) || 0 }))
+    const kgRolloTotal = await agregarRolloExtra(supabase, { fecha: hoy, corralesConKg, dieta })
     setKgsRolloExtra({})
     setMostrarAgregarRollo(false)
     setGuardandoRollo(false)
@@ -656,93 +638,23 @@ function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer
   async function ejecutarConfirmar(hoy) {
     setMostrarConfirmReemplazo(false)
     setGuardando(true)
-      // Eliminar raciones de hoy y recomponer stock
-      const { data: racionesHoy } = await supabase.from('raciones_app').select('corral_id, kg_total, mezclador').eq('fecha', hoy)
-      // Recomponer stock — sumar lo que se había descontado
-      const { data: stockItems } = await supabase.from('stock_insumos').select('*')
-      if (stockItems && racionesHoy) {
-        const stockFreshRecomp = {}
-        stockItems.forEach(s => { stockFreshRecomp[s.id] = s.cantidad_kg || 0 })
-        const descPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
-        racionesHoy.forEach(r => {
-          const etapa = r.mezclador === 'Acostumbramiento' ? 'acostumbramiento' : r.mezclador === 'Recria' ? 'recria' : 'terminacion'
-          descPorEtapa[etapa] = (descPorEtapa[etapa] || 0) + (r.kg_total || 0)
-        })
-        for (const etapa of Object.keys(descPorEtapa)) {
-          const totalKg = descPorEtapa[etapa]
-          if (totalKg === 0) continue
-          const formula = (FRML?.seco?.[etapa] || FRML?.[etapa] || [])
-          for (const ing of formula) {
-            const kgIng = Math.round(ing.kg * totalKg / 100)
-            if (kgIng === 0) continue
-            const stockItem = stockItems.find(s => s.insumo === ing.n) || stockItems.find(s => s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()) || ing.n.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0].toLowerCase()))
-            if (stockItem) {
-              stockFreshRecomp[stockItem.id] = (stockFreshRecomp[stockItem.id] || 0) + kgIng
-              await supabase.from('stock_insumos').update({ cantidad_kg: stockFreshRecomp[stockItem.id] }).eq('id', stockItem.id)
-            }
-          }
-        }
-      }
-      // Eliminar raciones de hoy
-      await supabase.from('raciones_app').delete().eq('fecha', hoy)
-    const registros = corralesAlim.map(c => {
-      const etapa = getEtapa(c)
-      return {
-        corral_id: c.id,
-        fecha: hoy,
-        kg_total: kgs[c.id] || 0,
-        mezclador: etapa === 'acostumbramiento' ? 'Acostumbramiento' : etapa === 'recria' ? 'Recria' : 'Terminacion',
-        tipo_dieta: dieta,
-      }
-    })
-    for (const reg of registros) {
-      if (!reg.corral_id) continue
-      await supabase.from('raciones_app').insert(reg)
+
+    const formulasPorEtapa = {
+      acostumbramiento: FRML?.acostumbramiento || [],
+      recria: FRML?.recria || [],
+      terminacion: FRML?.terminacion || [],
     }
+    const corralesConEtapaYKg = corralesAlim.map(c => ({
+      corralId: c.id, etapa: getEtapa(c), kg: kgs[c.id] || 0,
+    }))
 
-    // Descontar del stock — separar corrales con solo rollo de los normales
-    const descuentoPorEtapa = { acostumbramiento: 0, recria: 0, terminacion: 0 }
-    let kgSoloRollo = 0
-    corralesAlim.forEach(c => {
-      const etapa = getEtapa(c)
-      const kg = kgs[c.id] || 0
-      if (false) {
-        kgSoloRollo += kg
-      } else {
-        descuentoPorEtapa[etapa] = (descuentoPorEtapa[etapa] || 0) + kg
-      }
+    await confirmarRacionesDia(supabase, {
+      fecha: hoy,
+      corralesConEtapaYKg,
+      dieta,
+      formulasPorEtapa,
+      reemplazarExistente: true, // seguro en los dos casos: si no había nada cargado hoy, simplemente no revierte ni borra nada
     })
-
-    const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
-    if (stockItemsFresh) {
-      // Recargar stock fresco para evitar valores desactualizados
-      const stockFresh = {}
-      stockItemsFresh.forEach(s => { stockFresh[s.id] = s.cantidad_kg || 0 })
-
-      for (const etapa of Object.keys(descuentoPorEtapa)) {
-        const totalKgEtapa = descuentoPorEtapa[etapa]
-        if (totalKgEtapa === 0) continue
-        // FRML puede ser { seco: { acostumbramiento: [...] } } o { acostumbramiento: [...] }
-        const formula = (FRML?.seco?.[etapa] || FRML?.[etapa] || [])
-        for (const ing of formula) {
-          const kgIng = Math.round(ing.kg * totalKgEtapa / 100)
-          if (kgIng === 0) continue
-          const stockItem = stockItemsFresh.find(s => s.insumo === ing.n) ||
-            stockItemsFresh.find(s =>
-              s.insumo.toLowerCase().includes(ing.n.toLowerCase().split(' ')[0].toLowerCase()) ||
-              ing.n.toLowerCase().includes(s.insumo.toLowerCase().split(' ')[0].toLowerCase())
-            )
-          if (!stockItem) continue // skip si no matchea (ej. Agua)
-          const nuevaCantidad = Math.max(0, stockFresh[stockItem.id] - kgIng)
-          stockFresh[stockItem.id] = nuevaCantidad
-          await supabase.from('stock_insumos').update({
-            cantidad_kg: nuevaCantidad,
-            actualizado_en: new Date().toISOString()
-          }).eq('id', stockItem.id)
-        }
-      }
-
-    }
 
     onDone()
     alert(`Raciones confirmadas. ${total.toLocaleString('es-AR')} kg totales.`)
@@ -1752,39 +1664,6 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
   const totalClasif = ORDEN_RANGOS.reduce((s, k) => s + (parseInt(form[k]) || 0), 0)
   const menores = parseInt(form.menores) || 0
   const totalPesados = totalClasif + menores
-
-  async function agregarRolloHoy() {
-    setGuardandoRollo(true)
-    const ahora = new Date()
-    const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
-    const corralesRollo = corralesAlim.filter(c => (kgsRolloExtra[c.id] || 0) > 0)
-    const { data: stockItemsFresh } = await supabase.from('stock_insumos').select('*')
-    let kgRolloTotal = 0
-    for (const c of corralesRollo) {
-      const kg = parseInt(kgsRolloExtra[c.id]) || 0
-      if (!kg) continue
-      kgRolloTotal += kg
-      // Actualizar o insertar ración de rollo extra para este corral
-      const { data: racionExist } = await supabase.from('raciones_app').select('id, kg_total').eq('fecha', hoy).eq('corral_id', c.id).single()
-      if (racionExist) {
-        await supabase.from('raciones_app').update({ kg_total: (racionExist.kg_total || 0) + kg }).eq('id', racionExist.id)
-      } else {
-        await supabase.from('raciones_app').insert({ corral_id: c.id, fecha: hoy, kg_total: kg, mezclador: 'Acostumbramiento', solo_rollo: true, tipo_dieta: dieta })
-      }
-    }
-    // Descontar rollo del stock
-    if (kgRolloTotal > 0 && stockItemsFresh) {
-      const rolloItem = stockItemsFresh.find(s => s.insumo === 'Rollo (heno)') || stockItemsFresh.find(s => s.insumo.toLowerCase().includes('rollo'))
-      if (rolloItem) {
-        const nuevaCant = Math.max(0, (rolloItem.cantidad_kg || 0) - kgRolloTotal)
-        await supabase.from('stock_insumos').update({ cantidad_kg: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', rolloItem.id)
-      }
-    }
-    setKgsRolloExtra({})
-    setMostrarAgregarRollo(false)
-    setGuardandoRollo(false)
-    alert(`Rollo extra registrado: ${kgRolloTotal} kg`)
-  }
 
   async function confirmar() {
     if (!corralLibre1 || !corralLibre2) { alert('Seleccioná dos corrales libres para A y B'); return }
