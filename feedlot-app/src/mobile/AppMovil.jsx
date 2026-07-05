@@ -6,6 +6,7 @@ import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionL
 import { moverAnimalesEntreCorrales } from '../shared/corralesLogic'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
 import { registrarVenta } from '../shared/ventasLogic'
+import { registrarServicioTercero } from '../shared/serviciosLogic'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -2033,26 +2034,12 @@ function ServiciosMovil({ nav, usuario }) {
     var nombreCliente = form.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : (form.cliente === '__nuevo__' ? form.clienteNuevo.trim() : form.cliente)
     if (!nombreCliente || !form.labor || !form.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
     setGuardando(true)
-    if (form.cliente === '__nuevo__' && form.clienteNuevo.trim()) {
-      var existe = contactos.find(c => c.nombre.toLowerCase() === form.clienteNuevo.trim().toLowerCase())
-      if (!existe) await supabase.from('contactos').insert({ nombre: form.clienteNuevo.trim(), activo: true })
-    }
-    var ha = parseFloat(form.hectareas)
-    var { error } = await supabase.from('servicios_terceros').insert({
-      campania: form.campania || null,
-      cliente: nombreCliente,
-      labor: form.labor,
-      cultivo: form.cultivo,
-      tipo_servicio: form.tipo_servicio,
-      campo: form.campo || null,
-      nro_lote: form.nro_lote || null,
-      fecha: form.fecha,
-      hectareas: ha,
-      empleado1: form.empleado1 || null,
-      empleado2: form.empleado2 || null,
-      observaciones: form.observaciones || null,
-      estado: 'pendiente',
-      estado_pago: 'pendiente',
+    var { error } = await registrarServicioTercero(supabase, {
+      campania: form.campania, tipoServicio: form.tipo_servicio,
+      cliente: form.tipo_servicio === 'propio' ? null : nombreCliente,
+      labor: form.labor, cultivo: form.cultivo, campo: form.campo, nroLote: form.nro_lote,
+      fecha: form.fecha, hectareas: form.hectareas,
+      empleado1: form.empleado1, empleado2: form.empleado2, observaciones: form.observaciones,
     })
     setGuardando(false)
     if (error) { alert('Error: ' + error.message); return }

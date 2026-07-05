@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
+import { registrarServicioTercero } from '../shared/serviciosLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -135,28 +136,17 @@ export default function Servicios({ usuario }) {
     if (!form.labor || !form.hectareas) { alert('Completá labor y hectáreas'); return }
     if (form.tipo_servicio === 'tercero' && !form.cliente && !form.clienteNuevo) { alert('Ingresá el cliente'); return }
     setGuardando(true)
-    let clienteNombre = form.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : (form.cliente === '__nuevo__' ? form.clienteNuevo?.trim() : form.cliente)
-    if (form.cliente === '__nuevo__' && form.clienteNuevo?.trim()) {
-      const existe = contactos.find(c => c.nombre.toLowerCase() === form.clienteNuevo.trim().toLowerCase())
-      if (!existe) await supabase.from('contactos').insert({ nombre: form.clienteNuevo.trim(), activo: true })
-    }
-    await supabase.from('servicios_terceros').insert({
-      campania: form.campania,
-      cliente: clienteNombre,
-      labor: form.labor,
-      cultivo: form.cultivo,
-      tipo_servicio: form.tipo_servicio,
-      campo: form.campo || null,
-      nro_lote: form.nro_lote || null,
-      fecha: form.fecha,
-      hectareas: parseFloat(form.hectareas),
-      empleado1: form.empleado1 || null,
-      empleado2: form.empleado2 || null,
-      estado: 'pendiente',
+    const clienteTexto = form.tipo_servicio === 'propio' ? null : (form.cliente === '__nuevo__' ? form.clienteNuevo?.trim() : form.cliente)
+    const { error } = await registrarServicioTercero(supabase, {
+      campania: form.campania, tipoServicio: form.tipo_servicio, cliente: clienteTexto,
+      labor: form.labor, cultivo: form.cultivo, campo: form.campo, nroLote: form.nro_lote,
+      fecha: form.fecha, hectareas: form.hectareas,
+      empleado1: form.empleado1, empleado2: form.empleado2, observaciones: form.observaciones,
     })
+    setGuardando(false)
+    if (error) { alert('Error: ' + error.message); return }
     setShowForm(false)
     setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
-    setGuardando(false)
     await cargar()
   }
 
