@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Btn, Loader } from './UI'
+import { confirmarVacunacionIngreso, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -210,7 +211,7 @@ export default function Sanidad({ usuario }) {
 
   async function cargarProductos() {
     const [{ data }, { data: compras }] = await Promise.all([
-      supabase.from('stock_sanitario').select('*').eq('activo', true).order('producto'),
+      cargarStockSanitario(supabase),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'sanitario').order('fecha', { ascending: false }).limit(50),
     ])
     if (data) setProductos(data.map(p => ({ n: p.producto, tipo: p.tipo, id: p.id, cantidad_ml: p.cantidad_ml, unidad: p.unidad || 'ml', lab: p.laboratorio || '', car: p.carencia_dias || 0, minimo: p.minimo_stock || 0 })))
@@ -223,7 +224,7 @@ export default function Sanidad({ usuario }) {
     const [{ data: al }, { data: c }, { data: l }, { data: enf }, { data: mort }, { data: ev }, { data: rev }, { data: vacIng }] = await Promise.all([
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
       supabase.from('corrales').select('*').not('rol', 'eq', 'libre').not('rol', 'eq', 'deshabilitado').order('numero'),
-      supabase.from('lotes').select('id, codigo, cantidad, fecha_ingreso, peso_prom_ingreso, corral_cuarentena_id').order('created_at', { ascending: false }).limit(10),
+      supabase.from('lotes').select('id, codigo, cantidad, fecha_ingreso, peso_prom_ingreso, corral_cuarentena_id, vacunado_ingreso').order('created_at', { ascending: false }).limit(10),
       supabase.from('animales_enfermeria').select('*, corrales:corral_origen_id(numero), lotes(codigo)').order('creado_en', { ascending: false }),
       supabase.from('mortalidad').select('*, corrales(numero), lotes(codigo)').order('creado_en', { ascending: false }),
       supabase.from('eventos_sanitarios').select('*, corrales(numero), usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(30),
@@ -477,7 +478,7 @@ export default function Sanidad({ usuario }) {
                   // "Ya vacunado" se calcula desde los eventos guardados en la base (no solo de
                   // esta sesión del navegador), para que se vea igual en cualquier PC/celular.
                   const eventosVacunacion = eventosVacunacionIngreso.filter(e => e.lote_id === l.id || (!e.lote_id && e.corral_id === l.corral_cuarentena_id))
-                  const confirmada = vac.confirmada || eventosVacunacion.length > 0
+                  const confirmada = vac.confirmada || yaVacunadoIngreso(l) || eventosVacunacion.length > 0
                   const resumenGuardado = eventosVacunacion.length > 0
                     ? eventosVacunacion.map(e => ({ nombre: e.producto, dosis: e.cantidad_animales ? +(e.cantidad_ml / e.cantidad_animales).toFixed(1) : null, mlTotal: e.cantidad_ml || 0 }))
                     : null
@@ -565,7 +566,7 @@ export default function Sanidad({ usuario }) {
                                     const validas = vacSeleccionadas.filter(vs => vs.prod_id)
                                     if (validas.length === 0) { alert('Seleccioná al menos una vacuna'); return }
                                     setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: true}}))
-                                    const resumen = []
+                                    const vacunasParaGuardar = []
                                     for (const vs of validas) {
                                       const dosis = parseFloat(vs.dosis || 5)
                                       const mlDesc = Math.round(l.cantidad * dosis)
@@ -577,15 +578,13 @@ export default function Sanidad({ usuario }) {
                                           return
                                         }
                                       }
-                                      await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: -mlDesc })
-                                      await supabase.from('eventos_sanitarios').insert({
-                                        tipo: 'vacunacion', corral_id: l.corral_cuarentena_id, lote_id: l.id,
-                                        producto: prod.n, cantidad_ml: mlDesc,
-                                        cantidad_animales: l.cantidad,
-                                        observaciones: `Ingreso lote ${l.codigo} — ${dosis} ml/animal`,
-                                        registrado_por: usuario?.id,
-                                      })
-                                      resumen.push({ nombre: prod.n, dosis, mlTotal: mlDesc })
+                                      vacunasParaGuardar.push({ productoId: prod.id, nombre: prod.n, dosisMlPorAnimal: dosis })
+                                    }
+                                    const { error, resumen } = await confirmarVacunacionIngreso(supabase, { lote: l, vacunas: vacunasParaGuardar, usuario })
+                                    if (error) {
+                                      alert('Error al confirmar vacunación: ' + error.message)
+                                      setVacunacionLote(prev => ({...prev, [l.id]: {...prev[l.id], guardando: false}}))
+                                      return
                                     }
                                     await cargarProductos()
                                     await cargarDatos()

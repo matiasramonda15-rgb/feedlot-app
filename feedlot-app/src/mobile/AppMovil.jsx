@@ -1,6 +1,7 @@
 // AppMovil v2
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
   border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F',
@@ -20,11 +21,11 @@ export default function AppMovil({ usuario, onLogout }) {
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
-      supabase.from('lotes').select('id, codigo, procedencia, fecha_ingreso, corral_cuarentena_id, cantidad').order('created_at', { ascending: false }),
+      supabase.from('lotes').select('id, codigo, procedencia, fecha_ingreso, corral_cuarentena_id, cantidad, vacunado_ingreso').order('created_at', { ascending: false }),
       supabase.from('ventas').select('id, comprador, precio_kg, kg_vivo_total, kg_neto, cantidad, corral_id, creado_en, corrales(numero)').is('precio_kg', null).order('creado_en', { ascending: false }),
       supabase.from('stock_insumos').select('*'),
       supabase.from('movimientos').select('corral_destino_id, fecha').order('fecha', { ascending: false }),
-      supabase.from('stock_sanitario').select('*'),
+      cargarStockSanitario(supabase),
     ])
     const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
     const ayerStr = ayer.toISOString().split('T')[0]
@@ -990,7 +991,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
   }, [lotes])
 
   useEffect(() => {
-    supabase.from('stock_sanitario').select('*').order('producto').then(({ data }) => setStockSanitario(data || []))
+    cargarStockSanitario(supabase).then(({ data }) => setStockSanitario(data || []))
   }, [])
 
   async function confirmarAlerta(id) {
@@ -1036,20 +1037,14 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
     const cantAnimales = parseInt(formEvento.cantidad)
     const dosisMl = parseFloat(formEvento.dosis_ml) || 0
     const mlTotal = dosisMl > 0 ? Math.round(cantAnimales * dosisMl) : null
-    // Descontar del stock sanitario
-    if (mlTotal > 0) {
-      const prod = stockSanitario.find(p => String(p.id) === String(formEvento.prod_id))
-      if (prod) {
-        const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlTotal)
-        await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
-      }
-    }
-    await supabase.from('eventos_sanitarios').insert({
-      tipo: 'tratamiento', corral_id: parseInt(formEvento.corral_id),
-      producto: formEvento.producto, cantidad_animales: cantAnimales,
-      cantidad_ml: mlTotal,
-      observaciones: formEvento.observaciones || null, registrado_por: usuario?.id,
+    const prod = stockSanitario.find(p => String(p.id) === String(formEvento.prod_id))
+    const { error } = await registrarTratamientoSanitario(supabase, {
+      tipo: 'tratamiento', corralId: parseInt(formEvento.corral_id),
+      productoId: prod?.id || null, productoNombre: formEvento.producto,
+      cantidadMl: mlTotal, cantidadAnimales: cantAnimales,
+      observaciones: formEvento.observaciones, usuario,
     })
+    if (error) { alert('Error al registrar el evento: ' + error.message); setGuardando(false); return }
     onDone()
     alert(`Evento registrado.${mlTotal ? ` Se descontaron ${mlTotal.toLocaleString('es-AR')} ml de ${formEvento.producto}.` : ''}`)
     setPantSan('alertas')
@@ -1194,37 +1189,18 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                                       if (!loteC) { alert('No se encontró el lote de ingreso para este corral. Revisá que el corral tenga un lote cargado con corral_cuarentena_id = ' + c.id); return }
                                       if (validas.length === 0) { alert('Seleccioná al menos una vacuna'); return }
                                       setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: true}}))
-                                      try {
-                                        const resumen = []
-                                        for (const vs of validas) {
-                                          const dosis = parseFloat(vs.dosis || 5)
-                                          const mlDesc = Math.round(loteC.cantidad * dosis)
-                                          const prod = vacunas.find(p => String(p.id) === String(vs.prod_id))
-                                          if (!prod) continue
-                                          const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlDesc)
-                                          const { error: e1 } = await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
-                                          if (e1) throw e1
-                                          const { error: e2 } = await supabase.from('eventos_sanitarios').insert({
-                                            tipo: 'vacunacion', corral_id: c.id,
-                                            producto: prod.producto, cantidad_ml: mlDesc,
-                                            cantidad_animales: loteC.cantidad,
-                                            observaciones: `Ingreso ${loteC.codigo} — ${dosis} ml/animal`,
-                                            registrado_por: usuario?.id,
-                                          })
-                                          if (e2) throw e2
-                                          resumen.push({ nombre: prod.producto, dosis, mlTotal: mlDesc })
-                                        }
-                                        // Marcar lote como vacunado en Supabase
-                                        if (loteC) {
-                                          const { error: e3 } = await supabase.from('lotes').update({ vacunado_ingreso: true }).eq('id', loteC.id)
-                                          if (e3) throw e3
-                                        }
-                                        await onDone()
-                                        setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false, confirmada: true, resumen}, [`exp_vac_${c.id}`]: false}))
-                                      } catch(err) {
-                                        alert('Error al confirmar vacunación: ' + (err.message || JSON.stringify(err)))
+                                      const vacunasParaGuardar = validas.map(vs => {
+                                        const prod = vacunas.find(p => String(p.id) === String(vs.prod_id))
+                                        return prod ? { productoId: prod.id, nombre: prod.producto, dosisMlPorAnimal: parseFloat(vs.dosis || 5) } : null
+                                      }).filter(Boolean)
+                                      const { error, resumen } = await confirmarVacunacionIngreso(supabase, { lote: loteC, vacunas: vacunasParaGuardar, usuario })
+                                      if (error) {
+                                        alert('Error al confirmar vacunación: ' + error.message)
                                         setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false}}))
+                                        return
                                       }
+                                      await onDone()
+                                      setVacunacionMovil(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false, confirmada: true, resumen}, [`exp_vac_${c.id}`]: false}))
                                     }}
                                     style={{ flex: 2, background: vacSeleccionadas.some(vs => vs.prod_id) ? C.green : '#1A1A1A', border: 'none', borderRadius: 8, padding: 10, fontSize: 13, fontWeight: 600, color: vacSeleccionadas.some(vs => vs.prod_id) ? '#0A1A0A' : C.muted, cursor: 'pointer', fontFamily: C.sans }}>
                                     {vac.guardando ? 'Guardando...' : '✓ Confirmar vacunación'}
@@ -1337,32 +1313,22 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                                   const validas = vacSeleccionadas.filter(vs => vs.prod_id)
                                   if (validas.length === 0) return
                                   setVacunacionMovil(prev => ({...prev, [loteAlerta.id]: {...prev[loteAlerta.id], guardando: true}}))
-                                  try {
-                                    for (const vs of validas) {
-                                      const dosis = parseFloat(vs.dosis || 5)
-                                      const mlDesc = Math.round(loteAlerta.cantidad * dosis)
-                                      const prod = vacunas.find(p => String(p.id) === String(vs.prod_id))
-                                      if (!prod) continue
-                                      const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlDesc)
-                                      const { error: e1 } = await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
-                                      if (e1) throw e1
-                                      const { error: e2 } = await supabase.from('eventos_sanitarios').insert({
-                                        tipo: 'vacunacion', corral_id: loteAlerta.corral_cuarentena_id,
-                                        producto: prod.producto, cantidad_ml: mlDesc,
-                                        cantidad_animales: loteAlerta.cantidad,
-                                        observaciones: `Ingreso ${loteAlerta.codigo} — ${dosis} ml/animal`,
-                                        registrado_por: usuario?.id,
-                                      })
-                                      if (e2) throw e2
-                                    }
-                                    const { error: e3 } = await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('id', a.id)
-                                    if (e3) throw e3
+                                  const vacunasParaGuardar = validas.map(vs => {
+                                    const prod = vacunas.find(p => String(p.id) === String(vs.prod_id))
+                                    return prod ? { productoId: prod.id, nombre: prod.producto, dosisMlPorAnimal: parseFloat(vs.dosis || 5) } : null
+                                  }).filter(Boolean)
+                                  const { error, resumen } = await confirmarVacunacionIngreso(supabase, { lote: loteAlerta, vacunas: vacunasParaGuardar, usuario })
+                                  if (error) {
+                                    alert('Error al confirmar vacunación: ' + error.message)
                                     setVacunacionMovil(prev => ({...prev, [loteAlerta.id]: {...prev[loteAlerta.id], guardando: false}}))
-                                    await onDone()
-                                  } catch(err) {
-                                    alert('Error al confirmar vacunación: ' + (err.message || JSON.stringify(err)))
-                                    setVacunacionMovil(prev => ({...prev, [loteAlerta.id]: {...prev[loteAlerta.id], guardando: false}}))
+                                    return
                                   }
+                                  const { error: e3 } = await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('id', a.id)
+                                  if (e3) {
+                                    alert('La vacunación se guardó, pero no se pudo cerrar la alerta: ' + e3.message)
+                                  }
+                                  setVacunacionMovil(prev => ({...prev, [loteAlerta.id]: {...prev[loteAlerta.id], guardando: false, confirmada: true, resumen}}))
+                                  await onDone()
                                 }}
                                 style={{ width: '100%', background: vacSeleccionadas.some(vs => vs.prod_id) ? C.green : '#1A1A1A', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: vacSeleccionadas.some(vs => vs.prod_id) ? '#0A1A0A' : C.muted, cursor: 'pointer', fontFamily: C.sans }}>
                                 {vac.guardando ? 'Guardando...' : '✓ Confirmar vacunación'}
@@ -1473,8 +1439,7 @@ function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, mo
                           if (enf.prod_id && mlNum > 0) {
                             const prod = stockSanitario.find(p => String(p.id) === String(enf.prod_id))
                             if (prod) {
-                              const nuevaCant = Math.max(0, (prod.cantidad_ml || 0) - mlNum)
-                              await supabase.from('stock_sanitario').update({ cantidad_ml: nuevaCant, actualizado_en: new Date().toISOString() }).eq('id', prod.id)
+                              await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: -mlNum })
                             }
                           }
                           await supabase.from('eventos_sanitarios').insert({
