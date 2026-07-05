@@ -8,6 +8,7 @@ import { registrarIngresoLote } from '../shared/ingresosLogic'
 import { registrarVenta } from '../shared/ventasLogic'
 import { registrarServicioTercero } from '../shared/serviciosLogic'
 import Corrales from '../components/Corrales'
+import Ingresos from '../components/Ingresos'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -84,7 +85,7 @@ export default function AppMovil({ usuario, onLogout }) {
   const pantallas = {
     home:        <Home usuario={usuario} nav={nav} onLogout={onLogout} datos={datos} onReload={cargarDatos} />,
     corrales:    <Corrales usuario={usuario} mobile={true} nav={nav} />,
-    ingreso:     <Ingreso nav={nav} usuario={usuario} corrales={datos.corrales} procedencias={datos.procedencias || []} onDone={cargarDatos} />,
+    ingreso:     <Ingresos usuario={usuario} mobile={true} nav={nav} />,
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} dietaAyer={datos.dietaAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
@@ -417,7 +418,7 @@ function Corrales_OLD_local_sin_usar({ nav, corrales, usuario, esEncargado, onDo
     </div>
   )
 }
-function Ingreso({ nav, usuario, corrales, procedencias, onDone }) {
+function Ingreso_OLD_local_sin_usar({ nav, usuario, corrales, procedencias, onDone }) {
   const [form, setForm] = useState({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 anos', cantidad: '', kg_bascula: '', observaciones: '', corral_id: '', transportista: '' })
   const [guardando, setGuardando] = useState(false)
   const prom = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null

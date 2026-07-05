@@ -4,6 +4,23 @@ import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
 
+// Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
+const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+function MobileTopbar({ titulo, sub, onBack }) {
+  return (
+    <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+      {onBack && <button onClick={onBack} style={{ background: 'none', border: 'none', color: CM.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>}
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: CM.text }}>{titulo}</div>
+        {sub && <div style={{ fontSize: 11, color: CM.muted, marginTop: 1 }}>{sub}</div>}
+      </div>
+    </div>
+  )
+}
+function MobileScroll({ children }) {
+  return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', background: CM.bg, color: CM.text }}>{children}</div>
+}
+
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
   text: '#1A1916', muted: '#6B6760', hint: '#9E9A94',
@@ -46,7 +63,7 @@ function normalizarSublotes(raw) {
   })
 }
 
-export default function Ingresos({ usuario }) {
+export default function Ingresos({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('lista')
   const [showDetalleMeses, setShowDetalleMeses] = useState(false)
   const [showDetallePrecio, setShowDetallePrecio] = useState(false)
@@ -62,7 +79,7 @@ export default function Ingresos({ usuario }) {
   // Nuevo ingreso form
   const [form, setForm] = useState({
     procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años',
-    cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '',
+    cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '',
   })
 
   // Completar datos (precio, kg factura, comercial)
@@ -96,19 +113,21 @@ export default function Ingresos({ usuario }) {
   async function guardarIngreso() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completá cantidad y kg báscula'); return }
     setGuardando(true)
-    const { error } = await registrarIngresoLote(supabase, {
-      procedencia: form.procedencia === 'Nuevo' ? form.otraProcedencia : form.procedencia,
+    const { error, lote } = await registrarIngresoLote(supabase, {
+      procedencia: (form.procedencia === 'Nuevo' || form.procedencia === 'Otro') ? form.otraProcedencia : form.procedencia,
       categoria: form.categoria,
       cantidad: form.cantidad,
       kgBascula: form.kg_bascula,
       observaciones: form.observaciones,
       corralId: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
+      transportista: form.transportista,
     }, usuario)
     if (error) { alert('Error al guardar el ingreso: ' + error.message); setGuardando(false); return }
     await cargarDatos()
-    setVista('lista')
-    setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
+    setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '' })
     setGuardando(false)
+    if (mobile) { alert(`Lote ${lote?.codigo || ''} registrado.`); nav('home') }
+    else setVista('lista')
   }
 
   async function guardarEdicion() {
@@ -244,6 +263,84 @@ export default function Ingresos({ usuario }) {
   }
 
   if (loading) return <Loader />
+
+  // ── MODO CELULAR: solo el formulario simple de "nuevo ingreso" (báscula) ──
+  if (mobile) {
+    const procedenciasHist = [...new Set(lotes.map(l => l.procedencia).filter(Boolean))]
+    const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena' || c.rol === 'libre')
+    const prom = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <MobileTopbar titulo="Nuevo ingreso" sub="Llegada de lote" onBack={() => nav && nav('home')} />
+        <MobileScroll>
+          <div style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Procedencia</div>
+            <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value, otraProcedencia: ''})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+              <option value="">— Seleccioná —</option>
+              {procedenciasHist.map(o => <option key={o} value={o}>{o}</option>)}
+              <option value="Otro">+ Nueva procedencia...</option>
+            </select>
+            {form.procedencia === 'Otro' && (
+              <input type="text" placeholder="Escribi la procedencia..." value={form.otraProcedencia}
+                onChange={e => setForm({...form, otraProcedencia: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box', marginTop: 6 }} />
+            )}
+          </div>
+          <div style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Categoria</div>
+            <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+              {['Novillos 2-3 años','Novillos 3-4 años','Vaquillonas','Terneros'].map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          {[
+            { label: 'Cantidad de animales', key: 'cantidad', placeholder: 'ej. 85' },
+            { label: 'Kg en bascula', key: 'kg_bascula', placeholder: 'ej. 20380' },
+          ].map(f => (
+            <div key={f.key} style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>{f.label}</div>
+              <input type="number" inputMode="numeric" placeholder={f.placeholder} value={form[f.key]}
+                onChange={e => setForm({...form, [f.key]: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+            </div>
+          ))}
+          {corralesCuarentena.length > 0 && (
+            <div style={{ marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral de cuarentena</div>
+              <select value={form.corral_cuarentena_id} onChange={e => setForm({...form, corral_cuarentena_id: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                <option value="">Sin asignar</option>
+                {corralesCuarentena.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.animales || 0} anim.</option>)}
+              </select>
+            </div>
+          )}
+          {prom && <div style={{ background: CM.surface2, borderRadius: 8, padding: '.75rem', marginBottom: '.85rem', fontSize: 13, color: CM.green, fontFamily: CM.mono }}>Peso prom: <strong>{prom} kg/animal</strong></div>}
+          <div style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Transportista</div>
+            <input type="text" placeholder="Nombre del transportista (opcional)" value={form.transportista}
+              onChange={e => setForm({...form, transportista: e.target.value})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
+            <input type="text" placeholder="condicion, sanidad previa, etc." value={form.observaciones}
+              onChange={e => setForm({...form, observaciones: e.target.value})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+          </div>
+          <button onClick={guardarIngreso} disabled={guardando}
+            style={{ width: '100%', background: CM.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+            {guardando ? 'Guardando...' : 'Registrar ingreso'}
+          </button>
+          <button onClick={() => nav && nav('home')}
+            style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+            Cancelar
+          </button>
+        </MobileScroll>
+      </div>
+    )
+  }
+  // ── FIN MODO CELULAR — de acá para abajo sigue el modo PC, sin cambios ──
 
   const lotesSinPrecio = esDueno ? lotes.filter(l => !l.precio_compra && !l.monto_total_con_iva) : []
   const loteEditandoExtra = (esDueno && editandoPrecio?.id && !lotesSinPrecio.find(l => l.id === editandoPrecio.id))
