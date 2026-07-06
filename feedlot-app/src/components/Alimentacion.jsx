@@ -1086,12 +1086,6 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                   📄 Exportar todo
                 </button>
               )}
-              {historial.length > 0 && (
-                <button onClick={eliminarTodasRaciones}
-                  style={{ padding: '8px 14px', fontSize: 12, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>
-                  Eliminar últimos 7 días
-                </button>
-              )}
             </div>
           </div>
 
@@ -1154,7 +1148,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: S.bg }}>
-                          {['Corral', 'Etapa', 'Dieta', 'Kg cargados', ''].map(h => (
+                          {['Corral', 'Etapa', 'Dieta', 'Kg cargados'].map(h => (
                             <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                           ))}
                         </tr>
@@ -1181,12 +1175,6 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                               ) : (
                                 <span style={{ color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</span>
                               )}
-                            </td>
-                            <td style={{ padding: '8px 12px' }}>
-                              <button onClick={() => eliminarRacion(h.id)}
-                                style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 5, cursor: 'pointer' }}>
-                                Eliminar
-                              </button>
                             </td>
                           </tr>
                         ))}
