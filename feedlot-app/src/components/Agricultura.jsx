@@ -903,6 +903,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [chequesCartera, setChequesCartera] = useState([])
   const [costosPend, setCostosPend] = useState({})
   const [ordenGuardadaM, setOrdenGuardadaM] = useState(null)
+  const [modoProductoM, setModoProductoM] = useState({})
 
   useEffect(() => {
     supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true })
@@ -932,7 +933,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     let caja_oficial_id = null
     if (form.es_propia && totalGastosPropios > 0) {
       const desc = `${form.tipo} — ${campo?.nombre || ''}`
-      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'egreso', categoria: 'Gasto propio agricultura', descripcion: desc, monto: totalGastosPropios, forma_pago: 'interno' }).select().single()
+      const { data: co, error: errCaja } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'egreso', categoria: 'Gasto propio agricultura', descripcion: desc, monto: totalGastosPropios, forma_pago: 'interno' }).select().single()
+      if (errCaja) { alert('Error al registrar el gasto propio: ' + errCaja.message); setGuardando(false); return }
       caja_oficial_id = co?.id || null
     }
 
@@ -940,10 +942,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     for (const p of form.productos) {
       if (!p.id || !p.dosis || !superficie) continue
       const usado = parseFloat(p.dosis) * superficie
-      await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -usado })
+      const { error: errStock } = await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -usado })
+      if (errStock) { alert('Error al descontar stock: ' + errStock.message); setGuardando(false); return }
     }
 
-    const { data: ordenInsertada } = await supabase.from('ordenes_trabajo').insert({
+    const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
       campo_id: parseInt(form.campo_id), campana_id: parseInt(form.campana_id) || null,
       lote_id: form.lote_id ? parseInt(form.lote_id) : null,
       superficie_ha_real: superficie || null,
@@ -956,6 +959,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       estado_pago: form.es_propia ? 'pagado' : 'pendiente',
       caja_oficial_id, registrado_por: usuario?.id,
     }).select().single()
+    if (errOrden) { alert('Error al guardar la orden: ' + errOrden.message); setGuardando(false); return }
 
     await cargar()
     setShowForm(false)
@@ -1146,8 +1150,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           </div>
           {form.productos.map((p, idx) => {
             const item = stockAgro.find(s => s.id === parseInt(p.id))
+            const modo = modoProductoM[idx] || 'dosis'
             const dosis = parseFloat(p.dosis) || 0
-            const totalUsado = superficie ? Math.round(dosis * superficie * 100) / 100 : 0
+            const totalUsado = modo === 'dosis'
+              ? (superficie ? Math.round(dosis * superficie * 100) / 100 : 0)
+              : (parseFloat(p.total) || 0)
+            const dosisCalculada = modo === 'total' && superficie ? Math.round((totalUsado / superficie) * 100) / 100 : dosis
             const alcanza = item ? (item.cantidad || 0) >= totalUsado : true
             return (
               <div key={idx} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.85rem', marginBottom: 8 }}>
@@ -1162,17 +1170,39 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   </select>
                   <button onClick={() => removeProducto(idx)} style={{ background: 'none', border: 'none', color: CM.red, fontSize: 16, cursor: 'pointer', padding: '0 6px' }}>✕</button>
                 </div>
+
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  {[{ v: 'dosis', l: 'Cargar por dosis/ha' }, { v: 'total', l: 'Cargar por cantidad total' }].map(o => (
+                    <button key={o.v} onClick={() => setModoProductoM({...modoProductoM, [idx]: o.v})}
+                      style={{ flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${modo === o.v ? CM.green : CM.border}`, background: modo === o.v ? '#1A3D26' : 'transparent', color: modo === o.v ? CM.green : CM.muted }}>
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Dosis / ha</div>
-                    <input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value })}
-                      placeholder="ej. 1.5" style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+                    <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Dosis / ha{modo === 'total' ? ' (calculada)' : ''}</div>
+                    {modo === 'dosis' ? (
+                      <input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value })}
+                        placeholder="ej. 1.5" style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+                    ) : (
+                      <div style={{ padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.muted, background: CM.surface2, borderRadius: 6, border: `1px solid ${CM.border}` }}>
+                        {superficie ? dosisCalculada.toLocaleString('es-AR') : '— sin superficie —'}
+                      </div>
+                    )}
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Total a usar</div>
-                    <div style={{ padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: alcanza ? CM.text : CM.red, background: CM.surface2, borderRadius: 6, border: `1px solid ${alcanza ? CM.border : CM.red}` }}>
-                      {totalUsado.toLocaleString('es-AR')} {p.unidad || item?.unidad || ''}
-                    </div>
+                    <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Total a usar{modo === 'dosis' ? ' (calculado)' : ''}</div>
+                    {modo === 'total' ? (
+                      <input type="number" value={p.total} onChange={e => updProducto(idx, { total: e.target.value, dosis: superficie ? String(Math.round((parseFloat(e.target.value)||0) / superficie * 100) / 100) : p.dosis })}
+                        placeholder={`ej. 30 ${p.unidad || item?.unidad || ''}`}
+                        style={{ width: '100%', background: CM.surface2, border: `1px solid ${alcanza ? CM.green : CM.red}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: alcanza ? CM.green : CM.red, boxSizing: 'border-box' }} />
+                    ) : (
+                      <div style={{ padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: alcanza ? CM.text : CM.red, background: CM.surface2, borderRadius: 6, border: `1px solid ${alcanza ? CM.border : CM.red}` }}>
+                        {totalUsado.toLocaleString('es-AR')} {p.unidad || item?.unidad || ''}
+                      </div>
+                    )}
                   </div>
                 </div>
                 {!alcanza && <div style={{ fontSize: 11, color: CM.red, marginTop: 6 }}>⚠ Stock insuficiente (hay {(item?.cantidad||0).toLocaleString('es-AR')} {item?.unidad})</div>}
