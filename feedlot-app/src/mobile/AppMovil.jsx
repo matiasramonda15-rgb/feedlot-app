@@ -14,6 +14,7 @@ import Pesada from '../components/Pesada'
 import Alimentacion from '../components/Alimentacion'
 import Sanidad from '../components/Sanidad'
 import Servicios from '../components/Servicios'
+import Agricultura from '../components/Agricultura'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -97,6 +98,7 @@ export default function AppMovil({ usuario, onLogout }) {
     venta:       <Ventas usuario={usuario} mobile={true} nav={nav} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
     servicios:   <Servicios usuario={usuario} mobile={true} nav={nav} />,
+    agricultura: <Agricultura usuario={usuario} mobile={true} nav={nav} />,
   }
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: C.sans, color: C.text, position: 'relative', overflow: 'hidden' }}>
@@ -220,6 +222,7 @@ function Home({ usuario, nav, onLogout, datos }) {
             { icon: '💊', label: 'Sanidad', p: 'sanidad' },
             { icon: '💰', label: 'Carga venta', p: 'venta' },
             ...(['matias_eu@hotmail.com','martin@campo.com','braian@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
+            ...(usuario?.rol === 'dueno' ? [{ icon: '🌱', label: 'Agricultura', p: 'agricultura' }] : []),
           ].map((a, i) => (
             <div key={i} onClick={() => nav(a.p)}
               style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.85rem', cursor: 'pointer', textAlign: 'center' }}>

@@ -30,7 +30,8 @@ function Card({ children, titulo, style = {} }) {
 const CULTIVOS = ['Soja', 'Maiz', 'Trigo', 'Alfalfa', 'Girasol', 'Sorgo', 'Otro']
 const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'Labranza', 'Otro']
 
-export default function Agricultura({ usuario }) {
+export default function Agricultura({ usuario, mobile, nav }) {
+  const [pantAgroM, setPantAgroM] = useState('home')
   const [tab, setTab] = useState('campos')
   const [loading, setLoading] = useState(true)
 
@@ -88,6 +89,37 @@ export default function Agricultura({ usuario }) {
   }
 
   if (loading) return <Loader />
+
+  // ── MODO CELULAR ──
+  if (mobile) {
+    if (pantAgroM === 'orden') {
+      return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} />
+    }
+    if (pantAgroM === 'stock') {
+      return <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} />
+    }
+    const CM = { bg: '#1A2E1A', surface: '#243324', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', sans: "'IBM Plex Sans', sans-serif" }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CM.bg, color: CM.text, fontFamily: CM.sans }}>
+        <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+          <button onClick={() => nav && nav('home')} style={{ background: 'none', border: 'none', color: CM.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Agricultura</div>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+          <button onClick={() => setPantAgroM('orden')}
+            style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', marginBottom: '.85rem', textAlign: 'left', cursor: 'pointer' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: CM.text, marginBottom: 4 }}>📋 Nueva orden de trabajo</div>
+            <div style={{ fontSize: 12, color: CM.muted }}>Siembra, pulverización, cosecha, etc. — con insumos por hectárea</div>
+          </button>
+          <button onClick={() => setPantAgroM('stock')}
+            style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', textAlign: 'left', cursor: 'pointer' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: CM.text, marginBottom: 4 }}>📦 Stock de insumos</div>
+            <div style={{ fontSize: 12, color: CM.muted }}>Ver cantidades disponibles (solo lectura)</div>
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const TABS = [
     { key: 'campos', label: 'Campos' },
@@ -850,7 +882,7 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 }
 
 // ── TAB ÓRDENES DE TRABAJO ──
-function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario }) {
+function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario, mobile, nav }) {
   const [tabInner, setTabInner] = useState('ordenes')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
@@ -903,14 +935,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       caja_oficial_id = co?.id || null
     }
 
-    // Descontar stock de productos usados — query fresco para tener cantidad actual
+    // Descontar stock de productos usados — de forma atómica en la base
     for (const p of form.productos) {
       if (!p.id || !p.dosis || !superficie) continue
-      const { data: itemFresh } = await supabase.from('stock_agro').select('id, cantidad').eq('id', parseInt(p.id)).single()
-      if (itemFresh) {
-        const usado = parseFloat(p.dosis) * superficie
-        await supabase.from('stock_agro').update({ cantidad: Math.max(0, (itemFresh.cantidad || 0) - usado), actualizado_en: new Date().toISOString() }).eq('id', itemFresh.id)
-      }
+      const usado = parseFloat(p.dosis) * superficie
+      await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -usado })
     }
 
     await supabase.from('ordenes_trabajo').insert({
@@ -992,6 +1021,135 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const campanaO = campanas.find(c => c.id === o.campana_id)
       generarReciboOrden({ ...o, fecha: formPagoGrupal.fecha, pagos_detalle: pagosFinal, ...formPagoGrupal }, campoO, loteO, campanaO, stockAgro)
     })
+  }
+
+  // ── MODO CELULAR: solo el formulario de nueva orden (con insumos por ha) ──
+  if (mobile) {
+    const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+    const lotesDelCampo = campo?.lotes_agricolas || []
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CM.bg, color: CM.text, fontFamily: CM.sans }}>
+        <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+          <button onClick={() => nav && nav('home')} style={{ background: 'none', border: 'none', color: CM.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Nueva orden de trabajo</div>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Campo *</div>
+            <select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value, lote_id: '', superficie_ha: ''})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+              <option value="">— Seleccioná —</option>
+              {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+          {lotesDelCampo.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Lote</div>
+              <select value={form.lote_id} onChange={e => setForm({...form, lote_id: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                <option value="">— Todo el campo —</option>
+                {lotesDelCampo.map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
+              </select>
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Tipo de trabajo *</div>
+              <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                <option value="">— Seleccioná —</option>
+                {TIPOS_ORDEN.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Fecha</div>
+              <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Superficie trabajada (ha)</div>
+            <input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})}
+              placeholder={superficieBase ? String(superficieBase) : 'ej. 45'}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{v:false,l:'Contratista'},{v:true,l:'Trabajo propio'}].map(o => (
+                <button key={String(o.v)} onClick={() => setForm({...form, es_propia: o.v})}
+                  style={{ flex: 1, padding: '9px', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer', border: `1px solid ${form.es_propia === o.v ? CM.green : CM.border}`, background: form.es_propia === o.v ? '#1A3D26' : 'transparent', color: form.es_propia === o.v ? CM.green : CM.muted }}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+            {!form.es_propia && (
+              <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})}
+                placeholder="Nombre del contratista"
+                style={{ width: '100%', marginTop: 8, background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase' }}>Insumos aplicados</div>
+            <button onClick={addProducto} style={{ padding: '4px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.green}`, color: CM.green, borderRadius: 6, cursor: 'pointer' }}>+ Agregar</button>
+          </div>
+          {form.productos.map((p, idx) => {
+            const item = stockAgro.find(s => s.id === parseInt(p.id))
+            const dosis = parseFloat(p.dosis) || 0
+            const totalUsado = superficie ? Math.round(dosis * superficie * 100) / 100 : 0
+            const alcanza = item ? (item.cantidad || 0) >= totalUsado : true
+            return (
+              <div key={idx} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.85rem', marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <select value={p.id} onChange={e => {
+                    const it = stockAgro.find(s => String(s.id) === e.target.value)
+                    updProducto(idx, { id: e.target.value, unidad: it?.unidad || '' })
+                  }}
+                    style={{ flex: 1, background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '9px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans }}>
+                    <option value="">— Insumo —</option>
+                    {stockAgro.map(s => <option key={s.id} value={s.id}>{s.insumo} ({(s.cantidad||0).toLocaleString('es-AR')} {s.unidad} en stock)</option>)}
+                  </select>
+                  <button onClick={() => removeProducto(idx)} style={{ background: 'none', border: 'none', color: CM.red, fontSize: 16, cursor: 'pointer', padding: '0 6px' }}>✕</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Dosis / ha</div>
+                    <input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value })}
+                      placeholder="ej. 1.5" style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Total a usar</div>
+                    <div style={{ padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: alcanza ? CM.text : CM.red, background: CM.surface2, borderRadius: 6, border: `1px solid ${alcanza ? CM.border : CM.red}` }}>
+                      {totalUsado.toLocaleString('es-AR')} {p.unidad || item?.unidad || ''}
+                    </div>
+                  </div>
+                </div>
+                {!alcanza && <div style={{ fontSize: 11, color: CM.red, marginTop: 6 }}>⚠ Stock insuficiente (hay {(item?.cantidad||0).toLocaleString('es-AR')} {item?.unidad})</div>}
+              </div>
+            )
+          })}
+
+          <div style={{ marginTop: 14, marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
+            <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+          </div>
+
+          <div style={{ fontSize: 11, color: CM.muted, marginBottom: 12 }}>
+            El costo del contratista se carga después (cuando se paga), en la pestaña Órdenes de la PC.
+          </div>
+
+          <button onClick={guardar} disabled={guardando}
+            style={{ width: '100%', background: CM.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+            {guardando ? 'Guardando...' : 'Registrar orden'}
+          </button>
+          <button onClick={() => nav && nav('home')}
+            style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const ordenesFiltradas = ordenes.filter(o => {
@@ -2309,7 +2467,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 }
 
 
-function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
+function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav }) {
   const [tab, setTab] = useState('stock')
   const [showForm, setShowForm] = useState(false)
   const [editandoStock, setEditandoStock] = useState(null)
@@ -2332,6 +2490,44 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario }) {
 
   const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Otro']
   const UNIDADES = ['litros', 'kg', 'bolsas', 'unidades']
+
+  // ── MODO CELULAR: solo lectura ──
+  if (mobile) {
+    const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CM.bg, color: CM.text, fontFamily: CM.sans }}>
+        <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+          <button onClick={() => nav && nav('home')} style={{ background: 'none', border: 'none', color: CM.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Stock de insumos</div>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+          <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem', padding: '8px 12px', background: CM.surface, borderRadius: 8, border: `1px solid ${CM.border}` }}>
+            📋 Solo lectura — los remitos y compras se cargan desde la PC.
+          </div>
+          {stock.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: CM.muted, fontSize: 13 }}>No hay insumos cargados.</div>}
+          {stock.map(s => {
+            const bajo = (s.cantidad || 0) <= (s.minimo_stock || 0)
+            return (
+              <div key={s.id} style={{ background: CM.surface, border: `1px solid ${bajo ? CM.red : CM.border}`, borderRadius: 10, padding: '1rem', marginBottom: '.65rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{s.insumo}</div>
+                    <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>{s.tipo || '—'}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: CM.mono, color: bajo ? CM.red : CM.green }}>{(s.cantidad || 0).toLocaleString('es-AR')}</div>
+                    <div style={{ fontSize: 11, color: CM.muted }}>{s.unidad}</div>
+                    {bajo && <div style={{ fontSize: 11, color: CM.red, fontWeight: 600 }}>⚠ Bajo mínimo</div>}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
 
   useEffect(() => {
     supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true })
