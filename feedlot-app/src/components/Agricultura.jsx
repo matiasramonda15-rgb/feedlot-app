@@ -902,6 +902,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
   const [costosPend, setCostosPend] = useState({})
+  const [ordenGuardadaM, setOrdenGuardadaM] = useState(null)
 
   useEffect(() => {
     supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true })
@@ -942,7 +943,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -usado })
     }
 
-    await supabase.from('ordenes_trabajo').insert({
+    const { data: ordenInsertada } = await supabase.from('ordenes_trabajo').insert({
       campo_id: parseInt(form.campo_id), campana_id: parseInt(form.campana_id) || null,
       lote_id: form.lote_id ? parseInt(form.lote_id) : null,
       superficie_ha_real: superficie || null,
@@ -954,10 +955,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       observaciones: form.observaciones || null,
       estado_pago: form.es_propia ? 'pagado' : 'pendiente',
       caja_oficial_id, registrado_por: usuario?.id,
-    })
+    }).select().single()
 
     await cargar()
     setShowForm(false)
+    if (mobile) setOrdenGuardadaM(ordenInsertada)
     setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '' })
     setGuardando(false)
   }
@@ -1027,6 +1029,55 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   if (mobile) {
     const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
     const lotesDelCampo = campo?.lotes_agricolas || []
+
+    // ── Confirmación después de guardar: ver / descargar / enviar por WhatsApp ──
+    if (ordenGuardadaM) {
+      const o = ordenGuardadaM
+      const loteG = campo?.lotes_agricolas?.find(l => l.id === o.lote_id)
+      const campanaG = campanas.find(c => c.id === o.campana_id)
+      const textoResumen = [
+        `📋 *Orden de trabajo*`,
+        `Campo: ${campo?.nombre || '—'}`,
+        loteG ? `Lote: ${loteG.numero}` : null,
+        `Tipo: ${o.tipo}`,
+        `Fecha: ${new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR')}`,
+        o.superficie_ha_real ? `Superficie: ${o.superficie_ha_real} ha` : null,
+        !o.es_propia && o.proveedor ? `Contratista: ${o.proveedor}` : null,
+        (o.productos || []).length > 0 ? '\nInsumos aplicados:' : null,
+        ...(o.productos || []).map(p => {
+          const item = stockAgro.find(s => s.id === parseInt(p.id))
+          const total = o.superficie_ha_real ? Math.round(parseFloat(p.dosis) * o.superficie_ha_real * 100) / 100 : ''
+          return `• ${item?.insumo || '—'}: ${p.dosis} ${item?.unidad || ''}/ha (${total} ${item?.unidad || ''} total)`
+        }),
+        o.observaciones ? `\nObs: ${o.observaciones}` : null,
+      ].filter(Boolean).join('\n')
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CM.bg, color: CM.text, fontFamily: CM.sans }}>
+          <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>✓ Orden registrada</div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+            <div style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '1rem', marginBottom: '1rem', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6 }}>
+              {textoResumen}
+            </div>
+            <a href={`https://wa.me/?text=${encodeURIComponent(textoResumen)}`} target="_blank" rel="noopener noreferrer"
+              style={{ display: 'block', textAlign: 'center', width: '100%', background: '#25D366', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', textDecoration: 'none', boxSizing: 'border-box', marginBottom: 10 }}>
+              📲 Enviar por WhatsApp
+            </a>
+            <button onClick={() => generarReciboOrden(o, campo, loteG, campanaG, stockAgro)}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.blue}`, borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: CM.blue, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 10 }}>
+              🖨️ Ver / Descargar PDF
+            </button>
+            <button onClick={() => { setOrdenGuardadaM(null); nav && nav('home') }}
+              style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+              Volver al inicio
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CM.bg, color: CM.text, fontFamily: CM.sans }}>
         <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
@@ -1394,9 +1445,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                             generarReciboOrden(o, campoO, loteO, campanaO, stockAgro)
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>}
                           <button onClick={async () => {
-                            if (!confirm('¿Eliminar esta orden?')) return
+                            if (!confirm('¿Eliminar esta orden? Se repondrá el stock de los insumos que se habían descontado.')) return
                             if (o.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', o.caja_oficial_id)
                             if (o.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', o.caja_paralela_id)
+                            // Reponer stock de los insumos que se habían descontado al crear esta orden
+                            for (const p of (o.productos || [])) {
+                              if (!p.id || !p.dosis || !o.superficie_ha_real) continue
+                              const usado = parseFloat(p.dosis) * o.superficie_ha_real
+                              await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: usado })
+                            }
                             await supabase.from('ordenes_trabajo').delete().eq('id', o.id)
                             await cargar()
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
