@@ -12,6 +12,7 @@ import Ingresos from '../components/Ingresos'
 import Ventas from '../components/Ventas'
 import Pesada from '../components/Pesada'
 import Alimentacion from '../components/Alimentacion'
+import Sanidad from '../components/Sanidad'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -91,7 +92,7 @@ export default function AppMovil({ usuario, onLogout }) {
     ingreso:     <Ingresos usuario={usuario} mobile={true} nav={nav} />,
     pesada:      <Pesada usuario={usuario} mobile={true} nav={nav} />,
     alimentacion:<Alimentacion usuario={usuario} mobile={true} nav={nav} />,
-    sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
+    sanidad:     <Sanidad usuario={usuario} mobile={true} nav={nav} />,
     venta:       <Ventas usuario={usuario} mobile={true} nav={nav} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
     servicios:   <ServiciosMovil nav={nav} usuario={usuario} />,
@@ -835,7 +836,7 @@ function AlimentacionMovil_OLD_local_sin_usar({ nav, usuario, corrales, formulas
     </div>
   )
 }
-function SanidadMovil({ nav, alertas, proximaPesada, onDone, corrales, lotes, movimientos, usuario }) {
+function SanidadMovil_OLD_local_sin_usar({ nav, alertas, proximaPesada, onDone, corrales, lotes, movimientos, usuario }) {
   const [pantSan, setPantSan] = useState(() => {
     const t = window.__sanidadTab || 'alertas'
     window.__sanidadTab = null

@@ -1,7 +1,23 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Btn, Loader } from './UI'
-import { confirmarVacunacionIngreso, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
+import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
+
+const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+function MobileTopbar({ titulo, sub, onBack }) {
+  return (
+    <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+      {onBack && <button onClick={onBack} style={{ background: 'none', border: 'none', color: CM.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>}
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: CM.text }}>{titulo}</div>
+        {sub && <div style={{ fontSize: 11, color: CM.muted, marginTop: 1 }}>{sub}</div>}
+      </div>
+    </div>
+  )
+}
+function MobileScroll({ children }) {
+  return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', background: CM.bg, color: CM.text }}>{children}</div>
+}
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -43,7 +59,7 @@ function Badge({ children, color, bg, border }) {
   )
 }
 
-export default function Sanidad({ usuario }) {
+export default function Sanidad({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('alertas')
   const [historialSan, setHistorialSan] = useState([])
   const [loading, setLoading] = useState(true)
@@ -68,6 +84,15 @@ export default function Sanidad({ usuario }) {
   // historialSan already declared above
   const [showNuevoProd, setShowNuevoProd] = useState(false)
   const [formNuevoProd, setFormNuevoProd] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml', minimo: '' })
+  // Estado propio del modo celular
+  const [pantSan, setPantSan] = useState('alertas')
+  const [confirmadosM, setConfirmadosM] = useState({})
+  const [revStateM, setRevStateM] = useState([])
+  const [formEventoM, setFormEventoM] = useState({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
+  const [guardandoM, setGuardandoM] = useState(false)
+  const [stockSanitarioM, setStockSanitarioM] = useState([])
+  const [proximaPesadaM, setProximaPesadaM] = useState(null)
+  const [movimientosM, setMovimientosM] = useState([])
   const [editProd, setEditProd] = useState(null)
   const [tipoCustomNuevo, setTipoCustomNuevo] = useState('')
   const [filtroTipoStock, setFiltroTipoStock] = useState('')
@@ -220,6 +245,18 @@ export default function Sanidad({ usuario }) {
 
   useEffect(() => { cargarDatos() }, [])
 
+  useEffect(() => {
+    if (!mobile) return
+    setRevStateM(corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado').map(c => ({ id: c.id, numero: c.numero, rol: c.rol, animales: c.animales || 0, ok: null, enfermos: [] })))
+  }, [corrales, mobile])
+
+  useEffect(() => {
+    if (!mobile) return
+    cargarStockSanitario(supabase).then(({ data }) => setStockSanitarioM(data || []))
+    supabase.from('configuracion').select('valor').eq('clave', 'proxima_pesada').single().then(({ data }) => setProximaPesadaM(data?.valor || null))
+    supabase.from('movimientos').select('*').order('fecha', { ascending: false }).limit(50).then(({ data }) => setMovimientosM(data || []))
+  }, [mobile])
+
   async function cargarDatos() {
     const [{ data: al }, { data: c }, { data: l }, { data: enf }, { data: mort }, { data: ev }, { data: rev }, { data: vacIng }] = await Promise.all([
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
@@ -313,6 +350,642 @@ export default function Sanidad({ usuario }) {
 
 
   if (loading) return <Loader />
+
+  // ── MODO CELULAR ──
+  if (mobile) {
+    const corralesActivosM = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
+    const proximaDateM = proximaPesadaM ? new Date(proximaPesadaM + 'T12:00:00') : null
+    const diasPesadaM = proximaDateM ? Math.ceil((proximaDateM - new Date()) / (1000 * 60 * 60 * 24)) : null
+
+    async function confirmarAlertaM(id) {
+      await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('id', id)
+      setConfirmadosM(prev => ({...prev, [id]: true}))
+      await cargarDatos()
+    }
+
+    async function confirmarRevisionM() {
+      const sin = revStateM.filter(s => s.ok === null).length
+      if (sin > 0) { alert(`Falta revisar ${sin} corral${sin !== 1 ? 'es' : ''}.`); return }
+      setGuardandoM(true)
+      await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
+      for (const st of revStateM) {
+        const novedades = st.enfermos || []
+        await supabase.from('eventos_sanitarios').insert({
+          tipo: 'revision', corral_id: st.id,
+          producto: st.ok ? 'Sin novedad' : 'Varios',
+          cantidad_animales: st.ok ? st.animales : novedades.length,
+          observaciones: st.ok ? 'Sin novedades' : novedades.map(e => `${e.desc} - ${e.diag}`).join('; '),
+          registrado_por: usuario?.id,
+        })
+        for (const enf of novedades) {
+          if (enf.desc) {
+            await supabase.from('animales_enfermeria').insert({
+              corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
+              tratamiento: enf.prod, estado: 'en tratamiento', registrado_por: usuario?.id,
+            })
+          }
+        }
+      }
+      await cargarDatos()
+      alert('Revision confirmada.')
+      setPantSan('alertas')
+      setGuardandoM(false)
+    }
+
+    async function registrarEventoM() {
+      if (!formEventoM.corral_id) { alert('Selecciona un corral'); return }
+      if (!formEventoM.prod_id) { alert('Selecciona un producto'); return }
+      if (!formEventoM.cantidad) { alert('Ingresa la cantidad de animales'); return }
+      setGuardandoM(true)
+      const cantAnimales = parseInt(formEventoM.cantidad)
+      const dosisMl = parseFloat(formEventoM.dosis_ml) || 0
+      const mlTotal = dosisMl > 0 ? Math.round(cantAnimales * dosisMl) : null
+      const prod = stockSanitarioM.find(p => String(p.id) === String(formEventoM.prod_id))
+      const { error } = await registrarTratamientoSanitario(supabase, {
+        tipo: 'tratamiento', corralId: parseInt(formEventoM.corral_id),
+        productoId: prod?.id || null, productoNombre: formEventoM.producto,
+        cantidadMl: mlTotal, cantidadAnimales: cantAnimales,
+        observaciones: formEventoM.observaciones, usuario,
+      })
+      if (error) { alert('Error al registrar el evento: ' + error.message); setGuardandoM(false); return }
+      await cargarDatos()
+      alert(`Evento registrado.${mlTotal ? ` Se descontaron ${mlTotal.toLocaleString('es-AR')} ml de ${formEventoM.producto}.` : ''}`)
+      setPantSan('alertas')
+      setFormEventoM({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
+      setGuardandoM(false)
+    }
+
+    async function guardarMortalidadM() {
+      await guardarMortalidad()
+      nav && nav('home')
+    }
+
+    const TABS_M = [
+      { key: 'alertas', label: 'Alertas' },
+      { key: 'revision', label: 'Revision' },
+      { key: 'evento', label: 'Evento' },
+      { key: 'mortalidad', label: '💀 Muerte' },
+      { key: 'stock', label: '📦 Stock' },
+    ]
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <MobileTopbar titulo="Sanidad" onBack={() => nav && nav('home')} />
+        <div style={{ display: 'flex', background: CM.surface, borderBottom: `1px solid ${CM.border}`, flexShrink: 0 }}>
+          {TABS_M.map(t => (
+            <button key={t.key} onClick={() => setPantSan(t.key)}
+              style={{ flex: 1, padding: '10px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: CM.sans, background: pantSan === t.key ? CM.green : 'transparent', color: pantSan === t.key ? '#0A1A0A' : CM.muted, borderBottom: pantSan === t.key ? `2px solid ${CM.green}` : '2px solid transparent' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <MobileScroll>
+          {pantSan === 'alertas' && (
+            <>
+              {proximaDateM && (
+                <div style={{ background: diasPesadaM <= 7 ? '#3D2A00' : '#1A3D26', border: `1px solid ${diasPesadaM <= 7 ? CM.amber : CM.green}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: diasPesadaM <= 7 ? CM.amber : CM.green, marginBottom: 3 }}>Proxima pesada fija</div>
+                  <div style={{ fontSize: 12, color: CM.muted }}>
+                    {proximaDateM.toLocaleDateString('es-AR')}
+                    <span style={{ marginLeft: 8, fontWeight: 600, color: diasPesadaM <= 7 ? CM.amber : CM.green }}>
+                      {diasPesadaM <= 0 ? '- Realizar hoy' : `- en ${diasPesadaM} dias`}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {alertas.length === 0 && corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0).length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: CM.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
+              {corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0).map(c => {
+                const ultimoLote = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
+                const ultimaFecha = ultimoLote?.fecha_ingreso || (movimientosM || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0] || null
+                const dias = ultimaFecha ? (() => {
+                  const hoy = new Date()
+                  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+                  return Math.floor((new Date(hoyStr) - new Date(ultimaFecha)) / (1000 * 60 * 60 * 24))
+                })() : null
+                if (dias === null) return null
+                return (
+                  <div key={c.id} style={{ background: '#3D2A00', border: `1px solid ${CM.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: CM.amber, marginBottom: 3 }}>🐄 Cuarentena C-{c.numero} — {dias} días</div>
+                    <div style={{ fontSize: 12, color: CM.muted, marginBottom: '.65rem' }}>
+                      {c.animales} animales · último ingreso {ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}
+                    </div>
+                    {(() => {
+                      const loteC = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
+                      const vacunas = stockSanitarioM.filter(p => p.tipo === 'Vacuna')
+                      const vacKey = loteC?.id || c.id
+                      const vac = vacunacionLote[vacKey] || {}
+                      const vacSeleccionadas = vac.vacunas || [{ prod_id: '', dosis: '5' }]
+                      const expandido = vacunacionLote[`exp_vac_${c.id}`]
+                      const yaVacunado = loteC ? yaVacunadoIngreso(loteC) : false
+                      if (vac.confirmada || yaVacunado) {
+                        return (
+                          <div style={{ background: '#1A3D26', border: `1px solid ${CM.green}`, borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12, color: CM.green }}>
+                            ✓ Vacunado{(vac.resumen?.length > 0) ? ` — ${vac.resumen.map(r => `${r.nombre} ${r.dosis}ml/animal`).join(' · ')}` : ''}
+                          </div>
+                        )
+                      }
+                      return (
+                        <div style={{ marginBottom: 8 }}>
+                          {!expandido ? (
+                            <button onClick={() => setVacunacionLote(prev => ({...prev, [`exp_vac_${c.id}`]: true}))}
+                              style={{ width: '100%', padding: 10, background: '#2A1A00', border: `1px solid ${CM.amber}`, borderRadius: 8, color: CM.amber, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>
+                              💉 Vacunar al ingreso
+                            </button>
+                          ) : (
+                            <div style={{ background: '#1A1A1A', border: `1px solid ${CM.amber}`, borderRadius: 8, padding: '1rem' }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: CM.amber, marginBottom: 10 }}>💉 Vacunación — C-{c.numero}</div>
+                              {vacunas.length === 0 ? (
+                                <div style={{ fontSize: 12, color: CM.amber }}>⚠ No hay vacunas en stock.</div>
+                              ) : (
+                                <>
+                                  {vacSeleccionadas.map((vs, vi) => {
+                                    const mlTotal = vs.prod_id && vs.dosis && loteC ? Math.round(loteC.cantidad * parseFloat(vs.dosis || 5)) : null
+                                    return (
+                                      <div key={vi} style={{ marginBottom: 10 }}>
+                                        <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>
+                                          {vi === 0 ? 'Vacuna' : `Vacuna ${vi + 1}`}
+                                        </div>
+                                        <select value={vs.prod_id || ''}
+                                          onChange={e => {
+                                            const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, prod_id: e.target.value} : x)
+                                            setVacunacionLote(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                          }}
+                                          style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.amber}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, marginBottom: 6 }}>
+                                          <option value="">— Seleccioná —</option>
+                                          {vacunas.map(p => (
+                                            <option key={p.id} value={p.id}>{p.producto} · {(p.cantidad_ml || 0).toLocaleString('es-AR')} {p.unidad || 'ml'}</option>
+                                          ))}
+                                        </select>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                          <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: 11, color: CM.muted, marginBottom: 4 }}>ml/animal</div>
+                                            <input type="number" inputMode="decimal" value={vs.dosis || '5'} step="0.5" min="0"
+                                              onChange={e => {
+                                                const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, dosis: e.target.value} : x)
+                                                setVacunacionLote(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                              }}
+                                              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
+                                          </div>
+                                          {vacSeleccionadas.length > 1 && (
+                                            <button onClick={() => {
+                                              const nuevas = vacSeleccionadas.filter((_, i) => i !== vi)
+                                              setVacunacionLote(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                            }} style={{ padding: '10px 12px', fontSize: 13, background: '#2E1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 8, cursor: 'pointer', marginTop: 20 }}>✕</button>
+                                          )}
+                                        </div>
+                                        {mlTotal && <div style={{ fontSize: 12, color: CM.green, marginTop: 4 }}>→ {mlTotal.toLocaleString('es-AR')} ml ({loteC?.cantidad} × {vs.dosis} ml)</div>}
+                                      </div>
+                                    )
+                                  })}
+                                  <button onClick={() => {
+                                    const nuevas = [...vacSeleccionadas, { prod_id: '', dosis: '5' }]
+                                    setVacunacionLote(prev => ({...prev, [vacKey]: {...(prev[vacKey]||{}), vacunas: nuevas}}))
+                                  }} style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.green}`, borderRadius: 8, padding: '10px', fontSize: 13, color: CM.green, fontWeight: 600, marginBottom: 10, cursor: 'pointer' }}>
+                                    + Agregar otra vacuna
+                                  </button>
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button onClick={() => setVacunacionLote(prev => ({...prev, [`exp_vac_${c.id}`]: false}))}
+                                      style={{ flex: 1, background: '#1A1A1A', border: `1px solid ${CM.border}`, borderRadius: 8, padding: 10, fontSize: 13, color: CM.muted, cursor: 'pointer' }}>
+                                      Cancelar
+                                    </button>
+                                    <button disabled={!vacSeleccionadas.some(vs => vs.prod_id) || vac.guardando}
+                                      onClick={async () => {
+                                        const validas = vacSeleccionadas.filter(vs => vs.prod_id)
+                                        if (!loteC) { alert('No se encontró el lote de ingreso para este corral. Revisá que el corral tenga un lote cargado con corral_cuarentena_id = ' + c.id); return }
+                                        if (validas.length === 0) { alert('Seleccioná al menos una vacuna'); return }
+                                        setVacunacionLote(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: true}}))
+                                        const vacunasParaGuardar = validas.map(vs => {
+                                          const prod = vacunas.find(p => String(p.id) === String(vs.prod_id))
+                                          return prod ? { productoId: prod.id, nombre: prod.producto, dosisMlPorAnimal: parseFloat(vs.dosis || 5) } : null
+                                        }).filter(Boolean)
+                                        const { error, resumen } = await confirmarVacunacionIngreso(supabase, { lote: loteC, vacunas: vacunasParaGuardar, usuario })
+                                        if (error) {
+                                          alert('Error al confirmar vacunación: ' + error.message)
+                                          setVacunacionLote(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false}}))
+                                          return
+                                        }
+                                        await cargarDatos()
+                                        setVacunacionLote(prev => ({...prev, [vacKey]: {...prev[vacKey], guardando: false, confirmada: true, resumen}, [`exp_vac_${c.id}`]: false}))
+                                      }}
+                                      style={{ flex: 2, background: vacSeleccionadas.some(vs => vs.prod_id) ? CM.green : '#1A1A1A', border: 'none', borderRadius: 8, padding: 10, fontSize: 13, fontWeight: 600, color: vacSeleccionadas.some(vs => vs.prod_id) ? '#0A1A0A' : CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+                                      {vac.guardando ? 'Guardando...' : '✓ Confirmar vacunación'}
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                    {dias >= 10 && (
+                      <button onClick={async () => {
+                        await supabase.from('corrales').update({ rol: 'acumulacion' }).eq('id', c.id)
+                        await supabase.from('movimientos').insert({ fecha: new Date().toISOString(), tipo: 'cambio_rol', corral_destino_id: c.id, cantidad: c.animales, motivo: 'Fin cuarentena — pase a acumulacion', registrado_por: usuario?.id })
+                        await cargarDatos()
+                      }} style={{ width: '100%', padding: 10, background: '#1A3D26', border: `1px solid ${CM.green}`, borderRadius: 8, color: CM.green, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>
+                        ✓ Confirmar pasaje a acumulacion
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              {alertas.map(a => {
+                const isProtocolo = a.tipo === 'protocolo_ingreso'
+                const loteAlerta = isProtocolo ? (lotes || []).find(l => l.corral_cuarentena_id === a.corral_id) : null
+                const vac = loteAlerta ? (vacunacionLote[loteAlerta.id] || {}) : {}
+                const vacunas = stockSanitarioM.filter(p => p.tipo === 'Vacuna')
+                const vacSeleccionadas = vac.vacunas || [{ prod_id: '', dosis: '5' }]
+                const expandido = vacunacionLote[`exp_${a.id}`]
+                return (
+                  <div key={a.id} style={{ background: confirmadosM[a.id] ? '#1A3D26' : '#3D2A00', border: `1px solid ${confirmadosM[a.id] ? CM.green : CM.amber}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                    {confirmadosM[a.id] ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ fontSize: 20 }}>✅</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: CM.green }}>Confirmado</div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '.65rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: CM.amber, marginBottom: 3 }}>{a.titulo}</div>
+                            <div style={{ fontSize: 12, color: CM.muted }}>{a.descripcion}</div>
+                            {a.fecha_vence && <div style={{ fontSize: 11, color: CM.amber, marginTop: 3 }}>Vence: {new Date(a.fecha_vence).toLocaleDateString('es-AR')}</div>}
+                          </div>
+                          {isProtocolo && (
+                            <button onClick={() => setVacunacionLote(prev => ({...prev, [`exp_${a.id}`]: !prev[`exp_${a.id}`]}))}
+                              style={{ marginLeft: 10, padding: '6px 12px', fontSize: 12, background: expandido ? '#2A1A00' : CM.amber, border: `1px solid ${CM.amber}`, borderRadius: 7, color: expandido ? CM.amber : '#0A1A0A', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+                              {expandido ? '▲ Cerrar' : '💉 Vacunar'}
+                            </button>
+                          )}
+                        </div>
+                        {isProtocolo && expandido && loteAlerta && (
+                          <div style={{ borderTop: `1px solid ${CM.amber}`, paddingTop: '1rem' }}>
+                            {vacunas.length === 0 ? (
+                              <div style={{ fontSize: 12, color: CM.amber }}>⚠ No hay vacunas en stock.</div>
+                            ) : (
+                              <>
+                                {vacSeleccionadas.map((vs, vi) => {
+                                  const mlTotal = vs.prod_id && vs.dosis ? Math.round(loteAlerta.cantidad * parseFloat(vs.dosis || 5)) : null
+                                  const prodSel = vacunas.find(p => String(p.id) === String(vs.prod_id))
+                                  return (
+                                    <div key={vi} style={{ marginBottom: 10 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>
+                                        {vi === 0 ? 'Vacuna' : `Vacuna ${vi + 1}`}
+                                      </div>
+                                      <select value={vs.prod_id || ''}
+                                        onChange={e => {
+                                          const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, prod_id: e.target.value} : x)
+                                          setVacunacionLote(prev => ({...prev, [loteAlerta.id]: {...(prev[loteAlerta.id]||{}), vacunas: nuevas}}))
+                                        }}
+                                        style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.amber}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, marginBottom: 6 }}>
+                                        <option value="">— Seleccioná —</option>
+                                        {vacunas.map(p => (
+                                          <option key={p.id} value={p.id}>{p.producto} · {(p.cantidad_ml || 0).toLocaleString('es-AR')} {p.unidad || 'ml'}</option>
+                                        ))}
+                                      </select>
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ fontSize: 11, color: CM.muted, marginBottom: 4 }}>ml/animal</div>
+                                          <input type="number" inputMode="decimal" value={vs.dosis || '5'} step="0.5" min="0"
+                                            onChange={e => {
+                                              const nuevas = vacSeleccionadas.map((x, i) => i === vi ? {...x, dosis: e.target.value} : x)
+                                              setVacunacionLote(prev => ({...prev, [loteAlerta.id]: {...(prev[loteAlerta.id]||{}), vacunas: nuevas}}))
+                                            }}
+                                            style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
+                                        </div>
+                                        {vacSeleccionadas.length > 1 && (
+                                          <button onClick={() => {
+                                            const nuevas = vacSeleccionadas.filter((_, i) => i !== vi)
+                                            setVacunacionLote(prev => ({...prev, [loteAlerta.id]: {...(prev[loteAlerta.id]||{}), vacunas: nuevas}}))
+                                          }} style={{ padding: '10px 12px', fontSize: 13, background: '#2E1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 8, cursor: 'pointer', marginTop: 20 }}>✕</button>
+                                        )}
+                                      </div>
+                                      {mlTotal && <div style={{ fontSize: 12, color: CM.green, marginTop: 4 }}>→ {mlTotal.toLocaleString('es-AR')} ml de {prodSel?.producto}</div>}
+                                    </div>
+                                  )
+                                })}
+                                <button onClick={() => {
+                                  const nuevas = [...vacSeleccionadas, { prod_id: '', dosis: '5' }]
+                                  setVacunacionLote(prev => ({...prev, [loteAlerta.id]: {...(prev[loteAlerta.id]||{}), vacunas: nuevas}}))
+                                }} style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.green}`, borderRadius: 8, padding: '10px', fontSize: 13, color: CM.green, fontWeight: 600, marginBottom: 10, cursor: 'pointer' }}>
+                                  + Agregar otra vacuna
+                                </button>
+                                <button disabled={!vacSeleccionadas.some(vs => vs.prod_id) || vac.guardando}
+                                  onClick={async () => {
+                                    const validas = vacSeleccionadas.filter(vs => vs.prod_id)
+                                    if (validas.length === 0) return
+                                    setVacunacionLote(prev => ({...prev, [loteAlerta.id]: {...prev[loteAlerta.id], guardando: true}}))
+                                    const vacunasParaGuardar = validas.map(vs => {
+                                      const prod = vacunas.find(p => String(p.id) === String(vs.prod_id))
+                                      return prod ? { productoId: prod.id, nombre: prod.producto, dosisMlPorAnimal: parseFloat(vs.dosis || 5) } : null
+                                    }).filter(Boolean)
+                                    const { error, resumen } = await confirmarVacunacionIngreso(supabase, { lote: loteAlerta, vacunas: vacunasParaGuardar, usuario })
+                                    if (error) {
+                                      alert('Error al confirmar vacunación: ' + error.message)
+                                      setVacunacionLote(prev => ({...prev, [loteAlerta.id]: {...prev[loteAlerta.id], guardando: false}}))
+                                      return
+                                    }
+                                    const { error: e3 } = await supabase.from('alertas').update({ resuelta: true, resuelta_en: new Date().toISOString() }).eq('id', a.id)
+                                    if (e3) alert('La vacunación se guardó, pero no se pudo cerrar la alerta: ' + e3.message)
+                                    setVacunacionLote(prev => ({...prev, [loteAlerta.id]: {...prev[loteAlerta.id], guardando: false, confirmada: true, resumen}}))
+                                    await cargarDatos()
+                                  }}
+                                  style={{ width: '100%', background: vacSeleccionadas.some(vs => vs.prod_id) ? CM.green : '#1A1A1A', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: vacSeleccionadas.some(vs => vs.prod_id) ? '#0A1A0A' : CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+                                  {vac.guardando ? 'Guardando...' : '✓ Confirmar vacunación'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {!isProtocolo && (
+                          <button onClick={() => confirmarAlertaM(a.id)}
+                            style={{ width: '100%', padding: 10, background: '#2A1A00', border: `1px solid ${CM.amber}`, borderRadius: 8, color: CM.amber, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>
+                            Confirmar resolucion
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          )}
+
+          {pantSan === 'revision' && (
+            <>
+              <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
+                Recorre cada corral. Sin novedades si esta todo bien. Hay novedad si encontras algun animal con problema.
+              </div>
+              {revStateM.map((c, i) => (
+                <div key={c.id} style={{ border: `1px solid ${c.ok === true ? CM.green : c.ok === false ? CM.amber : CM.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
+                  <div style={{ padding: '1rem', background: c.ok === true ? '#1A3D26' : c.ok === false ? '#3D2A00' : CM.surface, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>Corral {c.numero}</div>
+                      <div style={{ fontSize: 12, color: CM.muted }}>{c.rol} - {c.animales} animales</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {c.ok === true && <span style={{ fontSize: 12, fontWeight: 600, color: CM.green }}>Sin novedades ✓</span>}
+                      {c.ok === false && <span style={{ fontSize: 12, fontWeight: 600, color: CM.amber }}>{c.enfermos.length} con novedad</span>}
+                      {c.ok === null && (
+                        <>
+                          <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: true, enfermos: []}; setRevStateM(n) }}
+                            style={{ padding: '7px 10px', background: '#1A3D26', border: `1px solid ${CM.green}`, borderRadius: 7, color: CM.green, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>Sin novedades ✓</button>
+                          <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',prod:'',prod_id:null,ml:'',mover_enfermeria:false}]}; setRevStateM(n) }}
+                            style={{ padding: '7px 10px', background: '#3D2A00', border: `1px solid ${CM.amber}`, borderRadius: 7, color: CM.amber, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>Hay novedad</button>
+                        </>
+                      )}
+                      {c.ok !== null && (
+                        <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: null, enfermos: []}; setRevStateM(n) }}
+                          style={{ padding: '5px 8px', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 6, color: CM.muted, fontSize: 11, cursor: 'pointer', fontFamily: CM.sans }}>Cambiar</button>
+                      )}
+                    </div>
+                  </div>
+                  {c.ok === false && (
+                    <div style={{ padding: '1rem', borderTop: `1px solid ${CM.border}`, background: CM.surface2 }}>
+                      {c.enfermos.map((enf, ei) => (
+                        <div key={ei} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '.75rem', marginBottom: '.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: CM.amber }}>Animal {ei + 1}</span>
+                            <button onClick={() => {
+                              const n = [...revStateM]; n[i].enfermos.splice(ei, 1)
+                              if (!n[i].enfermos.length) n[i].ok = null
+                              setRevStateM(n)
+                            }} style={{ background: 'transparent', border: 'none', color: CM.muted, cursor: 'pointer', fontSize: 16 }}>✕</button>
+                          </div>
+                          <input type="text" placeholder="Descripcion del animal" value={enf.desc}
+                            onChange={e => { const n = [...revStateM]; n[i].enfermos[ei].desc = e.target.value; setRevStateM(n) }}
+                            style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box', marginBottom: 6 }} />
+                          <select value={enf.diag} onChange={e => { const n = [...revStateM]; n[i].enfermos[ei].diag = e.target.value; setRevStateM(n) }}
+                            style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans, marginBottom: 6 }}>
+                            {['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro'].map(d => <option key={d}>{d}</option>)}
+                          </select>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <select value={enf.prod} onChange={e => {
+                              const prod = stockSanitarioM.find(p => p.producto === e.target.value)
+                              const n = [...revStateM]
+                              n[i].enfermos[ei].prod = e.target.value
+                              n[i].enfermos[ei].prod_id = prod?.id || null
+                              setRevStateM(n)
+                            }}
+                              style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans }}>
+                              <option value="">— Producto aplicado —</option>
+                              {stockSanitarioM.map(p => <option key={p.id} value={p.producto}>{p.producto} ({(p.cantidad_ml||0).toLocaleString('es-AR')} {p.unidad||'ml'})</option>)}
+                            </select>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <input type="number" value={enf.ml || ''} placeholder="ml" onChange={e => { const n=[...revStateM]; n[i].enfermos[ei].ml=e.target.value; setRevStateM(n) }}
+                                style={{ flex: 1, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, background: CM.surface, color: CM.text }} />
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={enf.mover_enfermeria || false} onChange={e => { const n=[...revStateM]; n[i].enfermos[ei].mover_enfermeria=e.target.checked; setRevStateM(n) }} />
+                                → Enf.
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <button onClick={() => { const n = [...revStateM]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',prod:'',prod_id:null,ml:'',mover_enfermeria:false}); setRevStateM(n) }}
+                        style={{ width: '100%', padding: '8px', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 8, color: CM.muted, fontSize: 12, cursor: 'pointer', fontFamily: CM.sans, marginTop: 4 }}>
+                        + Agregar otro animal
+                      </button>
+                      <button onClick={async () => {
+                        if (guardandoM) return
+                        const enfs = c.enfermos.filter(e => e.prod || e.desc || e.diag)
+                        if (!enfs.length) { alert('Completá al menos un animal con diagnóstico o producto'); return }
+                        setGuardandoM(true)
+                        try {
+                          for (const enf of enfs) {
+                            const mlNum = parseFloat(enf.ml) || 0
+                            if (enf.prod_id && mlNum > 0) {
+                              await supabase.rpc('incrementar_stock_sanitario', { p_id: enf.prod_id, p_delta: -mlNum })
+                            }
+                            await supabase.from('eventos_sanitarios').insert({
+                              tipo: 'revision',
+                              corral_id: revStateM[i]?.id,
+                              producto: enf.prod || null,
+                              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+                              cantidad_animales: 1,
+                              cantidad_ml: parseFloat(enf.ml) || null,
+                              mover_enfermeria: enf.mover_enfermeria || false,
+                              registrado_por: usuario?.id,
+                            })
+                          }
+                          const n = [...revStateM]
+                          n[i] = {...n[i], confirmado: true}
+                          setRevStateM(n)
+                          setGuardandoM(false)
+                        } catch(err) {
+                          alert('Error: ' + (err.message || JSON.stringify(err)))
+                          setGuardandoM(false)
+                        }
+                      }} disabled={guardandoM}
+                        style={{ width: '100%', padding: '10px', background: CM.amber, border: 'none', borderRadius: 8, color: '#1A0A00', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans, marginTop: 8 }}>
+                        {guardandoM ? 'Guardando...' : '✓ Confirmar tratamiento'}
+                      </button>
+                      {c.confirmado && (
+                        <div style={{ textAlign: 'center', fontSize: 12, color: CM.green, marginTop: 6, fontWeight: 600 }}>✓ Tratamiento registrado</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <button onClick={confirmarRevisionM} disabled={guardandoM}
+                style={{ width: '100%', background: CM.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+                {guardandoM ? 'Guardando...' : 'Confirmar revision completa'}
+              </button>
+            </>
+          )}
+
+          {pantSan === 'evento' && (
+            <>
+              <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
+                Registra un evento sanitario puntual — vacunacion, tratamiento, etc.
+              </div>
+              <div style={{ marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+                <select value={formEventoM.corral_id} onChange={e => setFormEventoM({...formEventoM, corral_id: e.target.value})}
+                  style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                  <option value="">Selecciona un corral</option>
+                  {corralesActivosM.map(c => <option key={c.id} value={c.id}>Corral {c.numero} - {c.rol} - {c.animales || 0} anim.</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto</div>
+                {stockSanitarioM.length === 0
+                  ? <div style={{ padding: '11px 12px', background: CM.surface2, borderRadius: 8, fontSize: 13, color: CM.muted }}>No hay productos en stock sanitario.</div>
+                  : <select value={formEventoM.prod_id}
+                      onChange={e => {
+                        const prod = stockSanitarioM.find(p => String(p.id) === e.target.value)
+                        setFormEventoM({...formEventoM, prod_id: e.target.value, producto: prod?.producto || ''})
+                      }}
+                      style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                      <option value="">— Seleccioná un producto —</option>
+                      {stockSanitarioM.map(p => (
+                        <option key={p.id} value={p.id}>{p.producto} · {(p.cantidad_ml || 0).toLocaleString('es-AR')} {p.unidad || 'ml'} en stock</option>
+                      ))}
+                    </select>
+                }
+              </div>
+              <div style={{ marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Dosis ml/animal</div>
+                <input type="number" inputMode="decimal" placeholder="5" value={formEventoM.dosis_ml}
+                  onChange={e => setFormEventoM({...formEventoM, dosis_ml: e.target.value})}
+                  style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad de animales</div>
+                <input type="number" inputMode="numeric" placeholder="0" value={formEventoM.cantidad}
+                  onChange={e => setFormEventoM({...formEventoM, cantidad: e.target.value})}
+                  style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+              </div>
+              {formEventoM.prod_id && formEventoM.dosis_ml && formEventoM.cantidad && (() => {
+                const mlTotal = Math.round(parseInt(formEventoM.cantidad) * parseFloat(formEventoM.dosis_ml))
+                const prod = stockSanitarioM.find(p => String(p.id) === String(formEventoM.prod_id))
+                const stockActual = prod?.cantidad_ml || 0
+                const alcanza = stockActual >= mlTotal
+                return (
+                  <div style={{ background: alcanza ? '#1A2E1A' : '#2E1A1A', border: `1px solid ${alcanza ? CM.green : CM.red}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: alcanza ? CM.green : CM.red }}>
+                      {mlTotal.toLocaleString('es-AR')} ml totales ({formEventoM.cantidad} animales × {formEventoM.dosis_ml} ml)
+                    </div>
+                    <div style={{ fontSize: 11, color: CM.muted, marginTop: 3 }}>
+                      Stock actual: {stockActual.toLocaleString('es-AR')} ml · {alcanza ? `Quedan ${(stockActual - mlTotal).toLocaleString('es-AR')} ml` : `⚠ Faltan ${(mlTotal - stockActual).toLocaleString('es-AR')} ml`}
+                    </div>
+                  </div>
+                )
+              })()}
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
+                <input type="text" placeholder="descripcion, diagnostico, etc." value={formEventoM.observaciones}
+                  onChange={e => setFormEventoM({...formEventoM, observaciones: e.target.value})}
+                  style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+              </div>
+              <button onClick={registrarEventoM} disabled={guardandoM}
+                style={{ width: '100%', background: CM.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+                {guardandoM ? 'Guardando...' : 'Registrar evento'}
+              </button>
+              <button onClick={() => setPantSan('alertas')}
+                style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+                Cancelar
+              </button>
+            </>
+          )}
+
+          {pantSan === 'mortalidad' && (
+            <>
+              <div style={{ background: '#3D1A1A', border: '1px solid #F09595', borderRadius: 12, padding: '1rem', marginBottom: '.85rem', fontSize: 12, color: '#F09595', lineHeight: 1.6 }}>
+                Registra la muerte de un animal. Se descuenta del corral automaticamente.
+              </div>
+              <div style={{ marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Fecha</div>
+                <input type="date" value={formMort.fecha} onChange={e => setFormMort({...formMort, fecha: e.target.value})}
+                  style={{ width: '100%', background: CM.surface, border: '1px solid ' + CM.border, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+                <select value={formMort.corral_id} onChange={e => setFormMort({...formMort, corral_id: e.target.value})}
+                  style={{ width: '100%', background: CM.surface, border: '1px solid ' + CM.border, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                  <option value="">Selecciona un corral</option>
+                  {corrales.filter(c => (c.animales || 0) > 0 && c.rol !== 'deshabilitado').map(c => <option key={c.id} value={c.id}>C-{c.numero} - {c.animales} anim.</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom: '.85rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad</div>
+                <input type="number" inputMode="numeric" value={formMort.cantidad} onChange={e => setFormMort({...formMort, cantidad: e.target.value})} min="1"
+                  style={{ width: '100%', background: CM.surface, border: '1px solid ' + CM.border, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: '#F09595', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Causa</div>
+                <select value={formMort.causa} onChange={e => setFormMort({...formMort, causa: e.target.value})}
+                  style={{ width: '100%', background: CM.surface, border: '1px solid ' + CM.border, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                  <option value="">Sin especificar</option>
+                  {['Neumonia', 'Enterotoxemia', 'Accidente', 'Timpanismo', 'Diarrea', 'Causa desconocida', 'Otro'].map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <button onClick={guardarMortalidadM} disabled={guardandoMort}
+                style={{ width: '100%', background: '#7A1A1A', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+                {guardandoMort ? 'Registrando...' : 'Registrar muerte'}
+              </button>
+              <button onClick={() => nav && nav('home')}
+                style={{ width: '100%', background: 'transparent', border: '1px solid ' + CM.border, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+                Cancelar
+              </button>
+            </>
+          )}
+
+          {pantSan === 'stock' && (
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Stock sanitario</div>
+              <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem' }}>Solo lectura — los ingresos se registran desde la PC en Sanidad.</div>
+              {stockSanitarioM.length === 0 && (
+                <div style={{ padding: '2rem', textAlign: 'center', color: CM.muted, fontSize: 13 }}>No hay productos cargados.</div>
+              )}
+              {stockSanitarioM.map(p => {
+                const cant = p.cantidad_ml || 0
+                const bajo = cant < (p.minimo_stock || 50)
+                return (
+                  <div key={p.id} style={{ background: CM.surface, border: `1px solid ${bajo ? CM.red : CM.border}`, borderRadius: 10, padding: '1rem', marginBottom: '.65rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{p.producto}</div>
+                        <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>{p.tipo || '—'}{p.laboratorio ? ` · ${p.laboratorio}` : ''}</div>
+                        {p.carencia_dias > 0 && <div style={{ fontSize: 11, color: CM.amber, marginTop: 2 }}>⚠ Carencia: {p.carencia_dias} días</div>}
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 20, fontWeight: 700, fontFamily: CM.mono, color: bajo ? CM.red : CM.green }}>{cant.toLocaleString('es-AR')}</div>
+                        <div style={{ fontSize: 11, color: CM.muted }}>{p.unidad || 'ml'}</div>
+                        {bajo && <div style={{ fontSize: 11, color: CM.red, fontWeight: 600 }}>⚠ Stock bajo</div>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </MobileScroll>
+      </div>
+    )
+  }
+  // ── FIN MODO CELULAR — de acá para abajo sigue el modo PC, sin cambios ──
 
   const mortMes = mortalidad.filter(m => {
     const f = new Date(m.creado_en); const h = new Date()
