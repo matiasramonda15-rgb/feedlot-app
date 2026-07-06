@@ -761,7 +761,6 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: 13, fontWeight: 700, fontFamily: CM.mono, color: CM.green }}>{(ing.cantidad || 0).toLocaleString('es-AR')} kg</div>
-                          <div style={{ fontSize: 10, fontWeight: 600, color: ing.estadoPago === 'pagado' ? CM.green : CM.amber }}>{ing.estadoPago === 'pagado' ? 'Pagado' : ing.tienePrecio ? 'Pendiente de pago' : 'Sin precio aún'}</div>
                         </div>
                       </div>
                     </div>
