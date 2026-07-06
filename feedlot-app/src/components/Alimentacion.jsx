@@ -468,10 +468,10 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   // ── MODO CELULAR: carga diaria simple (piletas/mixer) ──
   if (mobile) {
     const dieta = formulaActiva
-    const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
+    const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado').sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
     // Para "Agregar rollo" sí se incluyen los corrales vacíos (libres) — por ejemplo,
     // para dejar rollo listo antes de que llegue una tropa nueva a la tarde.
-    const corralesParaRollo = corrales.filter(c => c.rol !== 'deshabilitado')
+    const corralesParaRollo = corrales.filter(c => c.rol !== 'deshabilitado').sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
     function getEtapaM(c) {
       if (c.rol === 'cuarentena') return 'acostumbramiento'
       if (c.rol === 'acumulacion' || c.rol === 'enfermeria') return 'recria'
