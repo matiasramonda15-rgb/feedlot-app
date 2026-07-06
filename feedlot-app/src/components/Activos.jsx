@@ -71,13 +71,14 @@ export default function Activos({ usuario }) {
   async function guardarActivo() {
     if (!formActivo.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    await supabase.from('activos').insert({
+    const { error } = await supabase.from('activos').insert({
       ...formActivo,
       anio: formActivo.anio ? parseInt(formActivo.anio) : null,
       valor_compra: formActivo.valor_compra ? parseFloat(formActivo.valor_compra) : null,
       valor_actual: formActivo.valor_actual ? parseFloat(formActivo.valor_actual) : null,
       registrado_por: usuario?.id,
     })
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormActivo(false)
     setFormActivo({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '' })
@@ -91,13 +92,16 @@ export default function Activos({ usuario }) {
     const desc = `Retiro socio — ${formRetiro.socio}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
     if (formRetiro.es_paralelo) {
-      const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+      const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+      if (errCp) { alert('Error al registrar en caja: ' + errCp.message); setGuardando(false); return }
       caja_paralela_id = cp?.id
     } else {
-      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto, forma_pago: formRetiro.forma_pago }).select().single()
+      const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto, forma_pago: formRetiro.forma_pago }).select().single()
+      if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardando(false); return }
       caja_oficial_id = co?.id
     }
-    await supabase.from('retiros_socios').insert({ ...formRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
+    const { error } = await supabase.from('retiros_socios').insert({ ...formRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
+    if (error) { alert('Error al guardar el retiro: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormRetiro(false)
     setFormRetiro({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false })
@@ -121,7 +125,7 @@ export default function Activos({ usuario }) {
     }).select().single()
     if (error) { alert('Error: ' + error.message); setGuardandoCredito(false); return }
     // Insertar cuotas en pagos_creditos como pendientes
-    await supabase.from('pagos_creditos').insert(
+    const { error: errCuotas } = await supabase.from('pagos_creditos').insert(
       cuotasValidas.map((c, i) => ({
         credito_id: cred.id,
         fecha: c.fecha,
@@ -130,6 +134,7 @@ export default function Activos({ usuario }) {
         estado: 'pendiente',
       }))
     )
+    if (errCuotas) { alert('El crédito se guardó, pero hubo un error al cargar las cuotas: ' + errCuotas.message); setGuardandoCredito(false); return }
     setShowFormCredito(false)
     setFormCredito({ activo_id: '', descripcion: '', entidad: '', observaciones: '' })
     setCuotasForm([{ fecha: '', monto: '' }])
@@ -143,10 +148,12 @@ export default function Activos({ usuario }) {
     const desc = `Cuota ${cuota.nro_cuota} — ${credito.activos?.nombre || credito.descripcion || ''}`
     let caja_oficial_id = null, caja_paralela_id = null
     if (formPagoCredito.es_paralelo) {
-      const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoCredito.fecha || cuota.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+      const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPagoCredito.fecha || cuota.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+      if (errCp) { alert('Error al registrar en caja: ' + errCp.message); setGuardandoPagoCredito(false); return }
       caja_paralela_id = cp?.id
     } else {
-      const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoCredito.fecha || cuota.fecha, tipo: 'egreso', categoria: 'Cuota crédito', descripcion: desc, monto, forma_pago: 'transferencia' }).select().single()
+      const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPagoCredito.fecha || cuota.fecha, tipo: 'egreso', categoria: 'Cuota crédito', descripcion: desc, monto, forma_pago: 'transferencia' }).select().single()
+      if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardandoPagoCredito(false); return }
       caja_oficial_id = co?.id
     }
     await supabase.from('pagos_creditos').update({ estado: 'pagado', fecha_pago: formPagoCredito.fecha || cuota.fecha, caja_oficial_id, caja_paralela_id }).eq('id', cuota.id)
@@ -161,7 +168,7 @@ export default function Activos({ usuario }) {
 
   async function guardarEditActivo() {
     if (!editandoActivo?.nombre?.trim()) { alert('Ingresá el nombre'); return }
-    await supabase.from('activos').update({
+    const { error } = await supabase.from('activos').update({
       nombre: editandoActivo.nombre,
       tipo: editandoActivo.tipo,
       marca: editandoActivo.marca || null,
@@ -176,6 +183,7 @@ export default function Activos({ usuario }) {
       pct_servicios: parseFloat(editandoActivo.pct_servicios) || 0,
       pct_alfalfa: parseFloat(editandoActivo.pct_alfalfa) || 0,
     }).eq('id', editandoActivo.id)
+    if (error) { alert('Error al guardar los cambios: ' + error.message); return }
     setEditandoActivo(null)
     await cargar()
   }
