@@ -469,6 +469,9 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   if (mobile) {
     const dieta = formulaActiva
     const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
+    // Para "Agregar rollo" sí se incluyen los corrales vacíos (libres) — por ejemplo,
+    // para dejar rollo listo antes de que llegue una tropa nueva a la tarde.
+    const corralesParaRollo = corrales.filter(c => c.rol !== 'deshabilitado')
     function getEtapaM(c) {
       if (c.rol === 'cuarentena') return 'acostumbramiento'
       if (c.rol === 'acumulacion' || c.rol === 'enfermeria') return 'recria'
@@ -504,7 +507,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     async function agregarRolloHoyM() {
       setGuardandoRolloM(true)
       const hoy = new Date().toISOString().split('T')[0]
-      const corralesConKg = corralesAlim
+      const corralesConKg = corralesParaRollo
         .filter(c => (kgsRolloExtraM[c.id] || 0) > 0)
         .map(c => ({ corralId: c.id, kg: parseInt(kgsRolloExtraM[c.id]) || 0 }))
       const kgRolloTotal = await agregarRolloExtra(supabase, { fecha: hoy, corralesConKg, dieta })
@@ -685,9 +688,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
               ) : (
                 <div style={{ background: '#F0F7E6', border: '1px solid #639922', borderRadius: 10, padding: '1rem', marginTop: 8 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#639922', marginBottom: 12 }}>🌿 Agregar rollo</div>
-                  {corralesAlim.map(c => (
+                  {corralesParaRollo.map(c => (
                     <div key={c.id} style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 12, color: '#639922', fontWeight: 600, marginBottom: 4 }}>Corral {c.numero} ({c.animales} animales)</div>
+                      <div style={{ fontSize: 12, color: '#639922', fontWeight: 600, marginBottom: 4 }}>
+                        Corral {c.numero} ({c.animales || 0} animales{c.rol === 'libre' ? ' · vacío, tropa por llegar' : ''})
+                      </div>
                       <input type="number" inputMode="numeric" placeholder="0 kg" value={kgsRolloExtraM[c.id] || ''}
                         onChange={e => setKgsRolloExtraM({...kgsRolloExtraM, [c.id]: parseInt(e.target.value) || 0})}
                         style={{ width: '100%', background: '#fff', border: '1px solid #639922', borderRadius: 8, padding: '10px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: '#639922', boxSizing: 'border-box' }} />
