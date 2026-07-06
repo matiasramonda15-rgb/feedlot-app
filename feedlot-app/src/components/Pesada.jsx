@@ -340,6 +340,9 @@ export default function Pesada({ usuario, mobile, nav }) {
                   {corralesLibres.filter(c => String(c.id) !== String(corralLibre2)).map(c => (
                     <option key={c.id} value={c.id}>Corral {c.numero}</option>
                   ))}
+                  {corrales.filter(c => c.rol === 'clasificado' && c.sub === 'A' && String(c.id) !== String(corralLibre2)).map(c => (
+                    <option key={c.id} value={c.id}>Corral {c.numero} — continuar Rango A (ya tiene {c.animales || 0})</option>
+                  ))}
                 </select>
               </div>
               <div style={{ marginBottom: '1rem' }}>
@@ -351,6 +354,9 @@ export default function Pesada({ usuario, mobile, nav }) {
                   <option value="">— Seleccioná un corral libre —</option>
                   {corralesLibres.filter(c => String(c.id) !== String(corralLibre1)).map(c => (
                     <option key={c.id} value={c.id}>Corral {c.numero}</option>
+                  ))}
+                  {corrales.filter(c => c.rol === 'clasificado' && c.sub === 'B' && String(c.id) !== String(corralLibre1)).map(c => (
+                    <option key={c.id} value={c.id}>Corral {c.numero} — continuar Rango B (ya tiene {c.animales || 0})</option>
                   ))}
                 </select>
               </div>
@@ -803,6 +809,9 @@ export default function Pesada({ usuario, mobile, nav }) {
                   {corralesLibres.filter(c => String(c.id) !== String(corralLibre2)).map(c => (
                     <option key={c.id} value={c.id}>Corral {c.numero} · cap. {c.capacidad || '—'}</option>
                   ))}
+                  {corrales.filter(c => c.rol === 'clasificado' && c.sub === 'A' && String(c.id) !== String(corralLibre2)).map(c => (
+                    <option key={c.id} value={c.id}>Corral {c.numero} — continuar Rango A (ya tiene {c.animales || 0})</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -812,6 +821,9 @@ export default function Pesada({ usuario, mobile, nav }) {
                   <option value="">— Seleccioná —</option>
                   {corralesLibres.filter(c => String(c.id) !== String(corralLibre1)).map(c => (
                     <option key={c.id} value={c.id}>Corral {c.numero} · cap. {c.capacidad || '—'}</option>
+                  ))}
+                  {corrales.filter(c => c.rol === 'clasificado' && c.sub === 'B' && String(c.id) !== String(corralLibre1)).map(c => (
+                    <option key={c.id} value={c.id}>Corral {c.numero} — continuar Rango B (ya tiene {c.animales || 0})</option>
                   ))}
                 </select>
               </div>

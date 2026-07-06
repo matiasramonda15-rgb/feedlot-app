@@ -37,6 +37,20 @@ export async function confirmarPesadaClasificacion(supabase, {
 }) {
   const totalClasif = Object.values(conteoRangos).reduce((s, r) => s + (r?.cantidad || 0), 0)
 
+  if (!corralLibre1Id || !corralLibre2Id) return { error: { message: 'Seleccioná dos corrales para los rangos A y B' } }
+  if (corralLibre1Id === corralLibre2Id) return { error: { message: 'Los corrales para A y B deben ser diferentes' } }
+  if (totalClasif === 0) return { error: { message: 'No hay animales pesados' } }
+
+  // Detectar si los corrales elegidos para A/B ya venían en curso de un día
+  // anterior de la MISMA pesada (rango A o B ya asignado ahí) — en ese caso hay
+  // que SUMAR los animales nuevos, no pisar el número, y no volver a correr las
+  // fechas de próxima pesada / fecha_term_c (eso ya se hizo el primer día).
+  const { data: corral1Actual } = await supabase.from('corrales').select('rol, sub, animales').eq('id', corralLibre1Id).single()
+  const { data: corral2Actual } = await supabase.from('corrales').select('rol, sub, animales').eq('id', corralLibre2Id).single()
+  const esContinuacionA = corral1Actual?.rol === 'clasificado' && corral1Actual?.sub === 'A'
+  const esContinuacionB = corral2Actual?.rol === 'clasificado' && corral2Actual?.sub === 'B'
+  const esContinuacion = esContinuacionA || esContinuacionB
+
   // 1. Registrar pesada
   const { data: pesada, error } = await supabase.from('pesadas').insert({
     corral_id: corralAcum?.id || null, tipo: 'clasificacion', registrado_por: usuario?.id, fecha,
@@ -76,8 +90,8 @@ export async function confirmarPesadaClasificacion(supabase, {
   })
   const cantA = conteoRangos.A?.cantidad || 0
   const cantB = conteoRangos.B?.cantidad || 0
-  if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corralLibre1Id, tipo: 'nuevo_clasificado', animales: cantA, rango_antes: 'libre', rango_despues: 'A' })
-  if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corralLibre2Id, tipo: 'nuevo_clasificado', animales: cantB, rango_antes: 'libre', rango_despues: 'B' })
+  if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corralLibre1Id, tipo: esContinuacionA ? 'suma_existente' : 'nuevo_clasificado', animales: cantA, rango_antes: esContinuacionA ? 'A' : 'libre', rango_despues: 'A' })
+  if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corralLibre2Id, tipo: esContinuacionB ? 'suma_existente' : 'nuevo_clasificado', animales: cantB, rango_antes: esContinuacionB ? 'B' : 'libre', rango_despues: 'B' })
   const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
   Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
     const cant = conteoRangos[letraNueva]?.cantidad || 0
@@ -87,15 +101,21 @@ export async function confirmarPesadaClasificacion(supabase, {
   })
   if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
 
-  // 5. Subir 2 rangos a los corrales clasificados existentes
+  // 5. Subir 2 rangos a los corrales clasificados existentes (no toca A/B, esos se manejan aparte)
   for (const c of corralesClasificados) {
     const letraActual = (c.sub || 'A').length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
     await supabase.from('corrales').update({ sub: subirRango(letraActual, 2) }).eq('id', c.id)
   }
 
-  // 6. Asignar los corrales libres elegidos para los nuevos A y B
-  if (cantA > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'A', animales: cantA }).eq('id', corralLibre1Id)
-  if (cantB > 0) await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB }).eq('id', corralLibre2Id)
+  // 6. Asignar (primera vez) o SUMAR (continuación de un día anterior) los corrales de A y B
+  if (cantA > 0) {
+    if (esContinuacionA) await supabase.from('corrales').update({ animales: (corral1Actual.animales || 0) + cantA }).eq('id', corralLibre1Id)
+    else await supabase.from('corrales').update({ rol: 'clasificado', sub: 'A', animales: cantA }).eq('id', corralLibre1Id)
+  }
+  if (cantB > 0) {
+    if (esContinuacionB) await supabase.from('corrales').update({ animales: (corral2Actual.animales || 0) + cantB }).eq('id', corralLibre2Id)
+    else await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB }).eq('id', corralLibre2Id)
+  }
 
   // 7. Sumar animales C-G a los corrales que YA existían (usando el snapshot previo)
   for (const [letraNueva, letraAnterior] of Object.entries(mapeoDestino)) {
@@ -113,15 +133,17 @@ export async function confirmarPesadaClasificacion(supabase, {
     await supabase.from('corrales').update({ animales: Math.max(0, (acumActual?.animales || 0) - totalClasif) }).eq('id', corralAcum.id)
   }
 
-  // 9. Próxima pesada +40 días
-  const nuevaProxima = new Date()
-  nuevaProxima.setDate(nuevaProxima.getDate() + 40)
-  await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
+  // 9. Próxima pesada +40 días y fecha_term_c +20 días — solo si NO es continuación
+  // (si ya se había hecho el primer día de esta misma pesada, no hay que volver a correrlas)
+  if (!esContinuacion) {
+    const nuevaProxima = new Date()
+    nuevaProxima.setDate(nuevaProxima.getDate() + 40)
+    await supabase.from('configuracion').update({ valor: nuevaProxima.toISOString().split('T')[0] }).eq('clave', 'proxima_pesada')
 
-  // 9b. Fecha en que el rango C pasa a terminación (+20 días) — antes solo lo hacía la PC
-  const fechaTermC = new Date()
-  fechaTermC.setDate(fechaTermC.getDate() + 20)
-  await supabase.from('configuracion').upsert({ clave: 'fecha_term_c', valor: fechaTermC.toISOString().split('T')[0] }, { onConflict: 'clave' })
+    const fechaTermC = new Date()
+    fechaTermC.setDate(fechaTermC.getDate() + 20)
+    await supabase.from('configuracion').upsert({ clave: 'fecha_term_c', valor: fechaTermC.toISOString().split('T')[0] }, { onConflict: 'clave' })
+  }
 
   return { error: null, pesada, totalClasif }
 }
