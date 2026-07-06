@@ -62,6 +62,7 @@ function Badge({ children, color, bg, border }) {
 export default function Sanidad({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('alertas')
   const [historialSan, setHistorialSan] = useState([])
+  const [historialSanLegacy, setHistorialSanLegacy] = useState([])
   const [loading, setLoading] = useState(true)
   const [alertas, setAlertas] = useState([])
   const [corrales, setCorrales] = useState([])
@@ -235,12 +236,14 @@ export default function Sanidad({ usuario, mobile, nav }) {
   }, [])
 
   async function cargarProductos() {
-    const [{ data }, { data: compras }] = await Promise.all([
+    const [{ data }, { data: compras }, { data: legacy }] = await Promise.all([
       cargarStockSanitario(supabase),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'sanitario').order('fecha', { ascending: false }).limit(50),
+      supabase.from('ingresos_stock').select('*').eq('tipo', 'sanitario').order('creado_en', { ascending: false }).limit(10),
     ])
     if (data) setProductos(data.map(p => ({ n: p.producto, tipo: p.tipo, id: p.id, cantidad_ml: p.cantidad_ml, unidad: p.unidad || 'ml', lab: p.laboratorio || '', car: p.carencia_dias || 0, minimo: p.minimo_stock || 0 })))
     setHistorialSan(compras || [])
+    setHistorialSanLegacy(legacy || [])
   }
 
   useEffect(() => { cargarDatos() }, [])
@@ -979,6 +982,31 @@ export default function Sanidad({ usuario, mobile, nav }) {
                   </div>
                 )
               })}
+
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '1.25rem 0 .65rem' }}>Últimos 5 ingresos registrados</div>
+              {(() => {
+                const nuevos = historialSan.map(ing => ({ id: 'n'+ing.id, nombre: ing.insumo_nombre, cantidad: ing.cantidad, fecha: ing.fecha, proveedor: ing.proveedor, estadoPago: ing.estado_pago, tienePrecio: !!ing.precio_unitario }))
+                const viejos = historialSanLegacy.map(ing => ({ id: 'l'+ing.id, nombre: ing.insumo_nombre, cantidad: ing.cantidad_kg, fecha: (ing.creado_en || '').split('T')[0], proveedor: ing.proveedor, estadoPago: ing.estado_pago, tienePrecio: !!ing.precio_por_kg }))
+                const todos = [...nuevos, ...viejos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 5)
+                if (todos.length === 0) return <div style={{ fontSize: 12, color: CM.muted, textAlign: 'center', padding: '1rem' }}>Todavía no hay ingresos cargados.</div>
+                return todos.map(ing => (
+                  <div key={ing.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '.7rem .9rem', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{ing.nombre}</div>
+                        <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>
+                          {ing.fecha ? new Date(ing.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                          {ing.proveedor ? ` · ${ing.proveedor}` : ''}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, fontFamily: CM.mono, color: CM.green }}>{(ing.cantidad || 0).toLocaleString('es-AR')} ml</div>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: ing.estadoPago === 'pagado' ? CM.green : CM.amber }}>{ing.estadoPago === 'pagado' ? 'Pagado' : ing.tienePrecio ? 'Pendiente de pago' : 'Sin precio aún'}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              })()}
             </div>
           )}
         </MobileScroll>

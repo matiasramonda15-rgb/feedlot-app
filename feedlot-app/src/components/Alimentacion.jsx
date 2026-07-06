@@ -160,6 +160,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   const [historial, setHistorial] = useState([])
   const [historialArchivo, setHistorialArchivo] = useState([])
   const [historialInsumos, setHistorialInsumos] = useState([])
+  const [historialLegacy, setHistorialLegacy] = useState([])
   const [archivoOffset, setArchivoOffset] = useState(100)
   const [cargandoArchivo, setCargandoArchivo] = useState(false)
 
@@ -236,7 +237,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     hace7dias.setDate(hace7dias.getDate() - 7)
     const hace7diasISO = hace7dias.toISOString()
 
-    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }, { data: compras }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }, { data: compras }, { data: legacy }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
@@ -245,11 +246,13 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion', 'fecha_term_c']),
       supabase.from('raciones_app').select('*, corrales(numero)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'alimentacion').order('fecha', { ascending: false }).limit(50),
+      supabase.from('ingresos_stock').select('*').eq('tipo', 'alimentacion').order('creado_en', { ascending: false }).limit(10),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
     setHistorial(rapp || [])
     setHistorialInsumos(compras || [])
+    setHistorialLegacy(legacy || [])
     setHistorialArchivo([])
     setArchivoOffset(100)
 
@@ -739,6 +742,31 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                     </div>
                   )
                 })}
+
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '1.25rem 0 .65rem' }}>Últimos 5 ingresos registrados</div>
+                {(() => {
+                  const nuevos = historialInsumos.map(ing => ({ id: 'n'+ing.id, nombre: ing.insumo_nombre, cantidad: ing.cantidad, fecha: ing.fecha, proveedor: ing.proveedor, estadoPago: ing.estado_pago, tienePrecio: !!ing.precio_unitario }))
+                  const viejos = historialLegacy.map(ing => ({ id: 'l'+ing.id, nombre: ing.insumo_nombre, cantidad: ing.cantidad_kg, fecha: (ing.creado_en || '').split('T')[0], proveedor: ing.proveedor, estadoPago: ing.estado_pago, tienePrecio: !!ing.precio_por_kg }))
+                  const todos = [...nuevos, ...viejos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 5)
+                  if (todos.length === 0) return <div style={{ fontSize: 12, color: CM.muted, textAlign: 'center', padding: '1rem' }}>Todavía no hay ingresos cargados.</div>
+                  return todos.map(ing => (
+                    <div key={ing.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '.7rem .9rem', marginBottom: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{ing.nombre}</div>
+                          <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>
+                            {ing.fecha ? new Date(ing.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                            {ing.proveedor ? ` · ${ing.proveedor}` : ''}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: CM.mono, color: CM.green }}>{(ing.cantidad || 0).toLocaleString('es-AR')} kg</div>
+                          <div style={{ fontSize: 10, fontWeight: 600, color: ing.estadoPago === 'pagado' ? CM.green : CM.amber }}>{ing.estadoPago === 'pagado' ? 'Pagado' : ing.tienePrecio ? 'Pendiente de pago' : 'Sin precio aún'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                })()}
               </>
             )
           })()}
