@@ -707,11 +707,36 @@ export default function Alimentacion({ usuario, mobile, nav }) {
               )}
             </>
           )}
-          {tabM === 'stock' && (
-            <div style={{ fontSize: 12, color: CM.muted, padding: '1rem', textAlign: 'center' }}>
-              El detalle de stock se ve en la pestaña "Stock de insumos" de esta misma pantalla.
-            </div>
-          )}
+          {tabM === 'stock' && (() => {
+            const COLORES_M = { 'Rollo (heno)': '#639922', 'Maiz grano seco': '#E8A020', 'Vitaminas': '#5090E0', 'Urea': '#9060C0', 'Soja grano': '#20A060' }
+            return (
+              <>
+                <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem', padding: '8px 12px', background: CM.surface, borderRadius: 8, border: `1px solid ${CM.border}` }}>
+                  📋 Solo lectura — los ingresos (remitos) se registran desde la PC, en la pestaña "Stock de insumos".
+                </div>
+                {stockDB.map(s => {
+                  const bajo = s.cantidad_kg <= s.minimo_kg
+                  const color = bajo ? CM.amber : CM.green
+                  const c = COLORES_M[s.insumo] || CM.green
+                  const pct = Math.min(100, Math.round(s.cantidad_kg / Math.max(s.minimo_kg * 3, s.cantidad_kg) * 100))
+                  return (
+                    <div key={s.id} style={{ padding: '.75rem 0', borderBottom: `1px solid ${CM.border}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />{s.insumo}
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 700, fontFamily: CM.mono, color }}>{bajo ? '⚠ ' : ''}{(s.cantidad_kg || 0).toLocaleString('es-AR')} kg</div>
+                      </div>
+                      <div style={{ height: 4, background: CM.surface2, borderRadius: 2, overflow: 'hidden', marginBottom: 5 }}>
+                        <div style={{ height: '100%', borderRadius: 2, background: color, width: `${pct}%` }} />
+                      </div>
+                      {bajo && <div style={{ fontSize: 11, color: CM.amber }}>⚠ Bajo mínimo ({(s.minimo_kg || 0).toLocaleString('es-AR')} kg) — avisar para reponer</div>}
+                    </div>
+                  )
+                })}
+              </>
+            )
+          })()}
         </MobileScroll>
       </div>
     )
