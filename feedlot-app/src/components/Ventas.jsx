@@ -4,6 +4,22 @@ import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { registrarVenta } from '../shared/ventasLogic'
 
+const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+function MobileTopbar({ titulo, sub, onBack }) {
+  return (
+    <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+      {onBack && <button onClick={onBack} style={{ background: 'none', border: 'none', color: CM.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>}
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: CM.text }}>{titulo}</div>
+        {sub && <div style={{ fontSize: 11, color: CM.muted, marginTop: 1 }}>{sub}</div>}
+      </div>
+    </div>
+  )
+}
+function MobileScroll({ children }) {
+  return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', background: CM.bg, color: CM.text }}>{children}</div>
+}
+
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
   text: '#1A1916', muted: '#6B6760', hint: '#9E9A94',
@@ -112,7 +128,7 @@ async function generarPdfVenta(titulo, filas, info) {
   doc.save(nombreArchivo)
 }
 
-export default function Ventas({ usuario }) {
+export default function Ventas({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('ventas')
   const [loading, setLoading] = useState(true)
   const [ventas, setVentas] = useState([])
@@ -152,6 +168,27 @@ export default function Ventas({ usuario }) {
   })
   // Multi-corral
   const [corralesVenta, setCorralesVenta] = useState([{ corral_id: '', cantidad: '', kg_vivo: '' }])
+  // Estado simple del formulario cuando se usa desde el celular (sin precio/comercial)
+  const [compradorM, setCompradorM] = useState('')
+  const [compradorNuevoM, setCompradorNuevoM] = useState('')
+  const [observacionesM, setObservacionesM] = useState('')
+  const [guardandoM, setGuardandoM] = useState(false)
+
+  async function guardarVentaMobile() {
+    const validos = corralesVenta.filter(c => c.corral_id && c.cantidad && c.kg_vivo)
+    if (validos.length === 0) { alert('Completá al menos un corral con cantidad y kg'); return }
+    setGuardandoM(true)
+    const compradorFinal = compradorM === 'Otro' ? compradorNuevoM : compradorM
+    const { error, cantidadVentas } = await registrarVenta(supabase, {
+      corralesVenta: validos, desbastePct: 8,
+      comprador: compradorFinal, observaciones: observacionesM, usuario,
+    })
+    if (error) { alert('Error al guardar: ' + error.message); setGuardandoM(false); return }
+    await cargar()
+    alert(`${cantidadVentas > 1 ? `${cantidadVentas} ventas registradas` : 'Venta registrada'} correctamente.`)
+    nav && nav('home')
+    setGuardandoM(false)
+  }
   const [guardando, setGuardando] = useState(false)
   const [ventaConfirmada, setVentaConfirmada] = useState(null)
 
@@ -402,6 +439,119 @@ export default function Ventas({ usuario }) {
   }
 
   if (loading) return <Loader />
+
+  // ── MODO CELULAR: formulario simple de carga de venta (sin precio/comercial) ──
+  if (mobile) {
+    const corralesConAnimales = corrales.filter(c => (c.animales || 0) > 0 && c.rol !== 'deshabilitado')
+    const totalKgVivo = corralesVenta.reduce((s, c) => s + (parseFloat(c.kg_vivo) || 0), 0)
+    const totalCant = corralesVenta.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <MobileTopbar titulo="Carga venta" sub="Desbaste 8% · podés agregar varios corrales" onBack={() => nav && nav('home')} />
+        <MobileScroll>
+          {corralesVenta.map((cv, i) => {
+            const kgVivoCv = parseFloat(cv.kg_vivo) || 0
+            return (
+              <div key={i} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.65rem' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: CM.green }}>Corral {i + 1}</div>
+                  {corralesVenta.length > 1 && (
+                    <button onClick={() => setCorralesVenta(corralesVenta.filter((_, j) => j !== i))}
+                      style={{ background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 6, color: CM.muted, fontSize: 11, padding: '3px 8px', cursor: 'pointer', fontFamily: CM.sans }}>
+                      Quitar
+                    </button>
+                  )}
+                </div>
+                <div style={{ marginBottom: '.65rem' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral</div>
+                  <select value={cv.corral_id} onChange={e => { const n = [...corralesVenta]; n[i].corral_id = e.target.value; setCorralesVenta(n) }}
+                    style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                    <option value="">Seleccioná un corral</option>
+                    {corralesConAnimales.map(c => <option key={c.id} value={c.id}>C-{c.numero} · {c.rol === 'clasificado' && c.sub ? `Rango ${c.sub}` : c.rol} · {c.animales} anim.</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: kgVivoCv > 0 ? '.65rem' : 0 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad</div>
+                    <input type="number" inputMode="numeric" placeholder="ej. 20" value={cv.cantidad}
+                      onChange={e => { const n = [...corralesVenta]; n[i].cantidad = e.target.value; setCorralesVenta(n) }}
+                      style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Kg vivo (báscula)</div>
+                    <input type="number" inputMode="numeric" placeholder="ej. 8000" value={cv.kg_vivo}
+                      onChange={e => { const n = [...corralesVenta]; n[i].kg_vivo = e.target.value; setCorralesVenta(n) }}
+                      style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                {kgVivoCv > 0 && (
+                  <div style={{ fontSize: 12, fontFamily: CM.mono, color: CM.blue }}>
+                    Peso prom: <strong>{Math.round(kgVivoCv / (parseInt(cv.cantidad) || 1)).toLocaleString('es-AR')} kg/cabeza</strong>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          <button onClick={() => setCorralesVenta([...corralesVenta, { corral_id: '', cantidad: '', kg_vivo: '' }])}
+            style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 13, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans, marginBottom: '.85rem' }}>
+            + Agregar otro corral
+          </button>
+
+          {totalKgVivo > 0 && (
+            <div style={{ background: '#0F2040', border: `1px solid ${CM.blue}`, borderRadius: 12, padding: '1rem', marginBottom: '.85rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.blue, textTransform: 'uppercase', marginBottom: 10 }}>Resumen total</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                {[
+                  { label: 'KG vivo total', value: totalKgVivo.toLocaleString('es-AR') + ' kg' },
+                  { label: 'Total animales', value: totalCant + ' cab.' },
+                  { label: 'Peso prom. bruto', value: totalCant > 0 ? Math.round(totalKgVivo / totalCant).toLocaleString('es-AR') + ' kg' : '—' },
+                ].map(s => (
+                  <div key={s.label}>
+                    <div style={{ fontSize: 10, color: CM.muted, marginBottom: 2 }}>{s.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, fontFamily: CM.mono, color: CM.blue }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: CM.muted }}>{corralesVenta.filter(c => c.corral_id).length} corrales</div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Comprador</div>
+            <select value={compradorM} onChange={e => { setCompradorM(e.target.value); setCompradorNuevoM('') }}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+              <option value="">— Seleccioná o agregá nuevo —</option>
+              {(compradores || []).map(o => <option key={o} value={o}>{o}</option>)}
+              <option value="Otro">+ Nuevo comprador...</option>
+            </select>
+            {compradorM === 'Otro' && (
+              <input type="text" placeholder="Nombre del comprador" value={compradorNuevoM}
+                onChange={e => setCompradorNuevoM(e.target.value)}
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box', marginTop: 6 }} />
+            )}
+          </div>
+
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
+            <input type="text" placeholder="observaciones opcionales..." value={observacionesM}
+              onChange={e => setObservacionesM(e.target.value)}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+          </div>
+
+          <button onClick={guardarVentaMobile} disabled={guardandoM}
+            style={{ width: '100%', background: CM.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
+            {guardandoM ? 'Guardando...' : 'Registrar venta'}
+          </button>
+          <button onClick={() => nav && nav('home')}
+            style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+            Cancelar
+          </button>
+        </MobileScroll>
+      </div>
+    )
+  }
+  // ── FIN MODO CELULAR — de acá para abajo sigue el modo PC, sin cambios ──
 
   const TABS = [
     { key: 'ventas', label: 'Ventas' },

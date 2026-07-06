@@ -9,6 +9,7 @@ import { registrarVenta } from '../shared/ventasLogic'
 import { registrarServicioTercero } from '../shared/serviciosLogic'
 import Corrales from '../components/Corrales'
 import Ingresos from '../components/Ingresos'
+import Ventas from '../components/Ventas'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -89,7 +90,7 @@ export default function AppMovil({ usuario, onLogout }) {
     pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} dietaAyer={datos.dietaAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
-    venta:       <VentaMovil nav={nav} usuario={usuario} corrales={datos.corrales} compradores={datos.compradores || []} onDone={cargarDatos} />,
+    venta:       <Ventas usuario={usuario} mobile={true} nav={nav} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
     servicios:   <ServiciosMovil nav={nav} usuario={usuario} />,
   }
@@ -1823,7 +1824,7 @@ function PesadaMovil({ nav, usuario, corrales, onDone }) {
   )
 }
 
-function VentaMovil({ nav, usuario, corrales, compradores, onDone }) {
+function VentaMovil_OLD_local_sin_usar({ nav, usuario, corrales, compradores, onDone }) {
   const [corralesVenta, setCorralesVenta] = useState([{ corral_id: '', cantidad: '', kg_vivo: '' }])
   const [comprador, setComprador] = useState('')
   const [compradorNuevo, setCompradorNuevo] = useState('')
