@@ -1078,6 +1078,25 @@ export default function Alimentacion({ usuario, mobile, nav }) {
             })
             return Object.entries(porFecha).sort((a, b) => b[0].localeCompare(a[0])).map(([fecha, items]) => {
               const totalKg = items.reduce((s, h) => s + (h.kg_total || 0), 0)
+
+              // Resumen de kilos de cada insumo (maíz seco, maíz húmedo, rollo, etc.)
+              // realmente usados ese día — separa la parte de rollo extra del mixer.
+              const resumenInsumos = {}
+              items.forEach(h => {
+                const kgRollo = h.kg_rollo_extra || (h.solo_rollo ? (h.kg_total || 0) : 0)
+                const kgMixer = (h.kg_total || 0) - kgRollo
+                if (kgRollo > 0) resumenInsumos['Rollo'] = (resumenInsumos['Rollo'] || 0) + kgRollo
+                if (kgMixer > 0) {
+                  const etapa = h.mezclador === 'Acostumbramiento' ? 'acostumbramiento' : h.mezclador === 'Recria' ? 'recria' : 'terminacion'
+                  const dietaH = h.tipo_dieta || 'seco'
+                  const formulaDia = formulas?.[dietaH]?.[etapa] || []
+                  formulaDia.forEach(ing => {
+                    const kgIng = Math.round(ing.kg * kgMixer / 100)
+                    if (kgIng) resumenInsumos[ing.n] = (resumenInsumos[ing.n] || 0) + kgIng
+                  })
+                }
+              })
+
               return (
                 <div key={fecha} style={{ marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1094,6 +1113,16 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                       </button>
                     </div>
                   </div>
+                  {Object.keys(resumenInsumos).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                      {Object.entries(resumenInsumos).sort((a, b) => b[1] - a[1]).map(([nombre, kg]) => (
+                        <div key={nombre} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                          <span style={{ color: S.muted }}>{nombre}: </span>
+                          <span style={{ fontWeight: 700, fontFamily: 'monospace', color: nombre === 'Rollo' ? '#639922' : S.text }}>{kg.toLocaleString('es-AR')} kg</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
@@ -1113,7 +1142,19 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                                 {h.tipo_dieta === 'humedo' ? 'Maíz húmedo' : 'Maíz seco'}
                               </span>
                             </td>
-                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700 }}>
+                              {h.rollo_y_mixer ? (
+                                <span>
+                                  <span style={{ color: S.green }}>{((h.kg_total || 0) - (h.kg_rollo_extra || 0)).toLocaleString('es-AR')} kg mixer</span>
+                                  {' + '}
+                                  <span style={{ color: '#639922' }}>{(h.kg_rollo_extra || 0).toLocaleString('es-AR')} kg rollo</span>
+                                </span>
+                              ) : h.solo_rollo ? (
+                                <span style={{ color: '#639922' }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg rollo</span>
+                              ) : (
+                                <span style={{ color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</span>
+                              )}
+                            </td>
                             <td style={{ padding: '8px 12px' }}>
                               <button onClick={() => eliminarRacion(h.id)}
                                 style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 5, cursor: 'pointer' }}>
@@ -1202,7 +1243,19 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                                         {h.tipo_dieta === 'humedo' ? 'Maíz húmedo' : 'Maíz seco'}
                                       </span>
                                     </td>
-                                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
+                                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700 }}>
+                                      {h.rollo_y_mixer ? (
+                                        <span>
+                                          <span style={{ color: S.green }}>{((h.kg_total || 0) - (h.kg_rollo_extra || 0)).toLocaleString('es-AR')} kg mixer</span>
+                                          {' + '}
+                                          <span style={{ color: '#639922' }}>{(h.kg_rollo_extra || 0).toLocaleString('es-AR')} kg rollo</span>
+                                        </span>
+                                      ) : h.solo_rollo ? (
+                                        <span style={{ color: '#639922' }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg rollo</span>
+                                      ) : (
+                                        <span style={{ color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</span>
+                                      )}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
