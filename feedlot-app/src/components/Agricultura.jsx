@@ -116,6 +116,29 @@ export default function Agricultura({ usuario, mobile, nav }) {
             <div style={{ fontSize: 15, fontWeight: 700, color: CM.text, marginBottom: 4 }}>📦 Stock de insumos</div>
             <div style={{ fontSize: 12, color: CM.muted }}>Ver cantidades disponibles (solo lectura)</div>
           </button>
+
+          <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '1.25rem 0 .65rem' }}>Últimas órdenes de trabajo</div>
+          {ordenes.length === 0 && <div style={{ fontSize: 13, color: CM.muted, textAlign: 'center', padding: '1rem' }}>Todavía no hay órdenes cargadas.</div>}
+          {ordenes.slice(0, 6).map(o => {
+            const loteO = o.campos?.lotes_agricolas?.find(l => l.id === o.lote_id)
+            return (
+              <div key={o.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.8rem', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{o.tipo} — {o.campos?.nombre || '—'}{loteO ? ` · Lote ${loteO.numero}` : ''}</div>
+                    <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>
+                      {o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                      {o.superficie_ha_real ? ` · ${o.superficie_ha_real} ha` : ''}
+                      {!o.es_propia && o.proveedor ? ` · ${o.proveedor}` : ''}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: o.estado_pago === 'pagado' ? '#1A3D26' : '#3D2A00', color: o.estado_pago === 'pagado' ? CM.green : '#F5C97A' }}>
+                    {o.estado_pago === 'pagado' ? 'Pagado' : 'Pendiente'}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
     )
@@ -961,7 +984,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     }).select().single()
     if (errOrden) { alert('Error al guardar la orden: ' + errOrden.message); setGuardando(false); return }
 
-    await cargar()
+    if (!mobile) await cargar() // en el celular, la recarga se hace recién al volver al inicio (ver más abajo), para no remontar el formulario y perder la confirmación
     setShowForm(false)
     if (mobile) setOrdenGuardadaM(ordenInsertada)
     setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '' })
@@ -1073,7 +1096,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.blue}`, borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: CM.blue, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 10 }}>
               🖨️ Ver / Descargar PDF
             </button>
-            <button onClick={() => { setOrdenGuardadaM(null); nav && nav('home') }}
+            <button onClick={async () => { setOrdenGuardadaM(null); await cargar(); nav && nav('home') }}
               style={{ width: '100%', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
               Volver al inicio
             </button>
