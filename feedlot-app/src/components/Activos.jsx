@@ -74,6 +74,7 @@ export default function Activos({ usuario }) {
     const { error } = await supabase.from('activos').insert({
       ...formActivo,
       anio: formActivo.anio ? parseInt(formActivo.anio) : null,
+      fecha_compra: formActivo.fecha_compra || null,
       valor_compra: formActivo.valor_compra ? parseFloat(formActivo.valor_compra) : null,
       valor_actual: formActivo.valor_actual ? parseFloat(formActivo.valor_actual) : null,
       registrado_por: usuario?.id,
