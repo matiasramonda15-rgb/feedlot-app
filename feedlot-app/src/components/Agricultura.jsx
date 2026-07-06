@@ -32,6 +32,7 @@ const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'La
 
 export default function Agricultura({ usuario, mobile, nav }) {
   const [pantAgroM, setPantAgroM] = useState('home')
+  const [ordenExpandidaM, setOrdenExpandidaM] = useState(null)
   const [tab, setTab] = useState('campos')
   const [loading, setLoading] = useState(true)
 
@@ -121,8 +122,10 @@ export default function Agricultura({ usuario, mobile, nav }) {
           {ordenes.length === 0 && <div style={{ fontSize: 13, color: CM.muted, textAlign: 'center', padding: '1rem' }}>Todavía no hay órdenes cargadas.</div>}
           {ordenes.slice(0, 6).map(o => {
             const loteO = o.campos?.lotes_agricolas?.find(l => l.id === o.lote_id)
+            const expandida = ordenExpandidaM === o.id
             return (
-              <div key={o.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.8rem', marginBottom: 8 }}>
+              <div key={o.id} style={{ background: CM.surface, border: `1px solid ${expandida ? CM.green : CM.border}`, borderRadius: 10, padding: '.8rem', marginBottom: 8, cursor: 'pointer' }}
+                onClick={() => setOrdenExpandidaM(expandida ? null : o.id)}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{o.tipo} — {o.campos?.nombre || '—'}{loteO ? ` · Lote ${loteO.numero}` : ''}</div>
@@ -136,6 +139,25 @@ export default function Agricultura({ usuario, mobile, nav }) {
                     {o.estado_pago === 'pagado' ? 'Pagado' : 'Pendiente'}
                   </span>
                 </div>
+                {expandida && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${CM.border}` }} onClick={e => e.stopPropagation()}>
+                    {o.observaciones && <div style={{ fontSize: 12, color: CM.muted, marginBottom: 8 }}>Obs: {o.observaciones}</div>}
+                    <div style={{ fontSize: 10, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 6 }}>Insumos aplicados</div>
+                    {(!o.productos || o.productos.length === 0) ? (
+                      <div style={{ fontSize: 12, color: CM.muted }}>Sin insumos cargados en esta orden.</div>
+                    ) : o.productos.map((p, pi) => {
+                      const item = stockAgro.find(s => s.id === parseInt(p.id))
+                      const total = p.total || (o.superficie_ha_real && p.dosis ? Math.round(parseFloat(p.dosis) * o.superficie_ha_real * 100) / 100 : null)
+                      return (
+                        <div key={pi} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
+                          <span>{item?.insumo || '— insumo no encontrado —'}</span>
+                          <span style={{ fontFamily: 'monospace', color: CM.green }}>{p.dosis} {item?.unidad || p.unidad}/ha{total ? ` · ${total.toLocaleString('es-AR')} ${item?.unidad || p.unidad} total` : ''}</span>
+                        </div>
+                      )
+                    })}
+                    {o.costo_total && <div style={{ fontSize: 12, color: CM.muted, marginTop: 8 }}>Costo: ${(o.costo_total).toLocaleString('es-AR')}</div>}
+                  </div>
+                )}
               </div>
             )
           })}
