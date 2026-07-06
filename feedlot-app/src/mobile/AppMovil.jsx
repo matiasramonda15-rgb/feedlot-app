@@ -11,6 +11,7 @@ import Corrales from '../components/Corrales'
 import Ingresos from '../components/Ingresos'
 import Ventas from '../components/Ventas'
 import Pesada from '../components/Pesada'
+import Alimentacion from '../components/Alimentacion'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -89,7 +90,7 @@ export default function AppMovil({ usuario, onLogout }) {
     corrales:    <Corrales usuario={usuario} mobile={true} nav={nav} />,
     ingreso:     <Ingresos usuario={usuario} mobile={true} nav={nav} />,
     pesada:      <Pesada usuario={usuario} mobile={true} nav={nav} />,
-    alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} dietaAyer={datos.dietaAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
+    alimentacion:<Alimentacion usuario={usuario} mobile={true} nav={nav} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <Ventas usuario={usuario} mobile={true} nav={nav} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
@@ -514,7 +515,7 @@ function Ingreso_OLD_local_sin_usar({ nav, usuario, corrales, procedencias, onDo
     </div>
   )
 }
-function AlimentacionMovil({ nav, usuario, corrales, formulas, capMixer, kgsAyer, dietaAyer, fechaTermC, onDone }) {
+function AlimentacionMovil_OLD_local_sin_usar({ nav, usuario, corrales, formulas, capMixer, kgsAyer, dietaAyer, fechaTermC, onDone }) {
   const [dieta, setDieta] = useState(dietaAyer || 'seco')
   const corralesAlim = corrales.filter(c => c.rol !== 'libre' && c.rol !== 'deshabilitado')
   const hoyStr = new Date().toISOString().split('T')[0]
