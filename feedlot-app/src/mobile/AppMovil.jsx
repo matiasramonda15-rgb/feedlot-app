@@ -10,6 +10,7 @@ import { registrarServicioTercero } from '../shared/serviciosLogic'
 import Corrales from '../components/Corrales'
 import Ingresos from '../components/Ingresos'
 import Ventas from '../components/Ventas'
+import Pesada from '../components/Pesada'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -87,7 +88,7 @@ export default function AppMovil({ usuario, onLogout }) {
     home:        <Home usuario={usuario} nav={nav} onLogout={onLogout} datos={datos} onReload={cargarDatos} />,
     corrales:    <Corrales usuario={usuario} mobile={true} nav={nav} />,
     ingreso:     <Ingresos usuario={usuario} mobile={true} nav={nav} />,
-    pesada:      <PesadaMovil nav={nav} usuario={usuario} corrales={datos.corrales} onDone={cargarDatos} />,
+    pesada:      <Pesada usuario={usuario} mobile={true} nav={nav} />,
     alimentacion:<AlimentacionMovil nav={nav} usuario={usuario} corrales={datos.corrales} formulas={datos.formulas} capMixer={datos.capMixer} kgsAyer={datos.kgsAyer} dietaAyer={datos.dietaAyer} fechaTermC={datos.fechaTermC} onDone={cargarDatos} />,
     sanidad:     <SanidadMovil nav={nav} alertas={datos.alertas} proximaPesada={datos.proximaPesada} onDone={cargarDatos} corrales={datos.corrales} lotes={datos.lotes} movimientos={datos.movimientos} usuario={usuario} />,
     venta:       <Ventas usuario={usuario} mobile={true} nav={nav} />,
@@ -1604,7 +1605,7 @@ function StockTab({ usuario, onDone }) {
   )
 }
 
-function PesadaMovil({ nav, usuario, corrales, onDone }) {
+function PesadaMovil_OLD_local_sin_usar({ nav, usuario, corrales, onDone }) {
   const [paso, setPaso] = useState(1)
   const [form, setForm] = useState({ A: '', B: '', C: '', D: '', E: '', F: '', G: '', menores: '' })
   const [corralLibre1, setCorralLibre1] = useState('')
