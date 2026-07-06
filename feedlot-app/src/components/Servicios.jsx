@@ -2,6 +2,22 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { registrarServicioTercero } from '../shared/serviciosLogic'
 
+const CM = { bg: '#0D1B2A', surface: '#1A2D3D', surface2: '#243447', border: '#2D4357', text: '#E8F0F8', muted: '#7A9AB8', accent: '#5BB8F5', green: '#4CAF82', greenLight: '#1A3D2E', amber: '#F5A623', amberLight: '#3D2E1A', red: '#F55B5B', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+function MobileTopbar({ titulo, sub, onBack }) {
+  return (
+    <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
+      {onBack && <button onClick={onBack} style={{ background: 'none', border: 'none', color: CM.accent, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>}
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: CM.text }}>{titulo}</div>
+        {sub && <div style={{ fontSize: 11, color: CM.muted, marginTop: 1 }}>{sub}</div>}
+      </div>
+    </div>
+  )
+}
+function MobileScroll({ children }) {
+  return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', background: CM.bg, color: CM.text }}>{children}</div>
+}
+
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
   text: '#1A1916', muted: '#6B6760', hint: '#9E9A94',
@@ -25,7 +41,7 @@ const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Rotu
 const CULTIVOS = ['Maíz', 'Soja', 'Trigo', 'Sorgo', 'Girasol', 'Cebada', 'Otro']
 const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' } }
 
-export default function Servicios({ usuario }) {
+export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
   const [campanas, setCampanas] = useState([])
@@ -38,6 +54,22 @@ export default function Servicios({ usuario }) {
   const [chequesCartera, setChequesCartera] = useState([])
   const [registros, setRegistros] = useState([])
   const [descargasReg, setDescargasReg] = useState({})
+  // Estado propio del modo celular
+  const [tabM, setTabM] = useState('servicio')
+  const [formM, setFormM] = useState({ campania: '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+  const [guardandoM, setGuardandoM] = useState(false)
+  const [okM, setOkM] = useState('')
+  const [registroActivoM, setRegistroActivoM] = useState(null)
+  const [showFormRegM, setShowFormRegM] = useState(false)
+  const [formRegM, setFormRegM] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
+  const [formDescM, setFormDescM] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+  const [guardandoDescM, setGuardandoDescM] = useState(false)
+  const [guardandoRegM, setGuardandoRegM] = useState(false)
+  const [editandoDescIdM, setEditandoDescIdM] = useState(null)
+  const [editDescKgM, setEditDescKgM] = useState('')
+  const [editDescPatenteM, setEditDescPatenteM] = useState('')
+  const [editandoSvcIdM, setEditandoSvcIdM] = useState(null)
+  const [editSvcM, setEditSvcM] = useState({})
 
   // Filtros
   const [filtros, setFiltros] = useState({ campania: '', cliente: '', labor: '', cultivo: '', tipo: '', estado: '', empleado: '' })
@@ -95,6 +127,15 @@ export default function Servicios({ usuario }) {
     if (esBrian) setTab('mercaderia')
     cargar()
   }, [])
+
+  useEffect(() => {
+    if (!mobile) return
+    setTabM(esBrian ? 'mercaderia' : 'servicio')
+  }, [mobile, esBrian])
+
+  useEffect(() => {
+    if (mobile && campanas.length > 0 && !formM.campania) setFormM(f => ({...f, campania: campanas[0].nombre}))
+  }, [campanas, mobile])
 
   async function cargar() {
     const { data: camps } = await supabase.from('campanas').select('*').eq('activa', true).order('nombre', { ascending: false })
@@ -285,6 +326,426 @@ export default function Servicios({ usuario }) {
   const totalConIva = Math.round(totalSeleccionadas * (1 + (parseFloat(formPago.iva_pct) || 0) / 100))
 
   if (loading) return <div style={{ padding: '2rem', color: S.muted }}>Cargando...</div>
+
+  // ── MODO CELULAR ──
+  if (mobile) {
+    const inpM = { width: '100%', padding: '12px 14px', border: `1px solid ${CM.border}`, borderRadius: 10, fontSize: 15, background: CM.surface2, boxSizing: 'border-box', fontFamily: CM.sans, color: CM.text, marginBottom: 12 }
+    const lblM = { fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 5 }
+    const serviciosRecientesM = servicios.slice(0, 10)
+
+    async function guardarServicioM() {
+      const nombreCliente = formM.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : (formM.cliente === '__nuevo__' ? formM.clienteNuevo.trim() : formM.cliente)
+      if (!nombreCliente || !formM.labor || !formM.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
+      setGuardandoM(true)
+      const { error } = await registrarServicioTercero(supabase, {
+        campania: formM.campania, tipoServicio: formM.tipo_servicio,
+        cliente: formM.tipo_servicio === 'propio' ? null : nombreCliente,
+        labor: formM.labor, cultivo: formM.cultivo, campo: formM.campo, nroLote: formM.nro_lote,
+        fecha: formM.fecha, hectareas: formM.hectareas,
+        empleado1: formM.empleado1, empleado2: formM.empleado2, observaciones: formM.observaciones,
+      })
+      setGuardandoM(false)
+      if (error) { alert('Error: ' + error.message); return }
+      await cargar()
+      setOkM('servicio')
+      setTimeout(() => {
+        setOkM('')
+        setFormM(f => ({ ...f, cliente: '', clienteNuevo: '', campo: '', nro_lote: '', hectareas: '', empleado1: '', empleado2: '', observaciones: '' }))
+      }, 2000)
+    }
+
+    async function guardarRegistroMercaderiaM() {
+      if (!formRegM.campo) { alert('Ingresá el campo'); return }
+      setGuardandoRegM(true)
+      const { data, error } = await supabase.from('registros_mercaderia').insert({
+        campo: formRegM.campo, cliente: formRegM.cliente || null,
+        nro_lote: formRegM.nro_lote || null, cultivo: formRegM.cultivo || null,
+        fecha: formRegM.fecha || null,
+      }).select().single()
+      if (error) { alert('Error: ' + error.message); setGuardandoRegM(false); return }
+      setRegistros(prev => [data, ...prev])
+      setRegistroActivoM(data)
+      setDescargasReg(prev => ({ ...prev, [data.id]: [] }))
+      setShowFormRegM(false)
+      setFormRegM({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
+      setGuardandoRegM(false)
+    }
+
+    async function guardarDescargaM(regId) {
+      if (!formDescM.kg) { alert('Ingresá los kg'); return }
+      setGuardandoDescM(true)
+      await supabase.from('descargas_mercaderia').insert({
+        registro_id: regId, fecha: formDescM.fecha, tipo: formDescM.tipo,
+        patente: formDescM.tipo === 'camion' ? (formDescM.patente || null) : null,
+        kg: parseFloat(formDescM.kg),
+        observaciones: formDescM.tipo !== 'camion' ? (formDescM.observaciones || null) : null,
+        registrado_por: usuario?.id,
+      })
+      setFormDescM({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+      setGuardandoDescM(false)
+      await cargarDescargasReg(regId)
+      setOkM('descarga')
+      setTimeout(() => setOkM(''), 1500)
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CM.bg, fontFamily: CM.sans, color: CM.text }}>
+        <MobileTopbar titulo="Servicios" sub={tabM === 'mercaderia' ? 'Registro de mercadería' : 'Registrar trabajo'} onBack={() => nav && nav('home')} />
+        {!esBrian && (
+          <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${CM.border}`, background: CM.surface }}>
+            {[{ key: 'servicio', label: '📋 Nuevo servicio' }, { key: 'mercaderia', label: '📦 Mercadería' }].map(t => (
+              <button key={t.key} onClick={() => setTabM(t.key)}
+                style={{ flex: 1, padding: '12px', fontSize: 13, fontWeight: tabM === t.key ? 600 : 400, border: 'none', background: 'transparent', borderBottom: tabM === t.key ? `2px solid ${CM.accent}` : '2px solid transparent', color: tabM === t.key ? CM.accent : CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <MobileScroll>
+          {tabM === 'servicio' && (
+            <div>
+              {okM === 'servicio' && (
+                <div style={{ background: CM.greenLight, border: `1px solid ${CM.green}`, borderRadius: 10, padding: '1rem', marginBottom: '1rem', textAlign: 'center', fontSize: 14, fontWeight: 600, color: CM.green }}>
+                  ✓ Servicio registrado
+                </div>
+              )}
+              <label style={lblM}>Campaña</label>
+              <select value={formM.campania} onChange={e => setFormM({...formM, campania: e.target.value})} style={inpM}>
+                <option value="">— Sin especificar —</option>
+                {campanas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+              </select>
+              <label style={lblM}>Tipo</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                {[{ v: 'tercero', l: 'Tercero' }, { v: 'propio', l: 'Propio' }].map(t => (
+                  <button key={t.v} onClick={() => setFormM({...formM, tipo_servicio: t.v})}
+                    style={{ padding: '11px', fontSize: 14, fontWeight: 600, border: `2px solid ${formM.tipo_servicio === t.v ? CM.accent : CM.border}`, background: formM.tipo_servicio === t.v ? CM.accent + '22' : 'transparent', color: formM.tipo_servicio === t.v ? CM.accent : CM.muted, borderRadius: 10, cursor: 'pointer', fontFamily: CM.sans }}>
+                    {t.l}
+                  </button>
+                ))}
+              </div>
+              {formM.tipo_servicio === 'tercero' && (
+                <>
+                  <label style={lblM}>Cliente *</label>
+                  <select value={formM.cliente} onChange={e => setFormM({...formM, cliente: e.target.value, clienteNuevo: ''})} style={inpM}>
+                    <option value="">— Seleccioná —</option>
+                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    <option value="__nuevo__">+ Nuevo cliente...</option>
+                  </select>
+                  {formM.cliente === '__nuevo__' && (
+                    <input type="text" placeholder="Nombre del cliente" value={formM.clienteNuevo}
+                      onChange={e => setFormM({...formM, clienteNuevo: e.target.value})}
+                      style={{ ...inpM, borderColor: CM.accent }} autoFocus />
+                  )}
+                </>
+              )}
+              <label style={lblM}>Servicio *</label>
+              <select value={formM.labor} onChange={e => setFormM({...formM, labor: e.target.value})} style={inpM}>
+                {LABORES.map(l => <option key={l}>{l}</option>)}
+              </select>
+              <label style={lblM}>Cultivo</label>
+              <select value={formM.cultivo} onChange={e => setFormM({...formM, cultivo: e.target.value})} style={inpM}>
+                {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+              </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={lblM}>Campo</label>
+                  <input type="text" value={formM.campo} onChange={e => setFormM({...formM, campo: e.target.value})} style={inpM} placeholder="ej. La Esperanza" />
+                </div>
+                <div>
+                  <label style={lblM}>N° Lote</label>
+                  <input type="text" value={formM.nro_lote} onChange={e => setFormM({...formM, nro_lote: e.target.value})} style={inpM} placeholder="ej. Lote 5" />
+                </div>
+              </div>
+              <label style={lblM}>Fecha</label>
+              <input type="date" value={formM.fecha} onChange={e => setFormM({...formM, fecha: e.target.value})} style={inpM} />
+              <label style={lblM}>Hectáreas *</label>
+              <input type="number" value={formM.hectareas} onChange={e => setFormM({...formM, hectareas: e.target.value})} style={inpM} placeholder="ej. 120" inputMode="decimal" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={lblM}>Empleado 1</label>
+                  <select value={formM.empleado1} onChange={e => setFormM({...formM, empleado1: e.target.value})} style={{ ...inpM, marginBottom: 0 }}>
+                    <option value="">— Sin asignar —</option>
+                    {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={lblM}>Empleado 2</label>
+                  <select value={formM.empleado2} onChange={e => setFormM({...formM, empleado2: e.target.value})} style={{ ...inpM, marginBottom: 0 }}>
+                    <option value="">— Sin asignar —</option>
+                    {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ height: 16 }} />
+              <button onClick={guardarServicioM} disabled={guardandoM}
+                style={{ width: '100%', padding: '14px', fontSize: 15, fontWeight: 600, background: CM.accent, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 24 }}>
+                {guardandoM ? 'Guardando...' : '💾 Guardar servicio'}
+              </button>
+              {serviciosRecientesM.length > 0 && (
+                <div style={{ marginBottom: 32 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Últimos registros</div>
+                  {serviciosRecientesM.map(s => (
+                    <div key={s.id} style={{ background: CM.surface, border: `1px solid ${editandoSvcIdM === s.id ? CM.accent : CM.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                      {editandoSvcIdM !== s.id ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>
+                              {s.campo || s.cliente || '—'}
+                              {s.nro_lote ? <span style={{ fontWeight: 400, color: CM.muted, fontSize: 12 }}> · {s.nro_lote}</span> : ''}
+                            </div>
+                            <div style={{ fontSize: 12, color: CM.muted, marginTop: 3 }}>
+                              {s.labor} {s.cultivo ? `· ${s.cultivo}` : ''} · {s.hectareas} ha
+                              {s.cliente && s.campo ? ` · ${s.cliente}` : ''}
+                            </div>
+                            {(s.empleado1 || s.empleado2) && (
+                              <div style={{ fontSize: 11, color: CM.accent, marginTop: 3 }}>👷 {[s.empleado1, s.empleado2].filter(Boolean).join(', ')}</div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 8 }}>
+                            <div style={{ fontSize: 11, color: CM.muted, whiteSpace: 'nowrap' }}>
+                              {s.fecha ? new Date(s.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}
+                            </div>
+                            <button onClick={() => { setEditandoSvcIdM(s.id); setEditSvcM({ campo: s.campo || '', nro_lote: s.nro_lote || '', cliente: s.cliente || '', labor: s.labor || 'Siembra', cultivo: s.cultivo || 'Maíz', hectareas: String(s.hectareas || ''), empleado1: s.empleado1 || '', empleado2: s.empleado2 || '', fecha: s.fecha || '' }) }}
+                              style={{ padding: '6px 12px', fontSize: 13, background: CM.surface2, border: `1px solid ${CM.accent}`, color: CM.accent, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>✏ Editar</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: CM.accent, marginBottom: 10 }}>Editar servicio</div>
+                          <label style={lblM}>Campo</label>
+                          <input type="text" value={editSvcM.campo} onChange={e => setEditSvcM({...editSvcM, campo: e.target.value})} style={inpM} />
+                          <label style={lblM}>N° Lote</label>
+                          <input type="text" value={editSvcM.nro_lote} onChange={e => setEditSvcM({...editSvcM, nro_lote: e.target.value})} style={inpM} />
+                          <label style={lblM}>Cliente</label>
+                          <select value={editSvcM.cliente} onChange={e => setEditSvcM({...editSvcM, cliente: e.target.value})} style={inpM}>
+                            <option value="">— Sin especificar —</option>
+                            {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                          </select>
+                          <label style={lblM}>Servicio</label>
+                          <select value={editSvcM.labor} onChange={e => setEditSvcM({...editSvcM, labor: e.target.value})} style={inpM}>
+                            {LABORES.map(l => <option key={l}>{l}</option>)}
+                          </select>
+                          <label style={lblM}>Cultivo</label>
+                          <select value={editSvcM.cultivo} onChange={e => setEditSvcM({...editSvcM, cultivo: e.target.value})} style={inpM}>
+                            {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+                          </select>
+                          <label style={lblM}>Hectáreas</label>
+                          <input type="number" value={editSvcM.hectareas} onChange={e => setEditSvcM({...editSvcM, hectareas: e.target.value})} style={inpM} inputMode="decimal" />
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div>
+                              <label style={lblM}>Empleado 1</label>
+                              <select value={editSvcM.empleado1} onChange={e => setEditSvcM({...editSvcM, empleado1: e.target.value})} style={{ ...inpM, marginBottom: 0 }}>
+                                <option value="">— Sin asignar —</option>
+                                {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={lblM}>Empleado 2</label>
+                              <select value={editSvcM.empleado2} onChange={e => setEditSvcM({...editSvcM, empleado2: e.target.value})} style={{ ...inpM, marginBottom: 0 }}>
+                                <option value="">— Sin asignar —</option>
+                                {empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ height: 12 }} />
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={async () => {
+                              await supabase.from('servicios_terceros').update({
+                                campo: editSvcM.campo || null, nro_lote: editSvcM.nro_lote || null, cliente: editSvcM.cliente || null,
+                                labor: editSvcM.labor, cultivo: editSvcM.cultivo,
+                                hectareas: parseFloat(editSvcM.hectareas) || s.hectareas,
+                                empleado1: editSvcM.empleado1 || null, empleado2: editSvcM.empleado2 || null,
+                              }).eq('id', s.id)
+                              await cargar()
+                              setEditandoSvcIdM(null)
+                            }} style={{ flex: 1, padding: '11px', fontSize: 13, fontWeight: 600, background: CM.accent, border: 'none', color: '#fff', borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
+                              Guardar
+                            </button>
+                            <button onClick={() => setEditandoSvcIdM(null)}
+                              style={{ padding: '11px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tabM === 'mercaderia' && (
+            <div>
+              {okM === 'descarga' && (
+                <div style={{ background: CM.greenLight, border: `1px solid ${CM.green}`, borderRadius: 10, padding: '1rem', marginBottom: '1rem', textAlign: 'center', fontSize: 14, fontWeight: 600, color: CM.green }}>
+                  ✓ Descarga registrada
+                </div>
+              )}
+              <button onClick={() => setShowFormRegM(!showFormRegM)}
+                style={{ width: '100%', padding: '12px', fontSize: 14, fontWeight: 600, background: showFormRegM ? CM.surface2 : CM.accent, border: `1px solid ${CM.accent}`, color: showFormRegM ? CM.accent : '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 16 }}>
+                {showFormRegM ? 'Cancelar' : '+ Nuevo campo'}
+              </button>
+              {showFormRegM && (
+                <div style={{ background: CM.surface, border: `1px solid ${CM.accent}`, borderRadius: 12, padding: '1rem', marginBottom: '1rem' }}>
+                  <label style={lblM}>Campo *</label>
+                  <input type="text" value={formRegM.campo} onChange={e => setFormRegM({...formRegM, campo: e.target.value})} style={inpM} placeholder="ej. La Esperanza" />
+                  <label style={lblM}>Cliente/Propietario</label>
+                  <select value={formRegM.cliente} onChange={e => setFormRegM({...formRegM, cliente: e.target.value})} style={inpM}>
+                    <option value="">— Sin especificar —</option>
+                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                  <label style={lblM}>N° Lote</label>
+                  <input type="text" value={formRegM.nro_lote} onChange={e => setFormRegM({...formRegM, nro_lote: e.target.value})} style={inpM} placeholder="ej. Lote 3" />
+                  <label style={lblM}>Cultivo</label>
+                  <select value={formRegM.cultivo} onChange={e => setFormRegM({...formRegM, cultivo: e.target.value})} style={inpM}>
+                    {CULTIVOS.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                  <label style={lblM}>Fecha inicio</label>
+                  <input type="date" value={formRegM.fecha} onChange={e => setFormRegM({...formRegM, fecha: e.target.value})} style={inpM} />
+                  <button onClick={guardarRegistroMercaderiaM} disabled={guardandoRegM}
+                    style={{ width: '100%', padding: '12px', fontSize: 14, fontWeight: 600, background: CM.green, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 16 }}>
+                    {guardandoRegM ? 'Guardando...' : '💾 Crear registro'}
+                  </button>
+                </div>
+              )}
+              {registros.length === 0 && !showFormRegM && (
+                <div style={{ textAlign: 'center', color: CM.muted, padding: '2rem', fontSize: 14 }}>No hay registros. Creá uno con "+ Nuevo campo".</div>
+              )}
+              {registros.map(reg => {
+                const desc = descargasReg[reg.id] || []
+                const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
+                const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
+                const kgOtro = desc.filter(d => d.tipo === 'otro').reduce((a, d) => a + (d.kg || 0), 0)
+                const kgTotal = kgCamion + kgBolsa + kgOtro
+                const isActivo = registroActivoM?.id === reg.id
+                return (
+                  <div key={reg.id} style={{ background: CM.surface, border: `1px solid ${isActivo ? CM.accent : CM.border}`, borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
+                    <div style={{ padding: '1rem' }} onClick={async () => {
+                      if (isActivo) { setRegistroActivoM(null); return }
+                      await cargarDescargasReg(reg.id)
+                      setRegistroActivoM(reg)
+                    }}>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{reg.campo}</div>
+                      <div style={{ fontSize: 12, color: CM.muted, marginTop: 2 }}>{reg.cliente || '—'} · {reg.nro_lote || 'Sin lote'} · {reg.cultivo}</div>
+                      {kgTotal > 0 && (
+                        <div style={{ marginTop: 8, display: 'flex', gap: 10, fontSize: 12, flexWrap: 'wrap' }}>
+                          {kgCamion > 0 && <span style={{ color: CM.accent }}>🚛 {kgCamion.toLocaleString('es-AR')} kg</span>}
+                          {kgBolsa > 0 && <span style={{ color: CM.green }}>🌾 {kgBolsa.toLocaleString('es-AR')} kg</span>}
+                          {kgOtro > 0 && <span style={{ color: CM.muted }}>📦 {kgOtro.toLocaleString('es-AR')} kg</span>}
+                          <span style={{ fontWeight: 700 }}>Total: {kgTotal.toLocaleString('es-AR')} kg</span>
+                        </div>
+                      )}
+                      <div style={{ marginTop: 8, fontSize: 12, color: isActivo ? CM.accent : CM.muted }}>{isActivo ? '▲ Cerrar' : '📦 Ver / Registrar descarga'}</div>
+                    </div>
+                    {isActivo && (
+                      <div style={{ borderTop: `1px solid ${CM.border}`, padding: '1rem', background: CM.surface2 }}>
+                        {desc.length > 0 && (
+                          <div style={{ marginBottom: 16 }}>
+                            {desc.map(d => (
+                              <div key={d.id} style={{ padding: '8px 0', borderBottom: `1px solid ${CM.border}` }}>
+                                {editandoDescIdM !== d.id ? (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                      <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'camion' ? '#1A3D6B44' : d.tipo === 'bolsa' ? '#1E5C2E44' : '#7A450044', color: d.tipo === 'camion' ? CM.accent : d.tipo === 'bolsa' ? CM.green : CM.amber }}>
+                                        {d.tipo === 'camion' ? '🚛' : d.tipo === 'bolsa' ? '🌾' : '📦'} {d.tipo}
+                                      </span>
+                                      {(d.patente || d.observaciones) && <span style={{ fontSize: 12, color: CM.muted, marginLeft: 8 }}>{d.patente || d.observaciones}</span>}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <span style={{ fontFamily: CM.mono, fontWeight: 700, fontSize: 14 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</span>
+                                      <button onClick={() => { setEditandoDescIdM(d.id); setEditDescKgM(String(d.kg || '')); setEditDescPatenteM(d.patente || d.observaciones || '') }}
+                                        style={{ padding: '4px 8px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 6, cursor: 'pointer' }}>✏</button>
+                                      <button onClick={async () => {
+                                        if (!confirm('¿Eliminar esta descarga?')) return
+                                        await supabase.from('descargas_mercaderia').delete().eq('id', d.id)
+                                        await cargarDescargasReg(reg.id)
+                                      }} style={{ padding: '4px 8px', fontSize: 12, background: '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 6, cursor: 'pointer' }}>🗑</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div style={{ fontSize: 12, color: CM.muted, marginBottom: 6 }}>{d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}</div>
+                                    <label style={{ ...lblM, marginBottom: 4 }}>{d.tipo === 'camion' ? 'Patente' : 'Detalle / N° bolsa'}</label>
+                                    <input type="text" value={editDescPatenteM}
+                                      onChange={e => setEditDescPatenteM(d.tipo === 'camion' ? e.target.value.toUpperCase() : e.target.value)}
+                                      placeholder={d.tipo === 'camion' ? 'ej. ABC 123' : 'ej. Bolsa 8'}
+                                      style={{ ...inpM, marginBottom: 8 }} />
+                                    <label style={{ ...lblM, marginBottom: 4 }}>Kg</label>
+                                    <input type="number" value={editDescKgM} onChange={e => setEditDescKgM(e.target.value)}
+                                      placeholder="ej. 28500" inputMode="decimal" style={{ ...inpM, marginBottom: 8 }} />
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                      <button onClick={async () => {
+                                        await supabase.from('descargas_mercaderia').update({
+                                          kg: parseFloat(editDescKgM) || d.kg,
+                                          patente: d.tipo === 'camion' ? (editDescPatenteM || null) : d.patente,
+                                          observaciones: d.tipo !== 'camion' ? (editDescPatenteM || null) : d.observaciones,
+                                        }).eq('id', d.id)
+                                        setEditandoDescIdM(null)
+                                        await cargarDescargasReg(reg.id)
+                                      }} style={{ flex: 1, padding: '10px', fontSize: 13, fontWeight: 600, background: CM.green, border: 'none', color: '#fff', borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
+                                        Guardar
+                                      </button>
+                                      <button onClick={() => setEditandoDescIdM(null)}
+                                        style={{ padding: '10px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {kgTotal > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', fontWeight: 700, color: CM.accent, fontSize: 15 }}>
+                                <span>TOTAL</span>
+                                <span style={{ fontFamily: CM.mono }}>{kgTotal.toLocaleString('es-AR')} kg</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <label style={lblM}>Tipo</label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
+                          {[{ v: 'camion', l: '🚛 Camión' }, { v: 'bolsa', l: '🌾 Bolsa' }, { v: 'otro', l: '📦 Otro' }].map(t => (
+                            <button key={t.v} onClick={() => setFormDescM({...formDescM, tipo: t.v})}
+                              style={{ padding: '10px 6px', fontSize: 12, fontWeight: 600, border: `2px solid ${formDescM.tipo === t.v ? CM.accent : CM.border}`, background: formDescM.tipo === t.v ? CM.accent + '22' : 'transparent', color: formDescM.tipo === t.v ? CM.accent : CM.muted, borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
+                              {t.l}
+                            </button>
+                          ))}
+                        </div>
+                        {formDescM.tipo === 'camion' ? (
+                          <>
+                            <label style={lblM}>Patente</label>
+                            <input type="text" value={formDescM.patente} onChange={e => setFormDescM({...formDescM, patente: e.target.value.toUpperCase()})}
+                              style={inpM} placeholder="ej. ABC 123" />
+                          </>
+                        ) : (
+                          <>
+                            <label style={lblM}>Detalle</label>
+                            <input type="text" value={formDescM.observaciones} onChange={e => setFormDescM({...formDescM, observaciones: e.target.value})}
+                              style={inpM} placeholder="ej. Bolsa 8" />
+                          </>
+                        )}
+                        <label style={lblM}>Kg *</label>
+                        <input type="number" value={formDescM.kg} onChange={e => setFormDescM({...formDescM, kg: e.target.value})}
+                          style={inpM} placeholder="ej. 28500" inputMode="decimal" />
+                        <label style={lblM}>Fecha</label>
+                        <input type="date" value={formDescM.fecha} onChange={e => setFormDescM({...formDescM, fecha: e.target.value})} style={inpM} />
+                        <button onClick={() => guardarDescargaM(reg.id)} disabled={guardandoDescM}
+                          style={{ width: '100%', padding: '13px', fontSize: 14, fontWeight: 600, background: CM.green, border: 'none', color: '#fff', borderRadius: 10, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 32 }}>
+                          {guardandoDescM ? 'Guardando...' : '+ Registrar descarga'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </MobileScroll>
+      </div>
+    )
+  }
+  // ── FIN MODO CELULAR — de acá para abajo sigue el modo PC, sin cambios ──
 
   return (
     <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>

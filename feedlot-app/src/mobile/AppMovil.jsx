@@ -13,6 +13,7 @@ import Ventas from '../components/Ventas'
 import Pesada from '../components/Pesada'
 import Alimentacion from '../components/Alimentacion'
 import Sanidad from '../components/Sanidad'
+import Servicios from '../components/Servicios'
 import { confirmarPesadaClasificacion } from '../shared/pesadaLogic'
 var C = {
   bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E',
@@ -95,7 +96,7 @@ export default function AppMovil({ usuario, onLogout }) {
     sanidad:     <Sanidad usuario={usuario} mobile={true} nav={nav} />,
     venta:       <Ventas usuario={usuario} mobile={true} nav={nav} />,
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
-    servicios:   <ServiciosMovil nav={nav} usuario={usuario} />,
+    servicios:   <Servicios usuario={usuario} mobile={true} nav={nav} />,
   }
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: C.sans, color: C.text, position: 'relative', overflow: 'hidden' }}>
@@ -1973,7 +1974,7 @@ function VentaMovil_OLD_local_sin_usar({ nav, usuario, corrales, compradores, on
 
 const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Roturación', 'Rastreo', 'Flete', 'Otro']
 
-function ServiciosMovil({ nav, usuario }) {
+function ServiciosMovil_OLD_local_sin_usar({ nav, usuario }) {
   var C = { bg: '#0D1B2A', surface: '#1A2D3D', surface2: '#243447', border: '#2D4357', text: '#E8F0F8', muted: '#7A9AB8', accent: '#5BB8F5', green: '#4CAF82', greenLight: '#1A3D2E', amber: '#F5A623', amberLight: '#3D2E1A', red: '#F55B5B', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
   var inp = { width: '100%', padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 15, background: C.surface2, boxSizing: 'border-box', fontFamily: C.sans, color: C.text, marginBottom: 12 }
   var lbl = { fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 5 }
