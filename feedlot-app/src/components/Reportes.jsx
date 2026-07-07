@@ -331,8 +331,9 @@ export default function Reportes({ usuario }) {
           {prom6 && (
             <div style={{ background: S.accentLight, border: `2px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.accent, marginBottom: '1rem' }}>📊 Indicadores — promedio últimos 6 meses (principal)</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                <Stat label="GDP" val={prom6.gdp ? `${prom6.gdp.toFixed(3)} kg/d` : '—'} sub="ganancia diaria de peso" color={prom6.gdp >= 1.1 ? S.green : prom6.gdp >= 0.9 ? S.amber : S.red} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                <Stat label="Ganancia diaria (por animal)" val={prom6.gdp ? `${prom6.gdp.toFixed(3)} kg/cab/d` : '—'} sub="cuánto engorda cada animal por día" color={prom6.gdp >= 1.1 ? S.green : prom6.gdp >= 0.9 ? S.amber : S.red} />
+                <Stat label="Kg ganados x animal" val={prom6.gdp && prom6.permanencia ? `${Math.round(prom6.gdp * prom6.permanencia)} kg` : '—'} sub="total durante toda la estadía" color={S.green} />
                 <Stat label="Permanencia" val={prom6.permanencia ? `${prom6.permanencia} días` : '—'} sub="tiempo promedio en el feedlot" />
                 <Stat label="Conversión" val={prom6.conversion ? prom6.conversion.toFixed(2) : '—'} sub="kg alimento / kg ganado" color={prom6.conversion <= 7 ? S.green : prom6.conversion <= 9 ? S.amber : S.red} />
               </div>
