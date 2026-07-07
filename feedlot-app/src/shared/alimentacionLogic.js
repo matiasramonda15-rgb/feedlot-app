@@ -32,9 +32,10 @@ export async function aplicarFormulaAlStock(supabase, { stockItems, formula, tot
   }
 }
 
-// Registra la ración del día para varios corrales y descuenta el stock según
-// la fórmula de cada etapa (acostumbramiento/recria/terminacion).
-// corralesConEtapaYKg: [{ corralId, etapa, kg }]
+// corralesConEtapaYKg: [{ corralId, etapa, kg, animales }]
+// animales: cuántos animales tenía el corral EN ESE MOMENTO — se guarda como
+// "foto" en cada ración para que los reportes de consumo diario histórico
+// sean exactos aunque después se muevan animales de ese corral.
 // formulasPorEtapa: { acostumbramiento: [...], recria: [...], terminacion: [...] }
 // Si reemplazarExistente=true, primero revierte (repone stock) lo que ya estaba
 // cargado ese día antes de volver a cargar — para cuando se corrige una carga.
@@ -62,6 +63,7 @@ export async function confirmarRacionesDia(supabase, { fecha, corralesConEtapaYK
       corral_id: c.corralId, fecha, kg_total: c.kg,
       mezclador: c.etapa === 'acostumbramiento' ? 'Acostumbramiento' : c.etapa === 'recria' ? 'Recria' : 'Terminacion',
       tipo_dieta: dieta,
+      cantidad_animales: c.animales ?? null,
     })
   }
 
@@ -78,17 +80,24 @@ export async function confirmarRacionesDia(supabase, { fecha, corralesConEtapaYK
 
 // Agrega rollo extra a uno o más corrales en el día de hoy (fuera de la mezcla
 // normal) y descuenta ese rollo del stock de forma atómica.
-// corralesConKg: [{ corralId, kg }]
+// corralesConKg: [{ corralId, kg, animales }]
 export async function agregarRolloExtra(supabase, { fecha, corralesConKg, dieta }) {
   let kgRolloTotal = 0
-  for (const { corralId, kg } of corralesConKg) {
+  for (const { corralId, kg, animales } of corralesConKg) {
     if (!kg) continue
     kgRolloTotal += kg
-    const { data: racionExist } = await supabase.from('raciones_app').select('id, kg_total').eq('fecha', fecha).eq('corral_id', corralId).single()
+    const { data: racionExist } = await supabase.from('raciones_app').select('id, kg_total, kg_rollo_extra').eq('fecha', fecha).eq('corral_id', corralId).single()
     if (racionExist) {
-      await supabase.from('raciones_app').update({ kg_total: (racionExist.kg_total || 0) + kg }).eq('id', racionExist.id)
+      // Ya había una ración de mixer cargada ese día para este corral — el rollo se
+      // suma aparte, y queda registrado por separado en kg_rollo_extra para poder
+      // distinguirlo del mixer en el historial.
+      await supabase.from('raciones_app').update({
+        kg_total: (racionExist.kg_total || 0) + kg,
+        kg_rollo_extra: (racionExist.kg_rollo_extra || 0) + kg,
+        rollo_y_mixer: true,
+      }).eq('id', racionExist.id)
     } else {
-      await supabase.from('raciones_app').insert({ corral_id: corralId, fecha, kg_total: kg, mezclador: 'Acostumbramiento', solo_rollo: true, tipo_dieta: dieta })
+      await supabase.from('raciones_app').insert({ corral_id: corralId, fecha, kg_total: kg, kg_rollo_extra: kg, mezclador: 'Acostumbramiento', solo_rollo: true, tipo_dieta: dieta, cantidad_animales: animales ?? null })
     }
   }
   if (kgRolloTotal > 0) {

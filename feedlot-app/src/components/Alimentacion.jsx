@@ -512,7 +512,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       const hoy = new Date().toISOString().split('T')[0]
       const corralesConKg = corralesParaRollo
         .filter(c => (kgsRolloExtraM[c.id] || 0) > 0)
-        .map(c => ({ corralId: c.id, kg: parseInt(kgsRolloExtraM[c.id]) || 0 }))
+        .map(c => ({ corralId: c.id, kg: parseInt(kgsRolloExtraM[c.id]) || 0, animales: c.animales || 0 }))
       const kgRolloTotal = await agregarRolloExtra(supabase, { fecha: hoy, corralesConKg, dieta })
       setKgsRolloExtraM({})
       setMostrarAgregarRolloM(false)
@@ -524,7 +524,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       setMostrarConfirmReemplazoM(false)
       setGuardandoM(true)
       const formulasPorEtapa = { acostumbramiento: FRML.acostumbramiento || [], recria: FRML.recria || [], terminacion: FRML.terminacion || [] }
-      const corralesConEtapaYKg = corralesAlim.map(c => ({ corralId: c.id, etapa: getEtapaM(c), kg: kgsM[c.id] || 0 }))
+      const corralesConEtapaYKg = corralesAlim.map(c => ({ corralId: c.id, etapa: getEtapaM(c), kg: kgsM[c.id] || 0, animales: c.animales || 0 }))
       await confirmarRacionesDia(supabase, { fecha: hoy, corralesConEtapaYKg, dieta, formulasPorEtapa, reemplazarExistente: true })
       await cargarDatos()
       alert(`Raciones confirmadas. ${totalM.toLocaleString('es-AR')} kg totales.`)
@@ -1148,13 +1148,16 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: S.bg }}>
-                          {['Corral', 'Etapa', 'Dieta', 'Kg cargados'].map(h => (
+                          {['Corral', 'Etapa', 'Dieta', 'Kg cargados', 'Animales', 'Consumo/animal'].map(h => (
                             <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => (
+                        {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => {
+                          const animalesFila = h.cantidad_animales ?? h.corrales?.animales ?? null
+                          const consumoAnimal = animalesFila > 0 ? (h.kg_total || 0) / animalesFila : null
+                          return (
                           <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                             <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
                             <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
@@ -1176,8 +1179,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                                 <span style={{ color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</span>
                               )}
                             </td>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{animalesFila != null ? animalesFila.toLocaleString('es-AR') : '—'}</td>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.accent }}>{consumoAnimal != null ? `${consumoAnimal.toFixed(1)} kg/cab` : '—'}</td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1243,13 +1249,16 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                               <thead>
                                 <tr style={{ background: S.bg }}>
-                                  {['Corral', 'Etapa', 'Kg cargados'].map(h => (
+                                  {['Corral', 'Etapa', 'Dieta', 'Kg cargados', 'Animales', 'Consumo/animal'].map(h => (
                                     <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
-                                {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => (
+                                {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => {
+                                  const animalesFila = h.cantidad_animales ?? h.corrales?.animales ?? null
+                                  const consumoAnimal = animalesFila > 0 ? (h.kg_total || 0) / animalesFila : null
+                                  return (
                                   <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                                     <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
                                     <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
@@ -1271,8 +1280,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                                         <span style={{ color: S.green }}>{(h.kg_total || 0).toLocaleString('es-AR')} kg</span>
                                       )}
                                     </td>
+                                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{animalesFila != null ? animalesFila.toLocaleString('es-AR') : '—'}</td>
+                                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.accent }}>{consumoAnimal != null ? `${consumoAnimal.toFixed(1)} kg/cab` : '—'}</td>
                                   </tr>
-                                ))}
+                                  )
+                                })}
                               </tbody>
                             </table>
                           </div>

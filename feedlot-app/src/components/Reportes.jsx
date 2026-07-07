@@ -108,6 +108,22 @@ export default function Reportes({ usuario }) {
 
   const raciones30 = raciones.filter(r => new Date(r.creado_en) >= hace30)
 
+  // Consumo diario promedio de los últimos 30 días (independiente del mes calendario)
+  const diasConsumo30 = {}
+  raciones30.forEach(r => {
+    const dia = r.creado_en.split('T')[0]
+    if (!diasConsumo30[dia]) diasConsumo30[dia] = { kgTotal: 0, animales: 0, corralesVistos: new Set() }
+    diasConsumo30[dia].kgTotal += r.kg_total || 0
+    if (r.corral_id && !diasConsumo30[dia].corralesVistos.has(r.corral_id)) {
+      diasConsumo30[dia].animales += (r.cantidad_animales ?? r.corrales?.animales) || 0
+      diasConsumo30[dia].corralesVistos.add(r.corral_id)
+    }
+  })
+  const diasConDatos30 = Object.values(diasConsumo30).filter(d => d.animales > 0 && d.kgTotal > 0)
+  const consumoDiarioProm30 = diasConDatos30.length > 0
+    ? diasConDatos30.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatos30.length
+    : null
+
   const costoAlimPorCorral = {}
   raciones30.forEach(r => {
     const num = r.corrales?.numero
@@ -186,9 +202,13 @@ export default function Reportes({ usuario }) {
       const dia = r.creado_en.split('T')[0]
       if (!porDia[dia]) porDia[dia] = { kgTotal: 0, animales: 0, corralesVistos: new Set() }
       porDia[dia].kgTotal += r.kg_total || 0
-      // Sumar animales del corral solo una vez por día
+      // Se usa la "foto" de animales guardada en el momento de cargar la ración
+      // (cantidad_animales) — así el cálculo es correcto incluso si después se
+      // movieron animales de ese corral. Los registros viejos (de antes de este
+      // arreglo) no tienen esa foto, así que para esos se usa el dato actual del
+      // corral como respaldo, aunque no sea exacto históricamente.
       if (r.corral_id && !porDia[dia].corralesVistos.has(r.corral_id)) {
-        porDia[dia].animales += r.corrales?.animales || 0
+        porDia[dia].animales += (r.cantidad_animales ?? r.corrales?.animales) || 0
         porDia[dia].corralesVistos.add(r.corral_id)
       }
     })
@@ -324,6 +344,7 @@ export default function Reportes({ usuario }) {
                   <Stat label="Permanencia" val={`${Math.round(mesActual.permanencia)} días`} sub={`corregida: ${Math.round(mesActual.permanenciaCorregida)} días`} />
                   <Stat label="Conversión" val={mesActual.conversion ? mesActual.conversion.toFixed(2) : '—'} sub="kg alimento / kg ganado" color={mesActual.conversion <= 7 ? S.green : mesActual.conversion <= 9 ? S.amber : S.red} />
                   <Stat label="Consumo diario" val={mesActual.consumoDiario ? `${mesActual.consumoDiario.toFixed(1)} kg/cab/d` : '—'} sub="alimento por cabeza" />
+                  <Stat label="Consumo diario (30 días)" val={consumoDiarioProm30 ? `${consumoDiarioProm30.toFixed(1)} kg/cab/d` : '—'} sub={`promedio móvil · ${diasConDatos30.length} días con datos`} color={S.accent} />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                   <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
