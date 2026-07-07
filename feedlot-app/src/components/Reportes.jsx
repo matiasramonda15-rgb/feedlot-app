@@ -40,17 +40,19 @@ export default function Reportes({ usuario }) {
   const [stock, setStock] = useState([])
   const [lotes, setLotes] = useState([])
   const [ventas, setVentas] = useState([])
+  const [formulasMixer, setFormulasMixer] = useState([])
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(500),
       supabase.from('stock_insumos').select('*'),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
+      supabase.from('formulas_mixer').select('*'),
     ])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
@@ -58,6 +60,7 @@ export default function Reportes({ usuario }) {
     setStock(s || [])
     setLotes(l || [])
     setVentas(v || [])
+    setFormulasMixer(fm || [])
     setLoading(false)
   }
 
@@ -139,6 +142,40 @@ export default function Reportes({ usuario }) {
   const hoy = new Date()
   // Calcula por mes calendario usando lotes y ventas
 
+  // ── Materia seca real: % MS por insumo (de stock_insumos) + composición de cada
+  // fórmula (de formulas_mixer) — para calcular cuántos kg de MATERIA SECA real
+  // se le dieron a los animales cada día, en vez de un % fijo aproximado.
+  const pctMSPorInsumo = {}
+  stock.forEach(s => { pctMSPorInsumo[s.insumo] = s.pct_ms || 0 })
+  const formulasPorDietaEtapa = {}
+  formulasMixer.forEach(f => {
+    const key = `${f.dieta}_${f.etapa}`
+    if (!formulasPorDietaEtapa[key]) formulasPorDietaEtapa[key] = []
+    formulasPorDietaEtapa[key].push({ n: f.ingrediente, kg: f.kg })
+  })
+  // Kg de materia seca real de una ración (separa rollo extra del mixer, y aplica
+  // el % MS de cada insumo de la fórmula correspondiente)
+  function kgMSDeRacion(r) {
+    const kgRollo = r.kg_rollo_extra || (r.solo_rollo ? (r.kg_total || 0) : 0)
+    const kgMixer = (r.kg_total || 0) - kgRollo
+    let msTotal = 0
+    if (kgRollo > 0) {
+      const msRollo = pctMSPorInsumo['Rollo (heno)'] || 0
+      msTotal += kgRollo * msRollo / 100
+    }
+    if (kgMixer > 0) {
+      const etapa = r.mezclador === 'Acostumbramiento' ? 'acostumbramiento' : r.mezclador === 'Recria' ? 'recria' : 'terminacion'
+      const dietaR = r.tipo_dieta || 'seco'
+      const formula = formulasPorDietaEtapa[`${dietaR}_${etapa}`] || []
+      formula.forEach(ing => {
+        const kgIng = ing.kg * kgMixer / 100
+        const msIng = pctMSPorInsumo[ing.n] ?? 0
+        msTotal += kgIng * msIng / 100
+      })
+    }
+    return msTotal
+  }
+
   function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fechaFin) {
     const dias = Math.round((fechaFin - fechaInicio) / 86400000)
     if (dias <= 0) return null
@@ -217,13 +254,8 @@ export default function Reportes({ usuario }) {
       ? diasConDatos.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatos.length
       : null
     const consumoDiarioCalc = consumoDiario && consumoDiario <= 30 ? consumoDiario : null
-    const MS_HUMEDO = 0.634
-    const MS_SECO = 0.705
     const kgAlimento = racionesPeriodo.reduce((s, r) => s + (r.kg_total || 0), 0)
-    const kgAlimentoMS = racionesPeriodo.reduce((s, r) => {
-      const ms = r.tipo_dieta === 'humedo' ? MS_HUMEDO : MS_SECO
-      return s + (r.kg_total || 0) * ms
-    }, 0)
+    const kgAlimentoMS = racionesPeriodo.reduce((s, r) => s + kgMSDeRacion(r), 0)
 
     // Paso 7: Conversión
     const conversion = gdp && consumoDiarioCalc ? (kgAlimentoMS / (gdp * existenciaPromedio * dias)) : null
@@ -323,6 +355,9 @@ export default function Reportes({ usuario }) {
       {tab === 'gdp' && (
         <div>
           <SectionHeader title="GDP y conversión" sub="Ganancia diaria de peso · basado en ventas reales e historial de raciones" />
+          <div style={{ fontSize: 11, color: S.muted, marginBottom: '.85rem', marginTop: -8 }}>
+            La conversión usa el % de materia seca real de cada insumo (editable en Alimentación → Fórmulas de mixer → Ingredientes).
+          </div>
 
           {/* Indicador principal: promedio de los últimos 6 meses — más estable que un solo mes,
               porque los animales que se venden un mes casi nunca son los que entraron ese mismo

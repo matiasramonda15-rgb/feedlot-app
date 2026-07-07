@@ -212,7 +212,16 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   const [cfgCapState, setCfgCapState] = useState([])
   const [formulaActiva, setFormulaActiva] = useState('seco')
   const primeraCargaRef = useRef(true)
-  const [pctMS, setPctMS] = useState({}) // { [insumo_id]: pct_ms } editable por usuario
+  const [pctMS, setPctMS] = useState({}) // { [insumo_id]: pct_ms } — se inicializa desde la base y se persiste ahí
+
+  useEffect(() => {
+    if (stockDB.length === 0) return
+    setPctMS(prev => {
+      const next = {...prev}
+      stockDB.forEach(s => { if (next[s.id] === undefined) next[s.id] = s.pct_ms || 0 })
+      return next
+    })
+  }, [stockDB])
   const [formulaDieta, setFormulaDieta] = useState('seco')
   const [formulas, setFormulas] = useState(JSON.parse(JSON.stringify(FORMULAS)))
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
@@ -287,7 +296,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       const formulasDB = { seco: { acostumbramiento: [], recria: [], terminacion: [] }, humedo: { acostumbramiento: [], recria: [], terminacion: [] } }
       fdb.forEach(row => {
         if (formulasDB[row.dieta]?.[row.etapa]) {
-          formulasDB[row.dieta][row.etapa].push({ n: row.ingrediente, kg: row.kg, c: row.color || '#888888', id: row.id })
+          formulasDB[row.dieta][row.etapa].push({ n: row.ingrediente, kg: row.kg, c: row.color || '#888888', id: row.id, ms: row.pct_ms != null ? row.pct_ms : null })
         }
       })
       setFormulas(formulasDB)
@@ -933,8 +942,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
               </thead>
               <tbody>
                 {stockDB.map(s => {
-                  const msDefault = s.insumo?.toLowerCase().includes('silo') ? 35 : s.insumo?.toLowerCase().includes('humedo') ? 72 : s.insumo?.toLowerCase().includes('expeller') || s.insumo?.toLowerCase().includes('urea') ? 88 : 88
-                  const ms = pctMS[s.id] !== undefined ? pctMS[s.id] : msDefault
+                  const ms = pctMS[s.id] !== undefined ? pctMS[s.id] : (s.pct_ms || 0)
                   const kgMS = Math.round(s.cantidad_kg * ms / 100)
                   const precioKgMS = s.precio_referencia && ms > 0 ? Math.round(s.precio_referencia * 100 / ms) : null
                   const totalStock = s.precio_referencia ? Math.round(s.cantidad_kg * s.precio_referencia) : null
@@ -950,7 +958,15 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right' }}>
                         <input type="number" value={ms} min="0" max="100" step="0.5"
-                          onChange={e => setPctMS(prev => ({...prev, [s.id]: parseFloat(e.target.value) || 0}))}
+                          onChange={e => {
+                            const val = parseFloat(e.target.value) || 0
+                            setPctMS(prev => ({...prev, [s.id]: val}))
+                          }}
+                          onBlur={async e => {
+                            const val = parseFloat(e.target.value) || 0
+                            const { error } = await supabase.from('stock_insumos').update({ pct_ms: val }).eq('id', s.id)
+                            if (error) alert('Error al guardar el % de materia seca: ' + error.message)
+                          }}
                           style={{ width: 65, padding: '4px 6px', border: `1px solid ${S.accent}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: S.surface }} />
                         <span style={{ fontSize: 11, color: S.muted, marginLeft: 2 }}>%</span>
                       </td>
