@@ -106,4 +106,4 @@ export async function agregarRolloExtra(supabase, { fecha, corralesConKg, dieta 
     if (rolloItem) await incrementarStockInsumo(supabase, rolloItem.id, -kgRolloTotal)
   }
   return kgRolloTotal
-} 
+}
