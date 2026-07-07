@@ -176,16 +176,32 @@ export default function Reportes({ usuario }) {
     return msTotal
   }
 
+  // Existencia actual real (siempre correcta, viene directo de los corrales de hoy)
+  const existenciaActualGlobal = corrales.reduce((s, c) => s + (c.animales || 0), 0)
+
   function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fechaFin) {
     const dias = Math.round((fechaFin - fechaInicio) / 86400000)
     if (dias <= 0) return null
+    const hoy = new Date()
 
-    // Lotes activos al inicio del período
-    const lotesAntesInicio = lotesData.filter(l => new Date(l.fecha_ingreso + 'T12:00:00') < fechaInicio)
-    const ventasAntesInicio = ventasData.filter(v => new Date(v.creado_en) < fechaInicio)
-    const animalesVendidosAntes = ventasAntesInicio.reduce((s, v) => s + (v.cantidad || 0), 0)
-    const animalesIngresadosAntes = lotesAntesInicio.reduce((s, l) => s + (l.cantidad || 0), 0)
-    const stockInicial = Math.max(0, animalesIngresadosAntes - animalesVendidosAntes)
+    // Existencia en una fecha pasada = existencia de HOY (que es un dato real y
+    // confiable) menos los animales que entraron después de esa fecha, más los que
+    // se vendieron después de esa fecha. Así no depende de tener cargado el
+    // historial completo desde el inicio del feedlot — solo los movimientos
+    // recientes (entre esa fecha y hoy), que sí están completos en el sistema.
+    function existenciaEn(fecha) {
+      const ingresosDespues = lotesData.filter(l => {
+        const f = new Date(l.fecha_ingreso + 'T12:00:00')
+        return f > fecha && f <= hoy
+      }).reduce((s, l) => s + (l.cantidad || 0), 0)
+      const ventasDespues = ventasData.filter(v => {
+        const f = new Date(v.creado_en)
+        return f > fecha && f <= hoy
+      }).reduce((s, v) => s + (v.cantidad || 0), 0)
+      return Math.max(0, existenciaActualGlobal - ingresosDespues + ventasDespues)
+    }
+
+    const stockInicial = existenciaEn(fechaInicio)
 
     // Ingresos del período
     const lotesPeriodo = lotesData.filter(l => {
@@ -367,10 +383,10 @@ export default function Reportes({ usuario }) {
             <div style={{ background: S.accentLight, border: `2px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.accent, marginBottom: '1rem' }}>📊 Indicadores — promedio últimos 6 meses (principal)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                <Stat label="Ganancia diaria (por animal)" val={prom6.gdp ? `${prom6.gdp.toFixed(3)} kg/cab/d` : '—'} sub="cuánto engorda cada animal por día" color={prom6.gdp >= 1.1 ? S.green : prom6.gdp >= 0.9 ? S.amber : S.red} />
+                <Stat label="Ganancia diaria (por animal)" val={prom6.gdp ? `${prom6.gdp.toFixed(2)} kg/día` : '—'} sub="promedio del feedlot, por cabeza" color={prom6.gdp >= 1.1 ? S.green : prom6.gdp >= 0.9 ? S.amber : S.red} />
                 <Stat label="Kg ganados x animal" val={prom6.gdp && prom6.permanencia ? `${Math.round(prom6.gdp * prom6.permanencia)} kg` : '—'} sub="total durante toda la estadía" color={S.green} />
                 <Stat label="Permanencia" val={prom6.permanencia ? `${prom6.permanencia} días` : '—'} sub="tiempo promedio en el feedlot" />
-                <Stat label="Conversión" val={prom6.conversion ? prom6.conversion.toFixed(2) : '—'} sub="kg alimento / kg ganado" color={prom6.conversion <= 7 ? S.green : prom6.conversion <= 9 ? S.amber : S.red} />
+                <Stat label="Conversión (6 meses)" val={prom6.conversion ? prom6.conversion.toFixed(2) : '—'} sub="kg materia seca / kg carne producido" color={prom6.conversion <= 7 ? S.green : prom6.conversion <= 9 ? S.amber : S.red} />
               </div>
               <div style={{ fontSize: 11, color: S.muted, marginTop: 10 }}>
                 {prom3 && <>3 meses: GDP {prom3.gdp?.toFixed(3) || '—'} · Perm. {prom3.permanencia || '—'}d · Conv. {prom3.conversion?.toFixed(2) || '—'}{'  ·  '}</>}
@@ -397,13 +413,13 @@ export default function Reportes({ usuario }) {
                   <Stat label="GDP estimado" val={mesActual.gdp ? `${mesActual.gdp.toFixed(3)} kg/d` : '—'} sub="normal" color={mesActual.gdp >= 1.1 ? S.green : mesActual.gdp >= 0.9 ? S.amber : S.red} />
                   {Math.abs(mesActual.variacionStock) > 10 && <Stat label="GDP corregido" val={mesActual.gdpCorregido ? `${mesActual.gdpCorregido.toFixed(3)} kg/d` : '—'} sub="por variación stock" color={S.purple} />}
                   <Stat label="Permanencia" val={`${Math.round(mesActual.permanencia)} días`} sub={`corregida: ${Math.round(mesActual.permanenciaCorregida)} días`} />
-                  <Stat label="Conversión" val={mesActual.conversion ? mesActual.conversion.toFixed(2) : '—'} sub="kg alimento / kg ganado" color={mesActual.conversion <= 7 ? S.green : mesActual.conversion <= 9 ? S.amber : S.red} />
+                  <Stat label="Conversión (mes actual)" val={mesActual.conversion ? mesActual.conversion.toFixed(2) : '—'} sub="kg materia seca / kg carne producido" color={mesActual.conversion <= 7 ? S.green : mesActual.conversion <= 9 ? S.amber : S.red} />
                   <Stat label="Consumo diario (30 días)" val={consumoDiarioProm30 ? `${consumoDiarioProm30.toFixed(1)} kg/cab/d` : '—'} sub={`promedio móvil · ${diasConDatos30.length} días con datos`} color={S.accent} />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                   <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
                   <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`${mesActual.cabVendidas} animales`} />
-                  <Stat label="Existencia promedio" val={Math.round(mesActual.existenciaPromedio)} sub={`inicio: ${mesActual.stockInicial} → fin: ${mesActual.stockFinal}`} />
+                  <Stat label="Existencia promedio (feedlot)" val={Math.round(mesActual.existenciaPromedio)} sub={`total de cabezas · inicio: ${mesActual.stockInicial} → fin: ${mesActual.stockFinal}`} />
                   <Stat label="Kg producidos estim." val={mesActual.kgProducidos ? `${Math.round(mesActual.kgProducidos).toLocaleString('es-AR')} kg` : '—'} sub="GDP × exist. × días" color={S.green} />
                 </div>
               </div>
