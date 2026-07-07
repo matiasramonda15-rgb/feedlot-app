@@ -343,7 +343,6 @@ export default function Reportes({ usuario }) {
                   {Math.abs(mesActual.variacionStock) > 10 && <Stat label="GDP corregido" val={mesActual.gdpCorregido ? `${mesActual.gdpCorregido.toFixed(3)} kg/d` : '—'} sub="por variación stock" color={S.purple} />}
                   <Stat label="Permanencia" val={`${Math.round(mesActual.permanencia)} días`} sub={`corregida: ${Math.round(mesActual.permanenciaCorregida)} días`} />
                   <Stat label="Conversión" val={mesActual.conversion ? mesActual.conversion.toFixed(2) : '—'} sub="kg alimento / kg ganado" color={mesActual.conversion <= 7 ? S.green : mesActual.conversion <= 9 ? S.amber : S.red} />
-                  <Stat label="Consumo diario" val={mesActual.consumoDiario ? `${mesActual.consumoDiario.toFixed(1)} kg/cab/d` : '—'} sub="alimento por cabeza" />
                   <Stat label="Consumo diario (30 días)" val={consumoDiarioProm30 ? `${consumoDiarioProm30.toFixed(1)} kg/cab/d` : '—'} sub={`promedio móvil · ${diasConDatos30.length} días con datos`} color={S.accent} />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>

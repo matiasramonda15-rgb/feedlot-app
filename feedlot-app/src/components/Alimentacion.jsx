@@ -1099,6 +1099,10 @@ export default function Alimentacion({ usuario, mobile, nav }) {
             })
             return Object.entries(porFecha).sort((a, b) => b[0].localeCompare(a[0])).map(([fecha, items]) => {
               const totalKg = items.reduce((s, h) => s + (h.kg_total || 0), 0)
+              const filasConAnimales = items.map(h => ({ animales: h.cantidad_animales ?? h.corrales?.animales ?? null, kg: h.kg_total || 0 })).filter(f => f.animales > 0)
+              const promedioConsumoAnimal = filasConAnimales.length > 0
+                ? filasConAnimales.reduce((s, f) => s + f.kg / f.animales, 0) / filasConAnimales.length
+                : null
 
               // Resumen de kilos de cada insumo (maíz seco, maíz húmedo, rollo, etc.)
               // realmente usados ese día — separa la parte de rollo extra del mixer.
@@ -1128,6 +1132,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                       <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
                         Total: {totalKg.toLocaleString('es-AR')} kg
                       </div>
+                      {promedioConsumoAnimal != null && (
+                        <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>
+                          Promedio: {promedioConsumoAnimal.toFixed(1)} kg/cab
+                        </div>
+                      )}
                       <button onClick={() => generarArchivoRaciones({ [fecha]: items }, fecha)}
                         style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                         📄 Exportar día
@@ -1229,6 +1238,10 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                     </div>
                     {Object.entries(porFecha).sort((a, b) => b[0].localeCompare(a[0])).map(([fecha, items]) => {
                       const totalKg = items.reduce((s, h) => s + (h.kg_total || 0), 0)
+                      const filasConAnimales = items.map(h => ({ animales: h.cantidad_animales ?? h.corrales?.animales ?? null, kg: h.kg_total || 0 })).filter(f => f.animales > 0)
+                      const promedioConsumoAnimal = filasConAnimales.length > 0
+                        ? filasConAnimales.reduce((s, f) => s + f.kg / f.animales, 0) / filasConAnimales.length
+                        : null
                       return (
                         <div key={fecha} style={{ marginBottom: '1.25rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1239,6 +1252,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                               <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.green }}>
                                 Total: {totalKg.toLocaleString('es-AR')} kg
                               </div>
+                              {promedioConsumoAnimal != null && (
+                                <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>
+                                  Promedio: {promedioConsumoAnimal.toFixed(1)} kg/cab
+                                </div>
+                              )}
                               <button onClick={() => generarArchivoRaciones({ [fecha]: items }, fecha)}
                                 style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                                 📄 Exportar día
