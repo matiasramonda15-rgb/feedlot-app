@@ -839,12 +839,20 @@ export default function Alimentacion({ usuario, mobile, nav }) {
             const total = ings.reduce((a, x) => a + x.kg, 0)
             const totalOk = Math.abs(total - 100) < 0.1
             const modoEdit = editando[key] || false
+            const kgMSDieta = ings.reduce((a, x) => {
+              const ingLower = x.n.toLowerCase()
+              const stockItem = stockDB.find(s => s.insumo.toLowerCase() === ingLower) || stockDB.find(s => s.insumo.toLowerCase().includes(ingLower.split(' ')[0]))
+              const ms = stockItem?.pct_ms || 0
+              return a + x.kg * ms / 100
+            }, 0)
+            const pctMSDieta = total > 0 ? (kgMSDieta / total * 100) : 0
             let acum = 0
             return (
               <div key={key} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{e.label}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: S.accent, fontWeight: 600, padding: '3px 9px', background: S.accentLight, borderRadius: 5 }}>% Materia seca: {pctMSDieta.toFixed(1)}%</span>
                     <span style={{ fontSize: 12, color: totalOk ? S.green : S.red, fontWeight: 600 }}>Total: {total.toFixed(1)} / 100 kg {!totalOk && '⚠'}</span>
                     {!modoEdit
                       ? <button onClick={() => setEditando({ ...editando, [key]: true })}
