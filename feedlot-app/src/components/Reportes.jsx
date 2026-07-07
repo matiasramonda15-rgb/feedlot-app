@@ -309,10 +309,17 @@ export default function Reportes({ usuario }) {
     const ultimos = meses.slice(-n).filter(m => m.gdp)
     if (ultimos.length === 0) return null
     const totalAnim = ultimos.reduce((s, m) => s + m.existenciaPromedio * m.dias, 0)
+    // La conversión se promedia SOLO entre los meses que realmente tienen un valor
+    // (algunos meses pueden no tener conversión calculable, por ejemplo si falta el
+    // dato de cuántos animales había exactamente ese día) — si un mes no aporta
+    // numerador, tampoco debe aportar peso al denominador, o arrastra el promedio
+    // para abajo sin razón.
+    const mesesConConversion = ultimos.filter(m => m.conversion)
+    const pesoConversion = mesesConConversion.reduce((s, m) => s + m.existenciaPromedio * m.dias, 0)
     return {
       gdp: ultimos.reduce((s, m) => s + m.gdp * m.existenciaPromedio * m.dias, 0) / totalAnim,
-      conversion: ultimos.filter(m => m.conversion).length > 0
-        ? ultimos.reduce((s, m) => s + (m.conversion || 0) * m.existenciaPromedio * m.dias, 0) / totalAnim
+      conversion: mesesConConversion.length > 0
+        ? mesesConConversion.reduce((s, m) => s + m.conversion * m.existenciaPromedio * m.dias, 0) / pesoConversion
         : null,
       permanencia: Math.round(ultimos.reduce((s, m) => s + m.permanencia * m.existenciaPromedio * m.dias, 0) / totalAnim),
     }
@@ -996,4 +1003,4 @@ function calcPesoProm(pa) {
   const tot = conPeso.reduce((s, p) => s + (p.cantidad || 0), 0)
   if (!tot) return null
   return conPeso.reduce((s, p) => s + p.peso_promedio * (p.cantidad || 0), 0) / tot
-}
+} 
