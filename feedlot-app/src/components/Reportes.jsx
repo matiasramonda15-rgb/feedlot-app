@@ -291,7 +291,10 @@ export default function Reportes({ usuario }) {
   const mesesGDP = []
   for (let i = 0; i < 12; i++) {
     const inicio = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)
-    const fin = new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 1)
+    // Para el mes EN CURSO (i=0), el período termina HOY, no el 31 del mes —
+    // si no, se cuentan "días" que todavía no pasaron y que por lo tanto no
+    // tienen ventas todavía, e infla la permanencia (muchos días / pocas ventas).
+    const fin = i === 0 ? hoy : new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 1)
     const resultado = calcMesGDP(lotes, ventas, raciones, inicio, fin)
     if (resultado) {
       mesesGDP.unshift({ mes: inicio.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' }), fechaInicio: inicio, ...resultado })
