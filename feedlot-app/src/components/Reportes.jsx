@@ -271,10 +271,10 @@ export default function Reportes({ usuario }) {
   const prom12 = promMovil(mesesGDP, 12)
 
   // GDP para display (usa mes actual o prom3 como fallback)
-  const gdpFeedlotGlobal = mesActual?.gdp || prom3?.gdp || null
-  const permanenciaPromedio = mesActual?.permanencia || prom3?.permanencia || null
+  const gdpFeedlotGlobal = prom6?.gdp || prom3?.gdp || mesActual?.gdp || null
+  const permanenciaPromedio = prom6?.permanencia || prom3?.permanencia || mesActual?.permanencia || null
   const kgGanadosPorAnimal = mesActual ? mesActual.pesoProm_venta - mesActual.pesoProm_ingreso : null
-  const conversionGlobal = mesActual?.conversion || prom3?.conversion || null
+  const conversionGlobal = prom6?.conversion || prom3?.conversion || mesActual?.conversion || null
   const totalKgAlimConsumido = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
 
   // Rentabilidad por venta
@@ -324,13 +324,32 @@ export default function Reportes({ usuario }) {
         <div>
           <SectionHeader title="GDP y conversión" sub="Ganancia diaria de peso · basado en ventas reales e historial de raciones" />
 
+          {/* Indicador principal: promedio de los últimos 6 meses — más estable que un solo mes,
+              porque los animales que se venden un mes casi nunca son los que entraron ese mismo
+              mes (el ciclo del feedlot dura varios meses), así que comparar un solo mes calendario
+              da resultados con mucho ruido. Con 6 meses ese efecto se compensa. */}
+          {prom6 && (
+            <div style={{ background: S.accentLight, border: `2px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: S.accent, marginBottom: '1rem' }}>📊 Indicadores — promedio últimos 6 meses (principal)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                <Stat label="GDP" val={prom6.gdp ? `${prom6.gdp.toFixed(3)} kg/d` : '—'} sub="ganancia diaria de peso" color={prom6.gdp >= 1.1 ? S.green : prom6.gdp >= 0.9 ? S.amber : S.red} />
+                <Stat label="Permanencia" val={prom6.permanencia ? `${prom6.permanencia} días` : '—'} sub="tiempo promedio en el feedlot" />
+                <Stat label="Conversión" val={prom6.conversion ? prom6.conversion.toFixed(2) : '—'} sub="kg alimento / kg ganado" color={prom6.conversion <= 7 ? S.green : prom6.conversion <= 9 ? S.amber : S.red} />
+              </div>
+              <div style={{ fontSize: 11, color: S.muted, marginTop: 10 }}>
+                {prom3 && <>3 meses: GDP {prom3.gdp?.toFixed(3) || '—'} · Perm. {prom3.permanencia || '—'}d · Conv. {prom3.conversion?.toFixed(2) || '—'}{'  ·  '}</>}
+                {prom12 && <>12 meses: GDP {prom12.gdp?.toFixed(3) || '—'} · Perm. {prom12.permanencia || '—'}d · Conv. {prom12.conversion?.toFixed(2) || '—'}</>}
+              </div>
+            </div>
+          )}
+
           {/* GDP Global — metodología por movimientos mensuales */}
           {mesActual ? (
             <>
               {/* Tarjetas resumen mes actual */}
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>Mes actual — {mesActual.mes}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Mes actual — {mesActual.mes} <span style={{ fontWeight: 400, color: S.muted, fontSize: 11 }}>(referencia — puede tener ruido, ver el promedio de 6 meses de arriba)</span></div>
                   {Math.abs(mesActual.variacionStock) > 20 && (
                     <span style={{ fontSize: 11, padding: '3px 10px', background: S.redLight, color: S.red, borderRadius: 4, fontWeight: 600 }}>⚠ Variación stock {mesActual.variacionStock.toFixed(0)}% — resultado puede tener sesgo</span>
                   )}
