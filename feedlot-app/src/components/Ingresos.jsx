@@ -1296,25 +1296,33 @@ function generarReciboCompra(lote, pagos, corrales) {
 // bloque por cada proveedor de las tropas cargadas en Ingresos (si las hay).
 function normalizarFacturas(l) {
   if (l.facturas_feria?.length > 0) {
-    return l.facturas_feria.map(f => ({
-      proveedor: f.proveedor || '', cuit: f.cuit || '', localidad: f.localidad || '', condicion_iva: f.condicion_iva || '', cbu: f.cbu || '',
-      nro_factura: f.nro_factura || '', feria_nombre: f.feria_nombre || '',
-      kg_factura: f.kg_factura != null ? String(f.kg_factura) : '', precio_neto: f.precio_neto != null ? String(f.precio_neto) : '',
-      comision: f.comision != null ? String(f.comision) : '', dte: f.dte != null ? String(f.dte) : '',
-      vencimientos: (f.vencimientos || [{ fecha: '', monto: '', pagado: false }]).map(v => ({ fecha: v.fecha || '', monto: String(v.monto || ''), pagado: v.pagado || false })),
-    }))
+    return l.facturas_feria.map(f => {
+      // Compatibilidad con facturas viejas que tenían comisión/DTE cargados por
+      // separado (antes de este cambio) — se reconstruye el "total manual" para
+      // no perder ese dato.
+      const totalManualGuardado = f.total_factura_manual != null
+        ? f.total_factura_manual
+        : (f.total_factura != null ? f.total_factura : null)
+      return {
+        proveedor: f.proveedor || '', cuit: f.cuit || '', localidad: f.localidad || '', condicion_iva: f.condicion_iva || '', cbu: f.cbu || '',
+        nro_factura: f.nro_factura || '', feria_nombre: f.feria_nombre || '',
+        kg_factura: f.kg_factura != null ? String(f.kg_factura) : '', precio_neto: f.precio_neto != null ? String(f.precio_neto) : '',
+        total_factura_manual: totalManualGuardado != null ? String(totalManualGuardado) : '',
+        vencimientos: (f.vencimientos || [{ fecha: '', monto: '', pagado: false }]).map(v => ({ fecha: v.fecha || '', monto: String(v.monto || ''), pagado: v.pagado || false })),
+      }
+    })
   }
   if (l.cuotas_pago?.length > 0) {
     return l.cuotas_pago.map(c => ({
       proveedor: l.procedencia || '', cuit: l.proveedor_cuit || '', nro_factura: c.nro_factura || '', feria_nombre: l.feria_nombre || '',
-      kg_factura: '', precio_neto: '', comision: '', dte: '',
+      kg_factura: '', precio_neto: '', total_factura_manual: '',
       vencimientos: (c.vencimientos || [{ fecha: c.fecha, monto: c.monto, pagado: false }]).map(v => ({ fecha: v.fecha || '', monto: String(v.monto || ''), pagado: v.pagado || false })),
     }))
   }
   if (l.sublotes?.length > 0) {
-    return l.sublotes.map(s => ({ proveedor: s.vendedor || '', cuit: s.cuit || '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', comision: '', dte: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }))
+    return l.sublotes.map(s => ({ proveedor: s.vendedor || '', cuit: s.cuit || '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', total_factura_manual: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }))
   }
-  return [{ proveedor: l.procedencia || '', cuit: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', comision: '', dte: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]
+  return [{ proveedor: l.procedencia || '', cuit: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', total_factura_manual: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]
 }
 
 function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
@@ -1373,21 +1381,27 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       // El monto neto sale de kg×precio; si no cargaron eso, se toma de la suma de los vencimientos cargados
       const montoNeto = (kg && precioNeto) ? Math.round(kg * precioNeto) : vencsFiltrados.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
       const ivaMonto = Math.round(montoNeto * IVA_PCT / 100)
-      const gastos = (parseFloat(f.comision) || 0) + (parseFloat(f.dte) || 0)
-      const totalFactura = montoNeto + ivaMonto + gastos
+      const totalManual = parseFloat(f.total_factura_manual) || 0
+      // El total de la factura es el que cargás vos a mano (el real, de la factura en
+      // papel); si todavía no lo cargaste, se usa neto+IVA como estimado provisorio.
+      // La comisión y gastos de feria salen solos, de la diferencia entre ambos.
+      const totalFactura = totalManual > 0 ? totalManual : (montoNeto + ivaMonto)
+      const gastos = totalManual > 0 ? Math.max(0, totalManual - (montoNeto + ivaMonto)) : 0
       return {
         proveedor: f.proveedor || null, cuit: f.cuit || null, localidad: f.localidad || null, condicion_iva: f.condicion_iva || null, cbu: f.cbu || null,
         nro_factura: f.nro_factura || null, feria_nombre: f.feria_nombre || null,
         kg_factura: kg || null, precio_neto: precioNeto || null, monto_neto: montoNeto, iva_monto: ivaMonto,
-        comision: parseFloat(f.comision) || null, dte: parseFloat(f.dte) || null, gastos_total: gastos, total_factura: totalFactura,
+        total_factura_manual: totalManual || null, gastos_total: gastos, total_factura: totalFactura,
         vencimientos: vencsFiltrados.map(v => ({ fecha: v.fecha || null, monto: parseFloat(v.monto) || 0, pagado: v.pagado || false })),
       }
     })
     const totalNeto = facturasCalc.reduce((s, f) => s + f.monto_neto, 0)
     const totalIva = facturasCalc.reduce((s, f) => s + f.iva_monto, 0)
-    const totalFacturadoConTodo = facturasCalc.reduce((s, f) => s + f.total_factura, 0)
     const montoTotalOriginal = lote.monto_total_con_iva || null
-    const montoNegro = montoTotalOriginal != null ? Math.max(0, montoTotalOriginal - totalFacturadoConTodo) : null
+    // El paralelo compara el total que cargaste en Ingresos (kg × precio de campo,
+    // sin IVA) contra la suma de los NETOS de las facturas (también sin IVA) — no
+    // se le suma el IVA a ninguno de los dos lados para esta comparación.
+    const montoNegro = montoTotalOriginal != null ? Math.max(0, montoTotalOriginal - totalNeto) : null
     const primeraFactura = facturasCalc[0]?.nro_factura || null
 
     // cuotas_pago (aplanado): se sigue completando para que el banner de vencimientos
@@ -1412,16 +1426,16 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   function renderFormFactura(l) {
     const facturas = formFactura.facturas || []
     const totalOperacion = l.monto_total_con_iva || 0
-    const totalFacturadoTodo = facturas.reduce((s, f) => {
+    // Para el Paralelo se compara NETO contra NETO (el total de Ingresos ya es un
+    // precio de campo, sin IVA) — no se le suma IVA ni gastos a ninguno de los dos lados.
+    const totalNetoTodo = facturas.reduce((s, f) => {
       const kg = parseFloat(f.kg_factura) || 0
       const precio = parseFloat(f.precio_neto) || 0
       const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
       const neto = (kg && precio) ? kg * precio : vencs.reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0)
-      const iva = neto * IVA_PCT / 100
-      const gastos = (parseFloat(f.comision) || 0) + (parseFloat(f.dte) || 0)
-      return s + neto + iva + gastos
+      return s + neto
     }, 0)
-    const paralelo = totalOperacion > 0 ? Math.max(0, totalOperacion - totalFacturadoTodo) : 0
+    const paralelo = totalOperacion > 0 ? Math.max(0, totalOperacion - totalNetoTodo) : 0
     const nombresProveedoresTropas = [...new Set((l.sublotes || []).map(s => s.vendedor).filter(Boolean))]
 
     return (
@@ -1433,7 +1447,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Facturas por proveedor (IVA {IVA_PCT}% incluido siempre)</div>
-          <button onClick={() => setFormFactura({...formFactura, facturas: [...facturas, { proveedor: '', cuit: '', localidad: '', condicion_iva: '', cbu: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', comision: '', dte: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]})}
+          <button onClick={() => setFormFactura({...formFactura, facturas: [...facturas, { proveedor: '', cuit: '', localidad: '', condicion_iva: '', cbu: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', total_factura_manual: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]})}
             style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
             + Agregar factura
           </button>
@@ -1449,8 +1463,11 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
           const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
           const montoNeto = (kg && precio) ? kg * precio : vencs.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
           const ivaMonto = Math.round(montoNeto * IVA_PCT / 100)
-          const gastos = (parseFloat(f.comision) || 0) + (parseFloat(f.dte) || 0)
-          const totalFactura = montoNeto + ivaMonto + gastos
+          const totalManual = parseFloat(f.total_factura_manual) || 0
+          // Si cargaste el total real de la factura, la diferencia contra neto+IVA
+          // es la comisión + gastos de feria (no hace falta desglosarlos a mano).
+          const totalFactura = totalManual > 0 ? totalManual : (montoNeto + ivaMonto)
+          const gastos = totalManual > 0 ? Math.max(0, totalManual - (montoNeto + ivaMonto)) : 0
           const totalVencs = vencs.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
           const set = patch => { const n = [...facturas]; n[fi] = { ...n[fi], ...patch }; setFormFactura({...formFactura, facturas: n}) }
 
@@ -1471,10 +1488,19 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                   style={{ padding: '5px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕ Quitar factura</button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                 <input placeholder="Localidad (opcional)" value={f.localidad || ''} onChange={e => set({ localidad: e.target.value })} style={{...inp, fontSize: 12}} />
                 <input placeholder="Condición IVA (ej. Resp. Inscripto)" value={f.condicion_iva || ''} onChange={e => set({ condicion_iva: e.target.value })} style={{...inp, fontSize: 12}} />
                 <input placeholder="CBU (opcional)" value={f.cbu || ''} onChange={e => set({ cbu: e.target.value })} style={{...inp, fontSize: 12}} />
+                <button title="Traer localidad/IVA/CBU del contacto (útil si esta factura ya estaba guardada de antes)"
+                  onClick={() => {
+                    const ct = (contactos || []).find(c => c.nombre === f.proveedor)
+                    if (!ct) { alert('No se encontró ese proveedor en Contactos'); return }
+                    set({ cuit: ct.cuit || f.cuit, localidad: ct.localidad || f.localidad, condicion_iva: ct.iva || f.condicion_iva, cbu: ct.cbu || f.cbu })
+                  }}
+                  style={{ padding: '7px 9px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  🔄
+                </button>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -1493,13 +1519,17 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
-                <div><Lbl>Comisión feria $ (si aplica)</Lbl><input type="number" value={f.comision || ''} placeholder="opcional" onChange={e => set({ comision: e.target.value })} style={{...inp, fontFamily: 'monospace'}} /></div>
-                <div><Lbl>DTE $ (si aplica)</Lbl><input type="number" value={f.dte || ''} placeholder="opcional" onChange={e => set({ dte: e.target.value })} style={{...inp, fontFamily: 'monospace'}} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                 <div>
-                  <Lbl c={S.purple}>Total esta factura</Lbl>
-                  <div style={{ padding: '8px 10px', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, background: S.purpleLight, color: S.purple, borderRadius: 6 }}>
-                    ${totalFactura.toLocaleString('es-AR')}
+                  <Lbl c={S.purple}>Total esta factura (el real, de la factura en papel)</Lbl>
+                  <input type="number" value={f.total_factura_manual || ''} placeholder={`ej. ${Math.round(montoNeto + ivaMonto)}`}
+                    onChange={e => set({ total_factura_manual: e.target.value })}
+                    style={{...inp, fontFamily: 'monospace', fontWeight: 700, border: `1px solid ${S.purple}`, color: S.purple, background: S.purpleLight}} />
+                </div>
+                <div>
+                  <Lbl>Comisión y gastos de feria (calculado)</Lbl>
+                  <div style={{ padding: '8px 10px', fontSize: 13, fontFamily: 'monospace', fontWeight: 600, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, color: gastos > 0 ? S.amber : S.muted }}>
+                    {f.total_factura_manual ? `$${gastos.toLocaleString('es-AR')}` : '—'}
                   </div>
                 </div>
               </div>
@@ -1552,8 +1582,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>{totalOperacion ? `$${totalOperacion.toLocaleString('es-AR')}` : '—'}</div>
             </div>
             <div>
-              <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total facturado (todas)</div>
-              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalFacturadoTodo.toLocaleString('es-AR')}</div>
+              <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total neto facturado (todas)</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalNetoTodo.toLocaleString('es-AR')}</div>
             </div>
             <div>
               <div style={{ fontSize: 10, color: paralelo > 0 ? S.purple : S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Paralelo</div>
