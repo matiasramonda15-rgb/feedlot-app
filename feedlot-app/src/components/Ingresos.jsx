@@ -1435,6 +1435,17 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       const neto = (kg && precio) ? kg * precio : vencs.reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0)
       return s + neto
     }, 0)
+    // Este es el total REAL sumado (lo que cargaste en "Total esta factura" de cada
+    // una, o neto+IVA si todavía no lo cargaste) — es lo que se muestra abajo.
+    const totalFacturaTodo = facturas.reduce((s, f) => {
+      const kg = parseFloat(f.kg_factura) || 0
+      const precio = parseFloat(f.precio_neto) || 0
+      const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
+      const neto = (kg && precio) ? kg * precio : vencs.reduce((sv, v) => sv + (parseFloat(v.monto) || 0), 0)
+      const iva = neto * IVA_PCT / 100
+      const totalManual = parseFloat(f.total_factura_manual) || 0
+      return s + (totalManual > 0 ? totalManual : (neto + iva))
+    }, 0)
     const paralelo = totalOperacion > 0 ? Math.max(0, totalOperacion - totalNetoTodo) : 0
     const nombresProveedoresTropas = [...new Set((l.sublotes || []).map(s => s.vendedor).filter(Boolean))]
 
@@ -1582,8 +1593,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>{totalOperacion ? `$${totalOperacion.toLocaleString('es-AR')}` : '—'}</div>
             </div>
             <div>
-              <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total neto facturado (todas)</div>
-              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalNetoTodo.toLocaleString('es-AR')}</div>
+              <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Total facturado (todas)</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalFacturaTodo.toLocaleString('es-AR')}</div>
             </div>
             <div>
               <div style={{ fontSize: 10, color: paralelo > 0 ? S.purple : S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Paralelo</div>
