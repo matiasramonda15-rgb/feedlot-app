@@ -1479,6 +1479,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                     {corralesVenta.map((cv, i) => {
                       const cSel = corrales.find(c => String(c.id) === String(cv.corral_id))
                       const g = cSel ? gdpPorCorral[cSel.numero] : null
+                      const tieneOverride = cv.desbaste_pct !== undefined && cv.desbaste_pct !== '' || cv.precio_kg !== undefined && cv.precio_kg !== ''
                       return (
                         <div key={i} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 8 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -1516,6 +1517,27 @@ export default function Ventas({ usuario, mobile, nav }) {
                               Peso prom.: <strong>{Math.round(g.pesoActual)} kg</strong>
                               {g.gdp ? ` · GDP: ${g.gdp.toFixed(2)} kg/día` : ''}
                               {g.pesoActual >= 400 ? <span style={{ color: S.green, marginLeft: 6 }}>★ Listos para venta</span> : ''}
+                            </div>
+                          )}
+                          {!tieneOverride ? (
+                            <button onClick={() => { const n = [...corralesVenta]; n[i].desbaste_pct = form.desbaste || '8'; n[i].precio_kg = form.precio_kg || ''; setCorralesVenta(n) }}
+                              style={{ marginTop: 10, padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.purple}`, color: S.purple, borderRadius: 5, cursor: 'pointer' }}>
+                              + Este grupo va a otro precio/desbaste
+                            </button>
+                          ) : (
+                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${S.border}`, display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '.75rem', alignItems: 'flex-end' }}>
+                              <div>
+                                <label style={{ fontSize: 10, fontWeight: 600, color: S.purple, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Desbaste % (este grupo)</label>
+                                <input type="number" value={cv.desbaste_pct} onChange={e => { const n = [...corralesVenta]; n[i].desbaste_pct = e.target.value; setCorralesVenta(n) }} style={{...inputStyle, borderColor: S.purple}} />
+                              </div>
+                              <div>
+                                <label style={{ fontSize: 10, fontWeight: 600, color: S.purple, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Precio $/kg (este grupo)</label>
+                                <input type="number" value={cv.precio_kg} placeholder="opcional" onChange={e => { const n = [...corralesVenta]; n[i].precio_kg = e.target.value; setCorralesVenta(n) }} style={{...inputStyle, borderColor: S.purple}} />
+                              </div>
+                              <button onClick={() => { const n = [...corralesVenta]; delete n[i].desbaste_pct; delete n[i].precio_kg; setCorralesVenta(n) }}
+                                style={{ padding: '7px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+                                Quitar
+                              </button>
                             </div>
                           )}
                         </div>
