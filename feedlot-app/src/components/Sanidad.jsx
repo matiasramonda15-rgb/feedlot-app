@@ -267,7 +267,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
       supabase.from('lotes').select('id, codigo, cantidad, fecha_ingreso, peso_prom_ingreso, corral_cuarentena_id, vacunado_ingreso').order('created_at', { ascending: false }).limit(10),
       supabase.from('animales_enfermeria').select('*, corrales:corral_origen_id(numero), lotes(codigo)').order('creado_en', { ascending: false }),
       supabase.from('mortalidad').select('*, corrales(numero), lotes(codigo)').order('creado_en', { ascending: false }),
-      supabase.from('eventos_sanitarios').select('*, corrales(numero), usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(30),
+      supabase.from('eventos_sanitarios').select('*, corrales(numero), usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(200),
       supabase.from('revisiones').select('*, usuarios:registrado_por(nombre)').order('creado_en', { ascending: false }).limit(10),
       supabase.from('eventos_sanitarios').select('id, corral_id, lote_id, producto, cantidad_ml, cantidad_animales').eq('tipo', 'vacunacion').order('creado_en', { ascending: false }).limit(300),
     ])
@@ -292,36 +292,63 @@ export default function Sanidad({ usuario, mobile, nav }) {
     const sin = revState.filter(s => s.ok === null).length
     if (sin > 0) { alert(`Falta revisar ${sin} corral${sin !== 1 ? 'es' : ''}.`); return }
 
-    await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
+    const { error: errRev } = await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
+    if (errRev) { alert('Error al registrar la revisión: ' + errRev.message); return }
 
     for (let i = 0; i < corrales.length; i++) {
       const st = revState[i]
-      await supabase.from('eventos_sanitarios').insert({
-        tipo: 'revision', corral_id: corrales[i].id,
-        producto: st.ok ? 'Sin novedad' : 'Varios',
-        cantidad_animales: st.ok ? corrales[i].animales : st.enfermos.length,
-        observaciones: st.ok ? 'Sin novedades' : st.enfermos.map(e => `${e.desc} - ${e.diag}`).join('; '),
-        registrado_por: usuario?.id,
-      })
+      if (st.ok) {
+        const { error } = await supabase.from('eventos_sanitarios').insert({
+          tipo: 'revision', corral_id: corrales[i].id,
+          producto: 'Sin novedad', cantidad_animales: corrales[i].animales,
+          observaciones: 'Sin novedades', registrado_por: usuario?.id,
+        })
+        if (error) { alert(`Error al guardar la revisión del corral ${corrales[i].numero}: ` + error.message); return }
+        continue
+      }
       for (const enf of (st.enfermos || [])) {
-        if (enf.desc) {
-          // Descontar del stock sanitario
-          if (enf.prod_id && enf.ml) {
-            await supabase.rpc('incrementar_stock_sanitario', { p_id: enf.prod_id, p_delta: -parseFloat(enf.ml) })
-          }
-          // Registrar en animales_enfermeria
-          const corrEnf = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
-          await supabase.from('animales_enfermeria').insert({
-            corral_origen_id: corrales[i].id,
-            corral_id: corrEnf?.id || null,
-            descripcion: enf.desc,
-            diagnostico: enf.diag,
-            tratamiento: enf.prod,
-            cantidad_ml: enf.ml ? parseFloat(enf.ml) : null,
-            estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
+        if (!enf.desc) continue
+        const productosValidos = (enf.productos || []).filter(p => p.prod)
+        if (productosValidos.length === 0) {
+          // Novedad sin ningún producto aplicado — igual queda registrada
+          const { error } = await supabase.from('eventos_sanitarios').insert({
+            tipo: 'revision', corral_id: corrales[i].id,
+            producto: null, cantidad_animales: 1,
+            observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
             registrado_por: usuario?.id,
           })
+          if (error) { alert('Error al guardar la novedad: ' + error.message); return }
+        } else {
+          // Un evento POR CADA producto realmente aplicado — así el historial
+          // muestra el nombre real de cada vacuna/producto, no un genérico "Varios".
+          for (const p of productosValidos) {
+            const mlNum = parseFloat(p.ml) || 0
+            if (p.prod_id && mlNum > 0) {
+              const { error: errStock } = await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
+              if (errStock) { alert('Error al descontar stock de ' + p.prod + ': ' + errStock.message); return }
+            }
+            const { error } = await supabase.from('eventos_sanitarios').insert({
+              tipo: 'revision', corral_id: corrales[i].id,
+              producto: p.prod, cantidad_ml: mlNum || null, cantidad_animales: 1,
+              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+              registrado_por: usuario?.id,
+            })
+            if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); return }
+          }
         }
+        // Registrar en animales_enfermeria (seguimiento del animal en sí, con todos los productos juntos)
+        const corrEnf = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
+        const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
+          corral_origen_id: corrales[i].id,
+          corral_id: corrEnf?.id || null,
+          descripcion: enf.desc,
+          diagnostico: enf.diag,
+          tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+          cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
+          estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
+          registrado_por: usuario?.id,
+        })
+        if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); return }
       }
     }
     await cargarDatos()
@@ -332,13 +359,13 @@ export default function Sanidad({ usuario, mobile, nav }) {
     const n = [...revState]; n[i] = { ok: true, enfermos: [] }; setRevState(n)
   }
   function setRevNov(i) {
-    const n = [...revState]; n[i] = { ok: false, enfermos: [{ desc: '', diag: 'Conjuntivitis', prod: '', prod_id: null, ml: '', mover_enfermeria: false }] }; setRevState(n)
+    const n = [...revState]; n[i] = { ok: false, enfermos: [{ desc: '', diag: 'Conjuntivitis', productos: [{ prod: '', prod_id: null, ml: '' }], mover_enfermeria: false }] }; setRevState(n)
   }
   function resetRev(i) {
     const n = [...revState]; n[i] = { ok: null, enfermos: [] }; setRevState(n)
   }
   function addEnfermo(i) {
-    const n = [...revState]; n[i].enfermos.push({ desc: '', diag: 'Conjuntivitis', prod: '' }); setRevState(n)
+    const n = [...revState]; n[i].enfermos.push({ desc: '', diag: 'Conjuntivitis', productos: [{ prod: '', prod_id: null, ml: '' }], mover_enfermeria: false }); setRevState(n)
   }
   function delEnfermo(i, ei) {
     const n = [...revState]
@@ -348,6 +375,18 @@ export default function Sanidad({ usuario, mobile, nav }) {
   }
   function updEnfermo(i, ei, k, v) {
     const n = [...revState]; n[i].enfermos[ei][k] = v; setRevState(n)
+  }
+  function addProductoEnfermo(i, ei) {
+    const n = [...revState]; n[i].enfermos[ei].productos.push({ prod: '', prod_id: null, ml: '' }); setRevState(n)
+  }
+  function delProductoEnfermo(i, ei, pi) {
+    const n = [...revState]
+    n[i].enfermos[ei].productos.splice(pi, 1)
+    if (!n[i].enfermos[ei].productos.length) n[i].enfermos[ei].productos.push({ prod: '', prod_id: null, ml: '' })
+    setRevState(n)
+  }
+  function updProductoEnfermo(i, ei, pi, k, v) {
+    const n = [...revState]; n[i].enfermos[ei].productos[pi][k] = v; setRevState(n)
   }
 
 
@@ -370,23 +409,43 @@ export default function Sanidad({ usuario, mobile, nav }) {
       const sin = revStateM.filter(s => s.ok === null).length
       if (sin > 0) { alert(`Falta revisar ${sin} corral${sin !== 1 ? 'es' : ''}.`); return }
       setGuardandoM(true)
-      await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
+      const { error: errRev } = await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
+      if (errRev) { alert('Error al registrar la revisión: ' + errRev.message); setGuardandoM(false); return }
       for (const st of revStateM) {
-        const novedades = st.enfermos || []
-        await supabase.from('eventos_sanitarios').insert({
-          tipo: 'revision', corral_id: st.id,
-          producto: st.ok ? 'Sin novedad' : 'Varios',
-          cantidad_animales: st.ok ? st.animales : novedades.length,
-          observaciones: st.ok ? 'Sin novedades' : novedades.map(e => `${e.desc} - ${e.diag}`).join('; '),
-          registrado_por: usuario?.id,
-        })
-        for (const enf of novedades) {
-          if (enf.desc) {
-            await supabase.from('animales_enfermeria').insert({
-              corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
-              tratamiento: enf.prod, estado: 'en tratamiento', registrado_por: usuario?.id,
+        if (st.ok) {
+          const { error } = await supabase.from('eventos_sanitarios').insert({
+            tipo: 'revision', corral_id: st.id, producto: 'Sin novedad',
+            cantidad_animales: st.animales, observaciones: 'Sin novedades', registrado_por: usuario?.id,
+          })
+          if (error) { alert('Error al guardar: ' + error.message); setGuardandoM(false); return }
+          continue
+        }
+        for (const enf of (st.enfermos || [])) {
+          if (!enf.desc) continue
+          const productosValidos = (enf.productos || []).filter(p => p.prod)
+          if (productosValidos.length === 0) {
+            await supabase.from('eventos_sanitarios').insert({
+              tipo: 'revision', corral_id: st.id, producto: null,
+              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+              cantidad_animales: 1, registrado_por: usuario?.id,
             })
+          } else {
+            for (const p of productosValidos) {
+              const mlNum = parseFloat(p.ml) || 0
+              if (p.prod_id && mlNum > 0) await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
+              await supabase.from('eventos_sanitarios').insert({
+                tipo: 'revision', corral_id: st.id, producto: p.prod,
+                observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+                cantidad_animales: 1, cantidad_ml: mlNum || null, registrado_por: usuario?.id,
+              })
+            }
           }
+          await supabase.from('animales_enfermeria').insert({
+            corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
+            tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+            cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
+            estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
+          })
         }
       }
       await cargarDatos()
@@ -734,7 +793,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                         <>
                           <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: true, enfermos: []}; setRevStateM(n) }}
                             style={{ padding: '7px 10px', background: '#1A3D26', border: `1px solid ${CM.green}`, borderRadius: 7, color: CM.green, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>Sin novedades ✓</button>
-                          <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',prod:'',prod_id:null,ml:'',mover_enfermeria:false}]}; setRevStateM(n) }}
+                          <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',productos:[{prod:'',prod_id:null,ml:''}],mover_enfermeria:false}]}; setRevStateM(n) }}
                             style={{ padding: '7px 10px', background: '#3D2A00', border: `1px solid ${CM.amber}`, borderRadius: 7, color: CM.amber, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>Hay novedad</button>
                         </>
                       )}
@@ -763,54 +822,75 @@ export default function Sanidad({ usuario, mobile, nav }) {
                             style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans, marginBottom: 6 }}>
                             {['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro'].map(d => <option key={d}>{d}</option>)}
                           </select>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <select value={enf.prod} onChange={e => {
-                              const prod = stockSanitarioM.find(p => p.producto === e.target.value)
-                              const n = [...revStateM]
-                              n[i].enfermos[ei].prod = e.target.value
-                              n[i].enfermos[ei].prod_id = prod?.id || null
-                              setRevStateM(n)
-                            }}
-                              style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans }}>
-                              <option value="">— Producto aplicado —</option>
-                              {stockSanitarioM.map(p => <option key={p.id} value={p.producto}>{p.producto} ({(p.cantidad_ml||0).toLocaleString('es-AR')} {p.unidad||'ml'})</option>)}
-                            </select>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                              <input type="number" value={enf.ml || ''} placeholder="ml" onChange={e => { const n=[...revStateM]; n[i].enfermos[ei].ml=e.target.value; setRevStateM(n) }}
-                                style={{ flex: 1, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, background: CM.surface, color: CM.text }} />
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={enf.mover_enfermeria || false} onChange={e => { const n=[...revStateM]; n[i].enfermos[ei].mover_enfermeria=e.target.checked; setRevStateM(n) }} />
-                                → Enf.
-                              </label>
-                            </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {(enf.productos || []).map((p, pi) => (
+                              <div key={pi} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <select value={p.prod} onChange={e => {
+                                  const prod = stockSanitarioM.find(x => x.producto === e.target.value)
+                                  const n = [...revStateM]
+                                  n[i].enfermos[ei].productos[pi].prod = e.target.value
+                                  n[i].enfermos[ei].productos[pi].prod_id = prod?.id || null
+                                  setRevStateM(n)
+                                }}
+                                  style={{ flex: 1, background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans }}>
+                                  <option value="">— Producto aplicado —</option>
+                                  {stockSanitarioM.map(x => <option key={x.id} value={x.producto}>{x.producto} ({(x.cantidad_ml||0).toLocaleString('es-AR')} {x.unidad||'ml'})</option>)}
+                                </select>
+                                <input type="number" value={p.ml || ''} placeholder="ml" onChange={e => { const n=[...revStateM]; n[i].enfermos[ei].productos[pi].ml=e.target.value; setRevStateM(n) }}
+                                  style={{ width: 60, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, background: CM.surface, color: CM.text }} />
+                                <button onClick={() => {
+                                  const n = [...revStateM]
+                                  n[i].enfermos[ei].productos.splice(pi, 1)
+                                  if (!n[i].enfermos[ei].productos.length) n[i].enfermos[ei].productos.push({ prod: '', prod_id: null, ml: '' })
+                                  setRevStateM(n)
+                                }} style={{ background: 'transparent', border: 'none', color: CM.muted, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                              </div>
+                            ))}
+                            <button onClick={() => { const n = [...revStateM]; n[i].enfermos[ei].productos.push({ prod: '', prod_id: null, ml: '' }); setRevStateM(n) }}
+                              style={{ padding: '5px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${CM.amber}`, color: CM.amber, borderRadius: 5, cursor: 'pointer', alignSelf: 'flex-start' }}>
+                              + Otro producto para este animal
+                            </button>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={enf.mover_enfermeria || false} onChange={e => { const n=[...revStateM]; n[i].enfermos[ei].mover_enfermeria=e.target.checked; setRevStateM(n) }} />
+                              → Mover a enfermería
+                            </label>
                           </div>
                         </div>
                       ))}
-                      <button onClick={() => { const n = [...revStateM]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',prod:'',prod_id:null,ml:'',mover_enfermeria:false}); setRevStateM(n) }}
+                      <button onClick={() => { const n = [...revStateM]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',productos:[{prod:'',prod_id:null,ml:''}],mover_enfermeria:false}); setRevStateM(n) }}
                         style={{ width: '100%', padding: '8px', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 8, color: CM.muted, fontSize: 12, cursor: 'pointer', fontFamily: CM.sans, marginTop: 4 }}>
                         + Agregar otro animal
                       </button>
                       <button onClick={async () => {
                         if (guardandoM) return
-                        const enfs = c.enfermos.filter(e => e.prod || e.desc || e.diag)
+                        const enfs = c.enfermos.filter(e => (e.productos||[]).some(p=>p.prod) || e.desc || e.diag)
                         if (!enfs.length) { alert('Completá al menos un animal con diagnóstico o producto'); return }
                         setGuardandoM(true)
                         try {
                           for (const enf of enfs) {
-                            const mlNum = parseFloat(enf.ml) || 0
-                            if (enf.prod_id && mlNum > 0) {
-                              await supabase.rpc('incrementar_stock_sanitario', { p_id: enf.prod_id, p_delta: -mlNum })
+                            const productosValidos = (enf.productos || []).filter(p => p.prod)
+                            if (productosValidos.length === 0) {
+                              await supabase.from('eventos_sanitarios').insert({
+                                tipo: 'revision', corral_id: revStateM[i]?.id, producto: null,
+                                observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+                                cantidad_animales: 1, mover_enfermeria: enf.mover_enfermeria || false,
+                                registrado_por: usuario?.id,
+                              })
+                            } else {
+                              for (const p of productosValidos) {
+                                const mlNum = parseFloat(p.ml) || 0
+                                if (p.prod_id && mlNum > 0) {
+                                  await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
+                                }
+                                await supabase.from('eventos_sanitarios').insert({
+                                  tipo: 'revision', corral_id: revStateM[i]?.id, producto: p.prod,
+                                  observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+                                  cantidad_animales: 1, cantidad_ml: mlNum || null,
+                                  mover_enfermeria: enf.mover_enfermeria || false,
+                                  registrado_por: usuario?.id,
+                                })
+                              }
                             }
-                            await supabase.from('eventos_sanitarios').insert({
-                              tipo: 'revision',
-                              corral_id: revStateM[i]?.id,
-                              producto: enf.prod || null,
-                              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-                              cantidad_animales: 1,
-                              cantidad_ml: parseFloat(enf.ml) || null,
-                              mover_enfermeria: enf.mover_enfermeria || false,
-                              registrado_por: usuario?.id,
-                            })
                           }
                           const n = [...revStateM]
                           n[i] = {...n[i], confirmado: true}
@@ -1389,39 +1469,48 @@ export default function Sanidad({ usuario, mobile, nav }) {
 
                 {st.ok === false && (
                   <div style={{ padding: '1rem', borderTop: `1px solid ${S.border}`, background: '#fffef8' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 160px 70px 60px 32px', gap: 8, padding: '4px 0 8px', borderBottom: `1px solid ${S.border}`, marginBottom: 4 }}>
-                      {['Descripcion del animal','Diagnostico','Producto aplicado','ml','Enf.',''].map(h => (
-                        <div key={h} style={{ fontSize: 10, fontWeight: 600, color: S.hint, textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</div>
-                      ))}
-                    </div>
                     {st.enfermos.map((e, ei) => (
-                      <div key={ei} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 160px 70px 60px 32px', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${S.border}` }}>
-                        <input type="text" value={e.desc} placeholder="ej. novillo negro, oreja cortada"
-                          onChange={ev => updEnfermo(i, ei, 'desc', ev.target.value)}
-                          style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }} />
-                        <select value={e.diag} onChange={ev => updEnfermo(i, ei, 'diag', ev.target.value)}
-                          style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
-                          {DIAGNOSTICOS.map(d => <option key={d}>{d}</option>)}
-                        </select>
-                        <select value={e.prod} onChange={ev => {
-                          const prod = productos.find(p => p.n === ev.target.value)
-                          updEnfermo(i, ei, 'prod', ev.target.value)
-                          updEnfermo(i, ei, 'prod_id', prod?.id || null)
-                        }}
-                          style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
-                          <option value="">— Producto —</option>
-                          {productos.map(p => <option key={p.n} value={p.n}>{p.n} ({p.cantidad_ml?.toLocaleString('es-AR')} {p.unidad})</option>)}
-                        </select>
-                        <input type="number" value={e.ml || ''} placeholder="ml" onChange={ev => updEnfermo(i, ei, 'ml', ev.target.value)}
-                          style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, width: 70, background: S.surface }} />
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: S.red, whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={e.mover_enfermeria || false} onChange={ev => updEnfermo(i, ei, 'mover_enfermeria', ev.target.checked)} />
-                          Enf.
-                        </label>
-                        <button onClick={() => delEnfermo(i, ei)}
-                          style={{ border: `1px solid ${S.border}`, background: 'transparent', color: S.muted, borderRadius: 5, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          ✕
-                        </button>
+                      <div key={ei} style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: '.75rem', marginBottom: '.65rem', background: S.surface }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 60px 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                          <input type="text" value={e.desc} placeholder="ej. novillo negro, oreja cortada"
+                            onChange={ev => updEnfermo(i, ei, 'desc', ev.target.value)}
+                            style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }} />
+                          <select value={e.diag} onChange={ev => updEnfermo(i, ei, 'diag', ev.target.value)}
+                            style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
+                            {DIAGNOSTICOS.map(d => <option key={d}>{d}</option>)}
+                          </select>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: S.red, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={e.mover_enfermeria || false} onChange={ev => updEnfermo(i, ei, 'mover_enfermeria', ev.target.checked)} />
+                            Enf.
+                          </label>
+                          <button onClick={() => delEnfermo(i, ei)}
+                            style={{ border: `1px solid ${S.border}`, background: 'transparent', color: S.muted, borderRadius: 5, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            ✕
+                          </button>
+                        </div>
+                        <div style={{ paddingLeft: 12, borderLeft: `2px solid ${S.border}` }}>
+                          {(e.productos || []).map((p, pi) => (
+                            <div key={pi} style={{ display: 'grid', gridTemplateColumns: '200px 90px 28px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                              <select value={p.prod} onChange={ev => {
+                                const prod = productos.find(x => x.n === ev.target.value)
+                                updProductoEnfermo(i, ei, pi, 'prod', ev.target.value)
+                                updProductoEnfermo(i, ei, pi, 'prod_id', prod?.id || null)
+                              }}
+                                style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
+                                <option value="">— Producto —</option>
+                                {productos.map(x => <option key={x.n} value={x.n}>{x.n} ({x.cantidad_ml?.toLocaleString('es-AR')} {x.unidad})</option>)}
+                              </select>
+                              <input type="number" value={p.ml || ''} placeholder="ml" onChange={ev => updProductoEnfermo(i, ei, pi, 'ml', ev.target.value)}
+                                style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 12, background: S.surface }} />
+                              <button onClick={() => delProductoEnfermo(i, ei, pi)}
+                                style={{ border: `1px solid ${S.border}`, background: 'transparent', color: S.muted, borderRadius: 5, width: 24, height: 24, cursor: 'pointer', fontSize: 11 }}>✕</button>
+                            </div>
+                          ))}
+                          <button onClick={() => addProductoEnfermo(i, ei)}
+                            style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                            + Otro producto para este animal
+                          </button>
+                        </div>
                       </div>
                     ))}
                     <div style={{ display: 'flex', gap: 8, marginTop: '.65rem' }}>
