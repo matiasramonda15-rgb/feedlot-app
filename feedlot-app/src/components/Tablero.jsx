@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
@@ -66,14 +67,15 @@ export default function Tablero({ usuario }) {
       { data: alertas },
       { data: pesadas },
       { data: ventas },
-      { data: ingresos },
+      { data: ingresosRecientes },
       { data: movimientos },
       { data: mortalidad },
       { data: ultimaPesadaDB },
       { data: stockItems },
-      { data: lotesDB },
-      { data: racionesDB },
       { data: lotesVenc },
+      { data: lotesGDP },
+      { data: racionesGDP },
+      { data: formulasMixerDB },
     ] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
@@ -85,8 +87,9 @@ export default function Tablero({ usuario }) {
       supabase.from('pesadas').select('fecha, creado_en').order('creado_en', { ascending: false }).limit(1).single(),
       supabase.from('stock_insumos').select('*'),
       supabase.from('lotes').select('id, procedencia, cantidad, monto_total_con_iva, fecha_vencimiento_pago, estado_pago, categoria').not('fecha_vencimiento_pago', 'is', null).eq('estado_pago', 'pendiente').order('fecha_vencimiento_pago'),
-      supabase.from('lotes').select('cantidad, kg_bascula, fecha_ingreso, estado').limit(500),
-      supabase.from('raciones_app').select('kg_total, creado_en').limit(1000),
+      supabase.from('lotes').select('cantidad, kg_bascula, fecha_ingreso').limit(1000),
+      supabase.from('raciones_app').select('corral_id, kg_total, creado_en, tipo_dieta, mezclador, solo_rollo, kg_rollo_extra, cantidad_animales, corrales(animales)').order('creado_en', { ascending: false }).limit(2000),
+      supabase.from('formulas_mixer').select('*'),
     ])
 
     // Calcular GDP por corral desde pesadas
@@ -121,7 +124,7 @@ export default function Tablero({ usuario }) {
 
     // Construir movimientos recientes combinados
     const movRecientes = []
-    if (ingresos) ingresos.slice(0, 3).forEach(i => movRecientes.push({ tipo: 'ingreso', texto: `Ingreso ${i.codigo} · ${i.cantidad} animales`, sub: `${new Date(i.fecha_ingreso).toLocaleDateString('es-AR')} · ${i.procedencia} · ${Math.round(i.peso_prom_ingreso || 0)} kg prom.`, color: S.green, fecha: i.fecha_ingreso }))
+    if (ingresosRecientes) ingresosRecientes.slice(0, 3).forEach(i => movRecientes.push({ tipo: 'ingreso', texto: `Ingreso ${i.codigo} · ${i.cantidad} animales`, sub: `${new Date(i.fecha_ingreso).toLocaleDateString('es-AR')} · ${i.procedencia} · ${Math.round(i.peso_prom_ingreso || 0)} kg prom.`, color: S.green, fecha: i.fecha_ingreso }))
     if (ventas) ventas.slice(0, 2).forEach(v => movRecientes.push({ tipo: 'venta', texto: `Venta · ${v.cantidad} animales · C-${v.corral_id}`, sub: `${new Date(v.creado_en).toLocaleDateString('es-AR')} · ${v.comprador || 'sin comprador'} · ${v.precio_kg ? '$' + v.precio_kg.toLocaleString('es-AR') + '/kg' : 'sin precio'}`, color: S.accent, fecha: v.creado_en }))
     if (mortalidad) mortalidad.slice(0, 2).forEach(m => movRecientes.push({ tipo: 'mortalidad', texto: `Mortandad · ${m.cantidad} animal${m.cantidad !== 1 ? 'es' : ''}`, sub: `${new Date(m.fecha).toLocaleDateString('es-AR')} · ${m.causa || 'sin causa'}`, color: S.amber, fecha: m.fecha }))
     movRecientes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
@@ -138,68 +141,42 @@ export default function Tablero({ usuario }) {
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
     const stockBajo = (stockItems || []).filter(s => s.cantidad_kg != null && s.minimo_kg != null && s.cantidad_kg <= s.minimo_kg)
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotes: lotesDB || [], raciones: racionesDB || [], lotesVenc: lotesVenc || [] })
+
+    // Indicadores globales (GDP, permanencia, conversión, consumo diario) —
+    // misma lógica compartida que usa Reportes, para que los números coincidan siempre.
+    const indicadores = calcularIndicadoresFeedlot({
+      corrales: corralesOrdenados, lotes: lotesGDP || [], ventas: ventas || [],
+      raciones: racionesGDP || [], stock: stockItems || [], formulasMixer: formulasMixerDB || [],
+    })
+
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotesVenc: lotesVenc || [], indicadores })
     setLoading(false)
   }
 
   if (loading) return <Loader />
 
-  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotes = [], raciones = [], lotesVenc = [] } = datos
+  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotesVenc = [], indicadores } = datos
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre')
   const totalAnimales = corralesActivos.reduce((s, c) => s + (c.animales || 0), 0)
 
-  // GDP y conversión — metodología mensual (mismo cálculo que Reportes)
-  const hoy = new Date()
-  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-  const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1)
+  // GDP, conversión, consumo diario — usa el promedio de los últimos 6 meses
+  // (mismo cálculo que Reportes, así los dos siempre muestran el mismo número).
+  // El promedio de 6 meses es mucho más estable que un solo mes calendario.
+  const { prom6, prom3 } = indicadores
+  const indicadoresPrincipales = prom6 || prom3 || null
+  const gdpGlobal = indicadoresPrincipales?.gdp || null
+  const conversionMF = indicadoresPrincipales?.conversion ? indicadoresPrincipales.conversion.toFixed(2) : null
+  const permanenciaGlobal = indicadoresPrincipales?.permanencia || null
+  const kgGanadosCiclo = gdpGlobal && permanenciaGlobal ? Math.round(gdpGlobal * permanenciaGlobal) : null
 
-  // Stock inicial del mes
-  const lotesAntesInicio = lotes.filter(l => l.fecha_ingreso && new Date(l.fecha_ingreso + 'T12:00:00') < inicioMes)
-  const ventasAntesInicio = ventas.filter(v => new Date(v.creado_en) < inicioMes)
-  const stockInicialMes = Math.max(0, lotesAntesInicio.reduce((s,l)=>s+(l.cantidad||0),0) - ventasAntesInicio.reduce((s,v)=>s+(v.cantidad||0),0))
-
-  // Ingresos del mes
-  const lotesMes = lotes.filter(l => l.fecha_ingreso && new Date(l.fecha_ingreso+'T12:00:00') >= inicioMes && new Date(l.fecha_ingreso+'T12:00:00') < finMes)
-  const cabIngMes = lotesMes.reduce((s,l)=>s+(l.cantidad||0),0)
-  const kgIngMes = lotesMes.reduce((s,l)=>s+(l.kg_bascula||0),0)
-
-  // Ventas del mes
-  const ventasMes = ventas.filter(v => new Date(v.creado_en) >= inicioMes && new Date(v.creado_en) < finMes)
-  const cabVendMes = ventasMes.reduce((s,v)=>s+(v.cantidad||0),0)
-  const kgVendMes = ventasMes.reduce((s,v)=>s+(v.kg_vivo_total||0),0)
-
-  const stockFinalMes = Math.max(0, stockInicialMes + cabIngMes - cabVendMes)
-  const existPromMes = (stockInicialMes + stockFinalMes) / 2
-  const diasMes = Math.round((hoy - inicioMes) / 86400000) || 1
-
-  const pesoProm_ingMes = cabIngMes > 0 ? kgIngMes / cabIngMes : null
-  const pesoProm_ventMes = cabVendMes > 0 ? kgVendMes / cabVendMes : null
-  const permanenciaMes = cabVendMes > 0 && existPromMes > 0 ? (existPromMes * diasMes) / cabVendMes : null
-  const gdpGlobal = pesoProm_ingMes && pesoProm_ventMes && permanenciaMes
-    ? (pesoProm_ventMes - pesoProm_ingMes) / permanenciaMes
-    : null
-
-  // Conversión: kg alimento consumido / kg producidos estimados
-  // Conversión: kg alimento en MS / kg producidos
-  // MS: maiz humedo = 63.4%, maiz seco = 70.5% (de toda la dieta)
-  const MS_HUMEDO = 0.634
-  const MS_SECO = 0.705
-  const kgAlimMesMS = raciones.reduce((s, r) => {
-    const ms = r.tipo_dieta === 'humedo' ? MS_HUMEDO : MS_SECO
-    return s + (r.kg_total || 0) * ms
-  }, 0)
-  const kgAlimMes = raciones.reduce((s,r)=>s+(r.kg_total||0),0)
-  // GDP global para display (corral-level basado en pesadas — fallback)
+  // GDP basado en pesadas (corral por corral) — se usa como referencia auxiliar
+  // para "Días prom. para 400 kg", no reemplaza al GDP global de arriba.
   const corralesConGDP = corralesActivos.filter(c => gdpPorCorral[c.numero])
   const totalAnimGDP = corralesConGDP.reduce((s, c) => s + (c.animales || 0), 0)
   const gdpPesadas = totalAnimGDP > 0
     ? corralesConGDP.reduce((s, c) => s + (gdpPorCorral[c.numero].gdp * (c.animales || 0)), 0) / totalAnimGDP
     : null
-
-  const gdpParaConversion = gdpGlobal || gdpPesadas
-  const kgProducidosMes = gdpParaConversion && existPromMes ? gdpParaConversion * existPromMes * diasMes : null
-  const conversionMF = kgAlimMesMS > 0 && kgProducidosMes > 0 ? (kgAlimMesMS / kgProducidosMes).toFixed(1) : null
 
   const gdpRef = gdpGlobal || gdpPesadas
   const corralesConPeso = corralesActivos.filter(c => gdpPorCorral[c.numero]?.pesoActual && gdpPorCorral[c.numero]?.gdp > 0)
@@ -207,14 +184,11 @@ export default function Tablero({ usuario }) {
     ? Math.round(corralesConPeso.reduce((s, c) => s + Math.max(0, (400 - gdpPorCorral[c.numero].pesoActual) / gdpPorCorral[c.numero].gdp), 0) / corralesConPeso.length)
     : null
 
-  // Aumento de peso promedio
-  const lotesConKg = lotes.filter(l => l.kg_bascula && l.cantidad)
-  const kgPromedioEntrada = lotesConKg.length > 0 ? lotesConKg.reduce((s, l) => s + (l.kg_bascula / l.cantidad), 0) / lotesConKg.length : null
-  const ventasConKg = ventas.filter(v => v.kg_vivo_total && v.cantidad)
-  const kgPromedioSalida = ventasConKg.length > 0 ? ventasConKg.reduce((s, v) => s + (v.kg_vivo_total / v.cantidad), 0) / ventasConKg.length : null
-  const aumentoPromedio = kgPromedioEntrada && kgPromedioSalida ? Math.round(kgPromedioSalida - kgPromedioEntrada) : null
+  // Consumo diario promedio (último dato calculado, del mismo período que el GDP)
+  const consumoDiarioGlobal = indicadoresPrincipales?.consumoDiarioCalc || null
 
   // Ventas este mes
+  const hoy = new Date()
   const ventasTotal = ventas.reduce((s, v) => s + (v.total || 0), 0)
   const ventasAnimales = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
 
@@ -269,31 +243,31 @@ export default function Tablero({ usuario }) {
               sub: `${corralesActivos.length} corrales activos`,
             },
             {
-              label: 'GDP global',
-              val: (gdpGlobal || gdpPesadas) ? (gdpGlobal || gdpPesadas).toFixed(2) : '—',
-              valSuffix: (gdpGlobal || gdpPesadas) ? ' kg/d' : '',
-              valStyle: { color: (gdpGlobal || gdpPesadas) ? ((gdpGlobal || gdpPesadas) >= 1.1 ? '#7EE8A2' : (gdpGlobal || gdpPesadas) >= 0.9 ? '#F5C97A' : '#F09595') : 'rgba(255,255,255,.4)' },
-              sub: gdpGlobal ? `prom. mensual · ${totalAnimGDP} anim.` : gdpPesadas ? `basado en pesadas · ${totalAnimGDP} anim.` : 'sin pesadas registradas',
+              label: 'Ganancia diaria (GDP)',
+              val: gdpGlobal ? gdpGlobal.toFixed(2) : '—',
+              valSuffix: gdpGlobal ? ' kg/día' : '',
+              valStyle: { color: gdpGlobal ? (gdpGlobal >= 1.1 ? '#7EE8A2' : gdpGlobal >= 0.9 ? '#F5C97A' : '#F09595') : 'rgba(255,255,255,.4)' },
+              sub: gdpGlobal ? 'promedio 6 meses, por animal' : 'sin datos suficientes',
             },
             {
-              label: 'Conversión MF',
+              label: 'Conversión (MS)',
               val: conversionMF || '—',
-              valSuffix: conversionMF ? ':1' : '',
               valStyle: { color: conversionMF ? (parseFloat(conversionMF) <= 7 ? '#7EE8A2' : parseFloat(conversionMF) <= 9 ? '#F5C97A' : '#F09595') : 'rgba(255,255,255,.4)' },
-              sub: conversionMF ? 'kg alimento / kg carne' : 'sin datos suficientes',
+              sub: conversionMF ? 'kg materia seca / kg carne' : 'sin datos suficientes',
             },
             {
-              label: 'Aumento promedio',
-              val: aumentoPromedio !== null ? `+${aumentoPromedio}` : '—',
-              valSuffix: aumentoPromedio !== null ? ' kg' : '',
-              valStyle: { color: aumentoPromedio !== null ? '#7EE8A2' : 'rgba(255,255,255,.4)' },
-              sub: aumentoPromedio !== null ? 'entrada vs salida' : 'sin ventas registradas',
+              label: 'Consumo diario',
+              val: consumoDiarioGlobal ? consumoDiarioGlobal.toFixed(1) : '—',
+              valSuffix: consumoDiarioGlobal ? ' kg/cab' : '',
+              valStyle: { color: consumoDiarioGlobal ? '#7EE8A2' : 'rgba(255,255,255,.4)' },
+              sub: consumoDiarioGlobal ? 'promedio del feedlot' : 'sin datos suficientes',
             },
             {
-              label: 'Días prom. para 400 kg',
-              val: diasProm !== null ? diasProm : '—',
-              valStyle: { color: diasProm !== null ? '#7EE8A2' : 'rgba(255,255,255,.4)' },
-              sub: 'al ritmo de GDP actual',
+              label: 'Kg ganados en el ciclo',
+              val: kgGanadosCiclo !== null ? `+${kgGanadosCiclo}` : '—',
+              valSuffix: kgGanadosCiclo !== null ? ' kg' : '',
+              valStyle: { color: kgGanadosCiclo !== null ? '#7EE8A2' : 'rgba(255,255,255,.4)' },
+              sub: permanenciaGlobal ? `en ~${permanenciaGlobal} días de estadía` : 'sin datos suficientes',
             },
           ].map((s, i) => (
             <div key={i} style={{ background: 'rgba(255,255,255,.06)', padding: '1rem 1.1rem' }}>
