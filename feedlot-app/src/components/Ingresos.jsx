@@ -225,9 +225,12 @@ export default function Ingresos({ usuario, mobile, nav }) {
       if (nombresProveedores.length > 0) procFinal = nombresProveedores.join(', ')
     }
 
-    // Todavía no hay factura de la feria en este punto (eso lo carga Paula después,
-    // en Gestión Comercial) — por ahora el monto se registra como informal/negro.
-    const montoNegro = montoTotal
+    // Si ya hay una factura cargada en Gestión Comercial, el paralelo se recalcula
+    // con la misma fórmula que usa esa pestaña (total de Ingresos menos el neto ya
+    // facturado) — así queda bien sin importar desde qué pestaña se guarde último.
+    // Si todavía no hay ninguna factura, se registra como informal/negro por defecto.
+    const totalNetoFacturasExistente = (lote.facturas_feria || []).reduce((s, f) => s + (f.monto_neto || 0), 0)
+    const montoNegro = lote.facturas_feria?.length > 0 ? Math.max(0, montoTotal - totalNetoFacturasExistente) : montoTotal
 
     await supabase.from('lotes').update({
       kg_factura: kgFac,
