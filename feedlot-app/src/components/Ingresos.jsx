@@ -234,6 +234,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
       precio_compra: precio,
       monto_total_con_iva: montoTotal,
       monto_negro: montoNegro,
+      plazo_dias: editandoPrecio.plazo_dias || null,
       fecha_vencimiento_pago: editandoPrecio.fecha_vencimiento_pago || null,
       comision_monto: comMonto || null,
       comision_a_quien: editandoPrecio.comision_a_quien || null,
@@ -837,20 +838,23 @@ export default function Ingresos({ usuario, mobile, nav }) {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                       <div>
                         <Lbl>Plazo (días)</Lbl>
-                        <input type="number" value={editandoPrecio.plazo_dias || ''} min="0"
+                        <input type="text" value={editandoPrecio.plazo_dias || ''}
                           onChange={e => {
-                            const dias = parseInt(e.target.value) || 0
-                            const fechaVto = dias > 0 ? new Date(Date.now() + dias * 86400000).toISOString().split('T')[0] : ''
-                            setEditandoPrecio({...editandoPrecio, plazo_dias: e.target.value, fecha_vencimiento_pago: fechaVto})
+                            const texto = e.target.value
+                            const primerNro = parseInt((texto.match(/\d+/) || [])[0])
+                            const fechaVto = primerNro > 0 ? new Date(Date.now() + primerNro * 86400000).toISOString().split('T')[0] : ''
+                            setEditandoPrecio({...editandoPrecio, plazo_dias: texto, fecha_vencimiento_pago: fechaVto})
                           }}
-                          placeholder="ej. 30"
+                          placeholder="ej. 30, o 30 y 60"
                           style={inpMono} />
+                        <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Podés poner varios plazos (ej. "30 y 60") — se muestra tal cual en el listado.</div>
                       </div>
                       <div>
                         <Lbl>Fecha vencimiento</Lbl>
                         <input type="date" value={editandoPrecio.fecha_vencimiento_pago || ''}
                           onChange={e => setEditandoPrecio({...editandoPrecio, fecha_vencimiento_pago: e.target.value})}
                           style={inp} />
+                        <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Se autocompleta con el primer plazo; la podés corregir a mano.</div>
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: S.hint, marginBottom: 12 }}>
@@ -940,7 +944,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
                         {total ? `-$${total.toLocaleString('es-AR')}` : '—'}
                       </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: vtoColor, whiteSpace: 'nowrap' }}>
-                        {l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                        {l.plazo_dias || (l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—')}
                       </td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
                         {esDueno && (
@@ -1792,7 +1796,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                     <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: S.purple }}>{l.monto_negro > 0 ? '$' + l.monto_negro.toLocaleString('es-AR') : '—'}</td>
                     <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{l.iva_monto ? '$' + l.iva_monto.toLocaleString('es-AR') : '—'}</td>
                     <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11, fontWeight: venceProx ? 700 : 400, color: venceProx ? S.red : S.text }}>
-                      {l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}
+                      {l.plazo_dias || (l.fecha_vencimiento_pago ? new Date(l.fecha_vencimiento_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—')}
                     </td>
                     <td style={{ padding: '7px 10px' }}>
                       <span style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, border: `1px solid ${ec.color}`, borderRadius: 5, background: ec.bg, color: ec.color }}>{ec.label}</span>
