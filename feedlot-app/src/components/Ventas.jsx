@@ -335,15 +335,12 @@ export default function Ventas({ usuario, mobile, nav }) {
 
   async function guardarDatosVenta(venta) {
     const ep = editandoVenta
-    if (!ep?.precio_kg && !ep?.monto_total_con_iva) { alert('Ingresá el precio por kg o el monto total de la operación'); return }
+    if (!ep?.precio_kg && !ep?.monto_total_con_iva && !Object.values(ep?.filaOverrides || {}).some(o => o.precio_kg)) {
+      alert('Ingresá el precio por kg o el monto total de la operación'); return
+    }
     const precioKg = ep.precio_kg ? parseFloat(ep.precio_kg) : null
     const desbastePct = ep.desbaste ? parseFloat(ep.desbaste) : (venta.desbaste_pct || 8)
-    // Para multicorral sumar kg de todos los corrales del grupo
-    const kgBrutoTotal = venta.grupo_venta_id
-      ? todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === venta.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
-      : (venta.kg_vivo_total || 0)
-    const kgNeto = Math.round(kgBrutoTotal * (1 - desbastePct / 100) * 10) / 10
-    const montoTotal = ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : (precioKg ? Math.round(kgNeto * precioKg * 100) / 100 : null)
+    const overrides = ep.filaOverrides || {}
     const plazo = parseInt(ep.plazo_dias || 0)
     const fechaBase = new Date(venta.creado_en)
     const fechaVto = plazo > 0 ? new Date(fechaBase.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
@@ -354,38 +351,59 @@ export default function Ventas({ usuario, mobile, nav }) {
       await supabase.from('contactos').insert({ nombre: compradorFinal, tipo: 'comprador_hacienda', activo: true })
     }
 
-    const updateData = {
-      precio_kg: precioKg,
-      desbaste_pct: desbastePct,
-      kg_neto: kgNeto,
-      total: montoTotal,
-      monto_total_con_iva: montoTotal,
-      plazo_dias: plazo || null,
-      fecha_vencimiento_cobro: fechaVto,
-      estado_comercial: 'pendiente_factura',
-      comprador: compradorFinal,
-      observaciones: ep.observaciones || venta.observaciones || null,
-    }
-
     const grupoId = venta.grupo_venta_id
     if (grupoId) {
-      // Para multicorral: guardar el total exacto en todos los registros del grupo
-      // sin dividir — todos tienen el mismo total y kg_neto proporcional
       const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', grupoId)
-      const totalKgNetoGrupo = (grupo || []).reduce((s, v) => s + (v.kg_vivo_total ? Math.round(v.kg_vivo_total * (1 - desbastePct / 100) * 10) / 10 : (v.kg_neto || 0)), 0)
-      for (const gv of (grupo || [])) {
-        const kgNetoV = gv.kg_vivo_total ? Math.round(gv.kg_vivo_total * (1 - desbastePct / 100) * 10) / 10 : (gv.kg_neto || 0)
-        // Asignar monto proporcional pero guardar también el total exacto en cada registro
-        const montoV = montoTotal && totalKgNetoGrupo > 0 ? Math.round(montoTotal * kgNetoV / totalKgNetoGrupo) : (precioKg ? Math.round(kgNetoV * precioKg) : null)
+      // Kg netos y monto de cada fila, respetando su propio override si lo tiene
+      const filas = (grupo || []).map(gv => {
+        const ov = overrides[gv.id] || {}
+        const desbCv = (ov.desbaste_pct !== undefined && ov.desbaste_pct !== '') ? parseFloat(ov.desbaste_pct) : desbastePct
+        const precioCv = (ov.precio_kg !== undefined && ov.precio_kg !== '') ? parseFloat(ov.precio_kg) : (precioKg || 0)
+        const kgNetoCv = gv.kg_vivo_total ? Math.round(gv.kg_vivo_total * (1 - desbCv / 100) * 10) / 10 : (gv.kg_neto || 0)
+        const montoCv = precioCv && kgNetoCv ? Math.round(precioCv * kgNetoCv) : null
+        return { gv, desbCv, precioCv, kgNetoCv, montoCv }
+      })
+      const totalKgNetoGrupo = filas.reduce((s, f) => s + f.kgNetoCv, 0)
+      const hayPreciosPorFila = filas.some(f => f.montoCv != null)
+      // Si cargaron un monto total a mano, se reparte proporcional a los kg netos;
+      // si no, se usa la suma de los montos calculados por fila (respetando overrides)
+      const montoTotalGrupo = ep.monto_total_con_iva
+        ? parseFloat(ep.monto_total_con_iva)
+        : (hayPreciosPorFila ? filas.reduce((s, f) => s + (f.montoCv || 0), 0) : null)
+
+      for (const { gv, desbCv, precioCv, kgNetoCv, montoCv } of filas) {
+        const montoV = ep.monto_total_con_iva && totalKgNetoGrupo > 0
+          ? Math.round(montoTotalGrupo * kgNetoCv / totalKgNetoGrupo)
+          : montoCv
         await supabase.from('ventas').update({
-          ...updateData,
-          kg_neto: kgNetoV,
+          precio_kg: precioCv || null,
+          desbaste_pct: desbCv,
+          kg_neto: kgNetoCv,
           total: montoV,
-          monto_total_grupo: montoTotal, // total exacto del grupo
+          monto_total_con_iva: montoV,
+          monto_total_grupo: montoTotalGrupo,
+          plazo_dias: plazo || null,
+          fecha_vencimiento_cobro: fechaVto,
+          estado_comercial: 'pendiente_factura',
+          comprador: compradorFinal,
+          observaciones: ep.observaciones || venta.observaciones || null,
         }).eq('id', gv.id)
       }
     } else {
-      await supabase.from('ventas').update(updateData).eq('id', venta.id)
+      const kgNeto = Math.round((venta.kg_vivo_total || 0) * (1 - desbastePct / 100) * 10) / 10
+      const montoTotal = ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : (precioKg ? Math.round(kgNeto * precioKg * 100) / 100 : null)
+      await supabase.from('ventas').update({
+        precio_kg: precioKg,
+        desbaste_pct: desbastePct,
+        kg_neto: kgNeto,
+        total: montoTotal,
+        monto_total_con_iva: montoTotal,
+        plazo_dias: plazo || null,
+        fecha_vencimiento_cobro: fechaVto,
+        estado_comercial: 'pendiente_factura',
+        comprador: compradorFinal,
+        observaciones: ep.observaciones || venta.observaciones || null,
+      }).eq('id', venta.id)
     }
     setEditandoBanner(null)
     setEditandoVenta(null)
@@ -560,12 +578,24 @@ export default function Ventas({ usuario, mobile, nav }) {
   ]
 
   function renderFormVenta(v) {
-    const kgBruto = v.grupo_venta_id
-      ? [...new Map([...ventasSinPrecio, ...ventas].map(vv => [vv.id, vv])).values()].filter(vv => vv.grupo_venta_id === v.grupo_venta_id).reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
-      : (v.kg_vivo_total || 0)
-    const desbPct = parseFloat(editandoVenta?.desbaste || 8) / 100
-    const kgNeto = kgBruto ? Math.round(kgBruto * (1 - desbPct) * 10) / 10 : 0
-    const montoCalc = editandoVenta?.precio_kg && kgNeto ? Math.round(parseFloat(editandoVenta.precio_kg) * kgNeto) : null
+    const grupo = v.grupo_venta_id
+      ? [...new Map([...ventasSinPrecio, ...ventas].map(vv => [vv.id, vv])).values()].filter(vv => vv.grupo_venta_id === v.grupo_venta_id)
+      : [v]
+    const kgBruto = grupo.reduce((s, vv) => s + (vv.kg_vivo_total || 0), 0)
+    const desbPctBase = parseFloat(editandoVenta?.desbaste || 8)
+    const overrides = editandoVenta?.filaOverrides || {}
+    // Kg netos y total respetando los overrides por fila (si los hay)
+    const filasCalc = grupo.map(gv => {
+      const ov = overrides[gv.id] || {}
+      const desbCv = (ov.desbaste_pct !== undefined && ov.desbaste_pct !== '') ? parseFloat(ov.desbaste_pct) : desbPctBase
+      const precioCv = (ov.precio_kg !== undefined && ov.precio_kg !== '') ? parseFloat(ov.precio_kg) : (parseFloat(editandoVenta?.precio_kg) || 0)
+      const kgNetoCv = Math.round((gv.kg_vivo_total || 0) * (1 - desbCv / 100) * 10) / 10
+      const montoCv = precioCv && kgNetoCv ? Math.round(precioCv * kgNetoCv) : null
+      return { gv, desbCv, precioCv, kgNetoCv, montoCv }
+    })
+    const kgNeto = Math.round(filasCalc.reduce((s, f) => s + f.kgNetoCv, 0) * 10) / 10
+    const hayPreciosPorFila = filasCalc.some(f => f.montoCv != null)
+    const montoCalc = hayPreciosPorFila ? filasCalc.reduce((s, f) => s + (f.montoCv || 0), 0) : null
     const montoTotal = editandoVenta?.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoCalc
     const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }
     const Lbl = ({ children }) => <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>{children}</label>
@@ -577,25 +607,64 @@ export default function Ventas({ usuario, mobile, nav }) {
             <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700, background: S.bg }}>{kgBruto > 0 ? `${kgBruto.toLocaleString('es-AR')} kg` : '—'}</div>
           </div>
           <div>
-            <Lbl>Desbaste %</Lbl>
+            <Lbl>Desbaste % (general)</Lbl>
             <input type="number" placeholder="8" value={editandoVenta?.desbaste || ''} onChange={e => {
               const desb = e.target.value
-              const kgN = Math.round(kgBruto * (1 - parseFloat(desb || 8) / 100))
-              const precio = parseFloat(editandoVenta?.precio_kg) || 0
-              const mt = precio && kgN ? String(Math.round(precio * kgN)) : editandoVenta?.monto_total_con_iva
-              setEditandoVenta({...editandoVenta, desbaste: desb, monto_total_con_iva: mt})
+              setEditandoVenta({...editandoVenta, desbaste: desb, monto_total_con_iva: ''})
             }} style={inp} />
           </div>
           <div>
-            <Lbl>Precio $/kg final</Lbl>
+            <Lbl>Precio $/kg final (general)</Lbl>
             <input type="number" placeholder="ej. 3100" value={editandoVenta?.precio_kg || ''} onChange={e => {
-              const precio = e.target.value
-              const kgN = Math.round(kgBruto * (1 - parseFloat(editandoVenta?.desbaste || 8) / 100) * 10) / 10
-              const mt = precio && kgN ? String(Math.round(parseFloat(precio) * kgN)) : ''
-              setEditandoVenta({...editandoVenta, precio_kg: precio, monto_total_con_iva: mt})
+              setEditandoVenta({...editandoVenta, precio_kg: e.target.value, monto_total_con_iva: ''})
             }} style={{ ...inp, border: `1px solid ${S.accent}`, fontWeight: 600 }} />
           </div>
         </div>
+
+        {grupo.length > 1 && (
+          <div style={{ marginBottom: 10 }}>
+            <Lbl>Corrales de esta venta — tocá si alguno va a otro precio/desbaste</Lbl>
+            {filasCalc.map(({ gv, desbCv, precioCv, kgNetoCv }) => {
+              const ov = overrides[gv.id] || {}
+              const tieneOverride = ov.desbaste_pct !== undefined || ov.precio_kg !== undefined
+              const setOv = patch => setEditandoVenta({...editandoVenta, filaOverrides: {...overrides, [gv.id]: {...ov, ...patch}}})
+              return (
+                <div key={gv.id} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '.65rem .85rem', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 12 }}>
+                      <strong>C-{gv.corrales?.numero || gv.corral_id}</strong> · {gv.cantidad} anim. · {(gv.kg_vivo_total || 0).toLocaleString('es-AR')} kg brutos
+                      {tieneOverride && <span style={{ color: S.purple, marginLeft: 6 }}>· {desbCv}% desb.{precioCv ? ` · $${precioCv}/kg` : ''} → {kgNetoCv.toLocaleString('es-AR')} kg netos</span>}
+                    </div>
+                    {!tieneOverride ? (
+                      <button onClick={() => setOv({ desbaste_pct: String(desbPctBase), precio_kg: editandoVenta?.precio_kg || '' })}
+                        style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.purple}`, color: S.purple, borderRadius: 5, cursor: 'pointer' }}>
+                        Otro precio/desbaste
+                      </button>
+                    ) : (
+                      <button onClick={() => { const n = {...overrides}; delete n[gv.id]; setEditandoVenta({...editandoVenta, filaOverrides: n}) }}
+                        style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                  {tieneOverride && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                      <div>
+                        <Lbl>Desbaste % (este corral)</Lbl>
+                        <input type="number" value={ov.desbaste_pct ?? ''} onChange={e => setOv({ desbaste_pct: e.target.value })} style={{...inp, borderColor: S.purple}} />
+                      </div>
+                      <div>
+                        <Lbl>Precio $/kg (este corral)</Lbl>
+                        <input type="number" value={ov.precio_kg ?? ''} placeholder="opcional" onChange={e => setOv({ precio_kg: e.target.value })} style={{...inp, borderColor: S.purple}} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
           <div>
             <Lbl>Monto Total Operación $ (IVA incluido)</Lbl>
@@ -626,11 +695,11 @@ export default function Ventas({ usuario, mobile, nav }) {
           <input type="text" placeholder="remito, condiciones, etc." value={editandoVenta?.observaciones || ''} onChange={e => setEditandoVenta({...editandoVenta, observaciones: e.target.value})}
             style={{ ...inp, fontFamily: 'inherit' }} />
         </div>
-        {montoTotal > 0 && (
+        {(montoTotal > 0 || kgNeto > 0) && (
           <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 14px', fontSize: 13, color: S.green, display: 'flex', gap: 24, marginBottom: 10 }}>
             <span>Kg brutos = <strong>{kgBruto.toLocaleString('es-AR')} kg</strong></span>
             <span>Kg netos = <strong>{kgNeto.toLocaleString('es-AR')} kg</strong></span>
-            <span>Total = <strong>${montoTotal.toLocaleString('es-AR')}</strong></span>
+            {montoTotal > 0 && <span>Total = <strong>${montoTotal.toLocaleString('es-AR')}</strong></span>}
           </div>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
@@ -1145,7 +1214,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                               </button>
                             </td>
                           </tr>
-                          {editandoVenta?.id === v.id && (
+                          {editandoVenta?.id === v.id && !editandoBanner && (
                             <tr style={{ background: '#FDF8F0' }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: S.amber, textTransform: 'uppercase', marginBottom: 12 }}>✏️ Editar venta — C-{v.corrales?.numero}</div>
@@ -1254,7 +1323,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                               </div>
                             </td>
                           </tr>
-                          {editandoVenta?.grupo_venta_id === v0.grupo_venta_id && (
+                          {editandoVenta?.grupo_venta_id === v0.grupo_venta_id && !editandoBanner && (
                             <tr style={{ background: S.accentLight }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>Editar venta — Multi-corral · {corralesNums}</div>
