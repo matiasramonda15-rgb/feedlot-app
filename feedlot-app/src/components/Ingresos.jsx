@@ -935,6 +935,16 @@ export default function Ingresos({ usuario, mobile, nav }) {
                       </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', textAlign: 'right' }}>
                         {(() => {
+                          // Total real = la suma de "Total esta factura" de cada proveedor
+                          // cargado en Gestión Comercial (ya incluye IVA y comisión/gastos de
+                          // feria) — dividido los kg, para comparar contra el precio de compra
+                          // de campo (que no tiene esos agregados).
+                          const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
+                          if (totalFacturasReal > 0 && kgParaTotal) {
+                            const real = Math.round(totalFacturasReal / kgParaTotal)
+                            return `$${real.toLocaleString('es-AR')}`
+                          }
+                          // Respaldo para lotes viejos sin facturas_feria todavía
                           if (!kgParaTotal || (l.monto_facturado == null && l.monto_negro == null)) return <span style={{ color: S.hint }}>—</span>
                           const real = Math.round(((l.monto_facturado || 0) + (l.monto_negro || 0) - (l.comision_monto || 0)) / kgParaTotal)
                           return `$${real.toLocaleString('es-AR')}`
