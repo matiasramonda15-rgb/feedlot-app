@@ -2010,11 +2010,16 @@ export default function Ventas({ usuario, mobile, nav }) {
                     const totalIva = (grupo || []).reduce((s, vv) => s + (vv.iva_monto || 0), 0)
                     const totalCom = (grupo || []).reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
                     const totalRet = (grupo || []).reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
-                    const netoACobrarGrupo = totalGrupo - totalCom - totalRet
+                    const netoACobrarGrupo = (totalFact + totalIva) - totalCom - totalRet
+                    // El total "real" a cobrar es Neto a cobrar + Paralelo (lo que ya
+                    // calcula Gestión Comercial) — no el total original de cuando se
+                    // cargó la venta, que puede haber quedado desactualizado si después
+                    // se ajustó el monto facturado/negro.
+                    const totalRealGrupo = (totalFact + totalIva > 0 || totalNegro > 0) ? (netoACobrarGrupo + totalNegro) : totalGrupo
                     const corralesStr = esGrupo ? (grupo || []).map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
                     const pagosList = (grupo || []).flatMap(vv => (pagosVenta && pagosVenta[vv.id]) || [])
                     const totalPagado = pagosList.reduce((s, p) => s + (p.monto || 0), 0)
-                    const saldo = totalGrupo - totalPagado
+                    const saldo = totalRealGrupo - totalPagado
                     const rowKey = esGrupo ? v.grupo_venta_id : v.id
                     const isReg = registrandoPago === rowKey
                     const ec = { pendiente: { bg: '#FDF0E0', color: '#7A4500' }, precio_cargado: { bg: '#E8EFF8', color: '#1A3D6B' }, facturado: { bg: '#F0EAFB', color: '#3D1A6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' } }[v.estado_comercial] || { bg: '#F7F5F0', color: '#6B6760' }
@@ -2028,7 +2033,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                           {esGrupo && <div style={{ fontSize: 10, color: S.accent }}>Multi-corral</div>}
                         </td>
                         <td style={{ padding: '7px 10px' }}>{v.comprador || '—'}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{netoACobrarGrupo > 0 ? '$' + netoACobrarGrupo.toLocaleString('es-AR') : '—'}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600, color: '#1E5C2E' }}>{totalRealGrupo > 0 ? '$' + Math.round(totalRealGrupo).toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#1E5C2E' }}>{totalFact ? '$' + totalFact.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#3D1A6B' }}>{totalNegro > 0 ? '$' + totalNegro.toLocaleString('es-AR') : '—'}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{totalIva ? '$' + totalIva.toLocaleString('es-AR') : '—'}</td>
@@ -2190,8 +2195,17 @@ export default function Ventas({ usuario, mobile, nav }) {
                                   <button onClick={async () => {
                                     if (!formPago.monto) return
                                     const monto = parseFloat(formPago.monto)
+                                    // Si el pago es mayor al saldo pendiente, queda un excedente a favor
+                                    // del comprador (para descontar en una próxima venta) — se anota en el
+                                    // pago para no perder el dato.
+                                    const excedente = Math.round((monto - saldo) * 100) / 100
+                                    let obsFinal = formPago.observaciones || null
+                                    if (excedente > 0) {
+                                      if (!confirm(`Este pago ($${monto.toLocaleString('es-AR')}) es mayor al saldo pendiente ($${Math.round(saldo).toLocaleString('es-AR')}).\n\nQueda $${excedente.toLocaleString('es-AR')} a favor del comprador. ¿Confirmás?`)) return
+                                      obsFinal = `${obsFinal ? obsFinal + ' — ' : ''}Sobrepago: $${excedente.toLocaleString('es-AR')} a favor del comprador`
+                                    }
                                     const esCheque = ['cheque','e-cheq'].includes(formPago.forma_pago)
-                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null, es_paralelo: formPago.es_paralela || false, subtipo_cheque: esCheque ? (formPago.subtipo_cheque || null) : null, librador_real: (esCheque && formPago.subtipo_cheque === 'tercero') ? (formPago.librador_real || null) : null }).select().single()
+                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null, es_paralelo: formPago.es_paralela || false, subtipo_cheque: esCheque ? (formPago.subtipo_cheque || null) : null, librador_real: (esCheque && formPago.subtipo_cheque === 'tercero') ? (formPago.librador_real || null) : null, observaciones: obsFinal }).select().single()
                                     const pagoId = pagoInsertado?.id || null
                                     const esParalela = formPago.es_paralela || (totalNegro > 0 && formPago.forma_pago === 'efectivo')
                                     if (esParalela) await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
@@ -2199,7 +2213,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                     if (esCheque && formPago.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: (formPago.subtipo_cheque === 'tercero' ? formPago.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: formPago.forma_pago === 'e-cheq', pago_venta_id: pagoId })
                                     const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)
                                     const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0) + monto
-                                    if (totalPag >= totalGrupo * 0.99) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
+                                    if (totalPag >= totalRealGrupo * 0.99) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
                                     setRegistrandoPago(null)
                                     await cargar()
                                   }} style={{ flex: 1, padding: '4px', fontSize: 11, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 4, cursor: 'pointer' }}>
