@@ -1920,7 +1920,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                       </div>
                       {!isEditGC && (
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 12 }}>
-                          <button onClick={() => { setEditandoComercial(gcKey); setFormComercial({ monto_facturado: montoTotal ? String(montoTotal) : '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                          <button onClick={() => { setEditandoComercial(gcKey); setFormComercial({ monto_facturado: v.monto_facturado != null ? String(v.monto_facturado) : (montoTotal ? String(montoTotal) : ''), iva_pct: v.iva_pct != null ? String(v.iva_pct) : '10.5', descuento_monto: v.descuento_monto != null ? String(v.descuento_monto) : '', descuento_descripcion: v.descuento_descripcion || '', tiene_retencion: v.tiene_retencion || false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
                             style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
                             ✏️ G. Comercial
                           </button>
