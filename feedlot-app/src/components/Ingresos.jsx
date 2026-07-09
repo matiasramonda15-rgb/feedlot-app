@@ -379,7 +379,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   // Detalle por mes
   const ingresosPorMes = {}
   lotes.forEach(l => {
-    const fecha = new Date(l.created_at || l.fecha_ingreso)
+    const fecha = l.created_at ? new Date(l.created_at) : new Date((l.fecha_ingreso || new Date().toISOString().split('T')[0]) + 'T12:00:00')
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
     if (!ingresosPorMes[key]) ingresosPorMes[key] = { cantidad: 0, ingresos: 0, kgTotal: 0, precioSum: 0, precioCount: 0 }
     ingresosPorMes[key].cantidad += l.cantidad || 0
