@@ -147,6 +147,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
   const [filtroArchivadas, setFiltroArchivadas] = useState({ comprador: '', desde: '', hasta: '' })
   const [filtroVentas, setFiltroVentas] = useState('')
+  const [grupoExpandido, setGrupoExpandido] = useState(null)
   const [filtroGestion, setFiltroGestion] = useState('')
   const [filtroCuentas, setFiltroCuentas] = useState('')
   const [showDetalleMeses, setShowDetalleMeses] = useState(false)
@@ -1248,21 +1249,35 @@ export default function Ventas({ usuario, mobile, nav }) {
                         const sinPrecio = (g || []).some(v => !v.precio_kg && !v.monto_total_con_iva && !v.total)
                         const v0 = (g || [])[0]
                         if (!v0) return null
+                        // Si dentro del grupo hay más de un desbaste o precio distinto,
+                        // se muestran todos separados por "/" en vez de solo el primero.
+                        const desbastesUnicos = [...new Set((g || []).map(v => v.desbaste_pct).filter(d => d != null))]
+                        const preciosUnicos = [...new Set((g || []).map(v => v.precio_kg).filter(p => p != null))]
+                        const tieneVariosGrupos = desbastesUnicos.length > 1 || preciosUnicos.length > 1
+                        const expandido = grupoExpandido === v0.grupo_venta_id
                         return (
                           <React.Fragment key={v0.grupo_venta_id}>
                           <tr style={{ borderBottom: `1px solid ${S.border}`, background: S.accentLight }}>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + (v0.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>
                               <div style={{ fontWeight: 600 }}>{corralesNums}</div>
-                              <div style={{ fontSize: 10, color: S.accent }}>Venta multi-corral</div>
+                              <div style={{ fontSize: 10, color: S.accent }}>
+                                Venta multi-corral
+                                {tieneVariosGrupos && (
+                                  <button onClick={() => setGrupoExpandido(expandido ? null : v0.grupo_venta_id)}
+                                    style={{ marginLeft: 6, padding: '1px 6px', fontSize: 10, background: 'transparent', border: `1px solid ${S.purple}`, color: S.purple, borderRadius: 4, cursor: 'pointer' }}>
+                                    {expandido ? '▲ ocultar detalle' : '▾ ver detalle'}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalAnim}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>{v0.comprador || '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgVivo.toLocaleString('es-AR')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{totalKgVivo && totalAnim ? Math.round(totalKgVivo / totalAnim).toLocaleString('es-AR') : '—'}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{v0.desbaste_pct}%</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{tieneVariosGrupos ? desbastesUnicos.map(d => `${d}%`).join(' / ') : `${v0.desbaste_pct}%`}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{totalKgNeto.toLocaleString('es-AR')}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{tieneVariosGrupos ? preciosUnicos.map(p => `$${p.toLocaleString('es-AR')}`).join(' / ') : (v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—')}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{(() => {
                               const totalNetoFact = (g || []).reduce((s, gv) => s + (gv.monto_facturado || 0), 0)
                               const totalNegro = (g || []).reduce((s, gv) => s + (gv.monto_negro || 0), 0)
@@ -1288,9 +1303,13 @@ export default function Ventas({ usuario, mobile, nav }) {
                                     ['Comprador', v0.comprador || '—'],
                                     ['Cantidad', `${totalAnim} animales`],
                                     ['Kg vivos', `${totalKgVivo.toLocaleString('es-AR')} kg`],
-                                    ['Desbaste', `${v0.desbaste_pct || 8}%`],
-                                    ['Kg netos', `${totalKgNeto.toLocaleString('es-AR')} kg`],
-                                    ['$/kg', v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'],
+                                    ...(tieneVariosGrupos
+                                      ? (g || []).map(gv => [`C-${gv.corrales?.numero || gv.corral_id}`, `${gv.cantidad} anim. · ${(gv.kg_vivo_total||0).toLocaleString('es-AR')} kg brutos · ${gv.desbaste_pct}% desb. · ${(gv.kg_neto||0).toLocaleString('es-AR')} kg netos · ${gv.precio_kg ? '$'+gv.precio_kg.toLocaleString('es-AR')+'/kg' : 'sin precio'} · $${(gv.total||0).toLocaleString('es-AR')}`])
+                                      : [
+                                          ['Desbaste', `${v0.desbaste_pct || 8}%`],
+                                          ['Kg netos', `${totalKgNeto.toLocaleString('es-AR')} kg`],
+                                          ['$/kg', v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'],
+                                        ]),
                                     ['Total', `$${totalMonto.toLocaleString('es-AR')}`],
                                     ...(v0.observaciones ? [['Observaciones', v0.observaciones]] : []),
                                   ],
@@ -1323,6 +1342,27 @@ export default function Ventas({ usuario, mobile, nav }) {
                               </div>
                             </td>
                           </tr>
+                          {expandido && (
+                            <tr style={{ background: '#FBF8FF' }}>
+                              <td colSpan={11} style={{ padding: '.85rem 1.25rem' }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: S.purple, textTransform: 'uppercase', marginBottom: 8 }}>Detalle por grupo de precio/desbaste</div>
+                                {(g || []).map(v => (
+                                  <div key={v.id} style={{ display: 'flex', gap: 16, fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${S.border}` }}>
+                                    <span style={{ fontWeight: 600 }}>C-{v.corrales?.numero || v.corral_id}</span>
+                                    <span style={{ color: S.muted }}>{v.cantidad} anim.</span>
+                                    <span style={{ color: S.muted }}>{(v.kg_vivo_total || 0).toLocaleString('es-AR')} kg brutos</span>
+                                    <span style={{ color: S.purple, fontWeight: 600 }}>{v.desbaste_pct}% desbaste</span>
+                                    <span style={{ color: S.muted }}>{(v.kg_neto || 0).toLocaleString('es-AR')} kg netos</span>
+                                    <span style={{ color: S.purple, fontWeight: 600 }}>{v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}/kg` : 'sin precio'}</span>
+                                    <span style={{ marginLeft: 'auto', fontWeight: 700, color: S.green }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</span>
+                                  </div>
+                                ))}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, fontSize: 13, fontWeight: 700, color: S.green }}>
+                                  Total combinado: ${totalMonto.toLocaleString('es-AR')}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
                           {editandoVenta?.grupo_venta_id === v0.grupo_venta_id && !editandoBanner && (
                             <tr style={{ background: S.accentLight }}>
                               <td colSpan={11} style={{ padding: '1.25rem' }}>
