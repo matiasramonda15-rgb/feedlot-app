@@ -117,7 +117,26 @@ export default function Contactos({ usuario }) {
 
   function calcularSaldo(nombre) {
     const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [] }
-    const totalVentas = data.ventas.reduce((s, v) => s + (v.total || 0), 0)
+    // Agrupar ventas multi-corral para no contar de más
+    const gruposVistos = new Set()
+    const ventasAgrupadas = data.ventas.filter(v => {
+      if (!v.grupo_venta_id) return true
+      if (gruposVistos.has(v.grupo_venta_id)) return false
+      gruposVistos.add(v.grupo_venta_id)
+      return true
+    })
+    const totalVentas = ventasAgrupadas.reduce((s, v) => {
+      const grupo = v.grupo_venta_id ? data.ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
+      const tieneFacturado = grupo.some(vv => vv.monto_facturado !== null && vv.monto_facturado !== undefined)
+      if (!tieneFacturado) return s + grupo.reduce((ss, vv) => ss + (vv.total || 0), 0)
+      const sumFact = grupo.reduce((ss, vv) => ss + (vv.monto_facturado || 0), 0)
+      const sumIva = grupo.reduce((ss, vv) => ss + (vv.iva_monto || 0), 0)
+      const sumCom = grupo.reduce((ss, vv) => ss + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
+      const sumRet = grupo.reduce((ss, vv) => ss + (vv.retencion_monto || 0), 0)
+      const sumNegro = grupo.reduce((ss, vv) => ss + (vv.monto_negro || 0), 0)
+      // El total de la venta = neto a cobrar (facturado + iva - comisión - retención) + paralelo
+      return s + (sumFact + sumIva - sumCom - sumRet) + sumNegro
+    }, 0)
     const cobradoVentas = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
     const pendienteVentas = totalVentas - cobradoVentas
     const totalCompras = data.lotes.reduce((s, l) => {
@@ -262,11 +281,17 @@ export default function Contactos({ usuario }) {
             const fechaOp = v.fecha || v.creado_en?.split('T')[0]
             const fechaVto = v.fecha_vencimiento_cobro
             const montoFact = (() => {
-              const sumFact = grupo.reduce((s, vv) => s + (vv.monto_facturado !== null && vv.monto_facturado !== undefined ? vv.monto_facturado : 0), 0)
-              const sumTotal = grupo.reduce((s, vv) => s + (vv.total || 0), 0)
-              // Si algún item tiene monto_facturado seteado (incluso en 0), usarlo; sino usar total
+              // Tiene que coincidir exactamente con "Neto a cobrar" de Gestión Comercial
+              // en Ventas (facturado + IVA - comisión - retención) — antes acá solo se
+              // usaba monto_facturado, sin sumar el IVA ni restar la retención, y por
+              // eso la cuenta corriente oficial no coincidía con Gestión Comercial.
               const tieneFacturado = grupo.some(vv => vv.monto_facturado !== null && vv.monto_facturado !== undefined)
-              return tieneFacturado ? sumFact : sumTotal
+              if (!tieneFacturado) return grupo.reduce((s, vv) => s + (vv.total || 0), 0)
+              const sumFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
+              const sumIva = grupo.reduce((s, vv) => s + (vv.iva_monto || 0), 0)
+              const sumCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
+              const sumRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
+              return sumFact + sumIva - sumCom - sumRet
             })()
             const montoParalelo = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
             const corralesStr = grupo.length > 1 ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
