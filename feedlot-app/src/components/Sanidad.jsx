@@ -91,6 +91,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
     if (destino) window.__sanidadTab = null
     return destino || 'alertas'
   })
+  const [verArchivoSan, setVerArchivoSan] = useState(false)
   const [confirmadosM, setConfirmadosM] = useState({})
   const [revStateM, setRevStateM] = useState([])
   const [formEventoM, setFormEventoM] = useState({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
@@ -493,6 +494,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
       { key: 'alertas', label: 'Alertas' },
       { key: 'revision', label: 'Revision' },
       { key: 'evento', label: 'Evento' },
+      { key: 'historial', label: '📋 Historial' },
       { key: 'mortalidad', label: '💀 Muerte' },
       { key: 'stock', label: '📦 Stock' },
     ]
@@ -1051,6 +1053,32 @@ export default function Sanidad({ usuario, mobile, nav }) {
             </>
           )}
 
+          {pantSan === 'historial' && (() => {
+            const TIPO_LABELS_M = { ingreso: 'Ingreso', revision: 'Revision', tratamiento: 'Tratamiento', segunda_dosis: '2da dosis', mortalidad: 'Mortandad' }
+            const eventosM = eventos.slice(0, 30)
+            return (
+              <div>
+                <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem' }}>Últimos {eventosM.length} eventos registrados — para confirmar que quedó todo guardado.</div>
+                {eventosM.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: CM.muted, fontSize: 13 }}>Todavía no hay eventos registrados.</div>}
+                {eventosM.map(e => (
+                  <div key={e.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.6rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{e.producto || TIPO_LABELS_M[e.tipo] || e.tipo}</div>
+                      <div style={{ fontSize: 11, color: CM.muted, fontFamily: CM.mono }}>{new Date(e.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</div>
+                    </div>
+                    <div style={{ fontSize: 12, color: CM.muted }}>
+                      {e.corrales?.numero ? `C-${e.corrales.numero}` : 'Todos'} · {TIPO_LABELS_M[e.tipo] || e.tipo}
+                      {e.cantidad_ml ? ` · ${e.cantidad_ml} ml` : ''}
+                      {e.cantidad_animales ? ` · ${e.cantidad_animales} anim.` : ''}
+                    </div>
+                    {e.observaciones && <div style={{ fontSize: 12, color: CM.text, marginTop: 4 }}>{e.observaciones}</div>}
+                    <div style={{ fontSize: 10, color: CM.muted, marginTop: 4 }}>Registrado por {e.usuarios?.nombre || '—'}</div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
           {pantSan === 'stock' && (
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Stock sanitario</div>
@@ -1541,8 +1569,18 @@ export default function Sanidad({ usuario, mobile, nav }) {
       )}
 
       {/* TAB HISTORIAL */}
-      {tab === 'historial' && (
-        <div>
+      {tab === 'historial' && (() => {
+        const hace14dias = new Date(); hace14dias.setDate(hace14dias.getDate() - 14)
+        const eventosRecientes = eventos.filter(e => new Date(e.creado_en) >= hace14dias)
+        const eventosArchivados = eventos.filter(e => new Date(e.creado_en) < hace14dias)
+        const TIPO_COLORS = {
+          ingreso: { bg: S.accentLight, color: S.accent, label: 'Ingreso' },
+          revision: { bg: S.purpleLight, color: S.purple, label: 'Revision' },
+          tratamiento: { bg: S.amberLight, color: S.amber, label: 'Tratamiento' },
+          segunda_dosis: { bg: S.amberLight, color: S.amber, label: '2da dosis' },
+          mortalidad: { bg: S.redLight, color: S.red, label: 'Mortandad' },
+        }
+        const TablaEventos = ({ lista }) => (
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -1553,17 +1591,10 @@ export default function Sanidad({ usuario, mobile, nav }) {
                 </tr>
               </thead>
               <tbody>
-                {eventos.length === 0 && (
+                {lista.length === 0 && (
                   <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay eventos registrados.</td></tr>
                 )}
-                {eventos.map(e => {
-                  const TIPO_COLORS = {
-                    ingreso: { bg: S.accentLight, color: S.accent, label: 'Ingreso' },
-                    revision: { bg: S.purpleLight, color: S.purple, label: 'Revision' },
-                    tratamiento: { bg: S.amberLight, color: S.amber, label: 'Tratamiento' },
-                    segunda_dosis: { bg: S.amberLight, color: S.amber, label: '2da dosis' },
-                    mortalidad: { bg: S.redLight, color: S.red, label: 'Mortandad' },
-                  }
+                {lista.map(e => {
                   const tc = TIPO_COLORS[e.tipo] || { bg: S.bg, color: S.muted, label: e.tipo }
                   return (
                     <tr key={e.id} style={{ borderBottom: `1px solid ${S.border}` }}>
@@ -1580,8 +1611,27 @@ export default function Sanidad({ usuario, mobile, nav }) {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )
+        return (
+          <div>
+            <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>Últimos 14 días · {eventosRecientes.length} eventos</div>
+            <TablaEventos lista={eventosRecientes} />
+            {eventosArchivados.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <button onClick={() => setVerArchivoSan(!verArchivoSan)}
+                  style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  {verArchivoSan ? '▲ Ocultar archivadas' : `▾ Ver archivadas (${eventosArchivados.length})`}
+                </button>
+                {verArchivoSan && (
+                  <div style={{ marginTop: 10 }}>
+                    <TablaEventos lista={eventosArchivados} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* TAB PRODUCTOS */}
       {tab === 'mortalidad' && (
