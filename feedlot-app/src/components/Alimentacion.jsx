@@ -685,12 +685,12 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                       let acum = 0
                       return (
                         <div key={ci}>
-                          {superaCap && (
-                            <div style={{ padding: '8px 1rem', background: CM.surface2, borderBottom: `1px solid ${CM.border}`, borderTop: ci > 0 ? `2px solid ${CM.amber}` : 'none' }}>
-                              <div style={{ fontSize: 12, fontWeight: 700, color: CM.amber }}>Carga {ci + 1} de {cargas.length} — {kgCarga.toLocaleString('es-AR')} kg</div>
-                              <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>Corrales: {carga.map(c => `C-${c.numero}`).join(', ')}</div>
-                            </div>
-                          )}
+                          <div style={{ padding: '10px 1rem', background: CM.surface2, borderBottom: `1px solid ${CM.border}`, borderTop: (superaCap && ci > 0) ? `2px solid ${CM.amber}` : 'none' }}>
+                            {superaCap && (
+                              <div style={{ fontSize: 13, fontWeight: 700, color: CM.amber, marginBottom: 4 }}>Carga {ci + 1} de {cargas.length} — {kgCarga.toLocaleString('es-AR')} kg</div>
+                            )}
+                            <div style={{ fontSize: 15, fontWeight: 600, color: CM.text }}>Corrales: {carga.map(c => `C-${c.numero}`).join(', ')}</div>
+                          </div>
                           {f.map((ing, ii) => {
                             const kg = Math.round(ing.kg * (superaCap ? factorCarga : factor))
                             acum += kg
