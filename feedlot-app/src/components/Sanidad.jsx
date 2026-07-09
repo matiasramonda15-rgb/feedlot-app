@@ -86,7 +86,11 @@ export default function Sanidad({ usuario, mobile, nav }) {
   const [showNuevoProd, setShowNuevoProd] = useState(false)
   const [formNuevoProd, setFormNuevoProd] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml', minimo: '' })
   // Estado propio del modo celular
-  const [pantSan, setPantSan] = useState('alertas')
+  const [pantSan, setPantSan] = useState(() => {
+    const destino = typeof window !== 'undefined' ? window.__sanidadTab : null
+    if (destino) window.__sanidadTab = null
+    return destino || 'alertas'
+  })
   const [confirmadosM, setConfirmadosM] = useState({})
   const [revStateM, setRevStateM] = useState([])
   const [formEventoM, setFormEventoM] = useState({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
@@ -272,7 +276,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
       supabase.from('eventos_sanitarios').select('id, corral_id, lote_id, producto, cantidad_ml, cantidad_animales').eq('tipo', 'vacunacion').order('creado_en', { ascending: false }).limit(300),
     ])
     setAlertas(al || [])
-    setCorrales(c || [])
+    setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setLotes(l || [])
     setEnfermeria(enf || [])
     setMortalidad(mort || [])

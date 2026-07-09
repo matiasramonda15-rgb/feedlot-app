@@ -182,7 +182,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   // Estado propio de la carga diaria simple que usa el celular
   const [kgsM, setKgsM] = useState({})
   const [pilsM, setPilsM] = useState({})
-  const [tabM, setTabM] = useState('piletas')
+  const [tabM, setTabM] = useState(() => {
+    const destino = typeof window !== 'undefined' ? window.__alimentacionTab : null
+    if (destino) window.__alimentacionTab = null
+    return destino || 'piletas'
+  })
   const [mostrarMixerM, setMostrarMixerM] = useState(false)
   const [mostrarConfirmReemplazoM, setMostrarConfirmReemplazoM] = useState(false)
   const [mostrarAgregarRolloM, setMostrarAgregarRolloM] = useState(false)

@@ -43,10 +43,11 @@ export default function AppMovil({ usuario, onLogout }) {
     ])
     const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
     const ayerStr = ayer.toISOString().split('T')[0]
-    const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }] = await Promise.all([
+    const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }, { data: revisionesHoy }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento', 'fecha_term_c']),
       supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('revisiones').select('id, creado_en').eq('tipo', 'bisemanal').order('creado_en', { ascending: false }).limit(1),
     ])
     // Construir formulas desde BD
     const formulasObj = {
@@ -85,7 +86,9 @@ export default function AppMovil({ usuario, onLogout }) {
       d.setDate(d.getDate() + 40)
       proximaPesadaCalc = d.toISOString().split('T')[0]
     }
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0) && !s.pedido_realizado), stockSanitario: (stockSan || []).filter(p => !p.pedido_realizado), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [] })
+    const hoyStr = new Date().toISOString().split('T')[0]
+    const revisionHoyHecha = (revisionesHoy || []).some(r => (r.creado_en || '').split('T')[0] === hoyStr)
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0) && (!s.pedido_realizado_hasta || s.pedido_realizado_hasta < hoyStr)), stockSanitario: (stockSan || []).filter(p => !p.pedido_realizado_hasta || p.pedido_realizado_hasta < hoyStr), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [], revisionHoyHecha })
   }
 
   const pantallas = {
@@ -170,9 +173,9 @@ function Home({ usuario, nav, onLogout, datos }) {
     })
   })
 
-  // Revision bisemanal los lunes (1) y jueves (4)
+  // Revision bisemanal los lunes (1) y jueves (4) — pero no si ya se confirmó hoy
   const diaSemana = new Date().getDay()
-  if (diaSemana === 1 || diaSemana === 4) {
+  if ((diaSemana === 1 || diaSemana === 4) && !datos.revisionHoyHecha) {
     tareas.unshift({ icon: '🔍', titulo: 'Revision bisemanal de corrales', sub: 'Hoy corresponde revisar todos los corrales', pantalla: 'sanidad', tabDestino: 'revision', urgente: true })
   }
 
@@ -202,7 +205,8 @@ function Home({ usuario, nav, onLogout, datos }) {
             {t.stockId ? (
               <button onClick={async (e) => {
                 e.stopPropagation()
-                await supabase.from(t.stockTabla).update({ pedido_realizado: true }).eq('id', t.stockId)
+                const hasta = new Date(); hasta.setDate(hasta.getDate() + 4)
+                await supabase.from(t.stockTabla).update({ pedido_realizado_hasta: hasta.toISOString().split('T')[0] }).eq('id', t.stockId)
                 if (onReload) await onReload()
               }} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: C.greenLight || '#1A3D2E', border: `1px solid ${C.green}`, color: C.green, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 ✓ Pedido hecho
