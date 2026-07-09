@@ -536,17 +536,23 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       let kgRestante = totalKg
       let cargasRestantes = n
       for (const c of ordenados) {
-        cargaActual.push(c)
-        sumaActual += c.kg
-        // Objetivo dinámico: lo que falta repartir, dividido las cargas que faltan armar
-        const targetDinamico = kgRestante / cargasRestantes
-        if (cargasRestantes > 1 && sumaActual >= targetDinamico) {
+        // Cerrar la carga actual ANTES de agregar este corral si:
+        // (a) agregarlo se pasaría de la capacidad real del mixer — esto es
+        //     obligatorio, nunca se puede violar, sea cual sea el objetivo parejo; o
+        // (b) ya alcanzamos el objetivo balanceado y todavía quedan cargas por armar
+        //     (esto es solo una preferencia de reparto parejo, no una obligación)
+        const seExcede = cargaActual.length > 0 && (sumaActual + c.kg > cap)
+        const targetDinamico = cargasRestantes > 0 ? kgRestante / cargasRestantes : cap
+        const alcanzoObjetivo = cargaActual.length > 0 && cargasRestantes > 1 && sumaActual >= targetDinamico
+        if (seExcede || alcanzoObjetivo) {
           cargas.push(cargaActual)
           kgRestante -= sumaActual
-          cargasRestantes -= 1
+          cargasRestantes = Math.max(1, cargasRestantes - 1)
           cargaActual = []
           sumaActual = 0
         }
+        cargaActual.push(c)
+        sumaActual += c.kg
       }
       if (cargaActual.length > 0) cargas.push(cargaActual)
       return cargas
