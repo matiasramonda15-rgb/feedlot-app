@@ -2209,7 +2209,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                         <tr style={{ background: S.accentLight }}>
                           <td colSpan={20} style={{ padding: '1.25rem' }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: 12 }}>G. Comercial — {corralesStr}</div>
-                            {renderFormGC(v, v.grupo_venta_id ? true : false, grupo, rowKey, v.monto_total_con_iva || v.total || 0, cargar, supabase)}
+                            {renderFormGC(v, v.grupo_venta_id ? true : false, grupo, rowKey, v.grupo_venta_id ? (v.monto_total_grupo || grupo.reduce((s, gv) => s + (gv.monto_total_con_iva || gv.total || 0), 0)) : (v.monto_total_con_iva || v.total || 0), cargar, supabase)}
                           </td>
                         </tr>
                       )}
