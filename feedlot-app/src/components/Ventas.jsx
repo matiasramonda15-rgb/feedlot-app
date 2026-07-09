@@ -157,7 +157,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [gcVersion, setGcVersion] = useState(0)
   const [formComercial, setFormComercial] = useState({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
   const [formPagoVto, setFormPagoVto] = useState('')
-  const [formPago, setFormPago] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' })
+  const [formPagos, setFormPagos] = useState([])
   const [chequesParalelos, setChequesParalelos] = useState([])
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
@@ -2075,22 +2075,35 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 </div>
                               )}
                               {!isReg ? (
-                              <button onClick={() => { setRegistrandoPago(rowKey); setFormPago({ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }) }}
+                              <button onClick={() => { setRegistrandoPago(rowKey); setFormPagos([{ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }]) }}
                                 style={{ fontSize: 10, padding: '3px 8px', background: '#E8EFF8', border: '1px solid #1A3D6B', color: '#1A3D6B', borderRadius: 4, cursor: 'pointer', width: '100%' }}>
                                 + Registrar pago
                               </button>
                             ) : null}
                             {isReg && (
                               <div style={{ marginTop: 12 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                            {formPagos.map((fp, fpi) => {
+                              const setFp = patch => { const n = [...formPagos]; n[fpi] = {...n[fpi], ...patch}; setFormPagos(n) }
+                              return (
+                              <div key={fpi} style={{ border: '1px solid #E2DDD6', borderRadius: 6, padding: 8, marginBottom: 8, background: fpi % 2 === 0 ? 'transparent' : '#FAFAF8' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#6B6760' }}>Pago {fpi + 1}</div>
+                                  {formPagos.length > 1 && (
+                                    <button onClick={() => setFormPagos(formPagos.filter((_, j) => j !== fpi))}
+                                      style={{ padding: '2px 6px', fontSize: 10, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 4, cursor: 'pointer' }}>
+                                      ✕ Quitar
+                                    </button>
+                                  )}
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                                   <div>
                                     <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Monto $</div>
-                                    <input type="number" value={formPago.monto} onChange={e => setFormPago({...formPago, monto: e.target.value})}
+                                    <input type="number" value={fp.monto} onChange={e => setFp({ monto: e.target.value })}
                                       style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 12, fontFamily: 'monospace', boxSizing: 'border-box' }} />
                                   </div>
                                   <div>
                                     <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Forma</div>
-                                    <select value={formPago.forma_pago} onChange={e => setFormPago({...formPago, forma_pago: e.target.value})}
+                                    <select value={fp.forma_pago} onChange={e => setFp({ forma_pago: e.target.value })}
                                       style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11 }}>
                                       <option value="transferencia">Transferencia</option>
                                       <option value="cheque">Cheque</option>
@@ -2100,89 +2113,105 @@ export default function Ventas({ usuario, mobile, nav }) {
                                   </div>
                                   <div>
                                     <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Fecha</div>
-                                    <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})}
+                                    <input type="date" value={fp.fecha} onChange={e => setFp({ fecha: e.target.value })}
                                       style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
                                   </div>
                                   {/* Checkbox paralela */}
                                   <div style={{ gridColumn: '1/-1' }}>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
-                                      <input type="checkbox" checked={formPago.es_paralela || false} onChange={e => setFormPago({...formPago, es_paralela: e.target.checked})} />
+                                      <input type="checkbox" checked={fp.es_paralela || false} onChange={e => setFp({ es_paralela: e.target.checked })} />
                                       Cobro en cuenta paralela
                                     </label>
                                   </div>
                                   {/* Cheque recibido - datos del cheque que nos entregan */}
-                                  {['cheque','e-cheq'].includes(formPago.forma_pago) && (
+                                  {['cheque','e-cheq'].includes(fp.forma_pago) && (
                                     <>
                                       <div style={{ gridColumn: '1/-1', display: 'flex', gap: 6, marginTop: 2 }}>
                                         {['propio', 'tercero'].map(t => (
-                                          <button key={t} type="button" onClick={() => setFormPago({...formPago, subtipo_cheque: formPago.subtipo_cheque === t ? '' : t})}
-                                            style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${formPago.subtipo_cheque === t ? '#1A3D6B' : '#E2DDD6'}`, background: formPago.subtipo_cheque === t ? '#E8EFF8' : 'transparent', color: formPago.subtipo_cheque === t ? '#1A3D6B' : '#6B6760' }}>
+                                          <button key={t} type="button" onClick={() => setFp({ subtipo_cheque: fp.subtipo_cheque === t ? '' : t })}
+                                            style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${fp.subtipo_cheque === t ? '#1A3D6B' : '#E2DDD6'}`, background: fp.subtipo_cheque === t ? '#E8EFF8' : 'transparent', color: fp.subtipo_cheque === t ? '#1A3D6B' : '#6B6760' }}>
                                             {t === 'propio' ? 'Propio del comprador' : 'De tercero (endosado)'}
                                           </button>
                                         ))}
                                       </div>
-                                      {formPago.subtipo_cheque === 'tercero' && (
+                                      {fp.subtipo_cheque === 'tercero' && (
                                         <div style={{ gridColumn: '1/-1' }}>
                                           <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Librador real (quién lo emitió)</div>
-                                          <input type="text" value={formPago.librador_real} onChange={e => setFormPago({...formPago, librador_real: e.target.value})}
+                                          <input type="text" value={fp.librador_real} onChange={e => setFp({ librador_real: e.target.value })}
                                             placeholder="ej. otro cliente, no el comprador"
                                             style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
                                         </div>
                                       )}
                                       <div>
                                         <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>N° cheque</div>
-                                        <input type="text" value={formPago.numero_cheque} onChange={e => setFormPago({...formPago, numero_cheque: e.target.value})}
+                                        <input type="text" value={fp.numero_cheque} onChange={e => setFp({ numero_cheque: e.target.value })}
                                           style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Banco</div>
-                                        <input type="text" value={formPago.banco} onChange={e => setFormPago({...formPago, banco: e.target.value})}
+                                        <input type="text" value={fp.banco} onChange={e => setFp({ banco: e.target.value })}
                                           style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Fecha de cobro</div>
-                                        <input type="date" value={formPago.fecha_cobro_cheque} onChange={e => {
+                                        <input type="date" value={fp.fecha_cobro_cheque} onChange={e => {
                                           const fechaCobro = e.target.value
                                           const fechaVto = fechaCobro ? new Date(new Date(fechaCobro + 'T12:00:00').getTime() + 30 * 86400000).toISOString().split('T')[0] : ''
-                                          setFormPago({...formPago, fecha_cobro_cheque: fechaCobro, fecha_vencimiento_cheque: fechaVto})
+                                          setFp({ fecha_cobro_cheque: fechaCobro, fecha_vencimiento_cheque: fechaVto })
                                         }}
                                           style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Vencimiento (auto +30d)</div>
-                                        <input type="date" value={formPago.fecha_vencimiento_cheque} onChange={e => setFormPago({...formPago, fecha_vencimiento_cheque: e.target.value})}
+                                        <input type="date" value={fp.fecha_vencimiento_cheque} onChange={e => setFp({ fecha_vencimiento_cheque: e.target.value })}
                                           style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 11, boxSizing: 'border-box' }} />
                                       </div>
                                     </>
                                   )}
-                            </div>
+                                </div>
+                              </div>
+                              )
+                            })}
+                            <button onClick={() => setFormPagos([...formPagos, { monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }])}
+                              style={{ width: '100%', padding: '6px', fontSize: 11, fontWeight: 600, background: 'transparent', border: '1px dashed #85B7EB', color: '#1A3D6B', borderRadius: 5, cursor: 'pointer', marginBottom: 8 }}>
+                              + Agregar otra forma de pago
+                            </button>
+                            {formPagos.length > 1 && (
+                              <div style={{ fontSize: 11, fontWeight: 600, color: '#1A1916', marginBottom: 8, textAlign: 'right' }}>
+                                Total a registrar: ${formPagos.reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0).toLocaleString('es-AR')}
+                              </div>
+                            )}
                                 <div style={{ display: 'flex', gap: 4 }}>
                                   <button onClick={async () => {
-                                    if (!formPago.monto) return
-                                    const monto = parseFloat(formPago.monto)
-                                    // Si el pago es mayor al saldo pendiente, queda un excedente a favor
-                                    // del comprador (para descontar en una próxima venta) — se anota en el
-                                    // pago para no perder el dato.
-                                    const excedente = Math.round((monto - saldo) * 100) / 100
-                                    let obsFinal = formPago.observaciones || null
+                                    const entradasValidas = formPagos.filter(fp => fp.monto)
+                                    if (entradasValidas.length === 0) return
+                                    const montoTotalPagos = entradasValidas.reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0)
+                                    // Si la suma de todos los pagos es mayor al saldo pendiente, queda un
+                                    // excedente a favor del comprador (para descontar en una próxima venta).
+                                    const excedente = Math.round((montoTotalPagos - saldo) * 100) / 100
+                                    let notaExcedente = null
                                     if (excedente > 0) {
-                                      if (!confirm(`Este pago ($${monto.toLocaleString('es-AR')}) es mayor al saldo pendiente ($${Math.round(saldo).toLocaleString('es-AR')}).\n\nQueda $${excedente.toLocaleString('es-AR')} a favor del comprador. ¿Confirmás?`)) return
-                                      obsFinal = `${obsFinal ? obsFinal + ' — ' : ''}Sobrepago: $${excedente.toLocaleString('es-AR')} a favor del comprador`
+                                      if (!confirm(`Este pago ($${montoTotalPagos.toLocaleString('es-AR')}) es mayor al saldo pendiente ($${Math.round(saldo).toLocaleString('es-AR')}).\n\nQueda $${excedente.toLocaleString('es-AR')} a favor del comprador. ¿Confirmás?`)) return
+                                      notaExcedente = `Sobrepago: $${excedente.toLocaleString('es-AR')} a favor del comprador`
                                     }
-                                    const esCheque = ['cheque','e-cheq'].includes(formPago.forma_pago)
-                                    const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: formPago.fecha, monto, forma_pago: formPago.forma_pago, numero_cheque: formPago.numero_cheque || null, banco: formPago.banco || null, fecha_vencimiento_cheque: formPago.fecha_vencimiento_cheque || null, es_paralelo: formPago.es_paralela || false, subtipo_cheque: esCheque ? (formPago.subtipo_cheque || null) : null, librador_real: (esCheque && formPago.subtipo_cheque === 'tercero') ? (formPago.librador_real || null) : null, observaciones: obsFinal }).select().single()
-                                    const pagoId = pagoInsertado?.id || null
-                                    const esParalela = formPago.es_paralela || (totalNegro > 0 && formPago.forma_pago === 'efectivo')
-                                    if (esParalela) await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
-                                    else await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: formPago.forma_pago, pago_venta_id: pagoId })
-                                    if (esCheque && formPago.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: formPago.numero_cheque || null, banco: formPago.banco || null, monto, fecha_emision: formPago.fecha, fecha_cobro: formPago.fecha_cobro_cheque || null, fecha_vencimiento: formPago.fecha_vencimiento_cheque, librador: (formPago.subtipo_cheque === 'tercero' ? formPago.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: formPago.forma_pago === 'e-cheq', pago_venta_id: pagoId })
+                                    for (const fp of entradasValidas) {
+                                      const monto = parseFloat(fp.monto)
+                                      const obsFinal = `${fp.observaciones || ''}${notaExcedente ? (fp.observaciones ? ' — ' : '') + notaExcedente : ''}` || null
+                                      const esCheque = ['cheque','e-cheq'].includes(fp.forma_pago)
+                                      const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: fp.fecha, monto, forma_pago: fp.forma_pago, numero_cheque: fp.numero_cheque || null, banco: fp.banco || null, fecha_vencimiento_cheque: fp.fecha_vencimiento_cheque || null, es_paralelo: fp.es_paralela || false, subtipo_cheque: esCheque ? (fp.subtipo_cheque || null) : null, librador_real: (esCheque && fp.subtipo_cheque === 'tercero') ? (fp.librador_real || null) : null, observaciones: obsFinal }).select().single()
+                                      const pagoId = pagoInsertado?.id || null
+                                      const esParalela = fp.es_paralela || (totalNegro > 0 && fp.forma_pago === 'efectivo')
+                                      if (esParalela) await supabase.from('caja_paralela').insert({ fecha: fp.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
+                                      else await supabase.from('caja_oficial').insert({ fecha: fp.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: fp.forma_pago, pago_venta_id: pagoId })
+                                      if (esCheque && fp.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: fp.numero_cheque || null, banco: fp.banco || null, monto, fecha_emision: fp.fecha, fecha_cobro: fp.fecha_cobro_cheque || null, fecha_vencimiento: fp.fecha_vencimiento_cheque, librador: (fp.subtipo_cheque === 'tercero' ? fp.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: fp.forma_pago === 'e-cheq', pago_venta_id: pagoId })
+                                    }
                                     const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)
-                                    const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0) + monto
+                                    const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0)
                                     if (totalPag >= totalRealGrupo * 0.99) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
                                     setRegistrandoPago(null)
                                     await cargar()
                                   }} style={{ flex: 1, padding: '4px', fontSize: 11, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 4, cursor: 'pointer' }}>
-                                    Guardar
+                                    Guardar {formPagos.length > 1 ? 'todo' : ''}
                                   </button>
                                   <button onClick={() => setRegistrandoPago(null)}
                                     style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 4, cursor: 'pointer' }}>
