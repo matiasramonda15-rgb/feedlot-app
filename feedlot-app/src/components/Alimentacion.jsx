@@ -695,12 +695,14 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                             {superaCap && (
                               <div style={{ fontSize: 13, fontWeight: 700, color: CM.amber, marginBottom: 4 }}>Carga {ci + 1} de {cargas.length} — {kgCarga.toLocaleString('es-AR')} kg</div>
                             )}
-                            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Descargar en cada corral</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: CM.blue, textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              🚚 Descargar en cada corral
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                               {carga.map(c => (
-                                <div key={c.numero} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 600, color: CM.text }}>
+                                <div key={c.numero} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, fontWeight: 600, color: CM.blue, background: 'rgba(126,184,247,0.08)', border: `1px solid rgba(126,184,247,0.25)`, borderRadius: 6, padding: '5px 10px' }}>
                                   <span>C-{c.numero}</span>
-                                  <span style={{ fontFamily: CM.mono, color: CM.amber }}>{c.kg.toLocaleString('es-AR')} kg</span>
+                                  <span style={{ fontFamily: CM.mono, fontWeight: 700 }}>{c.kg.toLocaleString('es-AR')} kg</span>
                                 </div>
                               ))}
                             </div>
