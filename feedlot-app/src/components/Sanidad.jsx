@@ -424,28 +424,31 @@ export default function Sanidad({ usuario, mobile, nav }) {
           if (!enf.desc) continue
           const productosValidos = (enf.productos || []).filter(p => p.prod)
           if (productosValidos.length === 0) {
-            await supabase.from('eventos_sanitarios').insert({
+            const { error } = await supabase.from('eventos_sanitarios').insert({
               tipo: 'revision', corral_id: st.id, producto: null,
               observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
               cantidad_animales: 1, registrado_por: usuario?.id,
             })
+            if (error) { alert('Error al guardar la novedad: ' + error.message); setGuardandoM(false); return }
           } else {
             for (const p of productosValidos) {
               const mlNum = parseFloat(p.ml) || 0
               if (p.prod_id && mlNum > 0) await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
-              await supabase.from('eventos_sanitarios').insert({
+              const { error } = await supabase.from('eventos_sanitarios').insert({
                 tipo: 'revision', corral_id: st.id, producto: p.prod,
                 observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
                 cantidad_animales: 1, cantidad_ml: mlNum || null, registrado_por: usuario?.id,
               })
+              if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); setGuardandoM(false); return }
             }
           }
-          await supabase.from('animales_enfermeria').insert({
+          const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
             corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
             tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
             cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
             estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
           })
+          if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); setGuardandoM(false); return }
         }
       }
       await cargarDatos()
@@ -870,27 +873,36 @@ export default function Sanidad({ usuario, mobile, nav }) {
                           for (const enf of enfs) {
                             const productosValidos = (enf.productos || []).filter(p => p.prod)
                             if (productosValidos.length === 0) {
-                              await supabase.from('eventos_sanitarios').insert({
+                              const { error } = await supabase.from('eventos_sanitarios').insert({
                                 tipo: 'revision', corral_id: revStateM[i]?.id, producto: null,
                                 observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-                                cantidad_animales: 1, mover_enfermeria: enf.mover_enfermeria || false,
+                                cantidad_animales: 1,
                                 registrado_por: usuario?.id,
                               })
+                              if (error) throw error
                             } else {
                               for (const p of productosValidos) {
                                 const mlNum = parseFloat(p.ml) || 0
                                 if (p.prod_id && mlNum > 0) {
                                   await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
                                 }
-                                await supabase.from('eventos_sanitarios').insert({
+                                const { error } = await supabase.from('eventos_sanitarios').insert({
                                   tipo: 'revision', corral_id: revStateM[i]?.id, producto: p.prod,
                                   observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
                                   cantidad_animales: 1, cantidad_ml: mlNum || null,
-                                  mover_enfermeria: enf.mover_enfermeria || false,
                                   registrado_por: usuario?.id,
                                 })
+                                if (error) throw error
                               }
                             }
+                            const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
+                              corral_origen_id: revStateM[i]?.id, descripcion: enf.desc, diagnostico: enf.diag,
+                              tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+                              cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
+                              estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
+                              registrado_por: usuario?.id,
+                            })
+                            if (errEnf) throw errEnf
                           }
                           const n = [...revStateM]
                           n[i] = {...n[i], confirmado: true}
