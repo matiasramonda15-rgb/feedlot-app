@@ -315,7 +315,7 @@ export default function Contactos({ usuario }) {
             // Cobros del grupo
             const todosLosPagos = grupo.flatMap(vv => pagosVenta[vv.id] || [])
             todosLosPagos.forEach(p => {
-              const esParaleloP = p.es_paralelo || (p.forma_pago === 'efectivo' && montoParalelo > 0)
+              const esParaleloP = p.es_paralelo || false
               if (esParalela && !esParaleloP) return
               if (!esParalela && esParaleloP) return
               movimientos.push({
