@@ -1920,7 +1920,24 @@ export default function Ventas({ usuario, mobile, nav }) {
                       </div>
                       {!isEditGC && (
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 12 }}>
-                          <button onClick={() => { setEditandoComercial(gcKey); setFormComercial({ monto_facturado: v.monto_facturado != null ? String(v.monto_facturado) : (montoTotal ? String(montoTotal) : ''), iva_pct: v.iva_pct != null ? String(v.iva_pct) : '10.5', descuento_monto: v.descuento_monto != null ? String(v.descuento_monto) : '', descuento_descripcion: v.descuento_descripcion || '', tiene_retencion: v.tiene_retencion || false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                          <button onClick={() => {
+                            // Si es venta multi-corral, cada fila guardó su porción proporcional del
+                            // total — hay que sumarlas todas para reconstruir el monto agregado real.
+                            const montoFactAgg = isGroup
+                              ? (grupo.some(gv => gv.monto_facturado != null) ? grupo.reduce((s, gv) => s + (gv.monto_facturado || 0), 0) : null)
+                              : v.monto_facturado
+                            const descAgg = isGroup ? grupo.reduce((s, gv) => s + (gv.descuento_monto || 0), 0) : v.descuento_monto
+                            setEditandoComercial(gcKey)
+                            setFormComercial({
+                              monto_facturado: montoFactAgg != null ? String(montoFactAgg) : (montoTotal ? String(montoTotal) : ''),
+                              iva_pct: v.iva_pct != null ? String(v.iva_pct) : '10.5',
+                              descuento_monto: descAgg ? String(descAgg) : '',
+                              descuento_descripcion: v.descuento_descripcion || '',
+                              tiene_retencion: v.tiene_retencion || false,
+                              plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '',
+                              fecha_vencimiento: v.fecha_vencimiento_cobro || '',
+                            })
+                          }}
                             style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
                             ✏️ G. Comercial
                           </button>
@@ -2027,7 +2044,23 @@ export default function Ventas({ usuario, mobile, nav }) {
                           <input type="checkbox" checked={v.retencion_enviada || false} title="Retencion enviada" onChange={async e => { for (const vv of grupo) await supabase.from('ventas').update({ retencion_enviada: e.target.checked }).eq('id', vv.id); await cargar() }} />
                         </td>
                         <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                          <button onClick={() => { const mt = v.monto_total_con_iva || v.total || 0; setEditandoComercial(rowKey); setFormComercial({ monto_facturado: v.monto_facturado ? String(v.monto_facturado) : String(mt), iva_pct: v.iva_pct || '10.5', descuento_monto: v.descuento_monto ? String(v.descuento_monto) : '', descuento_descripcion: v.descuento_descripcion || '', tiene_retencion: v.tiene_retencion || false, plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '', fecha_vencimiento: v.fecha_vencimiento_cobro || '' }) }}
+                          <button onClick={() => {
+                            const mt = v.monto_total_con_iva || v.total || 0
+                            const montoFactAgg = esGrupo
+                              ? (grupo.some(gv => gv.monto_facturado != null) ? grupo.reduce((s, gv) => s + (gv.monto_facturado || 0), 0) : null)
+                              : v.monto_facturado
+                            const descAgg = esGrupo ? grupo.reduce((s, gv) => s + (gv.descuento_monto || 0), 0) : v.descuento_monto
+                            setEditandoComercial(rowKey)
+                            setFormComercial({
+                              monto_facturado: montoFactAgg != null ? String(montoFactAgg) : String(mt),
+                              iva_pct: v.iva_pct != null ? String(v.iva_pct) : '10.5',
+                              descuento_monto: descAgg ? String(descAgg) : '',
+                              descuento_descripcion: v.descuento_descripcion || '',
+                              tiene_retencion: v.tiene_retencion || false,
+                              plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '',
+                              fecha_vencimiento: v.fecha_vencimiento_cobro || '',
+                            })
+                          }}
                             style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                             ✏️ Editar
                           </button>
