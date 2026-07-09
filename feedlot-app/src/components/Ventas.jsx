@@ -1269,7 +1269,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                         return (
                           <React.Fragment key={v0.grupo_venta_id}>
                           <tr style={{ borderBottom: `1px solid ${S.border}`, background: S.accentLight }}>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + (v0.fecha ? 'T12:00:00' : '')).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                             <td style={{ padding: '9px 12px', fontSize: 12 }}>
                               <div style={{ fontWeight: 600 }}>{corralesNums}</div>
                               <div style={{ fontSize: 10, color: S.accent }}>
