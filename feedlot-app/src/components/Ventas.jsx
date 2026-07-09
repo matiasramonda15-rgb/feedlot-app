@@ -724,8 +724,11 @@ export default function Ventas({ usuario, mobile, nav }) {
     const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }
 
     async function guardarGC() {
+      // Distinguir "el usuario puso 0" (factura en cero, sin factura de verdad) de
+      // "el campo quedó vacío" — antes ambos se guardaban igual como null.
+      const netoIngresado = formComercial.monto_facturado !== ''
       const updateData = {
-        monto_facturado: neto || null, monto_negro: paralelo,
+        monto_facturado: netoIngresado ? neto : null, monto_negro: paralelo,
         iva_pct: iva, iva_monto: ivaMonto,
         descuento_monto: descuento || null,
         descuento_descripcion: formComercial.descuento_descripcion || null,
@@ -739,8 +742,8 @@ export default function Ventas({ usuario, mobile, nav }) {
         const totalKgNet = (grupo || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
         for (const gv of grupo) {
           const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / (grupo || []).length
-          const netoV = neto ? Math.round(neto * prop) : null
-          const ivaMV = netoV ? Math.round(netoV * iva / 100) : 0
+          const netoV = netoIngresado ? Math.round(neto * prop) : null
+          const ivaMV = netoIngresado ? Math.round(netoV * iva / 100) : 0
           const descV = descuento ? Math.round(descuento * prop) : 0
           const totalFactV = (netoV || 0) + ivaMV - descV
           const montoTotalV = montoTotal ? Math.round(montoTotal * prop) : 0
