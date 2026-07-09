@@ -731,42 +731,6 @@ export default function Ventas({ usuario, mobile, nav }) {
     const Lbl = ({ c }) => null
     const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }
 
-    async function guardarGC() {
-      // Distinguir "el usuario puso 0" (factura en cero, sin factura de verdad) de
-      // "el campo quedó vacío" — antes ambos se guardaban igual como null.
-      const netoIngresado = formComercial.monto_facturado !== ''
-      const updateData = {
-        monto_facturado: netoIngresado ? neto : null, monto_negro: paralelo,
-        iva_pct: iva, iva_monto: ivaMonto,
-        descuento_monto: descuento || null,
-        descuento_descripcion: formComercial.descuento_descripcion || null,
-        estado_comercial: 'facturado',
-        tiene_retencion: formComercial.tiene_retencion || false,
-        retencion_monto: retMonto || null,
-        plazo_dias: formComercial.plazo_dias ? parseInt(formComercial.plazo_dias) : null,
-        fecha_vencimiento_cobro: formComercial.fecha_vencimiento || null,
-      }
-      if (isGroup) {
-        const totalKgNet = (grupo || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
-        for (const gv of grupo) {
-          const prop = totalKgNet > 0 ? gv.kg_neto / totalKgNet : 1 / (grupo || []).length
-          const netoV = netoIngresado ? Math.round(neto * prop) : null
-          const ivaMV = netoIngresado ? Math.round(netoV * iva / 100) : 0
-          const descV = descuento ? Math.round(descuento * prop) : 0
-          const totalFactV = (netoV || 0) + ivaMV - descV
-          const montoTotalV = montoTotal ? Math.round(montoTotal * prop) : 0
-          const paraleloV = Math.max(0, montoTotalV - totalFactV)
-          await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null }).eq('id', gv.id)
-        }
-      } else {
-        await _supabase.from('ventas').update(updateData).eq('id', gcKey)
-      }
-      setEditandoComercial(null)
-      setFormComercial({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
-      await _cargar()
-      setGcVersion(v => v + 1)
-    }
-
     return (
       <div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
@@ -861,7 +825,8 @@ export default function Ventas({ usuario, mobile, nav }) {
                 const ivaMV = netoV ? Math.round(netoV * ivaVal / 100) : 0
                 const descV = descuentoVal ? Math.round(descuentoVal * prop) : 0
                 const paraleloV = montoTotal ? Math.max(0, Math.round(montoTotal * prop) - ((netoV || 0) + ivaMV - descV)) : 0
-                await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null }).eq('id', gv.id)
+                const retV = retMontoVal ? Math.round(retMontoVal * prop) : 0
+                await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null, retencion_monto: retV || null }).eq('id', gv.id)
               }
             } else {
               await _supabase.from('ventas').update(updateData).eq('id', gcKey)
