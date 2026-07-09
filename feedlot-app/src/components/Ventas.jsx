@@ -311,12 +311,20 @@ export default function Ventas({ usuario, mobile, nav }) {
   ventas.forEach(v => {
     const fecha = new Date(v.creado_en)
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
-    if (!ventasPorMes[key]) ventasPorMes[key] = { total: 0, cantidad: 0, ops: 0 }
+    if (!ventasPorMes[key]) ventasPorMes[key] = { total: 0, cantidad: 0, ops: 0, gruposVistos: new Set() }
     ventasPorMes[key].total += v.total || 0
     ventasPorMes[key].cantidad += v.cantidad || 0
-    ventasPorMes[key].ops += 1
+    // Una venta multi-corral genera varias filas (una por corral) — cuentan como
+    // UNA sola operación, no una por fila.
+    const opKey = v.grupo_venta_id || v.id
+    if (!ventasPorMes[key].gruposVistos.has(opKey)) {
+      ventasPorMes[key].gruposVistos.add(opKey)
+      ventasPorMes[key].ops += 1
+    }
   })
   const mesesOrdenados = Object.entries(ventasPorMes).sort((a, b) => b[0].localeCompare(a[0]))
+  // Total de operaciones reales del año (no filas — una venta multi-corral es 1 operación)
+  const operacionesReales = new Set(ventas.map(v => v.grupo_venta_id || v.id)).size
 
   // Detalle kg prom y precio prom por mes
   const kgPreciosPorMes = {}
@@ -895,7 +903,7 @@ export default function Ventas({ usuario, mobile, nav }) {
             <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem 1rem' }}>
               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Vendido este año</div>
               <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: S.green }}>{totalVentasAnio > 0 ? `$${totalVentasAnio.toLocaleString('es-AR')}` : '$0'}</div>
-              <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>{ventas.length} operaciones · {totalAnimVendidos} animales</div>
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 3, marginBottom: 6 }}>{operacionesReales} operaciones · {totalAnimVendidos} animales</div>
               <button onClick={() => setShowDetalleMeses(!showDetalleMeses)}
                 style={{ fontSize: 11, color: S.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
                 {showDetalleMeses ? '▴ Ocultar detalle' : '▾ Ver por mes'}
@@ -957,7 +965,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                   })}
                   <tr style={{ background: S.bg, borderTop: `2px solid ${S.border}` }}>
                     <td style={{ padding: '9px 14px', fontWeight: 700 }}>Total</td>
-                    <td style={{ padding: '9px 14px', color: S.muted }}>{ventas.length} ventas</td>
+                    <td style={{ padding: '9px 14px', color: S.muted }}>{operacionesReales} ventas</td>
                     <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontWeight: 700 }}>{totalAnimVendidos.toLocaleString('es-AR')}</td>
                     <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>${totalVentasAnio.toLocaleString('es-AR')}</td>
                   </tr>
