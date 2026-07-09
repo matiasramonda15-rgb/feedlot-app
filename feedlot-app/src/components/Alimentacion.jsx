@@ -507,14 +507,50 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     }
 
     const totalM = Object.values(kgsM).reduce((a, b) => a + b, 0)
+    // La nueva forma de repartir cargas (por proximidad de corrales) está en prueba,
+    // solo para el usuario dueño por ahora — el resto sigue viendo la versión anterior
+    // (ya probada y funcionando bien) hasta que se decida pasarla a todos.
+    const esDuenoM = usuario?.rol === 'dueno'
     const capAcost = caps[0] || 2000
     const capRecria = caps[1] || 2500
     const capTerm = caps[2] || 4200
     const MIXERS_M = [
-      { nombre: 'Mixer 1 - Acostumbramiento', etapa: 'acostumbramiento', corralesIds: corralesAlim.filter(c => getEtapaM(c) === 'acostumbramiento').map(c => c.id), cap: capAcost },
-      { nombre: 'Mixer 2 - Recria', etapa: 'recria', corralesIds: corralesAlim.filter(c => getEtapaM(c) === 'recria').map(c => c.id), cap: capRecria },
-      { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corralesIds: corralesAlim.filter(c => getEtapaM(c) === 'terminacion').map(c => c.id), cap: capTerm },
-    ].filter(m => m.corralesIds.length > 0)
+      { nombre: 'Mixer 1 - Acostumbramiento', etapa: 'acostumbramiento', corrales: corralesAlim.filter(c => getEtapaM(c) === 'acostumbramiento'), cap: capAcost },
+      { nombre: 'Mixer 2 - Recria', etapa: 'recria', corrales: corralesAlim.filter(c => getEtapaM(c) === 'recria'), cap: capRecria },
+      { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corrales: corralesAlim.filter(c => getEtapaM(c) === 'terminacion'), cap: capTerm },
+    ].filter(m => m.corrales.length > 0)
+
+    // Reparte los corrales de un mixer en N cargas — cada carga son corrales
+    // ENTEROS y CONTIGUOS por número (que en este feedlot refleja la ubicación
+    // física real), para que la recorrida del mixer sea corta y no haya que
+    // partir un corral entre dos cargas. Balancea los kilos entre cargas para
+    // que ninguna quede muy chica (evita que no mezcle bien).
+    function repartirCorralesEnCargas(corralesConKg, cap) {
+      const totalKg = corralesConKg.reduce((s, c) => s + c.kg, 0)
+      const n = Math.max(1, Math.ceil(totalKg / cap))
+      const ordenados = [...corralesConKg].sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
+      if (n <= 1) return [ordenados]
+      const cargas = []
+      let cargaActual = []
+      let sumaActual = 0
+      let kgRestante = totalKg
+      let cargasRestantes = n
+      for (const c of ordenados) {
+        cargaActual.push(c)
+        sumaActual += c.kg
+        // Objetivo dinámico: lo que falta repartir, dividido las cargas que faltan armar
+        const targetDinamico = kgRestante / cargasRestantes
+        if (cargasRestantes > 1 && sumaActual >= targetDinamico) {
+          cargas.push(cargaActual)
+          kgRestante -= sumaActual
+          cargasRestantes -= 1
+          cargaActual = []
+          sumaActual = 0
+        }
+      }
+      if (cargaActual.length > 0) cargas.push(cargaActual)
+      return cargas
+    }
 
     async function agregarRolloHoyM() {
       setGuardandoRolloM(true)
@@ -624,8 +660,60 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                   {mostrarMixerM ? 'Ocultar ingredientes' : 'Ver ingredientes del mixer'}
                 </button>
               </div>
-              {mostrarMixerM && MIXERS_M.map((mx, mi) => {
-                const totalMx = mx.corralesIds.reduce((a, id) => a + (kgsM[id] || 0), 0)
+              {mostrarMixerM && esDuenoM && MIXERS_M.map((mx, mi) => {
+                const corralesConKg = mx.corrales.map(c => ({ numero: c.numero, kg: kgsM[c.id] || 0 })).filter(c => c.kg > 0)
+                const totalMx = corralesConKg.reduce((a, c) => a + c.kg, 0)
+                if (totalMx === 0) return null
+                const f = FRML[mx.etapa] || []
+                const factor = totalMx / 100
+                const superaCap = totalMx > mx.cap
+                const cargas = superaCap ? repartirCorralesEnCargas(corralesConKg, mx.cap) : [corralesConKg]
+                return (
+                  <div key={mi} style={{ background: CM.surface, border: `1px solid ${superaCap ? CM.amber : CM.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
+                    <div style={{ padding: '.75rem 1rem', borderBottom: `1px solid ${CM.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: CM.green }}>{mx.nombre} <span style={{ fontSize: 9, color: CM.muted, fontWeight: 400 }}>(en prueba)</span></div>
+                      <div style={{ fontSize: 14, fontWeight: 700, fontFamily: CM.mono, color: superaCap ? CM.amber : CM.green }}>{totalMx.toLocaleString('es-AR')} kg</div>
+                    </div>
+                    {superaCap && (
+                      <div style={{ background: '#3D2A00', padding: '.75rem 1rem', borderBottom: `1px solid ${CM.border}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: CM.amber }}>⚠ Supera la capacidad ({mx.cap.toLocaleString('es-AR')} kg) — preparar {cargas.length} cargas</div>
+                      </div>
+                    )}
+                    {cargas.map((carga, ci) => {
+                      const kgCarga = carga.reduce((a, c) => a + c.kg, 0)
+                      const factorCarga = kgCarga / 100
+                      let acum = 0
+                      return (
+                        <div key={ci}>
+                          {superaCap && (
+                            <div style={{ padding: '8px 1rem', background: CM.surface2, borderBottom: `1px solid ${CM.border}`, borderTop: ci > 0 ? `2px solid ${CM.amber}` : 'none' }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: CM.amber }}>Carga {ci + 1} de {cargas.length} — {kgCarga.toLocaleString('es-AR')} kg</div>
+                              <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>Corrales: {carga.map(c => `C-${c.numero}`).join(', ')}</div>
+                            </div>
+                          )}
+                          {f.map((ing, ii) => {
+                            const kg = Math.round(ing.kg * (superaCap ? factorCarga : factor))
+                            acum += kg
+                            return (
+                              <div key={ii} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 1rem', borderBottom: `1px solid ${CM.border}` }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: ing.c }} />{ing.n}
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ fontSize: 15, fontWeight: 700, fontFamily: CM.mono, color: CM.green }}>{kg.toLocaleString('es-AR')} kg</div>
+                                  <div style={{ fontSize: 13, fontFamily: CM.mono, fontWeight: 700, color: CM.amber }}>↑ {acum.toLocaleString('es-AR')} kg</div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              {mostrarMixerM && !esDuenoM && MIXERS_M.map((mx, mi) => {
+                const totalMx = mx.corrales.reduce((a, c) => a + (kgsM[c.id] || 0), 0)
                 if (totalMx === 0) return null
                 const f = FRML[mx.etapa] || []
                 const factor = totalMx / 100
