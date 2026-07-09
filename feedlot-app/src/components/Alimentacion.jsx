@@ -693,19 +693,8 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                         <div key={ci}>
                           <div style={{ padding: '10px 1rem', background: CM.surface2, borderBottom: `1px solid ${CM.border}`, borderTop: (superaCap && ci > 0) ? `2px solid ${CM.amber}` : 'none' }}>
                             {superaCap && (
-                              <div style={{ fontSize: 13, fontWeight: 700, color: CM.amber, marginBottom: 4 }}>Carga {ci + 1} de {cargas.length} — {kgCarga.toLocaleString('es-AR')} kg</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: CM.amber }}>Carga {ci + 1} de {cargas.length} — {kgCarga.toLocaleString('es-AR')} kg</div>
                             )}
-                            <div style={{ fontSize: 11, fontWeight: 700, color: CM.blue, textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
-                              🚚 Descargar en cada corral
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              {carga.map(c => (
-                                <div key={c.numero} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, fontWeight: 600, color: CM.blue, background: 'rgba(126,184,247,0.08)', border: `1px solid rgba(126,184,247,0.25)`, borderRadius: 6, padding: '5px 10px' }}>
-                                  <span>C-{c.numero}</span>
-                                  <span style={{ fontFamily: CM.mono, fontWeight: 700 }}>{c.kg.toLocaleString('es-AR')} kg</span>
-                                </div>
-                              ))}
-                            </div>
                           </div>
                           {f.map((ing, ii) => {
                             const kg = Math.round(ing.kg * (superaCap ? factorCarga : factor))
@@ -722,6 +711,19 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                               </div>
                             )
                           })}
+                          <div style={{ padding: '10px 1rem', background: CM.surface2, borderTop: `1px solid ${CM.border}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: CM.blue, textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              🚚 Descargar en cada corral
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {carga.map(c => (
+                                <div key={c.numero} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, fontWeight: 600, color: CM.blue, background: 'rgba(126,184,247,0.08)', border: `1px solid rgba(126,184,247,0.25)`, borderRadius: 6, padding: '5px 10px' }}>
+                                  <span>C-{c.numero}</span>
+                                  <span style={{ fontFamily: CM.mono, fontWeight: 700 }}>{c.kg.toLocaleString('es-AR')} kg</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )
                     })}
