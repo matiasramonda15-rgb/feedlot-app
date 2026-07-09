@@ -511,10 +511,6 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     }
 
     const totalM = Object.values(kgsM).reduce((a, b) => a + b, 0)
-    // La nueva forma de repartir cargas (por proximidad de corrales) está en prueba,
-    // solo para el usuario dueño por ahora — el resto sigue viendo la versión anterior
-    // (ya probada y funcionando bien) hasta que se decida pasarla a todos.
-    const esDuenoM = usuario?.rol === 'dueno'
     const capAcost = caps[0] || 2000
     const capRecria = caps[1] || 2500
     const capTerm = caps[2] || 4200
@@ -670,7 +666,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                   {mostrarMixerM ? 'Ocultar ingredientes' : 'Ver ingredientes del mixer'}
                 </button>
               </div>
-              {mostrarMixerM && esDuenoM && MIXERS_M.map((mx, mi) => {
+              {mostrarMixerM && MIXERS_M.map((mx, mi) => {
                 const corralesConKg = mx.corrales.map(c => ({ numero: c.numero, kg: kgsM[c.id] || 0 })).filter(c => c.kg > 0)
                 const totalMx = corralesConKg.reduce((a, c) => a + c.kg, 0)
                 if (totalMx === 0) return null
@@ -681,7 +677,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                 return (
                   <div key={mi} style={{ background: CM.surface, border: `1px solid ${superaCap ? CM.amber : CM.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
                     <div style={{ padding: '.75rem 1rem', borderBottom: `1px solid ${CM.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: CM.green }}>{mx.nombre} <span style={{ fontSize: 9, color: CM.muted, fontWeight: 400 }}>(en prueba)</span></div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: CM.green }}>{mx.nombre}</div>
                       <div style={{ fontSize: 14, fontWeight: 700, fontFamily: CM.mono, color: superaCap ? CM.amber : CM.green }}>{totalMx.toLocaleString('es-AR')} kg</div>
                     </div>
                     {superaCap && (
@@ -731,54 +727,6 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                         </div>
                       )
                     })}
-                  </div>
-                )
-              })}
-              {mostrarMixerM && !esDuenoM && MIXERS_M.map((mx, mi) => {
-                const totalMx = mx.corrales.reduce((a, c) => a + (kgsM[c.id] || 0), 0)
-                if (totalMx === 0) return null
-                const f = FRML[mx.etapa] || []
-                const factor = totalMx / 100
-                const superaCap = totalMx > mx.cap
-                const nCargas = superaCap ? Math.ceil(totalMx / mx.cap) : 1
-                const kgPorCarga = superaCap ? Math.round(totalMx / nCargas) : totalMx
-                const factorCarga = kgPorCarga / 100
-                let acum = 0
-                return (
-                  <div key={mi} style={{ background: CM.surface, border: `1px solid ${superaCap ? CM.amber : CM.border}`, borderRadius: 12, marginBottom: '.65rem', overflow: 'hidden' }}>
-                    <div style={{ padding: '.75rem 1rem', borderBottom: `1px solid ${CM.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: CM.green }}>{mx.nombre}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, fontFamily: CM.mono, color: superaCap ? CM.amber : CM.green }}>{totalMx.toLocaleString('es-AR')} kg</div>
-                    </div>
-                    {superaCap && (
-                      <div style={{ background: '#3D2A00', padding: '.75rem 1rem', borderBottom: `1px solid ${CM.border}` }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: CM.amber }}>⚠ Supera la capacidad ({mx.cap.toLocaleString('es-AR')} kg)</div>
-                        <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>Preparar <strong style={{ color: CM.amber }}>{nCargas} cargas iguales</strong> de ~{kgPorCarga.toLocaleString('es-AR')} kg cada una</div>
-                      </div>
-                    )}
-                    <div style={{ padding: '6px 1rem', background: CM.surface2, borderBottom: `1px solid ${CM.border}` }}>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: CM.muted, textTransform: 'uppercase' }}>{superaCap ? `Ingredientes por carga (~${kgPorCarga.toLocaleString('es-AR')} kg)` : 'Ingredientes'}</div>
-                    </div>
-                    {f.map((ing, ii) => {
-                      const kg = Math.round(ing.kg * (superaCap ? factorCarga : factor))
-                      acum += kg
-                      return (
-                        <div key={ii} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 1rem', borderBottom: `1px solid ${CM.border}` }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: ing.c }} />{ing.n}
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: CM.mono, color: CM.green }}>{kg.toLocaleString('es-AR')} kg</div>
-                            <div style={{ fontSize: 13, fontFamily: CM.mono, fontWeight: 700, color: CM.amber }}>↑ {acum.toLocaleString('es-AR')} kg</div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                    {superaCap && (
-                      <div style={{ padding: '.75rem 1rem', background: '#1A3D26' }}>
-                        <div style={{ fontSize: 12, color: CM.green }}>Total por carga: <strong>{kgPorCarga.toLocaleString('es-AR')} kg</strong> × {nCargas} cargas = <strong>{totalMx.toLocaleString('es-AR')} kg</strong></div>
-                      </div>
-                    )}
                   </div>
                 )
               })}
