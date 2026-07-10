@@ -2107,14 +2107,19 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                   ? <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin resultados</div>
                   : archFiltrados.map(l => {
                     const totalArch = totalLoteCalc(l)
+                    const pagosArch = pagosMap[l.id] || []
                     return (
                       <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>C-{corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id} · {l.procedencia || '—'}</div>
                           <div style={{ fontSize: 11, color: S.muted }}>{l.fecha_ingreso ? new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR') : ''} · {l.cantidad} animales</div>
                         </div>
-                        <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red, fontSize: 14 }}>
-                          {totalArch > 0 ? `-$${totalArch.toLocaleString('es-AR')}` : '—'}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red, fontSize: 14 }}>
+                            {totalArch > 0 ? `-$${totalArch.toLocaleString('es-AR')}` : '—'}
+                          </div>
+                          <button onClick={() => generarReciboCompra(l, pagosArch, corrales)}
+                            style={{ padding: '5px 10px', fontSize: 11, background: S.surface, border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>🖨️ Recibo</button>
                         </div>
                       </div>
                     )
