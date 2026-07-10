@@ -175,9 +175,9 @@ export default function Servicios({ usuario, mobile, nav }) {
 
   async function guardar() {
     if (!form.labor || !form.hectareas) { alert('Completá labor y hectáreas'); return }
-    if (form.tipo_servicio === 'tercero' && !form.cliente && !form.clienteNuevo) { alert('Ingresá el cliente'); return }
+    if (form.tipo_servicio === 'tercero' && !form.cliente) { alert('Ingresá el cliente'); return }
     setGuardando(true)
-    const clienteTexto = form.tipo_servicio === 'propio' ? null : (form.cliente === '__nuevo__' ? form.clienteNuevo?.trim() : form.cliente)
+    const clienteTexto = form.tipo_servicio === 'propio' ? null : form.cliente
     const { error } = await registrarServicioTercero(supabase, {
       campania: form.campania, tipoServicio: form.tipo_servicio, cliente: clienteTexto,
       labor: form.labor, cultivo: form.cultivo, campo: form.campo, nroLote: form.nro_lote,
@@ -187,7 +187,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     setGuardando(false)
     if (error) { alert('Error: ' + error.message); return }
     setShowForm(false)
-    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
     await cargar()
   }
 
@@ -334,7 +334,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     const serviciosRecientesM = servicios.slice(0, 10)
 
     async function guardarServicioM() {
-      const nombreCliente = formM.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : (formM.cliente === '__nuevo__' ? formM.clienteNuevo.trim() : formM.cliente)
+      const nombreCliente = formM.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : formM.cliente
       if (!nombreCliente || !formM.labor || !formM.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
       setGuardandoM(true)
       const { error } = await registrarServicioTercero(supabase, {
@@ -350,7 +350,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       setOkM('servicio')
       setTimeout(() => {
         setOkM('')
-        setFormM(f => ({ ...f, cliente: '', clienteNuevo: '', campo: '', nro_lote: '', hectareas: '', empleado1: '', empleado2: '', observaciones: '' }))
+        setFormM(f => ({ ...f, cliente: '', campo: '', nro_lote: '', hectareas: '', empleado1: '', empleado2: '', observaciones: '' }))
       }, 2000)
     }
 
@@ -426,16 +426,11 @@ export default function Servicios({ usuario, mobile, nav }) {
               {formM.tipo_servicio === 'tercero' && (
                 <>
                   <label style={lblM}>Cliente *</label>
-                  <select value={formM.cliente} onChange={e => setFormM({...formM, cliente: e.target.value, clienteNuevo: ''})} style={inpM}>
+                  <select value={formM.cliente} onChange={e => setFormM({...formM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Seleccioná —</option>
                     {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                    <option value="__nuevo__">+ Nuevo cliente...</option>
                   </select>
-                  {formM.cliente === '__nuevo__' && (
-                    <input type="text" placeholder="Nombre del cliente" value={formM.clienteNuevo}
-                      onChange={e => setFormM({...formM, clienteNuevo: e.target.value})}
-                      style={{ ...inpM, borderColor: CM.accent }} autoFocus />
-                  )}
+                  <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
                 </>
               )}
               <label style={lblM}>Servicio *</label>
@@ -849,13 +844,8 @@ export default function Servicios({ usuario, mobile, nav }) {
                     <select value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} style={inp}>
                       <option value="">— Seleccioná —</option>
                       {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                      <option value="__nuevo__">+ Nuevo cliente...</option>
                     </select>
-                    {form.cliente === '__nuevo__' && (
-                      <input type="text" placeholder="Nombre del cliente" value={form.clienteNuevo}
-                        onChange={e => setForm({ ...form, clienteNuevo: e.target.value })}
-                        style={{ ...inp, marginTop: 6 }} />
-                    )}
+                    <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                   </div>
                 )}
                 <div>

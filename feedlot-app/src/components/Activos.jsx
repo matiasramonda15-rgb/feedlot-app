@@ -369,11 +369,11 @@ export default function Activos({ usuario }) {
               </div>
               <div style={{ marginBottom: 8 }}>
                 <Label>Comprador</Label>
-                <input type="text" list="lista_contactos_comprador" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
-                  placeholder="Nombre del comprador" style={inputStyle} />
-                <datalist id="lista_contactos_comprador">
-                  {contactos.map(c => <option key={c.id} value={c.nombre} />)}
-                </datalist>
+                <select value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})} style={inputStyle}>
+                  <option value="">— Seleccioná —</option>
+                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                </select>
+                <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                 <div>
@@ -524,11 +524,11 @@ export default function Activos({ usuario }) {
                       <div style={{ fontSize: 11, fontWeight: 700, color: S.green, marginBottom: 8 }}>💰 Registrar venta de {a.nombre}</div>
                       <div style={{ marginBottom: 8 }}>
                         <Label>Comprador</Label>
-                        <input type="text" list="lista_contactos_comprador2" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
-                          placeholder="Nombre del comprador" style={inputStyle} />
-                        <datalist id="lista_contactos_comprador2">
-                          {contactos.map(c => <option key={c.id} value={c.nombre} />)}
-                        </datalist>
+                        <select value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})} style={inputStyle}>
+                          <option value="">— Seleccioná —</option>
+                          {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                        </select>
+                        <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                         <div>
@@ -895,10 +895,11 @@ export default function Activos({ usuario }) {
                   <>
                     <div style={{ marginBottom: 10 }}>
                       <Label>A quién le pagó el socio</Label>
-                      <input type="text" list="lista_contactos_tercero" value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle} placeholder="Nombre del tercero" />
-                      <datalist id="lista_contactos_tercero">
-                        {contactos.map(c => <option key={c.id} value={c.nombre} />)}
-                      </datalist>
+                      <select value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle}>
+                        <option value="">— Seleccioná —</option>
+                        {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                      </select>
+                      <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                     </div>
                     <div style={{ fontSize: 11, color: S.hint }}>
                       Esto NO genera ningún movimiento de caja — solo descuenta del retiro de {formRetiro.socio || 'este socio'}.

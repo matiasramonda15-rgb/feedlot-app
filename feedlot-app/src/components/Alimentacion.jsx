@@ -157,6 +157,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   const [loading, setLoading] = useState(true)
   const [corrales, setCorrales] = useState([])
   const [stockDB, setStockDB] = useState([])
+  const [contactos, setContactos] = useState([])
   const [historial, setHistorial] = useState([])
   const [historialArchivo, setHistorialArchivo] = useState([])
   const [historialInsumos, setHistorialInsumos] = useState([])
@@ -250,7 +251,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     hace7dias.setDate(hace7dias.getDate() - 7)
     const hace7diasISO = hace7dias.toISOString()
 
-    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }, { data: compras }, { data: legacy }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }, { data: compras }, { data: legacy }, { data: ct }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
@@ -260,9 +261,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       supabase.from('raciones_app').select('*, corrales(numero)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'alimentacion').order('fecha', { ascending: false }).limit(50),
       supabase.from('ingresos_stock').select('*').eq('tipo', 'alimentacion').order('creado_en', { ascending: false }).limit(10),
+      supabase.from('contactos').select('id, nombre').eq('activo', true).order('nombre'),
     ])
     setCorrales(c || [])
     setStockDB(s || [])
+    setContactos(ct || [])
     setHistorial(rapp || [])
     setHistorialInsumos(compras || [])
     setHistorialLegacy(legacy || [])
@@ -1120,8 +1123,12 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                 )}
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Proveedor</label>
-                  <input type="text" value={formIngreso.proveedor} onChange={e => setFormIngreso({...formIngreso, proveedor: e.target.value})}
-                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
+                  <select value={formIngreso.proveedor} onChange={e => setFormIngreso({...formIngreso, proveedor: e.target.value})}
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }}>
+                    <option value="">— Seleccioná —</option>
+                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                  <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                 </div>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Remito</label>
@@ -1634,7 +1641,11 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                             const nuevaCant = prompt('Nueva cantidad (kg):', c.cantidad)
                             if (!nuevaCant) return
                             const nuevoPct = prompt('% Materia seca:', c.pct_ms || '')
-                            const nuevoProveedor = prompt('Proveedor:', c.proveedor || '')
+                            const nuevoProveedor = prompt('Proveedor (tal cual figura en Contactos):', c.proveedor || '')
+                            if (nuevoProveedor && !contactos.some(ct => ct.nombre === nuevoProveedor)) {
+                              alert(`"${nuevoProveedor}" no coincide con ningún contacto cargado. Escribilo tal cual figura en Contactos, o cargalo ahí primero.`)
+                              return
+                            }
                             const nuevoRemito = prompt('N° Remito:', c.numero_factura || '')
                             const pctMsNew = parseFloat(nuevoPct) || null
                             const kgMsNew = pctMsNew ? Math.round(parseFloat(nuevaCant) * pctMsNew / 100 * 10) / 10 : null

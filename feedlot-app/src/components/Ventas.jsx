@@ -171,7 +171,6 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [corralesVenta, setCorralesVenta] = useState([{ corral_id: '', cantidad: '', kg_vivo: '' }])
   // Estado simple del formulario cuando se usa desde el celular (sin precio/comercial)
   const [compradorM, setCompradorM] = useState('')
-  const [compradorNuevoM, setCompradorNuevoM] = useState('')
   const [observacionesM, setObservacionesM] = useState('')
   const [guardandoM, setGuardandoM] = useState(false)
 
@@ -179,7 +178,7 @@ export default function Ventas({ usuario, mobile, nav }) {
     const validos = corralesVenta.filter(c => c.corral_id && c.cantidad && c.kg_vivo)
     if (validos.length === 0) { alert('Completá al menos un corral con cantidad y kg'); return }
     setGuardandoM(true)
-    const compradorFinal = compradorM === 'Otro' ? compradorNuevoM : compradorM
+    const compradorFinal = compradorM || null
     const { error, cantidadVentas } = await registrarVenta(supabase, {
       corralesVenta: validos, desbastePct: 8,
       comprador: compradorFinal, observaciones: observacionesM, usuario,
@@ -206,11 +205,11 @@ export default function Ventas({ usuario, mobile, nav }) {
     setVentas(v || [])
     setLotes(l || [])
     setCorrales(c || [])
-    // Cargar compradores desde contactos + ventas anteriores
+    // Compradores: SOLO desde Contactos — no se completa más con nombres sueltos
+    // de ventas anteriores, para no perpetuar variantes mal escritas (ver política
+    // "todo contacto se crea desde Contactos" que se aplica en toda la app).
     const { data: contactosData } = await supabase.from('contactos').select('nombre').eq('activo', true).in('tipo', ['comprador_hacienda', 'otro'])
-    const nombresContactos = (contactosData || []).map(c => c.nombre)
-    const nombresVentas = [...new Set((v || []).map(x => x.comprador).filter(Boolean))]
-    const comps = [...new Set([...nombresContactos, ...nombresVentas])].sort()
+    const comps = [...new Set((contactosData || []).map(c => c.nombre))].sort()
     setCompradores(comps)
     // Deduplicar por grupo_venta_id - mostrar solo una por grupo
     const todasSinPrecio = (v || []).filter(x => !x.precio_kg && !x.monto_total_con_iva && !x.total)
@@ -353,12 +352,7 @@ export default function Ventas({ usuario, mobile, nav }) {
     const plazo = parseInt(ep.plazo_dias || 0)
     const fechaBase = new Date(venta.creado_en)
     const fechaVto = plazo > 0 ? new Date(fechaBase.getTime() + plazo * 86400000).toISOString().split('T')[0] : null
-    const compradorFinal = ep.comprador === 'Otro' ? (ep.compradorNuevo || null) : (ep.comprador || venta.comprador || null)
-
-    // Si es comprador nuevo, guardarlo como contacto
-    if (compradorFinal && !compradores.includes(compradorFinal)) {
-      await supabase.from('contactos').insert({ nombre: compradorFinal, tipo: 'comprador_hacienda', activo: true })
-    }
+    const compradorFinal = ep.comprador || venta.comprador || null
 
     const grupoId = venta.grupo_venta_id
     if (grupoId) {
@@ -430,7 +424,7 @@ export default function Ventas({ usuario, mobile, nav }) {
     setGuardando(true)
 
     const desbPct = parseFloat(form.desbaste) || 8
-    const compradorFinal = form.comprador === 'Otro' ? (form.comprador_otro || null) : (form.comprador || null)
+    const compradorFinal = form.comprador || null
 
     const { error, totalKgNeto, totalKgBruto, montoTotal } = await registrarVenta(supabase, {
       corralesVenta: corralesValidos,
@@ -546,17 +540,12 @@ export default function Ventas({ usuario, mobile, nav }) {
 
           <div style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Comprador</div>
-            <select value={compradorM} onChange={e => { setCompradorM(e.target.value); setCompradorNuevoM('') }}
+            <select value={compradorM} onChange={e => setCompradorM(e.target.value)}
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
-              <option value="">— Seleccioná o agregá nuevo —</option>
+              <option value="">— Seleccioná —</option>
               {(compradores || []).map(o => <option key={o} value={o}>{o}</option>)}
-              <option value="Otro">+ Nuevo comprador...</option>
             </select>
-            {compradorM === 'Otro' && (
-              <input type="text" placeholder="Nombre del comprador" value={compradorNuevoM}
-                onChange={e => setCompradorNuevoM(e.target.value)}
-                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box', marginTop: 6 }} />
-            )}
+            <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
@@ -682,17 +671,12 @@ export default function Ventas({ usuario, mobile, nav }) {
           </div>
           <div>
             <Lbl>Comprador</Lbl>
-            <select value={editandoVenta?.comprador || ''} onChange={e => setEditandoVenta({...editandoVenta, comprador: e.target.value, compradorNuevo: ''})}
+            <select value={editandoVenta?.comprador || ''} onChange={e => setEditandoVenta({...editandoVenta, comprador: e.target.value})}
               style={{ ...inp, fontFamily: 'inherit' }}>
               <option value="">— Sin comprador —</option>
               {compradores.map(c => <option key={c} value={c}>{c}</option>)}
-              <option value="Otro">+ Nuevo...</option>
             </select>
-            {editandoVenta?.comprador === 'Otro' && (
-              <input type="text" placeholder="Nombre del comprador" value={editandoVenta?.compradorNuevo || ''}
-                onChange={e => setEditandoVenta({...editandoVenta, compradorNuevo: e.target.value})}
-                style={{ ...inp, border: `1px solid ${S.accent}`, marginTop: 6, fontFamily: 'inherit' }} />
-            )}
+            <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
           </div>
           <div>
             <Lbl>Plazo (días)</Lbl>
@@ -1724,17 +1708,12 @@ export default function Ventas({ usuario, mobile, nav }) {
                       <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Precio y condiciones comerciales</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                         <Campo label="Comprador">
-                          <select value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value, comprador_otro: '' })} style={inputStyle}>
+                          <select value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value })} style={inputStyle}>
                             <option value="">— Seleccioná —</option>
                             {compradores.map(o => <option key={o} value={o}>{o}</option>)}
-                            <option value="Otro">+ Nuevo...</option>
                           </select>
+                          <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                         </Campo>
-                        {form.comprador === 'Otro' && (
-                          <Campo label="Nombre del comprador">
-                            <input type="text" value={form.comprador_otro || ''} onChange={e => setForm({ ...form, comprador_otro: e.target.value })} style={inputStyle} />
-                          </Campo>
-                        )}
                         <Campo label="Precio $/kg neto">
                           <input type="number" value={form.precio_kg} onChange={e => setForm({ ...form, precio_kg: e.target.value })} placeholder="ej. 3100" style={inputStyle} />
                         </Campo>

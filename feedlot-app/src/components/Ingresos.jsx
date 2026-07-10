@@ -102,7 +102,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     const [{ data: lotesDB }, { data: corralesDB }, { data: ctDB }] = await Promise.all([
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('corrales').select('id, numero, rol, sub, animales').order('numero'),
-      supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
+      supabase.from('contactos').select('id, nombre, cuit, tipo, localidad, iva, cbu').eq('activo', true).order('nombre'),
     ])
     setLotes(lotesDB || [])
     setCorrales(corralesDB || [])
@@ -114,7 +114,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     if (!form.cantidad || !form.kg_bascula) { alert('Completá cantidad y kg báscula'); return }
     setGuardando(true)
     const { error, lote } = await registrarIngresoLote(supabase, {
-      procedencia: (form.procedencia === 'Nuevo' || form.procedencia === 'Otro') ? form.otraProcedencia : form.procedencia,
+      procedencia: form.procedencia,
       categoria: form.categoria,
       cantidad: form.cantidad,
       kgBascula: form.kg_bascula,
@@ -133,7 +133,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   async function guardarEdicion() {
     if (!editandoLote) return
     setGuardando(true)
-    const procFinal = form.procedencia === 'Otro' ? (form.otraProcedencia?.trim() || null) : (form.procedencia || null)
+    const procFinal = form.procedencia || null
     await supabase.from('lotes').update({
       procedencia: procFinal || null, categoria: form.categoria,
       cantidad: parseInt(form.cantidad) || null, kg_bascula: parseFloat(form.kg_bascula) || null,
@@ -199,29 +199,13 @@ export default function Ingresos({ usuario, mobile, nav }) {
     const comMonto = editandoPrecio.comision_monto ? parseFloat(editandoPrecio.comision_monto) : 0
 
     // Resolver procedencia
-    let procFinal = editandoPrecio.procedencia !== 'Nuevo' ? (editandoPrecio.procedencia || lote.procedencia) : lote.procedencia
-    if (editandoPrecio.procedencia === 'Nuevo' && editandoPrecio.nuevaProcedencia?.trim()) {
-      const nombre = editandoPrecio.nuevaProcedencia.trim()
-      const existente = contactos.find(c => c.nombre.toLowerCase() === nombre.toLowerCase())
-      if (!existente) await supabase.from('contactos').insert({ nombre, tipo: 'proveedor_hacienda', activo: true })
-      procFinal = nombre
-    }
+    let procFinal = editandoPrecio.procedencia || lote.procedencia
 
-    // Si hay tropas por proveedor: crear los contactos nuevos que falten, y armar
-    // la procedencia general del lote juntando los nombres de todos los proveedores
+    // Si hay tropas por proveedor: armar la procedencia general del lote juntando
+    // los nombres de todos los proveedores
     let sublotesFinal = editandoPrecio.sublotes
     if (hayTropas) {
-      sublotesFinal = []
-      for (const prov of editandoPrecio.sublotes) {
-        let nombreProv = prov.vendedor
-        if (prov.vendedor === 'Nuevo' && prov.nuevaProcedencia?.trim()) {
-          nombreProv = prov.nuevaProcedencia.trim()
-          const existente = contactos.find(c => c.nombre.toLowerCase() === nombreProv.toLowerCase())
-          if (!existente) await supabase.from('contactos').insert({ nombre: nombreProv, tipo: 'proveedor_hacienda', activo: true })
-        }
-        sublotesFinal.push({ ...prov, vendedor: nombreProv })
-      }
-      const nombresProveedores = [...new Set(sublotesFinal.map(p => p.vendedor).filter(Boolean))]
+      const nombresProveedores = [...new Set(editandoPrecio.sublotes.map(p => p.vendedor).filter(Boolean))]
       if (nombresProveedores.length > 0) procFinal = nombresProveedores.join(', ')
     }
 
@@ -270,7 +254,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
 
   // ── MODO CELULAR: solo el formulario simple de "nuevo ingreso" (báscula) ──
   if (mobile) {
-    const procedenciasHist = [...new Set(lotes.map(l => l.procedencia).filter(Boolean))]
+    const procedenciasHist = [...new Set(contactos.filter(c => ['proveedor_hacienda', 'ambos', 'otro'].includes(c.tipo)).map(c => c.nombre))].sort()
     const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena' || c.rol === 'libre')
     const prom = form.cantidad && form.kg_bascula ? Math.round(parseFloat(form.kg_bascula) / parseInt(form.cantidad)) : null
     return (
@@ -279,17 +263,12 @@ export default function Ingresos({ usuario, mobile, nav }) {
         <MobileScroll>
           <div style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Procedencia</div>
-            <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value, otraProcedencia: ''})}
+            <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value})}
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
               <option value="">— Seleccioná —</option>
               {procedenciasHist.map(o => <option key={o} value={o}>{o}</option>)}
-              <option value="Otro">+ Nueva procedencia...</option>
             </select>
-            {form.procedencia === 'Otro' && (
-              <input type="text" placeholder="Escribi la procedencia..." value={form.otraProcedencia}
-                onChange={e => setForm({...form, otraProcedencia: e.target.value})}
-                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box', marginTop: 6 }} />
-            )}
+            <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
           </div>
           <div style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Categoria</div>
@@ -408,18 +387,12 @@ export default function Ingresos({ usuario, mobile, nav }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <Lbl>Procedencia / Vendedor</Lbl>
-              <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value, otraProcedencia: ''})} style={inp}>
+              <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value})} style={inp}>
                 <option value="">— Seleccioná —</option>
                 {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                <option value="Nuevo">+ Nuevo contacto...</option>
               </select>
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
             </div>
-            {form.procedencia === 'Nuevo' && (
-              <div>
-                <Lbl>Nombre del vendedor *</Lbl>
-                <input type="text" value={form.otraProcedencia} onChange={e => setForm({...form, otraProcedencia: e.target.value})} style={inp} placeholder="Se guardará como contacto" />
-              </div>
-            )}
             <div>
               <Lbl>Categoría</Lbl>
               <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} style={inp}>
@@ -690,24 +663,15 @@ export default function Ingresos({ usuario, mobile, nav }) {
                         </div>
                         {(editandoPrecio.sublotes||[]).map((prov, pi) => (
                           <div key={pi} style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: prov.vendedor === 'Nuevo' ? 6 : 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8 }}>
                               <select value={prov.vendedor||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],vendedor:e.target.value, nuevaProcedencia:''}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
                                 style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, fontWeight: 600, boxSizing: 'border-box' }}>
                                 <option value="">— Vendedor / proveedor —</option>
                                 {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                                <option value="Nuevo">+ Nuevo contacto...</option>
                               </select>
                               <button onClick={() => { const n=editandoPrecio.sublotes.filter((_,i)=>i!==pi); setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
                                 style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }} title="Quitar proveedor">✕</button>
                             </div>
-                            {prov.vendedor === 'Nuevo' && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8, marginBottom: 8 }}>
-                                <input placeholder="Nombre del nuevo vendedor" value={prov.nuevaProcedencia||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],nuevaProcedencia:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
-                                  style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, boxSizing: 'border-box' }} />
-                                <input placeholder="CUIT" value={prov.cuit||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],cuit:e.target.value}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
-                                  style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, boxSizing: 'border-box' }} />
-                              </div>
-                            )}
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                               <thead><tr style={{ background: S.bg }}>
                                 {['Cabezas', 'Kg', '$/kg', 'Subtotal', ''].map(h => (
@@ -730,7 +694,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
                             </table>
                             <button onClick={() => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],tropas:[...(n[pi].tropas||[]),{cabezas:'',kg:'',precio_kg:'',subtotal:''}]}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
                               style={{ marginTop: 6, padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
-                              + Otra tropa de {(prov.vendedor === 'Nuevo' ? prov.nuevaProcedencia : prov.vendedor) || 'este proveedor'}
+                              + Otra tropa de {prov.vendedor || 'este proveedor'}
                             </button>
                           </div>
                         ))}
@@ -771,16 +735,12 @@ export default function Ingresos({ usuario, mobile, nav }) {
                     {!editandoPrecio.sublotes?.length && (
                     <div style={{ marginBottom: 12 }}>
                       <Lbl>Procedencia / Vendedor</Lbl>
-                      <select value={editandoPrecio.procedencia || ''} onChange={e => setEditandoPrecio({...editandoPrecio, procedencia: e.target.value, nuevaProcedencia: ''})}
-                        style={{ ...inp, marginBottom: editandoPrecio.procedencia === 'Nuevo' ? 6 : 0 }}>
+                      <select value={editandoPrecio.procedencia || ''} onChange={e => setEditandoPrecio({...editandoPrecio, procedencia: e.target.value})}
+                        style={inp}>
                         <option value="">— Seleccioná —</option>
                         {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                        <option value="Nuevo">+ Nuevo contacto...</option>
                       </select>
-                      {editandoPrecio.procedencia === 'Nuevo' && (
-                        <input type="text" placeholder="Nombre del vendedor (se guardará como contacto)" value={editandoPrecio.nuevaProcedencia || ''}
-                          onChange={e => setEditandoPrecio({...editandoPrecio, nuevaProcedencia: e.target.value})} style={inp} />
-                      )}
+                      <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                     </div>
                     )}
 

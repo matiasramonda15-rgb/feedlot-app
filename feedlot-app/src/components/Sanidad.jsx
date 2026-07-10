@@ -62,6 +62,7 @@ function Badge({ children, color, bg, border }) {
 export default function Sanidad({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('alertas')
   const [historialSan, setHistorialSan] = useState([])
+  const [contactos, setContactos] = useState([])
   const [historialSanLegacy, setHistorialSanLegacy] = useState([])
   const [loading, setLoading] = useState(true)
   const [alertas, setAlertas] = useState([])
@@ -241,14 +242,16 @@ export default function Sanidad({ usuario, mobile, nav }) {
   }, [])
 
   async function cargarProductos() {
-    const [{ data }, { data: compras }, { data: legacy }] = await Promise.all([
+    const [{ data }, { data: compras }, { data: legacy }, { data: ct }] = await Promise.all([
       cargarStockSanitario(supabase),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'sanitario').order('fecha', { ascending: false }).limit(50),
       supabase.from('ingresos_stock').select('*').eq('tipo', 'sanitario').order('creado_en', { ascending: false }).limit(10),
+      supabase.from('contactos').select('id, nombre').eq('activo', true).order('nombre'),
     ])
     if (data) setProductos(data.map(p => ({ n: p.producto, tipo: p.tipo, id: p.id, cantidad_ml: p.cantidad_ml, unidad: p.unidad || 'ml', lab: p.laboratorio || '', car: p.carencia_dias || 0, minimo: p.minimo_stock || 0 })))
     setHistorialSan(compras || [])
     setHistorialSanLegacy(legacy || [])
+    setContactos(ct || [])
   }
 
   useEffect(() => { cargarDatos() }, [])
@@ -1867,9 +1870,12 @@ export default function Sanidad({ usuario, mobile, nav }) {
                 </div>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Proveedor</div>
-                  <input type="text" value={formStockSan.proveedor} onChange={e => setFormStockSan({...formStockSan, proveedor: e.target.value})}
-                    placeholder="ej. Veterinaria Córdoba"
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                  <select value={formStockSan.proveedor} onChange={e => setFormStockSan({...formStockSan, proveedor: e.target.value})}
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }}>
+                    <option value="">— Seleccioná —</option>
+                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                  <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>N° Remito</div>
@@ -2040,7 +2046,11 @@ export default function Sanidad({ usuario, mobile, nav }) {
                             <button onClick={async () => {
                               const nuevaCant = prompt('Nueva cantidad:', ing.cantidad)
                               if (!nuevaCant) return
-                              const nuevoProveedor = prompt('Proveedor:', ing.proveedor || '')
+                              const nuevoProveedor = prompt('Proveedor (tal cual figura en Contactos):', ing.proveedor || '')
+                              if (nuevoProveedor && !contactos.some(ct => ct.nombre === nuevoProveedor)) {
+                                alert(`"${nuevoProveedor}" no coincide con ningún contacto cargado. Escribilo tal cual figura en Contactos, o cargalo ahí primero.`)
+                                return
+                              }
                               const nuevoRemito = prompt('N° Remito/Factura:', ing.numero_factura || '')
                               await supabase.from('compras_insumos').update({ cantidad: parseFloat(nuevaCant), proveedor: nuevoProveedor || null, numero_factura: nuevoRemito || null }).eq('id', ing.id)
                               await cargarProductos()
