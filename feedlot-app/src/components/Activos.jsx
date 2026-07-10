@@ -36,6 +36,7 @@ export default function Activos({ usuario }) {
   const [tab, setTab] = useState('activos')
   const [loading, setLoading] = useState(true)
   const [activos, setActivos] = useState([])
+  const [contactos, setContactos] = useState([])
   const [vendiendoActivo, setVendiendoActivo] = useState(null)
   const [formVentaActivo, setFormVentaActivo] = useState({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '' })
   const [retiros, setRetiros] = useState([])
@@ -56,17 +57,19 @@ export default function Activos({ usuario }) {
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
 
   const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0 })
-  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false })
+  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: a }, { data: r }] = await Promise.all([
+    const [{ data: a }, { data: r }, { data: ct }] = await Promise.all([
       supabase.from('activos').select('*').order('fecha_compra', { ascending: false }),
       supabase.from('retiros_socios').select('*').order('fecha', { ascending: false }),
+      supabase.from('contactos').select('id, nombre').order('nombre'),
     ])
     setActivos(a || [])
     setRetiros(r || [])
+    setContactos(ct || [])
     setLoading(false)
   }
 
@@ -113,25 +116,80 @@ export default function Activos({ usuario }) {
 
   async function guardarRetiro() {
     if (!formRetiro.socio || !formRetiro.monto) { alert('Completá socio y monto'); return }
+    if (formRetiro.no_afecta_caja && !formRetiro.tercero) { alert('Ingresá a quién le pagó el socio'); return }
     setGuardando(true)
     const monto = parseFloat(formRetiro.monto)
-    const desc = `Retiro socio — ${formRetiro.socio}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
+    const desc = formRetiro.no_afecta_caja
+      ? `Retiro socio — ${formRetiro.socio} · pagó a ${formRetiro.tercero}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
+      : `Retiro socio — ${formRetiro.socio}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
-    if (formRetiro.es_paralelo) {
-      const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-      if (errCp) { alert('Error al registrar en caja: ' + errCp.message); setGuardando(false); return }
-      caja_paralela_id = cp?.id
-    } else {
-      const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto, forma_pago: formRetiro.forma_pago }).select().single()
-      if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardando(false); return }
-      caja_oficial_id = co?.id
+    // Si la plata la puso el socio directamente (no salió de la caja de la empresa,
+    // aunque la factura haya quedado a nombre de la sociedad), no se toca ninguna
+    // caja — solo se descuenta del retiro del socio.
+    if (!formRetiro.no_afecta_caja) {
+      if (formRetiro.es_paralelo) {
+        const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+        if (errCp) { alert('Error al registrar en caja: ' + errCp.message); setGuardando(false); return }
+        caja_paralela_id = cp?.id
+      } else {
+        const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto, forma_pago: formRetiro.forma_pago }).select().single()
+        if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardando(false); return }
+        caja_oficial_id = co?.id
+      }
     }
     const { error } = await supabase.from('retiros_socios').insert({ ...formRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
     if (error) { alert('Error al guardar el retiro: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormRetiro(false)
-    setFormRetiro({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false })
+    if (formRetiro.no_afecta_caja) {
+      generarReciboRetiro({ ...formRetiro, monto, fecha: formRetiro.fecha })
+    }
+    setFormRetiro({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
     setGuardando(false)
+  }
+
+  // Recibo imprimible de un pago a tercero hecho con la plata del socio (factura a
+  // nombre de la sociedad para descargar IVA, pero la plata no sale de la caja).
+  function generarReciboRetiro(r) {
+    const fechaStr = r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : ''
+    const html = `
+      <html><head><title>Recibo</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 40px; color: #1A1916; }
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1A1916; padding-bottom: 16px; }
+        .empresa { font-size: 22px; font-weight: 700; }
+        .sub { font-size: 12px; color: #6B6760; margin-top: 4px; }
+        .titulo { font-size: 16px; font-weight: 700; margin: 24px 0 16px; text-transform: uppercase; letter-spacing: .05em; }
+        .fila { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #E2DDD6; font-size: 14px; }
+        .monto { font-size: 26px; font-weight: 700; text-align: center; margin: 24px 0; padding: 16px; background: #F7F5F0; border-radius: 8px; }
+        .firma { margin-top: 60px; display: flex; justify-content: space-around; text-align: center; font-size: 12px; }
+        .firma div { border-top: 1px solid #1A1916; padding-top: 6px; width: 200px; }
+        button { margin-top: 30px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
+      </style></head>
+      <body>
+        <div class="header">
+          <div class="empresa">RAMONDA HNOS S.A.</div>
+          <div class="sub">Recibo de pago</div>
+        </div>
+        <div class="titulo">Recibo N° ${Date.now().toString().slice(-6)}</div>
+        <div class="fila"><span>Fecha</span><span>${fechaStr}</span></div>
+        <div class="fila"><span>Pagado a</span><span>${r.tercero}</span></div>
+        <div class="fila"><span>Concepto</span><span>${r.concepto || '—'}</span></div>
+        <div class="fila"><span>Forma de pago</span><span>${r.forma_pago}</span></div>
+        <div class="monto">$ ${Number(r.monto).toLocaleString('es-AR')}</div>
+        <div style="font-size: 11px; color: #6B6760; text-align: center;">
+          Pago realizado por cuenta y orden de Ramonda Hnos S.A., aportado directamente por el socio ${r.socio}.
+        </div>
+        <div class="firma">
+          <div>Recibí conforme</div>
+          <div>Ramonda Hnos S.A.</div>
+        </div>
+        <div style="text-align: center;"><button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button></div>
+      </body></html>
+    `
+    const win = window.open('', '_blank')
+    win.document.write(html)
+    win.document.close()
   }
 
   async function guardarCredito() {
@@ -311,8 +369,11 @@ export default function Activos({ usuario }) {
               </div>
               <div style={{ marginBottom: 8 }}>
                 <Label>Comprador</Label>
-                <input type="text" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
+                <input type="text" list="lista_contactos_comprador" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
                   placeholder="Nombre del comprador" style={inputStyle} />
+                <datalist id="lista_contactos_comprador">
+                  {contactos.map(c => <option key={c.id} value={c.nombre} />)}
+                </datalist>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                 <div>
@@ -463,8 +524,11 @@ export default function Activos({ usuario }) {
                       <div style={{ fontSize: 11, fontWeight: 700, color: S.green, marginBottom: 8 }}>💰 Registrar venta de {a.nombre}</div>
                       <div style={{ marginBottom: 8 }}>
                         <Label>Comprador</Label>
-                        <input type="text" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
+                        <input type="text" list="lista_contactos_comprador2" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
                           placeholder="Nombre del comprador" style={inputStyle} />
+                        <datalist id="lista_contactos_comprador2">
+                          {contactos.map(c => <option key={c.id} value={c.nombre} />)}
+                        </datalist>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                         <div>
@@ -813,10 +877,35 @@ export default function Activos({ usuario }) {
                   </select>
                 </div>
                 <div><Label>Observaciones</Label><input type="text" value={formRetiro.observaciones} onChange={e => setFormRetiro({...formRetiro, observaciones: e.target.value})} style={inputStyle} /></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" id="paralelo_retiro" checked={formRetiro.es_paralelo} onChange={e => setFormRetiro({...formRetiro, es_paralelo: e.target.checked})} />
-                  <label htmlFor="paralelo_retiro" style={{ fontSize: 13, cursor: 'pointer' }}>Paralelo (caja paralela)</label>
+                {!formRetiro.no_afecta_caja && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="checkbox" id="paralelo_retiro" checked={formRetiro.es_paralelo} onChange={e => setFormRetiro({...formRetiro, es_paralelo: e.target.checked})} />
+                    <label htmlFor="paralelo_retiro" style={{ fontSize: 13, cursor: 'pointer' }}>Paralelo (caja paralela)</label>
+                  </div>
+                )}
+              </div>
+              <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem', marginBottom: '.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: formRetiro.no_afecta_caja ? 10 : 0 }}>
+                  <input type="checkbox" id="no_afecta_caja" checked={formRetiro.no_afecta_caja} onChange={e => setFormRetiro({...formRetiro, no_afecta_caja: e.target.checked, es_paralelo: false})} />
+                  <label htmlFor="no_afecta_caja" style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    El socio pagó directamente a un tercero (factura a nombre de la sociedad, pero la plata no salió de la caja)
+                  </label>
                 </div>
+                {formRetiro.no_afecta_caja && (
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <Label>A quién le pagó el socio</Label>
+                      <input type="text" list="lista_contactos_tercero" value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle} placeholder="Nombre del tercero" />
+                      <datalist id="lista_contactos_tercero">
+                        {contactos.map(c => <option key={c.id} value={c.nombre} />)}
+                      </datalist>
+                    </div>
+                    <div style={{ fontSize: 11, color: S.hint }}>
+                      Esto NO genera ningún movimiento de caja — solo descuenta del retiro de {formRetiro.socio || 'este socio'}.
+                      Al guardar, se abre un recibo listo para imprimir o pasar en PDF.
+                    </div>
+                  </>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowFormRetiro(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -927,6 +1016,12 @@ export default function Activos({ usuario }) {
                             </body></html>`)
                             win.document.close()
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨 Recibo</button>
+                          {r.tercero && (
+                            <button onClick={() => generarReciboRetiro(r)}
+                              style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: '1px solid #97C459', color: S.green, borderRadius: 5, cursor: 'pointer' }}>
+                              🖨 Recibo a {r.tercero}
+                            </button>
+                          )}
                           <button onClick={() => eliminar('retiros_socios', r.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                         </div>
                       </td>
