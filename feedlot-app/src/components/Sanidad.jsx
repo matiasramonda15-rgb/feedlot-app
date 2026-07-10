@@ -1055,7 +1055,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
 
           {pantSan === 'historial' && (() => {
             const TIPO_LABELS_M = { ingreso: 'Ingreso', revision: 'Revision', tratamiento: 'Tratamiento', segunda_dosis: '2da dosis', mortalidad: 'Mortandad' }
-            const eventosM = eventos.slice(0, 30)
+            const eventosM = eventos.filter(e => e.producto !== 'Sin novedad').slice(0, 30)
             return (
               <div>
                 <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem' }}>Últimos {eventosM.length} eventos registrados — para confirmar que quedó todo guardado.</div>

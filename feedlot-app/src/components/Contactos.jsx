@@ -19,6 +19,8 @@ export default function Contactos({ usuario }) {
   const [contactos, setContactos] = useState([])
   const [ventas, setVentas] = useState([])
   const [lotes, setLotes] = useState([])
+  const [comprasInsumos, setComprasInsumos] = useState([])
+  const [ventasActivos, setVentasActivos] = useState([])
   const [pagosVenta, setPagosVenta] = useState({})
   const [pagosCompra, setPagosCompra] = useState({})
   const [vencimientosCompra, setVencimientosCompra] = useState({})
@@ -43,6 +45,8 @@ export default function Contactos({ usuario }) {
       { data: pv },
       { data: pc },
       { data: vc },
+      { data: ci },
+      { data: va },
     ] = await Promise.all([
       supabase.from('contactos').select('*').order('nombre'),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -50,11 +54,15 @@ export default function Contactos({ usuario }) {
       supabase.from('pagos_ventas').select('*'),
       supabase.from('pagos_compras').select('*'),
       supabase.from('vencimientos_compra').select('*').order('fecha_vencimiento'),
+      supabase.from('compras_insumos').select('*').order('creado_en', { ascending: false }),
+      supabase.from('ventas_activos').select('*').order('creado_en', { ascending: false }),
     ])
 
     setContactos(c || [])
     setVentas(v || [])
     setLotes(l || [])
+    setComprasInsumos(ci || [])
+    setVentasActivos(va || [])
 
     const pvMap = {}
     ;(pv || []).forEach(p => {
@@ -116,7 +124,7 @@ export default function Contactos({ usuario }) {
   }
 
   function calcularSaldo(nombre) {
-    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [] }
+    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     // Agrupar ventas multi-corral para no contar de más
     const gruposVistos = new Set()
     const ventasAgrupadas = data.ventas.filter(v => {
@@ -125,7 +133,7 @@ export default function Contactos({ usuario }) {
       gruposVistos.add(v.grupo_venta_id)
       return true
     })
-    const totalVentas = ventasAgrupadas.reduce((s, v) => {
+    const totalVentasHacienda = ventasAgrupadas.reduce((s, v) => {
       const grupo = v.grupo_venta_id ? data.ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
       const tieneFacturado = grupo.some(vv => vv.monto_facturado !== null && vv.monto_facturado !== undefined)
       if (!tieneFacturado) return s + grupo.reduce((ss, vv) => ss + (vv.total || 0), 0)
@@ -137,15 +145,25 @@ export default function Contactos({ usuario }) {
       // El total de la venta = neto a cobrar (facturado + iva - comisión - retención) + paralelo
       return s + (sumFact + sumIva - sumCom - sumRet) + sumNegro
     }, 0)
-    const cobradoVentas = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const cobradoVentasHacienda = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    // Ventas de activos (maquinaria, equipos) — el comprador nos debe, igual que una venta de hacienda
+    const totalVentasActivos = (data.ventasActivos || []).reduce((s, va) => s + (va.monto || 0), 0)
+    const cobradoVentasActivos = (data.ventasActivos || []).reduce((s, va) => s + (va.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const totalVentas = totalVentasHacienda + totalVentasActivos
+    const cobradoVentas = cobradoVentasHacienda + cobradoVentasActivos
     const pendienteVentas = totalVentas - cobradoVentas
-    const totalCompras = data.lotes.reduce((s, l) => {
+    const totalComprasHacienda = data.lotes.reduce((s, l) => {
       const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
       const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
       const totalLote = totalGC || l.monto_total_con_iva || (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0)
       return s + (totalLote || 0)
     }, 0)
-    const pagadoCompras = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const pagadoComprasHacienda = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    // Compras de insumos (rollo, maíz, remedios, etc.) — nosotros le debemos al proveedor
+    const totalComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.total || 0), 0)
+    const pagadoComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const totalCompras = totalComprasHacienda + totalComprasInsumos
+    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos
     const pendienteCompras = totalCompras - pagadoCompras
     return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
   }
@@ -157,14 +175,30 @@ export default function Contactos({ usuario }) {
   ventas.forEach(v => {
     const nombre = v.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     transaccionesPorNombre[nombre].ventas.push(v)
   })
   lotes.forEach(l => {
     const nombre = l.procedencia
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     transaccionesPorNombre[nombre].lotes.push(l)
+  })
+  // Compras de insumos (rollo, maíz, remedios, etc.) — funcionan igual que una
+  // compra de hacienda: nosotros le debemos al proveedor.
+  comprasInsumos.forEach(ci => {
+    const nombre = ci.proveedor
+    if (!nombre) return
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    transaccionesPorNombre[nombre].comprasInsumos.push(ci)
+  })
+  // Ventas de activos (maquinaria, equipos) — funcionan igual que una venta de
+  // hacienda: el comprador nos debe.
+  ventasActivos.forEach(va => {
+    const nombre = va.comprador
+    if (!nombre) return
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    transaccionesPorNombre[nombre].ventasActivos.push(va)
   })
 
   // Lista unificada de contactos (de tabla + de transacciones)
@@ -180,7 +214,7 @@ export default function Contactos({ usuario }) {
   // Vista ficha de contacto
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
-    const { ventas: ventasCto, lotes: lotesCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
+    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
     const contactoData = contactos.find(c => c.nombre === nombre)
 
     return (
@@ -364,6 +398,50 @@ export default function Contactos({ usuario }) {
             })
           })
 
+          // Compras de insumos (rollo, maíz, remedios, etc.) — le debemos al proveedor
+          ;(comprasInsumosCto || []).forEach(ci => {
+            const esParaleloCi = ci.es_paralelo || false
+            if (esParalela && !esParaleloCi) return
+            if (!esParalela && esParaleloCi) return
+            if (ci.total > 0) {
+              movimientos.push({
+                fecha: ci.fecha || ci.creado_en?.split('T')[0],
+                fechaVto: null, tipo: esParaleloCi ? 'PAR' : 'INSUMO', nro: ci.id,
+                descripcion: `${ci.insumo_nombre || 'Insumo'} · ${ci.cantidad || ''}${ci.unidad ? ' ' + ci.unidad : ''}`,
+                credito: 0, debito: ci.total, factura: ci.numero_factura,
+              })
+            }
+            // Pagos (si están cargados en pagos_detalle)
+            ;(ci.pagos_detalle || []).forEach((p, pi) => {
+              movimientos.push({
+                fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `${ci.id}-${pi}`,
+                descripcion: `Pago ${ci.insumo_nombre || 'insumo'} · ${p.forma_pago || ''}`,
+                credito: p.monto, debito: 0, esPago: true,
+              })
+            })
+          })
+
+          // Ventas de activos (maquinaria, equipos) — el comprador nos debe
+          if (!esParalela) {
+            ;(ventasActivosCto || []).forEach(va => {
+              if (va.monto > 0) {
+                movimientos.push({
+                  fecha: va.fecha || va.creado_en?.split('T')[0],
+                  fechaVto: null, tipo: 'ACTIVO', nro: va.id,
+                  descripcion: `Venta ${va.activo_nombre || 'activo'}${va.observaciones ? ' · ' + va.observaciones : ''}`,
+                  credito: va.monto, debito: 0,
+                })
+              }
+              ;(va.pagos_detalle || []).forEach((p, pi) => {
+                movimientos.push({
+                  fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: `${va.id}-${pi}`,
+                  descripcion: `Cobro venta ${va.activo_nombre || 'activo'} · ${p.forma_pago || ''}`,
+                  credito: 0, debito: p.monto, esPago: true,
+                })
+              })
+            })
+          }
+
           // Ordenar por fecha
           movimientos.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
 
@@ -413,9 +491,9 @@ export default function Contactos({ usuario }) {
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                          background: m.esPago ? S.greenLight : m.tipo === 'PAR' ? '#F0EAFB' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' ? '#E8F8EF' : S.accentLight,
-                          color: m.esPago ? S.green : m.tipo === 'PAR' ? '#3D1A6B' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' ? '#0D6E3B' : S.accent,
-                          border: `1px solid ${m.esPago ? '#97C459' : m.tipo === 'PAR' ? '#9F8ED4' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' ? '#5DBF8C' : '#85B7EB'}` }}>
+                          background: m.esPago ? S.greenLight : m.tipo === 'PAR' ? '#F0EAFB' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' || m.tipo === 'ACTIVO' ? '#E8F8EF' : S.accentLight,
+                          color: m.esPago ? S.green : m.tipo === 'PAR' ? '#3D1A6B' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' || m.tipo === 'ACTIVO' ? '#0D6E3B' : S.accent,
+                          border: `1px solid ${m.esPago ? '#97C459' : m.tipo === 'PAR' ? '#9F8ED4' : m.tipo === 'e-CVA' || m.tipo === 'COBRO' || m.tipo === 'ACTIVO' ? '#5DBF8C' : '#85B7EB'}` }}>
                           {m.tipo}
                         </span>
                       </td>

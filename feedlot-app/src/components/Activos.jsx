@@ -22,7 +22,7 @@ function Card({ children, style = {} }) {
 }
 
 const TIPOS = ['tractor', 'maquinaria', 'herramienta', 'vehiculo', 'infraestructura', 'otro']
-const ESTADOS = { activo: { bg: '#E8F4EB', color: '#1E5C2E' }, en_reparacion: { bg: '#FDF0E0', color: '#7A4500' }, dado_de_baja: { bg: '#FDF0F0', color: '#7A1A1A' } }
+const ESTADOS = { activo: { bg: '#E8F4EB', color: '#1E5C2E' }, en_reparacion: { bg: '#FDF0E0', color: '#7A4500' }, dado_de_baja: { bg: '#FDF0F0', color: '#7A1A1A' }, vendido: { bg: '#EDE7F6', color: '#4A2E8A' } }
 const SOCIOS = [
   { nombre: 'Oscar',   pct: 75.17 },
   { nombre: 'Matias',  pct: 23.46 },
@@ -36,6 +36,8 @@ export default function Activos({ usuario }) {
   const [tab, setTab] = useState('activos')
   const [loading, setLoading] = useState(true)
   const [activos, setActivos] = useState([])
+  const [vendiendoActivo, setVendiendoActivo] = useState(null)
+  const [formVentaActivo, setFormVentaActivo] = useState({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '' })
   const [retiros, setRetiros] = useState([])
   const [guardando, setGuardando] = useState(false)
   const [showFormActivo, setShowFormActivo] = useState(false)
@@ -84,6 +86,29 @@ export default function Activos({ usuario }) {
     setShowFormActivo(false)
     setFormActivo({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '' })
     setGuardando(false)
+  }
+
+  async function guardarVentaActivo(activo) {
+    const nombreActivo = activo ? activo.nombre : (formVentaActivo.activoNombreManual || '').trim()
+    if (!nombreActivo) { alert('Ingresá qué se vendió'); return }
+    if (!formVentaActivo.comprador || !formVentaActivo.monto) { alert('Completá comprador y monto'); return }
+    setGuardando(true)
+    const { error: errV } = await supabase.from('ventas_activos').insert({
+      activo_id: activo ? activo.id : null, activo_nombre: nombreActivo,
+      comprador: formVentaActivo.comprador.trim(),
+      monto: parseFloat(formVentaActivo.monto),
+      fecha: formVentaActivo.fecha || null,
+      observaciones: formVentaActivo.observaciones || null,
+      registrado_por: usuario?.id,
+    })
+    if (errV) { alert('Error al guardar la venta: ' + errV.message); setGuardando(false); return }
+    // Si era un activo ya registrado, pasa a estado "vendido" para que no siga contando como propio
+    if (activo) await supabase.from('activos').update({ estado: 'vendido' }).eq('id', activo.id)
+    await cargar()
+    setVendiendoActivo(null)
+    setFormVentaActivo({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', activoNombreManual: '' })
+    setGuardando(false)
+    alert('Venta registrada. El monto ya figura como deuda del comprador en su cuenta corriente, en Contactos.')
   }
 
   async function guardarRetiro() {
@@ -270,7 +295,57 @@ export default function Activos({ usuario }) {
               style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
               + Agregar activo
             </button>
+            <button onClick={() => setVendiendoActivo(vendiendoActivo === 'nuevo' ? null : 'nuevo')}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.greenLight, border: `1px solid #97C459`, color: S.green, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              💰 Vender algo (no está en la lista)
+            </button>
           </div>
+
+          {vendiendoActivo === 'nuevo' && (
+            <Card>
+              <div style={{ fontSize: 11, fontWeight: 700, color: S.green, marginBottom: '1rem' }}>💰 Registrar venta de un bien no cargado en Activos</div>
+              <div style={{ marginBottom: 8 }}>
+                <Label>Qué se vendió</Label>
+                <input type="text" value={formVentaActivo.activoNombreManual || ''} onChange={e => setFormVentaActivo({...formVentaActivo, activoNombreManual: e.target.value})}
+                  placeholder="ej. Generador eléctrico" style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <Label>Comprador</Label>
+                <input type="text" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
+                  placeholder="Nombre del comprador" style={inputStyle} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <Label>Monto $</Label>
+                  <input type="number" value={formVentaActivo.monto} onChange={e => setFormVentaActivo({...formVentaActivo, monto: e.target.value})} style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                </div>
+                <div>
+                  <Label>Fecha</Label>
+                  <input type="date" value={formVentaActivo.fecha} onChange={e => setFormVentaActivo({...formVentaActivo, fecha: e.target.value})} style={inputStyle} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <Label>Observaciones</Label>
+                <input type="text" value={formVentaActivo.observaciones} onChange={e => setFormVentaActivo({...formVentaActivo, observaciones: e.target.value})}
+                  placeholder="ej. cobra en rollos durante los próximos meses" style={inputStyle} />
+              </div>
+              <div style={{ fontSize: 11, color: S.hint, marginBottom: 10 }}>
+                El monto queda como deuda del comprador en su cuenta corriente (Contactos). Si te va a pagar en mercadería
+                (ej. rollos) en vez de efectivo, cargá esas entregas como compra normal en Alimentación con el mismo nombre
+                de comprador como proveedor — se van a descontar solas de esta deuda en el resumen de cuenta.
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => guardarVentaActivo(null)}
+                  style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                  Guardar venta
+                </button>
+                <button onClick={() => { setVendiendoActivo(null); setFormVentaActivo({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', activoNombreManual: '' }) }}
+                  style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+              </div>
+            </Card>
+          )}
 
           {showFormActivo && (
             <Card>
@@ -362,6 +437,10 @@ export default function Activos({ usuario }) {
                   </div>
 
                   <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                    <button onClick={() => setVendiendoActivo(vendiendoActivo === a.id ? null : a.id)}
+                      style={{ flex: 1, padding: '5px', fontSize: 11, background: S.greenLight, border: `1px solid #97C459`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>
+                      💰 Vender
+                    </button>
                     <button onClick={() => setEditandoActivo({
                       id: a.id, nombre: a.nombre, tipo: a.tipo, marca: a.marca || '', modelo: a.modelo || '',
                       anio: a.anio ? String(a.anio) : '', fecha_compra: a.fecha_compra || '',
@@ -379,6 +458,47 @@ export default function Activos({ usuario }) {
                       Eliminar
                     </button>
                   </div>
+                  {vendiendoActivo === a.id && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${S.border}` }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: S.green, marginBottom: 8 }}>💰 Registrar venta de {a.nombre}</div>
+                      <div style={{ marginBottom: 8 }}>
+                        <Label>Comprador</Label>
+                        <input type="text" value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})}
+                          placeholder="Nombre del comprador" style={inputStyle} />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                        <div>
+                          <Label>Monto $</Label>
+                          <input type="number" value={formVentaActivo.monto} onChange={e => setFormVentaActivo({...formVentaActivo, monto: e.target.value})}
+                            style={{ ...inputStyle, fontFamily: 'monospace' }} />
+                        </div>
+                        <div>
+                          <Label>Fecha</Label>
+                          <input type="date" value={formVentaActivo.fecha} onChange={e => setFormVentaActivo({...formVentaActivo, fecha: e.target.value})} style={inputStyle} />
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <Label>Observaciones</Label>
+                        <input type="text" value={formVentaActivo.observaciones} onChange={e => setFormVentaActivo({...formVentaActivo, observaciones: e.target.value})}
+                          placeholder="ej. cobra en rollos durante los próximos meses" style={inputStyle} />
+                      </div>
+                      <div style={{ fontSize: 11, color: S.hint, marginBottom: 10 }}>
+                        El monto queda como deuda del comprador en su cuenta corriente (Contactos). Si te va a pagar en mercadería
+                        (ej. rollos) en vez de efectivo, cargá esas entregas como compra normal en Alimentación con el mismo nombre
+                        de comprador como proveedor — se van a descontar solas de esta deuda en el resumen de cuenta.
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => guardarVentaActivo(a)}
+                          style={{ flex: 1, padding: '7px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                          Guardar venta
+                        </button>
+                        <button onClick={() => setVendiendoActivo(null)}
+                          style={{ padding: '7px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
