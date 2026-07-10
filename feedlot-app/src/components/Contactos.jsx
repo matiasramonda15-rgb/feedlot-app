@@ -26,6 +26,9 @@ export default function Contactos({ usuario }) {
   const [vencimientosCompra, setVencimientosCompra] = useState({})
   const [filtro, setFiltro] = useState('')
   const [contactoSeleccionado, setContactoSeleccionado] = useState(null)
+  const [fusionando, setFusionando] = useState(null)
+  const [fusionarCon, setFusionarCon] = useState('')
+  const [fusionando_ejecutando, setFusionandoEjecutando] = useState(false)
   const [mostrarNegro, setMostrarNegro] = useState(false)
   const [tabFicha, setTabFicha] = useState('oficial')
   const puedeVerParalelo = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
@@ -114,6 +117,43 @@ export default function Contactos({ usuario }) {
     setShowForm(false)
     setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
     setGuardando(false)
+  }
+
+  // Fusiona dos nombres que en realidad son la misma persona/empresa (ej. "Garcia"
+  // vs "Garcia (Capilla del Carmen)") — pasa todas las transacciones del nombre
+  // viejo al nombre correcto, en todas las tablas donde puede aparecer un contacto.
+  async function fusionarContactos(nombreViejo, nombreNuevo) {
+    if (!nombreNuevo || nombreViejo === nombreNuevo) return
+    setFusionandoEjecutando(true)
+    try {
+      const tablas = [
+        { tabla: 'ventas', campo: 'comprador' },
+        { tabla: 'lotes', campo: 'procedencia' },
+        { tabla: 'compras_insumos', campo: 'proveedor' },
+        { tabla: 'ventas_activos', campo: 'comprador' },
+      ]
+      for (const { tabla, campo } of tablas) {
+        const { error } = await supabase.from(tabla).update({ [campo]: nombreNuevo }).eq(campo, nombreViejo)
+        if (error) throw new Error(`${tabla}: ${error.message}`)
+      }
+      // Si el nombre viejo tenía ficha propia en Contactos y el nuevo no, se la
+      // pasamos; si los dos tienen ficha, se borra la del viejo (se queda con la del nuevo).
+      const fichaVieja = contactos.find(c => c.nombre === nombreViejo)
+      const fichaNueva = contactos.find(c => c.nombre === nombreNuevo)
+      if (fichaVieja && !fichaNueva) {
+        await supabase.from('contactos').update({ nombre: nombreNuevo }).eq('id', fichaVieja.id)
+      } else if (fichaVieja && fichaNueva) {
+        await supabase.from('contactos').delete().eq('id', fichaVieja.id)
+      }
+      await cargar()
+      setFusionando(null)
+      setFusionarCon('')
+      if (contactoSeleccionado === nombreViejo) setContactoSeleccionado(nombreNuevo)
+      alert(`Listo — todo lo de "${nombreViejo}" ahora está bajo "${nombreNuevo}".`)
+    } catch (err) {
+      alert('Error al fusionar: ' + err.message)
+    }
+    setFusionandoEjecutando(false)
   }
 
   async function eliminarContacto(id) {
@@ -228,19 +268,53 @@ export default function Contactos({ usuario }) {
             <div style={{ fontSize: 20, fontWeight: 700 }}>{nombre}</div>
             {contactoData?.tipo && <div style={{ fontSize: 12, color: S.muted, textTransform: 'capitalize' }}>{contactoData.tipo.replace('_', ' ')}</div>}
           </div>
-          {contactoData && (
-            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-              <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
-                style={{ padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                Editar contacto
-              </button>
-              <button onClick={async () => { await eliminarContacto(contactoData.id); setContactoSeleccionado(null) }}
-                style={{ padding: '7px 14px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>
-                Eliminar
-              </button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            <button onClick={() => { setFusionando(nombre); setFusionarCon('') }}
+              style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+              🔀 Fusionar
+            </button>
+            {contactoData && (
+              <>
+                <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
+                  style={{ padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                  Editar contacto
+                </button>
+                <button onClick={async () => { await eliminarContacto(contactoData.id); setContactoSeleccionado(null) }}
+                  style={{ padding: '7px 14px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>
+                  Eliminar
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {fusionando && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+            onClick={() => setFusionando(null)}>
+            <div style={{ background: S.surface, borderRadius: 10, padding: '1.5rem', width: 420, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>🔀 Fusionar contacto duplicado</div>
+              <div style={{ fontSize: 13, color: S.muted, marginBottom: '1rem' }}>
+                "<b>{fusionando}</b>" es en realidad el mismo que otro contacto ya cargado — todas sus ventas, compras y movimientos
+                van a pasar al nombre que elijas abajo, y "{fusionando}" va a dejar de aparecer como un contacto aparte.
+              </div>
+              <Label>Es el mismo que...</Label>
+              <select value={fusionarCon} onChange={e => setFusionarCon(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.bg, marginBottom: '1rem' }}>
+                <option value="">— Seleccioná el contacto correcto —</option>
+                {[...todosLosNombres].filter(n => n !== fusionando).sort().map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => fusionarContactos(fusionando, fusionarCon)} disabled={!fusionarCon || fusionando_ejecutando}
+                  style={{ flex: 1, padding: '9px', fontSize: 13, fontWeight: 600, background: fusionarCon ? S.accent : S.border, border: 'none', color: '#fff', borderRadius: 6, cursor: fusionarCon ? 'pointer' : 'default' }}>
+                  {fusionando_ejecutando ? 'Fusionando...' : 'Fusionar'}
+                </button>
+                <button onClick={() => setFusionando(null)} style={{ padding: '9px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Datos del contacto */}
         {contactoData && (
@@ -632,6 +706,10 @@ export default function Contactos({ usuario }) {
                   + Agregar datos
                 </button>
               )}
+              <button onClick={e => { e.stopPropagation(); setFusionando(nombre); setFusionarCon('') }}
+                style={{ marginTop: 6, width: '100%', padding: '4px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>
+                🔀 Es el mismo que otro contacto...
+              </button>
             </div>
           )
         })}
@@ -639,6 +717,34 @@ export default function Contactos({ usuario }) {
           <div style={{ gridColumn: '1/-1', padding: '3rem', textAlign: 'center', color: S.hint }}>No hay contactos.</div>
         )}
       </div>
+
+      {fusionando && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => setFusionando(null)}>
+          <div style={{ background: S.surface, borderRadius: 10, padding: '1.5rem', width: 420, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>🔀 Fusionar contacto duplicado</div>
+            <div style={{ fontSize: 13, color: S.muted, marginBottom: '1rem' }}>
+              "<b>{fusionando}</b>" es en realidad el mismo que otro contacto ya cargado — todas sus ventas, compras y movimientos
+              van a pasar al nombre que elijas abajo, y "{fusionando}" va a dejar de aparecer como un contacto aparte.
+            </div>
+            <Label>Es el mismo que...</Label>
+            <select value={fusionarCon} onChange={e => setFusionarCon(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.bg, marginBottom: '1rem' }}>
+              <option value="">— Seleccioná el contacto correcto —</option>
+              {[...todosLosNombres].filter(n => n !== fusionando).sort().map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => fusionarContactos(fusionando, fusionarCon)} disabled={!fusionarCon || fusionando_ejecutando}
+                style={{ flex: 1, padding: '9px', fontSize: 13, fontWeight: 600, background: fusionarCon ? S.accent : S.border, border: 'none', color: '#fff', borderRadius: 6, cursor: fusionarCon ? 'pointer' : 'default' }}>
+                {fusionando_ejecutando ? 'Fusionando...' : 'Fusionar'}
+              </button>
+              <button onClick={() => setFusionando(null)} style={{ padding: '9px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
