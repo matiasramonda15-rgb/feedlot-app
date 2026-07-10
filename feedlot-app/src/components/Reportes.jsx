@@ -42,11 +42,12 @@ export default function Reportes({ usuario }) {
   const [lotes, setLotes] = useState([])
   const [ventas, setVentas] = useState([])
   const [formulasMixer, setFormulasMixer] = useState([])
+  const [mortalidad, setMortalidad] = useState([])
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(500),
@@ -54,6 +55,7 @@ export default function Reportes({ usuario }) {
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
       supabase.from('formulas_mixer').select('*'),
+      supabase.from('mortalidad').select('*').order('fecha', { ascending: false }),
     ])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
@@ -62,6 +64,7 @@ export default function Reportes({ usuario }) {
     setLotes(l || [])
     setVentas(v || [])
     setFormulasMixer(fm || [])
+    setMortalidad(m || [])
     setLoading(false)
   }
 
@@ -404,6 +407,40 @@ export default function Reportes({ usuario }) {
               </div>
             </div>
           )}
+
+          {/* Mortalidad anual */}
+          {(() => {
+            const anioActual = new Date().getFullYear()
+            const anioAnterior = anioActual - 1
+            const existenciaActualM = corrales.reduce((s, c) => s + (c.animales || 0), 0)
+            const calcAnio = (anio) => {
+              const delAnio = mortalidad.filter(m => m.fecha && new Date(m.fecha + 'T12:00:00').getFullYear() === anio)
+              const total = delAnio.reduce((s, m) => s + (m.cantidad || 0), 0)
+              // Mismo criterio que ya se usa en Sanidad: % sobre la población que
+              // pudo haber estado expuesta (existencia actual + las que murieron)
+              const pct = (existenciaActualM + total) > 0 ? (total / (existenciaActualM + total)) * 100 : 0
+              const porCausa = {}
+              delAnio.forEach(m => { if (m.causa) porCausa[m.causa] = (porCausa[m.causa] || 0) + (m.cantidad || 0) })
+              const causaPrincipal = Object.entries(porCausa).sort((a, b) => b[1] - a[1])[0]
+              return { total, pct, causaPrincipal }
+            }
+            const actual = calcAnio(anioActual)
+            const anterior = calcAnio(anioAnterior)
+            return (
+              <div style={{ marginTop: '2rem' }}>
+                <SectionHeader title="Mortalidad" sub={`Índice anual · ${anioActual}`} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                  <Stat label={`Muertes ${anioActual}`} val={actual.total} color={S.red} />
+                  <Stat label="Índice de mortalidad" val={`${actual.pct.toFixed(2)}%`} sub="sobre la existencia actual + muertes" color={actual.pct > 2 ? S.red : actual.pct > 1 ? S.amber : S.green} />
+                  <Stat label="Causa principal" val={actual.causaPrincipal?.[0] || '—'} sub={actual.causaPrincipal ? `${actual.causaPrincipal[1]} casos` : ''} />
+                  <Stat label={`Año anterior (${anioAnterior})`} val={anterior.total ? `${anterior.total} · ${anterior.pct.toFixed(2)}%` : '—'} sub="para comparar" />
+                </div>
+                <div style={{ fontSize: 11, color: S.muted, marginTop: 10 }}>
+                  El índice de mortalidad es anual (no tiene mucho sentido verlo mes a mes, dado el volumen bajo de casos) — compara cuántos animales murieron en el año contra la población total expuesta (existencia actual + las que murieron).
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
 

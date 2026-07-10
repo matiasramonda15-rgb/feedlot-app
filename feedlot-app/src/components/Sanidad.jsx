@@ -1050,6 +1050,23 @@ export default function Sanidad({ usuario, mobile, nav }) {
                 style={{ width: '100%', background: 'transparent', border: '1px solid ' + CM.border, borderRadius: 10, padding: 12, fontSize: 14, color: CM.muted, cursor: 'pointer', fontFamily: CM.sans }}>
                 Cancelar
               </button>
+
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '1.5rem 0 .65rem' }}>Últimas muertes registradas</div>
+              {mortalidad.length === 0 && <div style={{ fontSize: 12, color: CM.muted, textAlign: 'center', padding: '1rem' }}>Todavía no hay muertes registradas.</div>}
+              {[...mortalidad].sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en)).slice(0, 6).map(m => {
+                const corralM = corrales.find(c => c.id === m.corral_id)
+                return (
+                  <div key={m.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.75rem .9rem', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#F09595' }}>{m.cantidad} animal{m.cantidad !== 1 ? 'es' : ''} · {corralM ? `C-${corralM.numero}` : '—'}</div>
+                        <div style={{ fontSize: 12, color: CM.muted, marginTop: 2 }}>{m.causa || 'Sin especificar'}</div>
+                      </div>
+                      <div style={{ fontSize: 11, color: CM.muted, fontFamily: CM.mono }}>{m.fecha ? new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}</div>
+                    </div>
+                  </div>
+                )
+              })}
             </>
           )}
 
