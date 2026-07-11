@@ -1339,6 +1339,12 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   }
 
   function totalLoteCalc(l) {
+    // Si ya hay facturas cargadas en Gestión Comercial, el total real es la suma
+    // de "Total esta factura" de cada una (ya incluye IVA + comisión/gastos de
+    // feria) — no hay que recalcularlo desde el neto solo, porque eso deja afuera
+    // los gastos y da un número más chico que la realidad.
+    const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
+    if (totalFacturasReal > 0) return totalFacturasReal
     const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || Math.round((l.monto_total_con_iva || 0) * (l.iva_pct || 10.5) / (100 + (l.iva_pct || 10.5))))
     const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
     const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula

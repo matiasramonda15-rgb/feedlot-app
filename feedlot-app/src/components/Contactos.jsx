@@ -193,6 +193,8 @@ export default function Contactos({ usuario }) {
     const cobradoVentas = cobradoVentasHacienda + cobradoVentasActivos
     const pendienteVentas = totalVentas - cobradoVentas
     const totalComprasHacienda = data.lotes.reduce((s, l) => {
+      const totalFacturasReal = (l.facturas_feria || []).reduce((ss, f) => ss + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
+      if (totalFacturasReal > 0) return s + totalFacturasReal
       const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
       const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
       const totalLote = totalGC || l.monto_total_con_iva || (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0)
@@ -297,7 +299,7 @@ export default function Contactos({ usuario }) {
                 "<b>{fusionando}</b>" es en realidad el mismo que otro contacto ya cargado — todas sus ventas, compras y movimientos
                 van a pasar al nombre que elijas abajo, y "{fusionando}" va a dejar de aparecer como un contacto aparte.
               </div>
-              <Label>Es el mismo que...</Label>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Es el mismo que...</div>
               <select value={fusionarCon} onChange={e => setFusionarCon(e.target.value)}
                 style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.bg, marginBottom: '1rem' }}>
                 <option value="">— Seleccioná el contacto correcto —</option>
@@ -436,9 +438,10 @@ export default function Contactos({ usuario }) {
 
           // Compras
           lotesCto.forEach(l => {
+            const totalFacturasRealL = (l.facturas_feria || []).reduce((ss, f) => ss + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
             const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
             const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
-            const montoFact = l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc : total
+            const montoFact = totalFacturasRealL > 0 ? totalFacturasRealL : (l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc : total)
             const montoParalelo = l.monto_negro || 0
             const venc = vencimientosCompra[l.id] || []
 
@@ -727,7 +730,7 @@ export default function Contactos({ usuario }) {
               "<b>{fusionando}</b>" es en realidad el mismo que otro contacto ya cargado — todas sus ventas, compras y movimientos
               van a pasar al nombre que elijas abajo, y "{fusionando}" va a dejar de aparecer como un contacto aparte.
             </div>
-            <Label>Es el mismo que...</Label>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Es el mismo que...</div>
             <select value={fusionarCon} onChange={e => setFusionarCon(e.target.value)}
               style={{ width: '100%', padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.bg, marginBottom: '1rem' }}>
               <option value="">— Seleccioná el contacto correcto —</option>
