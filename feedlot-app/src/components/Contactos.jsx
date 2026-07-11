@@ -21,6 +21,8 @@ export default function Contactos({ usuario }) {
   const [lotes, setLotes] = useState([])
   const [comprasInsumos, setComprasInsumos] = useState([])
   const [comprasAgro, setComprasAgro] = useState([])
+  const [cosechas, setCosechas] = useState([])
+  const [ventasGranos, setVentasGranos] = useState([])
   const [ventasActivos, setVentasActivos] = useState([])
   const [pagosVenta, setPagosVenta] = useState({})
   const [pagosCompra, setPagosCompra] = useState({})
@@ -49,6 +51,8 @@ export default function Contactos({ usuario }) {
       { data: ci },
       { data: va },
       { data: iag },
+      { data: cos },
+      { data: vgr },
     ] = await Promise.all([
       supabase.from('contactos').select('*').order('nombre'),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -59,6 +63,8 @@ export default function Contactos({ usuario }) {
       supabase.from('compras_insumos').select('*').order('creado_en', { ascending: false }),
       supabase.from('ventas_activos').select('*').order('creado_en', { ascending: false }),
       supabase.from('ingresos_agroquimicos').select('*').order('creado_en', { ascending: false }),
+      supabase.from('cosechas').select('*'),
+      supabase.from('ventas_granos').select('id, cosecha_id, kg'),
     ])
 
     setContactos(c || [])
@@ -67,6 +73,8 @@ export default function Contactos({ usuario }) {
     setComprasInsumos(ci || [])
     setVentasActivos(va || [])
     setComprasAgro(iag || [])
+    setCosechas(cos || [])
+    setVentasGranos(vgr || [])
 
     const pvMap = {}
     ;(pv || []).forEach(p => {
@@ -232,6 +240,27 @@ export default function Contactos({ usuario }) {
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
     const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, comprasAgro: comprasAgroCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
+    // Remitos sin precio todavía — se muestran en su propia pestaña, sin sumar al saldo
+    const remitosSinPrecio = [
+      ...(comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha })),
+      ...(comprasAgroCto || []).filter(ca => !ca.total).map(ca => ({ desc: ca.insumo_nombre || 'Agroquímico', cant: ca.cantidad, unidad: '', fecha: ca.fecha })),
+    ]
+    // Insumos ya cargados/pagados pero todavía no retirados físicamente
+    const insumosPendRetiro = [
+      ...(comprasInsumosCto || []).filter(ci => ci.retirado === false).map(ci => ({ id: ci.id, tabla: 'compras_insumos', insumoId: ci.insumo_id, tipo: ci.insumo_tipo, desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha, total: ci.total })),
+      ...(comprasAgroCto || []).filter(ca => ca.retirado === false).map(ca => ({ id: ca.id, tabla: 'ingresos_agroquimicos', insumoId: ca.agroquimico_id, tipo: 'agro', desc: ca.insumo_nombre || 'Agroquímico', cant: ca.cantidad, unidad: '', fecha: ca.fecha, total: ca.total })),
+    ]
+    // Mercadería entregada a este contacto (acopio) desde una cosecha, y
+    // todavía sin vender — sale de comparar lo cosechado contra lo ya vendido
+    // de esa misma cosecha.
+    const mercaderiaEntregada = cosechas
+      .filter(co => co.acopio === nombre)
+      .map(co => {
+        const kgVendido = ventasGranos.filter(vg => vg.cosecha_id === co.id).reduce((s, vg) => s + (vg.kg || 0), 0)
+        const kgPendiente = (co.kg_totales || 0) - kgVendido
+        return { id: co.id, cultivo: co.cultivo, kgTotales: co.kg_totales, kgVendido, kgPendiente, fecha: co.fecha }
+      })
+      .filter(m => m.kgPendiente > 0)
     const contactoData = contactos.find(c => c.nombre === nombre)
 
     return (
@@ -300,26 +329,115 @@ export default function Contactos({ usuario }) {
         </div>
 
         {/* Tabs ficha */}
-        {puedeVerParalelo && (
-          <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.25rem' }}>
-            {[
-              { key: 'oficial', label: 'Cuenta corriente' },
-              { key: 'paralela', label: 'Cuenta paralela' },
-            ].map(t => (
-              <button key={t.key} onClick={() => setTabFicha(t.key)}
-                style={{ padding: '9px 20px', fontSize: 13, fontWeight: tabFicha === t.key ? 600 : 500, cursor: 'pointer',
-                  color: tabFicha === t.key ? (t.key === 'paralela' ? '#3D1A6B' : S.accent) : S.muted,
-                  background: 'transparent', border: 'none',
-                  borderBottom: tabFicha === t.key ? `2px solid ${t.key === 'paralela' ? '#9F8ED4' : S.accent}` : '2px solid transparent',
-                  marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                {t.label}
-              </button>
-            ))}
+        <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.25rem' }}>
+          {[
+            { key: 'oficial', label: 'Cuenta corriente' },
+            ...(puedeVerParalelo ? [{ key: 'paralela', label: 'Cuenta paralela' }] : []),
+            { key: 'pendientes', label: `Remitos pendientes${remitosSinPrecio.length > 0 ? ` (${remitosSinPrecio.length})` : ''}` },
+            { key: 'retiro', label: `Pendiente de retiro${insumosPendRetiro.length > 0 ? ` (${insumosPendRetiro.length})` : ''}` },
+            { key: 'mercaderia', label: `Mercadería entregada${mercaderiaEntregada.length > 0 ? ` (${mercaderiaEntregada.length})` : ''}` },
+          ].map(t => (
+            <button key={t.key} onClick={() => setTabFicha(t.key)}
+              style={{ padding: '9px 20px', fontSize: 13, fontWeight: tabFicha === t.key ? 600 : 500, cursor: 'pointer',
+                color: tabFicha === t.key ? (t.key === 'paralela' ? '#3D1A6B' : t.key === 'pendientes' ? S.amber : t.key === 'retiro' ? '#1E5C8A' : t.key === 'mercaderia' ? S.green : S.accent) : S.muted,
+                background: 'transparent', border: 'none',
+                borderBottom: tabFicha === t.key ? `2px solid ${t.key === 'paralela' ? '#9F8ED4' : t.key === 'pendientes' ? '#EF9F27' : t.key === 'retiro' ? '#5DA9D6' : t.key === 'mercaderia' ? '#97C459' : S.accent}` : '2px solid transparent',
+                marginBottom: -1, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Pestaña: remitos pendientes de precio */}
+        {tabFicha === 'pendientes' && (
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+            {remitosSinPrecio.length === 0 ? (
+              <div style={{ fontSize: 13, color: S.hint, textAlign: 'center', padding: '1.5rem' }}>No hay remitos pendientes de precio con este contacto.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
+                  Todavía no tienen precio cargado — no suman al saldo hasta que se completen en Insumos.
+                </div>
+                {remitosSinPrecio.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 6, marginBottom: 6, fontSize: 13, color: S.amber }}>
+                    <span><strong>{r.desc}</strong> · {r.cant?.toLocaleString('es-AR')}{r.unidad ? ' ' + r.unidad : ''}</span>
+                    <span>{r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Pestaña: insumos pagados/cargados pero no retirados todavía */}
+        {tabFicha === 'retiro' && (
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+            {insumosPendRetiro.length === 0 ? (
+              <div style={{ fontSize: 13, color: S.hint, textAlign: 'center', padding: '1.5rem' }}>No hay insumos pendientes de retiro con este contacto.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
+                  Ya están cargados (y puede que ya pagados), pero todavía no se retiraron físicamente — por eso no suman al stock hasta que los marques como retirados.
+                </div>
+                {insumosPendRetiro.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                    <div>
+                      <div style={{ color: '#3D1A6B', fontWeight: 600 }}>{r.desc} · {r.cant?.toLocaleString('es-AR')}{r.unidad ? ' ' + r.unidad : ''}</div>
+                      <div style={{ color: S.muted, fontSize: 11, marginTop: 2 }}>
+                        {r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{r.total ? ` · $${r.total.toLocaleString('es-AR')}` : ' · sin precio todavía'}
+                      </div>
+                    </div>
+                    <button onClick={async () => {
+                      if (r.tabla === 'ingresos_agroquimicos') {
+                        const { data: item } = await supabase.from('stock_agro').select('cantidad').eq('id', r.insumoId).single()
+                        await supabase.from('stock_agro').update({ cantidad: (item?.cantidad || 0) + (r.cant || 0), actualizado_en: new Date().toISOString() }).eq('id', r.insumoId)
+                        await supabase.from('ingresos_agroquimicos').update({ retirado: true }).eq('id', r.id)
+                      } else {
+                        const rpc = r.tipo === 'sanitario' ? 'incrementar_stock_sanitario' : 'incrementar_stock_insumo'
+                        const { error: errRpc } = await supabase.rpc(rpc, { p_id: r.insumoId, p_delta: r.cant })
+                        if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
+                        await supabase.from('compras_insumos').update({ retirado: true }).eq('id', r.id)
+                      }
+                      await cargar()
+                    }} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      📦 Marcar retirado
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Pestaña: mercadería entregada (cosechas en depósito con este contacto, sin vender) */}
+        {tabFicha === 'mercaderia' && (
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+            {mercaderiaEntregada.length === 0 ? (
+              <div style={{ fontSize: 13, color: S.hint, textAlign: 'center', padding: '1.5rem' }}>No hay mercadería entregada a este contacto sin vender todavía.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
+                  Cosechas que se entregaron acá (en depósito/acopio) y todavía no se vendieron — no es una deuda, es stock tuyo guardado en otro lado.
+                </div>
+                {mercaderiaEntregada.map((m, i) => (
+                  <div key={i} style={{ padding: '10px 12px', background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: S.green, fontWeight: 700 }}>{m.cultivo}</span>
+                      <span style={{ color: S.muted }}>{m.fecha ? new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                    </div>
+                    <div style={{ color: S.green, marginTop: 3 }}>
+                      Pendiente de vender: <strong>{(m.kgPendiente / 1000).toLocaleString('es-AR')} tn</strong>
+                      {m.kgVendido > 0 && <span style={{ color: S.muted }}> (de {(m.kgTotales / 1000).toLocaleString('es-AR')} tn — ya vendiste {(m.kgVendido / 1000).toLocaleString('es-AR')} tn)</span>}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
         {/* Cuenta corriente unificada */}
-        {(() => {
+        {tabFicha !== 'pendientes' && tabFicha !== 'retiro' && tabFicha !== 'mercaderia' && (() => {
           const esParalela = tabFicha === 'paralela' && puedeVerParalelo
           const movimientos = []
 

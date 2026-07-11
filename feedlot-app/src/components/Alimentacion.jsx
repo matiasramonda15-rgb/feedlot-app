@@ -232,7 +232,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
   const [editando, setEditando] = useState({})
   const [showFormIngreso, setShowFormIngreso] = useState(false)
-  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '' })
+  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '', retirado: true })
   const [guardando, setGuardando] = useState(false)
   const [confirmado, setConfirmado] = useState(false)
   const [kgsHoy, setKgsHoy] = useState([[800, 2400], [840, 900], [1160, 1225]])
@@ -420,10 +420,15 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     const cant = parseFloat(formIngreso.cantidad)
     const pctMsForm = parseFloat(formIngreso.pct_ms) || null
     const kgMsForm = pctMsForm ? Math.round(cant * pctMsForm / 100 * 10) / 10 : null
-    // Actualizar stock de forma atómica (suma en la base, no en la app) para
-    // no pisar otra operación que toque el mismo insumo casi al mismo tiempo
-    const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: item.id, p_delta: cant })
-    if (errRpc) { alert('Error al actualizar el stock: ' + errRpc.message); setGuardando(false); return }
+    // La cantidad solo se suma al stock si ya se retiró físicamente — si se dejó
+    // marcado "todavía no lo retiramos", el stock queda igual hasta que se
+    // marque como retirado más adelante (desde Insumos).
+    if (formIngreso.retirado) {
+      // Actualizar stock de forma atómica (suma en la base, no en la app) para
+      // no pisar otra operación que toque el mismo insumo casi al mismo tiempo
+      const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: item.id, p_delta: cant })
+      if (errRpc) { alert('Error al actualizar el stock: ' + errRpc.message); setGuardando(false); return }
+    }
     await supabase.from('stock_insumos').update({ pedido_realizado: false, ...(pctMsForm ? { pct_ms: pctMsForm } : {}) }).eq('id', item.id)
     // Nota: ya no se usa ingresos_stock — todo va a compras_insumos
     // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
@@ -442,11 +447,12 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       total: null,
       estado_pago: 'pendiente',
       registrado_por: usuario?.id,
+      retirado: formIngreso.retirado,
     })
     if (errCompra) { alert('El stock se actualizó, pero no se pudo guardar el registro de compra: ' + errCompra.message); setGuardando(false); return }
     await cargarDatos()
     setShowFormIngreso(false)
-    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '' })
+    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '', retirado: true })
     setGuardando(false)
   }
 
@@ -1140,6 +1146,12 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 14, background: S.surface, boxSizing: 'border-box' }} />
                 </div>
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem' }}>
+                <input type="checkbox" id="alim_no_retirado" checked={!formIngreso.retirado} onChange={e => setFormIngreso({...formIngreso, retirado: !e.target.checked})} />
+                <label htmlFor="alim_no_retirado" style={{ fontSize: 13, cursor: 'pointer' }}>
+                  Todavía no lo retiramos (no suma al stock hasta que se marque como retirado)
+                </label>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button onClick={() => setShowFormIngreso(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>Cancelar</button>
                 <button onClick={guardarIngreso} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -1641,6 +1653,16 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                       </td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
+                          {c.retirado === false && (
+                            <button onClick={async () => {
+                              const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: c.cantidad })
+                              if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
+                              await supabase.from('compras_insumos').update({ retirado: true }).eq('id', c.id)
+                              onReload()
+                            }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
+                              📦 Marcar retirado
+                            </button>
+                          )}
                           <button onClick={async () => {
                             const nuevaCant = prompt('Nueva cantidad (kg):', c.cantidad)
                             if (!nuevaCant) return
@@ -1657,8 +1679,8 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                             onReload()
                           }} style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>✏</button>
                           <button onClick={async () => {
-                            if (!confirm(`¿Eliminar ingreso de ${c.insumo_nombre}? Esto también va a descontar ${c.cantidad?.toLocaleString('es-AR')} kg del stock.`)) return
-                            if (c.insumo_id && c.cantidad) {
+                            if (!confirm(`¿Eliminar ingreso de ${c.insumo_nombre}? ${c.retirado !== false ? `Esto también va a descontar ${c.cantidad?.toLocaleString('es-AR')} kg del stock.` : ''}`)) return
+                            if (c.insumo_id && c.cantidad && c.retirado !== false) {
                               const { error: errStock } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: -c.cantidad })
                               if (errStock) { alert('No se pudo descontar del stock: ' + errStock.message + ' — no se borró el ingreso.'); return }
                             }

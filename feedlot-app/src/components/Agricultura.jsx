@@ -228,7 +228,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       {tab === 'arriendos' && <TabArriendos campos={campos} cargar={cargar} contactos={contactos} usuario={usuario} />}
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} />}
-      {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} />}
+      {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} />}
@@ -1702,7 +1702,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 }
 
 
-function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar }) {
+function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar, contactos }) {
   const [showForm, setShowForm] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
@@ -1815,7 +1815,14 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
               </div>
             </div>
             {form.destino === 'acopio' && (
-              <div><Label>Acopio / Comprador</Label><input type="text" value={form.acopio} onChange={e => setForm({...form, acopio: e.target.value})} placeholder="ej. Cooperativa, acopio..." style={inputStyle} /></div>
+              <div>
+                <Label>Acopio / Comprador</Label>
+                <select value={form.acopio} onChange={e => setForm({...form, acopio: e.target.value})} style={inputStyle}>
+                  <option value="">— Seleccioná —</option>
+                  {(contactos || []).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                </select>
+                <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
+              </div>
             )}
             <div style={{ gridColumn: '1/-1' }}>
               <Label>Observaciones</Label>
@@ -2617,7 +2624,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '',
     fecha: new Date().toISOString().split('T')[0], proveedor: '',
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
-    numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }],
+    numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
   })
 
   const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Otro']
@@ -2723,20 +2730,25 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       fecha: formCompra.fecha,
       caja_oficial_id, caja_paralela_id, registrado_por: usuario?.id,
       estado_pago: pagarAhora ? 'pagado' : 'pendiente',
+      retirado: formCompra.retirado,
     })
     if (errIngresoAgro) { alert('Error al guardar la compra: ' + errIngresoAgro.message); setGuardando(false); return }
 
-    // Actualizar stock: la cantidad se suma siempre (el insumo llegó físicamente).
+    // Actualizar stock: la cantidad se suma solo si ya se retiró físicamente.
+    // Si se dejó marcado "todavía no lo retiramos", el stock queda igual hasta
+    // que se marque como retirado más adelante.
     // El precio de referencia solo se actualiza si ya se conoce (remito con precio o pago realizado).
     const item = stock.find(s => s.id === parseInt(formCompra.agroquimico_id))
-    if (item) {
+    if (item && formCompra.retirado) {
       const upd = { cantidad: (item.cantidad || 0) + cantidad, actualizado_en: new Date().toISOString() }
       if (precioUnit) upd.precio_referencia = precioUnit
       await supabase.from('stock_agro').update(upd).eq('id', item.id)
+    } else if (item && precioUnit) {
+      await supabase.from('stock_agro').update({ precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', item.id)
     }
 
     setShowFormCompra(false)
-    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }] })
+    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
@@ -3033,6 +3045,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             ))}
           </div>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem' }}>
+            <input type="checkbox" id="agro_no_retirado" checked={!formCompra.retirado} onChange={e => setFormCompra({...formCompra, retirado: !e.target.checked})} />
+            <label htmlFor="agro_no_retirado" style={{ fontSize: 13, cursor: 'pointer' }}>
+              Todavía no lo retiramos (no suma al stock hasta que se marque como retirado)
+            </label>
+          </div>
+
           {/* Formas de pago */}
           {pagarAhora && <div style={{ marginBottom: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -3190,9 +3209,22 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     {i.estado_pago === 'pagado'
                       ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Pagado</span>
                       : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
+                    {i.retirado === false && (
+                      <span style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 4, background: '#F0EAFB', color: '#3D1A6B', fontSize: 11, fontWeight: 600 }}>📦 No retirado</span>
+                    )}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <div style={{ display: 'flex', gap: 4 }}>
+                      {i.retirado === false && (
+                        <button onClick={async () => {
+                          const item = stock.find(s => s.id === i.agroquimico_id)
+                          if (item) await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + (i.cantidad || 0), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                          await supabase.from('ingresos_agroquimicos').update({ retirado: true }).eq('id', i.id)
+                          await cargar()
+                        }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
+                          📦 Marcar retirado
+                        </button>
+                      )}
                       {i.pagos_detalle && i.estado_pago === 'pagado' && (
                         <button onClick={() => generarReciboAgro(i, i.pagos_detalle, stock)}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>
@@ -3201,8 +3233,11 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                         if (!confirm('¿Eliminar esta compra? Se eliminará de la caja.')) return
                         if (i.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
                         if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
-                        const item = stock.find(s => s.id === i.agroquimico_id)
-                        if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - (i.cantidad || 0)), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                        // Si nunca se retiró, nunca se sumó al stock — no hay nada que restar
+                        if (i.retirado !== false) {
+                          const item = stock.find(s => s.id === i.agroquimico_id)
+                          if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - (i.cantidad || 0)), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                        }
                         await supabase.from('ingresos_agroquimicos').delete().eq('id', i.id)
                         await cargar()
                       }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>

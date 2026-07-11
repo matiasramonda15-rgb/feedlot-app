@@ -191,7 +191,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
       // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
       const hoy = new Date()
       const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
-      await supabase.from('compras_insumos').insert({
+      const { error: errCompraSan } = await supabase.from('compras_insumos').insert({
         fecha: fechaHoy,
         insumo_id: prod.id,
         insumo_tipo: 'sanitario',
@@ -205,6 +205,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
         estado_pago: 'pendiente',
         registrado_por: usuario?.id,
       })
+      if (errCompraSan) { alert('El stock se actualizó, pero no se pudo guardar el registro de compra: ' + errCompraSan.message); setGuardandoStockSan(false); return }
     }
     await cargarProductos()
     setShowFormStockSan(false)
