@@ -1653,7 +1653,11 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                             onReload()
                           }} style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>✏</button>
                           <button onClick={async () => {
-                            if (!confirm(`¿Eliminar ingreso de ${c.insumo_nombre}?`)) return
+                            if (!confirm(`¿Eliminar ingreso de ${c.insumo_nombre}? Esto también va a descontar ${c.cantidad?.toLocaleString('es-AR')} kg del stock.`)) return
+                            if (c.insumo_id && c.cantidad) {
+                              const { error: errStock } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: -c.cantidad })
+                              if (errStock) { alert('No se pudo descontar del stock: ' + errStock.message + ' — no se borró el ingreso.'); return }
+                            }
                             await supabase.from('compras_insumos').delete().eq('id', c.id)
                             onReload()
                           }} style={{ padding: '3px 8px', fontSize: 11, background: '#FDF0F0', border: '1px solid #F09595', color: '#7A1A1A', borderRadius: 5, cursor: 'pointer' }}>🗑</button>

@@ -2056,7 +2056,11 @@ export default function Sanidad({ usuario, mobile, nav }) {
                               await cargarProductos()
                             }} style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>✏</button>
                             <button onClick={async () => {
-                              if (!confirm(`¿Eliminar ingreso de ${ing.insumo_nombre}?`)) return
+                              if (!confirm(`¿Eliminar ingreso de ${ing.insumo_nombre}? Esto también va a descontar ${ing.cantidad?.toLocaleString('es-AR')} del stock.`)) return
+                              if (ing.insumo_id && ing.cantidad) {
+                                const { error: errStock } = await supabase.rpc('incrementar_stock_sanitario', { p_id: ing.insumo_id, p_delta: -ing.cantidad })
+                                if (errStock) { alert('No se pudo descontar del stock: ' + errStock.message + ' — no se borró el ingreso.'); return }
+                              }
                               await supabase.from('compras_insumos').delete().eq('id', ing.id)
                               await cargarProductos()
                             }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>🗑</button>
