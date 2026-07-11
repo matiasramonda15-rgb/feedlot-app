@@ -2088,8 +2088,16 @@ export default function Ventas({ usuario, mobile, nav }) {
                                       <option value="cheque">Cheque</option>
                                       <option value="e-cheq">E-Cheq</option>
                                       <option value="efectivo">Efectivo</option>
+                                      <option value="canje">🔄 Canje / Trueque</option>
                                     </select>
                                   </div>
+                                  {fp.forma_pago === 'canje' && (
+                                    <div style={{ gridColumn: '1/-1' }}>
+                                      <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>A cambio de</div>
+                                      <input type="text" value={fp.canje_detalle || ''} placeholder="ej. servicio de fletes del 3/7" onChange={e => setFp({ canje_detalle: e.target.value })}
+                                        style={{ width: '100%', border: '1px solid #E2DDD6', borderRadius: 4, padding: '4px 6px', fontSize: 12, boxSizing: 'border-box' }} />
+                                    </div>
+                                  )}
                                   <div>
                                     <div style={{ fontSize: 9, color: '#6B6760', textTransform: 'uppercase', marginBottom: 2 }}>Fecha</div>
                                     <input type="date" value={fp.fecha} onChange={e => setFp({ fecha: e.target.value })}
@@ -2175,13 +2183,20 @@ export default function Ventas({ usuario, mobile, nav }) {
                                     }
                                     for (const fp of entradasValidas) {
                                       const monto = parseFloat(fp.monto)
-                                      const obsFinal = `${fp.observaciones || ''}${notaExcedente ? (fp.observaciones ? ' — ' : '') + notaExcedente : ''}` || null
+                                      const esCanje = fp.forma_pago === 'canje'
+                                      const obsCanje = esCanje && fp.canje_detalle ? `Canje — a cambio de: ${fp.canje_detalle}` : null
+                                      const obsFinal = `${obsCanje || fp.observaciones || ''}${notaExcedente ? ((obsCanje || fp.observaciones) ? ' — ' : '') + notaExcedente : ''}` || null
                                       const esCheque = ['cheque','e-cheq'].includes(fp.forma_pago)
                                       const { data: pagoInsertado } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: fp.fecha, monto, forma_pago: fp.forma_pago, numero_cheque: fp.numero_cheque || null, banco: fp.banco || null, fecha_vencimiento_cheque: fp.fecha_vencimiento_cheque || null, es_paralelo: fp.es_paralela || false, subtipo_cheque: esCheque ? (fp.subtipo_cheque || null) : null, librador_real: (esCheque && fp.subtipo_cheque === 'tercero') ? (fp.librador_real || null) : null, observaciones: obsFinal }).select().single()
                                       const pagoId = pagoInsertado?.id || null
                                       const esParalela = fp.es_paralela || false
-                                      if (esParalela) await supabase.from('caja_paralela').insert({ fecha: fp.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
-                                      else await supabase.from('caja_oficial').insert({ fecha: fp.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: fp.forma_pago, pago_venta_id: pagoId })
+                                      // Canje: no sale ni entra plata de ninguna caja — el pago ya queda
+                                      // registrado arriba (pagos_ventas), y se compensa solo en Contactos
+                                      // contra la otra operación (la que se recibió a cambio).
+                                      if (!esCanje) {
+                                        if (esParalela) await supabase.from('caja_paralela').insert({ fecha: fp.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
+                                        else await supabase.from('caja_oficial').insert({ fecha: fp.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: fp.forma_pago, pago_venta_id: pagoId })
+                                      }
                                       if (esCheque && fp.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: fp.numero_cheque || null, banco: fp.banco || null, monto, fecha_emision: fp.fecha, fecha_cobro: fp.fecha_cobro_cheque || null, fecha_vencimiento: fp.fecha_vencimiento_cheque, librador: (fp.subtipo_cheque === 'tercero' ? fp.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: fp.forma_pago === 'e-cheq', pago_venta_id: pagoId })
                                     }
                                     const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)

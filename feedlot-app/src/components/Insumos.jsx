@@ -15,7 +15,7 @@ const inp = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}
 const inpMono = { ...inp, fontFamily: 'monospace' }
 const Lbl = ({ children }) => <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{children}</div>
 
-const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
+const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', canje_detalle: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
 function numeroALetras(num) {
   const unidades = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE',
@@ -133,7 +133,7 @@ export default function Insumos({ usuario }) {
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
       supabase.from('contactos').select('*').order('nombre'),
-      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').is('precio_unitario', null).is('proveedor', null).order('fecha', { ascending: false }),
+      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').is('precio_unitario', null).order('fecha', { ascending: false }),
     ])
     setCompras(c || [])
     setStockAlim(sa || [])
@@ -154,6 +154,11 @@ export default function Insumos({ usuario }) {
       cantidad_kg: x.cantidad,
       unidad: x.unidad,
       proveedor: x.proveedor,
+      localidad: x.localidad,
+      cuit: x.cuit,
+      iva: x.iva,
+      cbu: x.cbu,
+      numero_factura: x.numero_factura,
       creado_en: x.fecha,
     }))
     setSinPrecio([...(ip || []), ...comprasPend])
@@ -190,6 +195,7 @@ export default function Insumos({ usuario }) {
     if (pagarAhora && total) for (const pago of form.pagos) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
+      if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
       if (pago.es_paralelo) {
         const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
@@ -285,6 +291,7 @@ export default function Insumos({ usuario }) {
               for (const pago of formPagoGrupal.pagos) {
                 const monto = parseFloat(pago.monto) || 0
                 if (!monto) continue
+                if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
                 const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
                 if (pago.es_paralelo) {
                   const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
@@ -428,6 +435,7 @@ export default function Insumos({ usuario }) {
                         <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Forma de pago</div>
                         <select value={pago.tipo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inp}>
                           <option value="transferencia">Transferencia</option>
+                          <option value="canje">🔄 Canje / Trueque</option>
                           <option value="efectivo">Efectivo</option>
                           <option value="e-cheq">E-cheq</option>
                         </select>
@@ -447,6 +455,14 @@ export default function Insumos({ usuario }) {
                           style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>}
                       </div>
                     </div>
+                    {pago.tipo === 'canje' && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>A cambio de</div>
+                        <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
+                          onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, canje_detalle: e.target.value} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
+                          style={inp} />
+                      </div>
+                    )}
                     {pago.tipo === 'e-cheq' && (
                       <div style={{ marginTop: 8 }}>
                         <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 10 : 0 }}>
@@ -499,6 +515,7 @@ export default function Insumos({ usuario }) {
                     for (const pago of formPagoGrupal.pagos) {
                       const monto = parseFloat(pago.monto) || 0
                       if (!monto) continue
+                      if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
                       const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
                       if (pago.es_paralelo) {
                         const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
@@ -701,6 +718,7 @@ export default function Insumos({ usuario }) {
                                   setFormPagoInline({...formPagoInline, pagos: n})
                                 }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
                                   <option value="transferencia">Transferencia</option>
+                          <option value="canje">🔄 Canje / Trueque</option>
                                   <option value="efectivo">Efectivo</option>
                                   <option value="e-cheq">E-cheq</option>
                                   <option value="cuenta_corriente">Cuenta corriente</option>
@@ -725,6 +743,14 @@ export default function Insumos({ usuario }) {
                                     style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>}
                               </div>
                             </div>
+                            {pago.tipo === 'canje' && (
+                              <div style={{ marginTop: 8 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>A cambio de</div>
+                                <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
+                                  onChange={e => { const n = formPagoInline.pagos.map((p,i) => i===idx ? {...p, canje_detalle: e.target.value} : p); setFormPagoInline({...formPagoInline, pagos: n}) }}
+                                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
+                              </div>
+                            )}
                             {/* E-cheq: elegir propio o tercero */}
                             {pago.tipo === 'e-cheq' && (
                               <div style={{ marginTop: 8 }}>
@@ -822,6 +848,7 @@ export default function Insumos({ usuario }) {
                               for (const pago of pagos) {
                                 const monto = parseFloat(pago.monto) || 0
                                 if (!monto) continue
+                                if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
                                 const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
                                 if (pago.es_paralelo) {
                                   const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
@@ -1375,12 +1402,12 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngres
 
 function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar, chequesCartera = [], S, contactos = [] }) {
   const [editando, setEditando] = useState({})
-  const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
+  const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', canje_detalle: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
   function initEp(ing) {
     return {
-      precio: '', proveedor: '', localidad: '', cuit: '', iva: '', cbu: '',
-      numero_factura: '', fecha: new Date().toISOString().split('T')[0],
+      precio: '', proveedor: ing.proveedor || '', localidad: ing.localidad || '', cuit: ing.cuit || '', iva: ing.iva || '', cbu: ing.cbu || '',
+      numero_factura: ing.numero_factura || '', fecha: new Date().toISOString().split('T')[0],
       pagarAhora: false, pagos: [{ ...PAGO_INIT }]
     }
   }
@@ -1400,6 +1427,7 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
       for (const pago of ep.pagos) {
         const monto = parseFloat(pago.monto) || 0
         if (!monto) continue
+        if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
         const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
         if (pago.es_paralelo) {
           const { data: cp } = await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
@@ -1558,6 +1586,7 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
                         <div><Lbl>Forma</Lbl>
                           <select value={pago.tipo} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p)}}))} style={inp}>
                             <option value="transferencia">Transferencia</option>
+                          <option value="canje">🔄 Canje / Trueque</option>
                             <option value="efectivo">Efectivo</option>
                             <option value="e-cheq">E-cheq</option>
                             <option value="cuenta_corriente">Cta. corriente</option>
@@ -1575,6 +1604,13 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
                         <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                           {ep.pagos.length > 1 && <button onClick={() => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.filter((_,i)=>i!==idx)}}))} style={{ padding: '4px 7px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
                         </div>
+                        {pago.tipo === 'canje' && (
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <Lbl>A cambio de</Lbl>
+                            <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
+                              onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, canje_detalle: e.target.value} : p)}}))} style={inp} />
+                          </div>
+                        )}
                       </div>
                     ))}
                     {totalCalc > 0 && (

@@ -1638,16 +1638,20 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
         cheque_propio: pago.subtipo_cheque === 'propio' ? pago.cheque_propio : null,
         cheque_tercero_detalle,
         es_negro: pago.es_paralela || false,
-        descripcion: desc,
+        descripcion: pago.tipo === 'canje' && pago.canje_detalle ? `${desc} — Canje, a cambio de: ${pago.canje_detalle}` : desc,
       }).select().single()
 
       let pagoCajaId = null
-      if (pago.es_paralela) {
-        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
-        pagoCajaId = cp?.id || null
-      } else {
-        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
-        pagoCajaId = co?.id || null
+      // Canje: no sale plata de ninguna caja — se compensa solo en Contactos
+      // contra la otra operación (la que se recibió a cambio).
+      if (pago.tipo !== 'canje') {
+        if (pago.es_paralela) {
+          const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
+          pagoCajaId = cp?.id || null
+        } else {
+          const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
+          pagoCajaId = co?.id || null
+        }
       }
 
       if (pago.subtipo_cheque === 'propio' && pago.cheque_propio.fecha_vencimiento) {
@@ -1995,8 +1999,16 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                   <option value="cheque">Cheque</option>
                                   <option value="e-cheq">E-cheq</option>
                                   <option value="cuenta_corriente">Cuenta corriente</option>
+                                  <option value="canje">🔄 Canje / Trueque</option>
                                 </select>
                               </div>
+                              {pago.tipo === 'canje' && (
+                                <div style={{ gridColumn: '1/-1' }}>
+                                  <Lbl>A cambio de</Lbl>
+                                  <input type="text" value={pago.canje_detalle || ''} placeholder="ej. venta de un servicio del 3/7"
+                                    onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, canje_detalle: e.target.value} : p); setFormPago({...formPago, pagos: n}) }} style={inp} />
+                                </div>
+                              )}
                               <div><Lbl>Monto $</Lbl>
                                 <input type="number" value={pago.monto} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPago({...formPago, pagos: n}) }} style={{...inp, fontFamily: 'monospace'}} />
                               </div>

@@ -30,7 +30,7 @@ const SOCIOS = [
   { nombre: 'Cecilia', pct: 0.60  },
 ]
 const SOCIOS_DEFAULT = SOCIOS.map(s => s.nombre)
-const FORMAS_PAGO = ['transferencia', 'cheque', 'efectivo', 'depósito']
+const FORMAS_PAGO = ['transferencia', 'cheque', 'efectivo', 'depósito', 'canje']
 
 export default function Activos({ usuario }) {
   const [tab, setTab] = useState('activos')
@@ -124,10 +124,11 @@ export default function Activos({ usuario }) {
       ? `Retiro socio — ${formRetiro.socio} · pagó a ${formRetiro.tercero}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
       : `Retiro socio — ${formRetiro.socio}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
-    // Si la plata la puso el socio directamente (no salió de la caja de la empresa,
-    // aunque la factura haya quedado a nombre de la sociedad), no se toca ninguna
-    // caja — solo se descuenta del retiro del socio.
-    if (!formRetiro.no_afecta_caja) {
+    // Si la plata la puso el socio directamente, o si el retiro se saldó con un
+    // canje/trueque (no plata), no se toca ninguna caja — solo se descuenta del
+    // retiro del socio.
+    const esCanje = formRetiro.forma_pago === 'canje'
+    if (!formRetiro.no_afecta_caja && !esCanje) {
       if (formRetiro.es_paralelo) {
         const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
         if (errCp) { alert('Error al registrar en caja: ' + errCp.message); setGuardando(false); return }
@@ -886,6 +887,9 @@ export default function Activos({ usuario }) {
                   </select>
                 </div>
                 <div><Label>Observaciones</Label><input type="text" value={formRetiro.observaciones} onChange={e => setFormRetiro({...formRetiro, observaciones: e.target.value})} style={inputStyle} /></div>
+                {formRetiro.forma_pago === 'canje' && (
+                  <div><Label>A cambio de</Label><input type="text" value={formRetiro.canje_detalle || ''} onChange={e => setFormRetiro({...formRetiro, canje_detalle: e.target.value})} style={inputStyle} placeholder="ej. mercadería entregada el 3/7" /></div>
+                )}
                 {!formRetiro.no_afecta_caja && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <input type="checkbox" id="paralelo_retiro" checked={formRetiro.es_paralelo} onChange={e => setFormRetiro({...formRetiro, es_paralelo: e.target.checked})} />

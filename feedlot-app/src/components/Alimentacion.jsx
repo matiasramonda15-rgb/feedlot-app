@@ -1647,10 +1647,9 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                               return
                             }
                             const nuevoRemito = prompt('N° Remito:', c.numero_factura || '')
-                            const nuevoTotal = prompt('Total $ de esta entrega (para que descuente en Contactos — dejar vacío si todavía no se sabe):', c.total || '')
                             const pctMsNew = parseFloat(nuevoPct) || null
                             const kgMsNew = pctMsNew ? Math.round(parseFloat(nuevaCant) * pctMsNew / 100 * 10) / 10 : null
-                            await supabase.from('compras_insumos').update({ cantidad: parseFloat(nuevaCant), pct_ms: pctMsNew, kg_ms: kgMsNew, proveedor: nuevoProveedor || null, numero_factura: nuevoRemito || null, total: nuevoTotal ? parseFloat(nuevoTotal) : null }).eq('id', c.id)
+                            await supabase.from('compras_insumos').update({ cantidad: parseFloat(nuevaCant), pct_ms: pctMsNew, kg_ms: kgMsNew, proveedor: nuevoProveedor || null, numero_factura: nuevoRemito || null }).eq('id', c.id)
                             onReload()
                           }} style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 5, cursor: 'pointer' }}>✏</button>
                           <button onClick={async () => {

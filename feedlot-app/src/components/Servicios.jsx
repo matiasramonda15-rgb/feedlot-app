@@ -237,6 +237,7 @@ export default function Servicios({ usuario, mobile, nav }) {
         for (const p of formPago.pagos.filter(p => p.monto)) {
           const monto = parseFloat(p.monto) || 0
           if (!monto) continue
+          if (p.tipo === 'canje') continue  // canje: no toca caja, se compensa solo en Contactos
           if (p.es_paralelo) {
             const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
             if (ep) { alert('Error al registrar caja paralela: ' + ep.message); setGuardandoPago(false); return }
@@ -255,6 +256,7 @@ export default function Servicios({ usuario, mobile, nav }) {
           caja_oficial_id,
           caja_paralela_id,
           monto_negro: sinFactura > 0 ? sinFactura : null,
+          pagos_detalle: formPago.pagos,
         }
         if (precioHa) updateData.precio_ha = precioHa
         if (totalConIva > 0) updateData.total = totalConIva
@@ -1213,8 +1215,8 @@ export default function Servicios({ usuario, mobile, nav }) {
                         <div>
                           <Lbl>Forma de pago</Lbl>
                           <select value={p.tipo} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, tipo: e.target.value } : x); setFormPago({ ...formPago, pagos }) }} style={inp}>
-                            {['transferencia', 'efectivo', 'cheque_propio', 'cheque_tercero'].map(t => (
-                              <option key={t} value={t}>{t === 'cheque_propio' ? 'E-cheq propio' : t === 'cheque_tercero' ? 'Cheque tercero' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                            {['transferencia', 'efectivo', 'cheque_propio', 'cheque_tercero', 'canje'].map(t => (
+                              <option key={t} value={t}>{t === 'cheque_propio' ? 'E-cheq propio' : t === 'cheque_tercero' ? 'Cheque tercero' : t === 'canje' ? '🔄 Canje / Trueque' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
                             ))}
                           </select>
                         </div>
@@ -1227,6 +1229,13 @@ export default function Servicios({ usuario, mobile, nav }) {
                           Paralelo
                         </label>
                       </div>
+                      {p.tipo === 'canje' && (
+                        <div style={{ marginTop: 8 }}>
+                          <Lbl>A cambio de</Lbl>
+                          <input type="text" value={p.canje_detalle || ''} placeholder="ej. compra de agroquímico del 3/7"
+                            onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, canje_detalle: e.target.value } : x); setFormPago({ ...formPago, pagos }) }} style={inp} />
+                        </div>
+                      )}
                       {p.tipo === 'cheque_propio' && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
                           <div><Lbl>N° Cheque</Lbl><input type="text" value={p.cheque_propio?.numero || ''} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, numero: e.target.value } } : x); setFormPago({ ...formPago, pagos }) }} style={inpMono} /></div>
@@ -1525,6 +1534,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                               <option value="transferencia">Transferencia</option>
                               <option value="efectivo">Efectivo</option>
                               <option value="cheque_propio">E-cheq propio</option>
+                              <option value="canje">🔄 Canje / Trueque</option>
                             </select>
                           </div>
                           <div><Lbl>Monto $</Lbl>
@@ -1534,6 +1544,13 @@ export default function Servicios({ usuario, mobile, nav }) {
                             <input type="checkbox" checked={p.es_paralelo} onChange={e => { const pagos = formPagoMO.pagos.map((x, i) => i === pi ? { ...x, es_paralelo: e.target.checked } : x); setFormPagoMO({ ...formPagoMO, pagos }) }} />Paralelo
                           </label>
                         </div>
+                        {p.tipo === 'canje' && (
+                          <div style={{ marginTop: 8 }}>
+                            <Lbl>A cambio de</Lbl>
+                            <input type="text" value={p.canje_detalle || ''} placeholder="ej. compra de agroquímico del 3/7"
+                              onChange={e => { const pagos = formPagoMO.pagos.map((x, i) => i === pi ? { ...x, canje_detalle: e.target.value } : x); setFormPagoMO({ ...formPagoMO, pagos }) }} style={inp} />
+                          </div>
+                        )}
                       </div>
                     ))}
                     <div style={{ padding: '8px 12px', background: S.greenLight, borderRadius: 6, fontSize: 13, color: S.green, fontWeight: 600, marginTop: 8, marginBottom: 10 }}>
@@ -1548,6 +1565,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                           for (const p of formPagoMO.pagos.filter(p => p.monto)) {
                             const monto = parseFloat(p.monto) || 0
                             if (!monto) continue
+                            if (p.tipo === 'canje') continue  // canje: no toca caja
                             if (p.es_paralelo) {
                               await supabase.from('caja_paralela').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', descripcion: desc, monto })
                             } else {
