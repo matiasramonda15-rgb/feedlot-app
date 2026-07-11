@@ -416,8 +416,11 @@ export default function Contactos({ usuario }) {
                 credito: 0, debito: ci.total, factura: ci.numero_factura,
               })
             }
-            // Pagos (si están cargados en pagos_detalle)
-            ;(ci.pagos_detalle || []).forEach((p, pi) => {
+            // Pagos reales en plata (si están cargados en pagos_detalle) — los pagos
+            // tipo "canje" NO generan esta fila aparte: el débito de la compra de
+            // arriba ya representa el movimiento completo, y agregar un crédito acá
+            // encima cancelaría ese débito sin sentido (no hubo plata real de por medio).
+            ;(ci.pagos_detalle || []).filter(p => p.tipo !== 'canje').forEach((p, pi) => {
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `${ci.id}-${pi}`,
                 descripcion: `Pago ${ci.insumo_nombre || 'insumo'} · ${p.forma_pago || ''}`,
@@ -454,7 +457,7 @@ export default function Contactos({ usuario }) {
           // Calcular saldo acumulado
           let saldoAcum = 0
           const movConSaldo = movimientos.map(m => {
-            saldoAcum += (m.credito || 0) - (m.debito || 0)
+            saldoAcum += (Number(m.credito) || 0) - (Number(m.debito) || 0)
             return { ...m, saldoAcum }
           })
 
@@ -524,10 +527,10 @@ export default function Contactos({ usuario }) {
                   <tr style={{ background: S.accent }}>
                     <td colSpan={5} style={{ padding: '10px 12px', fontSize: 12, fontWeight: 700, color: '#fff' }}>SALDO FINAL</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#fff' }}>
-                      {movConSaldo.reduce((s, m) => s + m.debito, 0).toLocaleString('es-AR')}
+                      {movConSaldo.reduce((s, m) => s + (Number(m.debito) || 0), 0).toLocaleString('es-AR')}
                     </td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#fff' }}>
-                      {movConSaldo.reduce((s, m) => s + m.credito, 0).toLocaleString('es-AR')}
+                      {movConSaldo.reduce((s, m) => s + (Number(m.credito) || 0), 0).toLocaleString('es-AR')}
                     </td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: saldoAcum >= 0 ? '#7EE8A2' : '#F09595' }}>
                       {saldoAcum.toLocaleString('es-AR')}
