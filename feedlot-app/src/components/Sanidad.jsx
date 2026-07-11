@@ -188,19 +188,6 @@ export default function Sanidad({ usuario, mobile, nav }) {
       // no pisar otra operación que toque el mismo producto casi al mismo tiempo
       await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: cant })
       await supabase.from('stock_sanitario').update({ pedido_realizado: false }).eq('id', prod.id)
-      // Registrar en ingresos_stock (legacy)
-      await supabase.from('ingresos_stock').insert({
-        insumo_id: prod.id,
-        insumo_nombre: prod.n,
-        tipo: 'sanitario',
-        cantidad_kg: cant,
-        unidad: formStockSan.unidad,
-        precio_por_kg: null,
-        total: null,
-        proveedor: formStockSan.proveedor || null,
-        remito: formStockSan.remito || null,
-        registrado_por: usuario?.nombre || usuario?.email,
-      })
       // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
       const hoy = new Date()
       const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`

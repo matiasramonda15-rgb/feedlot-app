@@ -100,6 +100,7 @@ export default function Insumos({ usuario }) {
   const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
   const [preciosGrupal, setPreciosGrupal] = useState({})
+  const [facturasGrupal, setFacturasGrupal] = useState({})
   const [showPagosPend, setShowPagosPend] = useState(false)
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
@@ -256,10 +257,9 @@ export default function Insumos({ usuario }) {
       </div>
 
 
-      {/* Banner ingresos sin precio */}
-      {sinPrecio.length > 0 && (
-        <BannerSinPrecio ingresos={sinPrecio} stockAlim={stockAlim} stockSan={stockSan} usuario={usuario} onCargar={cargar} chequesCartera={chequesCartera} S={S} contactos={contactos} />
-      )}
+      {/* Nota: la sección de "completar remito" individual se unificó con la de
+          "compras pendientes" de abajo — ahí ya se puede poner precio (y factura)
+          por separado a cada ítem, y pagar varios juntos con un solo pago. */}
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.5rem' }}>
@@ -316,19 +316,25 @@ export default function Insumos({ usuario }) {
                   estado_pago: 'pagado',
                   total: totalItem || totalPagGrupal || undefined,
                   precio_unitario: precioUnit,
+                  numero_factura: facturasGrupal[id] || c?.numero_factura || null,
                   caja_oficial_id, caja_paralela_id,
                   pagos_detalle: formPagoGrupal.pagos,
                   forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'),
                   es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo),
                   contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null,
                 }).eq('id', id)
-                // Actualizar precio de referencia en stock
-                if (precioUnit && c?.insumo_id && c?.insumo_tipo === 'alimentacion') {
-                  await supabase.from('stock_insumos').update({ ultimo_precio_kg: precioUnit }).eq('id', c.insumo_id)
+                // Actualizar precio de referencia en stock (alimentación o sanidad)
+                if (precioUnit && c?.insumo_id) {
+                  if (c.insumo_tipo === 'alimentacion') {
+                    await supabase.from('stock_insumos').update({ precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                  } else {
+                    await supabase.from('stock_sanitario').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                  }
                 }
               }
               setSeleccionadas([])
               setPreciosGrupal({})
+              setFacturasGrupal({})
               setShowPagosPend(false)
               setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
               setGuardandoPago(false)
@@ -364,9 +370,9 @@ export default function Insumos({ usuario }) {
                         </div>
                         {c.total ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${c.total.toLocaleString('es-AR')}</span> : null}
                       </label>
-                      {seleccionadas.includes(c.id) && c.insumo_tipo === 'alimentacion' && (
-                        <div style={{ padding: '0 12px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap' }}>$/kg:</div>
+                      {seleccionadas.includes(c.id) && (
+                        <div style={{ padding: '0 12px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap' }}>$/{c.unidad || 'kg'}:</div>
                           <input type="number" value={preciosGrupal[c.id] || ''} onChange={e => {
                             const precio = e.target.value
                             const np = {...preciosGrupal, [c.id]: precio}
@@ -381,6 +387,13 @@ export default function Insumos({ usuario }) {
                             <span style={{ fontSize: 12, color: S.green, fontWeight: 600 }}>
                               = ${Math.round(parseFloat(preciosGrupal[c.id]) * c.cantidad).toLocaleString('es-AR')}
                             </span>
+                          )}
+                          {!c.numero_factura && (
+                            <>
+                              <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap', marginLeft: 8 }}>N° Factura:</div>
+                              <input type="text" value={facturasGrupal[c.id] || ''} onChange={e => setFacturasGrupal({...facturasGrupal, [c.id]: e.target.value})}
+                                placeholder="opcional" style={{ padding: '5px 8px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 12, width: 130 }} />
+                            </>
                           )}
                         </div>
                       )}
