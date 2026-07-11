@@ -2709,17 +2709,22 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       }
     }
 
-    await supabase.from('ingresos_agroquimicos').insert({
+    const { error: errIngresoAgro } = await supabase.from('ingresos_agroquimicos').insert({
       agroquimico_id: parseInt(formCompra.agroquimico_id), cantidad, precio_unitario: precioUnit, total,
       proveedor: formCompra.proveedor || null, domicilio: formCompra.domicilio || null, localidad: formCompra.localidad || null,
       cuit: formCompra.cuit || null, iva: formCompra.iva || null, cbu: formCompra.cbu || null,
       numero_factura: formCompra.numero_factura || null, observaciones: formCompra.observaciones || null,
-      forma_pago: formCompra.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
-      es_paralelo: formCompra.pagos.some(p => p.es_paralelo),
-      pagos_detalle: formCompra.pagos, fecha: formCompra.fecha,
+      // Solo se guarda el detalle del pago si realmente se pagó ahora — si queda
+      // pendiente, no hay que dejar un "pago" fantasma con el monto en blanco
+      // (eso hacía aparecer una fila de $0 sin descripción en Contactos).
+      forma_pago: pagarAhora ? formCompra.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
+      es_paralelo: pagarAhora ? formCompra.pagos.some(p => p.es_paralelo) : false,
+      pagos_detalle: pagarAhora ? formCompra.pagos : null,
+      fecha: formCompra.fecha,
       caja_oficial_id, caja_paralela_id, registrado_por: usuario?.id,
       estado_pago: pagarAhora ? 'pagado' : 'pendiente',
     })
+    if (errIngresoAgro) { alert('Error al guardar la compra: ' + errIngresoAgro.message); setGuardando(false); return }
 
     // Actualizar stock: la cantidad se suma siempre (el insumo llegó físicamente).
     // El precio de referencia solo se actualiza si ya se conoce (remito con precio o pago realizado).

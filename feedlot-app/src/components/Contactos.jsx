@@ -435,7 +435,7 @@ export default function Contactos({ usuario }) {
             // tipo "canje" NO generan esta fila aparte: el débito de la compra de
             // arriba ya representa el movimiento completo, y agregar un crédito acá
             // encima cancelaría ese débito sin sentido (no hubo plata real de por medio).
-            ;(ci.pagos_detalle || []).filter(p => p.tipo !== 'canje').forEach((p, pi) => {
+            ;(ci.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `${ci.id}-${pi}`,
                 descripcion: `Pago ${ci.insumo_nombre || 'insumo'} · ${p.forma_pago || ''}`,
@@ -458,7 +458,7 @@ export default function Contactos({ usuario }) {
                 credito: 0, debito: ca.total, factura: ca.numero_factura,
               })
             }
-            ;(ca.pagos_detalle || []).filter(p => p.tipo !== 'canje').forEach((p, pi) => {
+            ;(ca.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `agro-${ca.id}-${pi}`,
                 descripcion: `Pago ${ca.insumo_nombre || 'agroquímico'} · ${p.forma_pago || ''}`,
@@ -480,7 +480,7 @@ export default function Contactos({ usuario }) {
                 credito: va.monto, debito: 0,
               })
             }
-            ;(va.pagos_detalle || []).forEach((p, pi) => {
+            ;(va.pagos_detalle || []).filter(p => parseFloat(p.monto) > 0).forEach((p, pi) => {
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: `${va.id}-${pi}`,
                 descripcion: `Cobro venta ${va.activo_nombre || 'activo'} · ${p.forma_pago || ''}`,
