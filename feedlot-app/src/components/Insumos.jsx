@@ -1537,21 +1537,35 @@ function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar
             </div>
             {ep && (
               <div>
-                {/* Proveedor desde contactos */}
-                <div style={{ marginBottom: 10 }}>
-                  <Lbl>Proveedor</Lbl>
-                  <select onChange={e => {
-                    const ct = contactos.find(c => String(c.id) === e.target.value)
-                    if (ct) setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: ct.nombre, localidad: ct.localidad||'', cuit: ct.cuit||'', iva: ct.iva||'', cbu: ct.cbu||''}}))
-                  }} style={inp} defaultValue="">
-                    <option value="">— Seleccionar de contactos —</option>
-                    {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                  </select>
-                </div>
+                {ing.proveedor ? (
+                  // El proveedor ya se cargó al registrar el remito (en Alimentación/Sanidad) —
+                  // no hace falta volver a pedirlo, solo mostrarlo.
+                  <div style={{ marginBottom: 10, padding: '8px 10px', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13 }}>
+                    <span style={{ color: S.muted }}>Proveedor: </span><strong>{ing.proveedor}</strong>
+                    {ing.localidad ? <span style={{ color: S.muted }}> · {ing.localidad}</span> : ''}
+                    {ing.cuit ? <span style={{ color: S.muted }}> · CUIT {ing.cuit}</span> : ''}
+                  </div>
+                ) : (
+                  <>
+                    {/* Proveedor desde contactos */}
+                    <div style={{ marginBottom: 10 }}>
+                      <Lbl>Proveedor</Lbl>
+                      <select onChange={e => {
+                        const ct = contactos.find(c => String(c.id) === e.target.value)
+                        if (ct) setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: ct.nombre, localidad: ct.localidad||'', cuit: ct.cuit||'', iva: ct.iva||'', cbu: ct.cbu||''}}))
+                      }} style={inp} defaultValue="">
+                        <option value="">— Seleccionar de contactos —</option>
+                        {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                      <div><Lbl>Nombre proveedor</Lbl><input type="text" value={ep.proveedor} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: e.target.value}}))} style={inp} /></div>
+                      <div><Lbl>Localidad</Lbl><input type="text" value={ep.localidad} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], localidad: e.target.value}}))} style={inp} /></div>
+                      <div><Lbl>CUIT</Lbl><input type="text" value={ep.cuit} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], cuit: e.target.value}}))} style={inp} /></div>
+                    </div>
+                  </>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-                  <div><Lbl>Nombre proveedor</Lbl><input type="text" value={ep.proveedor} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: e.target.value}}))} style={inp} /></div>
-                  <div><Lbl>Localidad</Lbl><input type="text" value={ep.localidad} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], localidad: e.target.value}}))} style={inp} /></div>
-                  <div><Lbl>CUIT</Lbl><input type="text" value={ep.cuit} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], cuit: e.target.value}}))} style={inp} /></div>
                   <div><Lbl>N° Factura</Lbl><input type="text" value={ep.numero_factura} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], numero_factura: e.target.value}}))} style={inp} /></div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
