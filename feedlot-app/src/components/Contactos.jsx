@@ -20,6 +20,7 @@ export default function Contactos({ usuario }) {
   const [ventas, setVentas] = useState([])
   const [lotes, setLotes] = useState([])
   const [comprasInsumos, setComprasInsumos] = useState([])
+  const [comprasAgro, setComprasAgro] = useState([])
   const [ventasActivos, setVentasActivos] = useState([])
   const [pagosVenta, setPagosVenta] = useState({})
   const [pagosCompra, setPagosCompra] = useState({})
@@ -47,6 +48,7 @@ export default function Contactos({ usuario }) {
       { data: vc },
       { data: ci },
       { data: va },
+      { data: iag },
     ] = await Promise.all([
       supabase.from('contactos').select('*').order('nombre'),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -56,6 +58,7 @@ export default function Contactos({ usuario }) {
       supabase.from('vencimientos_compra').select('*').order('fecha_vencimiento'),
       supabase.from('compras_insumos').select('*').order('creado_en', { ascending: false }),
       supabase.from('ventas_activos').select('*').order('creado_en', { ascending: false }),
+      supabase.from('ingresos_agroquimicos').select('*').order('creado_en', { ascending: false }),
     ])
 
     setContactos(c || [])
@@ -63,6 +66,7 @@ export default function Contactos({ usuario }) {
     setLotes(l || [])
     setComprasInsumos(ci || [])
     setVentasActivos(va || [])
+    setComprasAgro(iag || [])
 
     const pvMap = {}
     ;(pv || []).forEach(p => {
@@ -124,7 +128,7 @@ export default function Contactos({ usuario }) {
   }
 
   function calcularSaldo(nombre) {
-    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
     // Agrupar ventas multi-corral para no contar de más
     const gruposVistos = new Set()
     const ventasAgrupadas = data.ventas.filter(v => {
@@ -164,8 +168,11 @@ export default function Contactos({ usuario }) {
     // Compras de insumos (rollo, maíz, remedios, etc.) — nosotros le debemos al proveedor
     const totalComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.total || 0), 0)
     const pagadoComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
-    const totalCompras = totalComprasHacienda + totalComprasInsumos
-    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos
+    // Compras de agroquímicos (herbicida, silobolsa, etc.) — mismo criterio
+    const totalComprasAgro = (data.comprasAgro || []).reduce((s, ca) => s + (ca.total || 0), 0)
+    const pagadoComprasAgro = (data.comprasAgro || []).reduce((s, ca) => s + (ca.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalComprasAgro
+    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoComprasAgro
     const pendienteCompras = totalCompras - pagadoCompras
     return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
   }
@@ -177,13 +184,13 @@ export default function Contactos({ usuario }) {
   ventas.forEach(v => {
     const nombre = v.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
     transaccionesPorNombre[nombre].ventas.push(v)
   })
   lotes.forEach(l => {
     const nombre = l.procedencia
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
     transaccionesPorNombre[nombre].lotes.push(l)
   })
   // Compras de insumos (rollo, maíz, remedios, etc.) — funcionan igual que una
@@ -191,7 +198,7 @@ export default function Contactos({ usuario }) {
   comprasInsumos.forEach(ci => {
     const nombre = ci.proveedor
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
     transaccionesPorNombre[nombre].comprasInsumos.push(ci)
   })
   // Ventas de activos (maquinaria, equipos) — funcionan igual que una venta de
@@ -199,8 +206,16 @@ export default function Contactos({ usuario }) {
   ventasActivos.forEach(va => {
     const nombre = va.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
     transaccionesPorNombre[nombre].ventasActivos.push(va)
+  })
+  // Compras de agroquímicos (herbicida, silobolsa, etc. — de Agricultura) —
+  // funcionan igual que una compra de insumos: nosotros le debemos al proveedor.
+  comprasAgro.forEach(ca => {
+    const nombre = ca.proveedor
+    if (!nombre) return
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
+    transaccionesPorNombre[nombre].comprasAgro.push(ca)
   })
 
   // Lista unificada de contactos (de tabla + de transacciones)
@@ -216,7 +231,7 @@ export default function Contactos({ usuario }) {
   // Vista ficha de contacto
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
-    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
+    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, comprasAgro: comprasAgroCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
     const contactoData = contactos.find(c => c.nombre === nombre)
 
     return (
@@ -424,6 +439,29 @@ export default function Contactos({ usuario }) {
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `${ci.id}-${pi}`,
                 descripcion: `Pago ${ci.insumo_nombre || 'insumo'} · ${p.forma_pago || ''}`,
+                credito: p.monto, debito: 0, esPago: true,
+              })
+            })
+          })
+
+          // Compras de agroquímicos (herbicida, silobolsa, etc. — de Agricultura) —
+          // le debemos al proveedor, mismo criterio que compras de insumos.
+          ;(comprasAgroCto || []).forEach(ca => {
+            const esParaleloCa = ca.es_paralelo || false
+            if (esParalela && !esParaleloCa) return
+            if (!esParalela && esParaleloCa) return
+            if (ca.total > 0) {
+              movimientos.push({
+                fecha: ca.fecha || ca.creado_en?.split('T')[0],
+                fechaVto: null, tipo: esParaleloCa ? 'PAR' : 'AGRO', nro: ca.id,
+                descripcion: `${ca.insumo_nombre || 'Agroquímico'} · ${ca.cantidad || ''}`,
+                credito: 0, debito: ca.total, factura: ca.numero_factura,
+              })
+            }
+            ;(ca.pagos_detalle || []).filter(p => p.tipo !== 'canje').forEach((p, pi) => {
+              movimientos.push({
+                fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `agro-${ca.id}-${pi}`,
+                descripcion: `Pago ${ca.insumo_nombre || 'agroquímico'} · ${p.forma_pago || ''}`,
                 credito: p.monto, debito: 0, esPago: true,
               })
             })
