@@ -279,67 +279,6 @@ export default function Insumos({ usuario }) {
             const pendientes = compras.filter(c => c.estado_pago === 'pendiente')
             if (pendientes.length === 0) return null
             const totalSel = seleccionadas.reduce((s, id) => { const c = pendientes.find(x => x.id === id); return s + (c?.total || 0) }, 0)
-            const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-
-            async function pagarSeleccionadas() {
-              if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
-              if (totalSel > 0 && Math.abs(totalSel - totalPagGrupal) > 0.5) { alert('El total de pagos no coincide con el total de las compras'); return }
-              if (totalPagGrupal === 0) { alert('Ingresá el monto a pagar'); return }
-              setGuardandoPago(true)
-              let caja_oficial_id = null, caja_paralela_id = null
-              const desc = `Pago compras insumos feedlot`
-              for (const pago of formPagoGrupal.pagos) {
-                const monto = parseFloat(pago.monto) || 0
-                if (!monto) continue
-                if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
-                const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
-                if (pago.es_paralelo) {
-                  const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-                  if (!caja_paralela_id) caja_paralela_id = cp?.id || null
-                } else {
-                  const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null }).select().single()
-                  if (!caja_oficial_id) caja_oficial_id = co?.id || null
-                }
-                if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-                  await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-                } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-                  for (const chId of pago.cheque_tercero_ids) {
-                    await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
-                  }
-                }
-              }
-              for (const id of seleccionadas) {
-                const c = pendientes.find(x => x.id === id)
-                const precioUnit = preciosGrupal[id] ? parseFloat(preciosGrupal[id]) : null
-                const totalItem = precioUnit && c?.cantidad ? Math.round(precioUnit * c.cantidad) : null
-                await supabase.from('compras_insumos').update({
-                  estado_pago: 'pagado',
-                  total: totalItem || totalPagGrupal || undefined,
-                  precio_unitario: precioUnit,
-                  numero_factura: facturasGrupal[id] || c?.numero_factura || null,
-                  caja_oficial_id, caja_paralela_id,
-                  pagos_detalle: formPagoGrupal.pagos,
-                  forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'),
-                  es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo),
-                  contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null,
-                }).eq('id', id)
-                // Actualizar precio de referencia en stock (alimentación o sanidad)
-                if (precioUnit && c?.insumo_id) {
-                  if (c.insumo_tipo === 'alimentacion') {
-                    await supabase.from('stock_insumos').update({ precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
-                  } else {
-                    await supabase.from('stock_sanitario').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
-                  }
-                }
-              }
-              setSeleccionadas([])
-              setPreciosGrupal({})
-              setFacturasGrupal({})
-              setShowPagosPend(false)
-              setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
-              setGuardandoPago(false)
-              await cargar()
-            }
 
             return (
               <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
@@ -542,9 +481,32 @@ export default function Insumos({ usuario }) {
                       }
                     }
                     for (const id of seleccionadas) {
-                      await supabase.from('compras_insumos').update({ estado_pago: 'pagado', caja_oficial_id, caja_paralela_id, pagos_detalle: formPagoGrupal.pagos, forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'), es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo), contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null }).eq('id', id)
+                      const c = compras.find(x => x.id === id)
+                      const precioUnit = preciosGrupal[id] ? parseFloat(preciosGrupal[id]) : (c?.precio_unitario || null)
+                      const totalItem = precioUnit && c?.cantidad ? Math.round(precioUnit * c.cantidad) : null
+                      await supabase.from('compras_insumos').update({
+                        estado_pago: 'pagado',
+                        precio_unitario: precioUnit,
+                        total: totalItem || c?.total || totalPagGrupal2 || undefined,
+                        numero_factura: facturasGrupal[id] || c?.numero_factura || null,
+                        caja_oficial_id, caja_paralela_id,
+                        pagos_detalle: formPagoGrupal.pagos,
+                        forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'),
+                        es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo),
+                        contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null,
+                      }).eq('id', id)
+                      // Actualizar precio de referencia en stock (alimentación o sanidad)
+                      if (precioUnit && c?.insumo_id) {
+                        if (c.insumo_tipo === 'alimentacion') {
+                          await supabase.from('stock_insumos').update({ precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                        } else {
+                          await supabase.from('stock_sanitario').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                        }
+                      }
                     }
                     setSeleccionadas([])
+                    setPreciosGrupal({})
+                    setFacturasGrupal({})
                     setShowPagosPend(false)
                     setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
                     setGuardandoPago(false)
