@@ -38,7 +38,7 @@ export default function Activos({ usuario }) {
   const [activos, setActivos] = useState([])
   const [contactos, setContactos] = useState([])
   const [vendiendoActivo, setVendiendoActivo] = useState(null)
-  const [formVentaActivo, setFormVentaActivo] = useState({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '' })
+  const [formVentaActivo, setFormVentaActivo] = useState({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', es_paralelo: false })
   const [retiros, setRetiros] = useState([])
   const [guardando, setGuardando] = useState(false)
   const [showFormActivo, setShowFormActivo] = useState(false)
@@ -102,6 +102,7 @@ export default function Activos({ usuario }) {
       monto: parseFloat(formVentaActivo.monto),
       fecha: formVentaActivo.fecha || null,
       observaciones: formVentaActivo.observaciones || null,
+      es_paralelo: formVentaActivo.es_paralelo || false,
       registrado_por: usuario?.id,
     })
     if (errV) { alert('Error al guardar la venta: ' + errV.message); setGuardando(false); return }
@@ -109,7 +110,7 @@ export default function Activos({ usuario }) {
     if (activo) await supabase.from('activos').update({ estado: 'vendido' }).eq('id', activo.id)
     await cargar()
     setVendiendoActivo(null)
-    setFormVentaActivo({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', activoNombreManual: '' })
+    setFormVentaActivo({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', activoNombreManual: '', es_paralelo: false })
     setGuardando(false)
     alert('Venta registrada. El monto ya figura como deuda del comprador en su cuenta corriente, en Contactos.')
   }
@@ -390,6 +391,10 @@ export default function Activos({ usuario }) {
                 <input type="text" value={formVentaActivo.observaciones} onChange={e => setFormVentaActivo({...formVentaActivo, observaciones: e.target.value})}
                   placeholder="ej. cobra en rollos durante los próximos meses" style={inputStyle} />
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <input type="checkbox" id="venta_activo_paralela" checked={formVentaActivo.es_paralelo || false} onChange={e => setFormVentaActivo({...formVentaActivo, es_paralelo: e.target.checked})} />
+                <label htmlFor="venta_activo_paralela" style={{ fontSize: 13, cursor: 'pointer' }}>Es una operación paralela (va a Caja 2, no a la cuenta corriente oficial)</label>
+              </div>
               <div style={{ fontSize: 11, color: S.hint, marginBottom: 10 }}>
                 El monto queda como deuda del comprador en su cuenta corriente (Contactos). Si te va a pagar en mercadería
                 (ej. rollos) en vez de efectivo, cargá esas entregas como compra normal en Alimentación con el mismo nombre
@@ -545,6 +550,10 @@ export default function Activos({ usuario }) {
                         <Label>Observaciones</Label>
                         <input type="text" value={formVentaActivo.observaciones} onChange={e => setFormVentaActivo({...formVentaActivo, observaciones: e.target.value})}
                           placeholder="ej. cobra en rollos durante los próximos meses" style={inputStyle} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <input type="checkbox" id="venta_activo_paralela2" checked={formVentaActivo.es_paralelo || false} onChange={e => setFormVentaActivo({...formVentaActivo, es_paralelo: e.target.checked})} />
+                        <label htmlFor="venta_activo_paralela2" style={{ fontSize: 13, cursor: 'pointer' }}>Es una operación paralela (va a Caja 2, no a la cuenta corriente oficial)</label>
                       </div>
                       <div style={{ fontSize: 11, color: S.hint, marginBottom: 10 }}>
                         El monto queda como deuda del comprador en su cuenta corriente (Contactos). Si te va a pagar en mercadería

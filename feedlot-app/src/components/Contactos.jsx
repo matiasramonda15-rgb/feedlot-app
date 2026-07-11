@@ -427,25 +427,26 @@ export default function Contactos({ usuario }) {
           })
 
           // Ventas de activos (maquinaria, equipos) — el comprador nos debe
-          if (!esParalela) {
-            ;(ventasActivosCto || []).forEach(va => {
-              if (va.monto > 0) {
-                movimientos.push({
-                  fecha: va.fecha || va.creado_en?.split('T')[0],
-                  fechaVto: null, tipo: 'ACTIVO', nro: va.id,
-                  descripcion: `Venta ${va.activo_nombre || 'activo'}${va.observaciones ? ' · ' + va.observaciones : ''}`,
-                  credito: va.monto, debito: 0,
-                })
-              }
-              ;(va.pagos_detalle || []).forEach((p, pi) => {
-                movimientos.push({
-                  fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: `${va.id}-${pi}`,
-                  descripcion: `Cobro venta ${va.activo_nombre || 'activo'} · ${p.forma_pago || ''}`,
-                  credito: 0, debito: p.monto, esPago: true,
-                })
+          ;(ventasActivosCto || []).forEach(va => {
+            const esParaleloVA = va.es_paralelo || false
+            if (esParalela && !esParaleloVA) return
+            if (!esParalela && esParaleloVA) return
+            if (va.monto > 0) {
+              movimientos.push({
+                fecha: va.fecha || va.creado_en?.split('T')[0],
+                fechaVto: null, tipo: esParaleloVA ? 'PAR' : 'ACTIVO', nro: va.id,
+                descripcion: `Venta ${va.activo_nombre || 'activo'}${va.observaciones ? ' · ' + va.observaciones : ''}`,
+                credito: va.monto, debito: 0,
+              })
+            }
+            ;(va.pagos_detalle || []).forEach((p, pi) => {
+              movimientos.push({
+                fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: `${va.id}-${pi}`,
+                descripcion: `Cobro venta ${va.activo_nombre || 'activo'} · ${p.forma_pago || ''}`,
+                credito: 0, debito: p.monto, esPago: true,
               })
             })
-          }
+          })
 
           // Ordenar por fecha
           movimientos.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
