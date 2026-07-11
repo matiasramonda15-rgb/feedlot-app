@@ -418,11 +418,13 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     if (!item) { alert(`No se encontró el insumo "${formIngreso.insumo}" en el stock. Probá recargar la página y volver a intentar.`); return }
     setGuardando(true)
     const cant = parseFloat(formIngreso.cantidad)
+    const pctMsForm = parseFloat(formIngreso.pct_ms) || null
+    const kgMsForm = pctMsForm ? Math.round(cant * pctMsForm / 100 * 10) / 10 : null
     // Actualizar stock de forma atómica (suma en la base, no en la app) para
     // no pisar otra operación que toque el mismo insumo casi al mismo tiempo
     const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: item.id, p_delta: cant })
     if (errRpc) { alert('Error al actualizar el stock: ' + errRpc.message); setGuardando(false); return }
-    await supabase.from('stock_insumos').update({ pedido_realizado: false }).eq('id', item.id)
+    await supabase.from('stock_insumos').update({ pedido_realizado: false, ...(pctMsForm ? { pct_ms: pctMsForm } : {}) }).eq('id', item.id)
     // Nota: ya no se usa ingresos_stock — todo va a compras_insumos
     // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
     const { error: errCompra } = await supabase.from('compras_insumos').insert({
@@ -432,6 +434,8 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       insumo_nombre: formIngreso.insumo,
       cantidad: cant,
       unidad: 'kg',
+      pct_ms: pctMsForm,
+      kg_ms: kgMsForm,
       proveedor: formIngreso.proveedor || null,
       numero_factura: formIngreso.remito || null,
       precio_unitario: null,
@@ -442,7 +446,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     if (errCompra) { alert('El stock se actualizó, pero no se pudo guardar el registro de compra: ' + errCompra.message); setGuardando(false); return }
     await cargarDatos()
     setShowFormIngreso(false)
-    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '' })
+    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '' })
     setGuardando(false)
   }
 
