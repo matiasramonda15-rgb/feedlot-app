@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from './supabase'
+import { supabase, setModoSoloLectura } from './supabase'
 import Login from './components/Login'
 import AppEscritorio from './components/AppEscritorio'
 import AppMovil from './mobile/AppMovil'
@@ -26,7 +26,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (session) cargarUsuario(session.user.id)
-      else { setUsuario(null); setLoading(false) }
+      else { setUsuario(null); setModoSoloLectura(false); setLoading(false) }
     })
 
     return () => subscription.unsubscribe()
@@ -39,6 +39,10 @@ export default function App() {
       .eq('id', userId)
       .single()
     setUsuario(data)
+    // Activar el bloqueo central de guardado si el usuario es de solo lectura —
+    // a partir de acá, ningún insert/update/upsert/delete/rpc de toda la app
+    // va a llegar a tocar la base, sin importar desde qué pantalla se intente.
+    setModoSoloLectura(data?.rol === 'lectura')
     setLoading(false)
   }
 
@@ -46,13 +50,14 @@ export default function App() {
 
   if (!session) return <Login />
 
-  // Empleados de campo → app móvil (también si acceden desde celu)
-  const esEmpleado = usuario?.rol === 'empleado' || usuario?.rol === 'encargado'
+  // Empleados de campo y usuarios de solo lectura → app móvil (también si
+  // acceden desde celu, como cualquier otro usuario)
+  const esEmpleado = usuario?.rol === 'empleado' || usuario?.rol === 'encargado' || usuario?.rol === 'lectura'
  if (esEmpleado || esMobil) {
-    return <AppMovil usuario={usuario} onLogout={() => supabase.auth.signOut()} />
+    return <AppMovil usuario={usuario} onLogout={() => { setModoSoloLectura(false); supabase.auth.signOut() }} />
   }
 
-  return <AppEscritorio usuario={usuario} onLogout={() => supabase.auth.signOut()} />
+  return <AppEscritorio usuario={usuario} onLogout={() => { setModoSoloLectura(false); supabase.auth.signOut() }} />
 }
 
 function Splash() {

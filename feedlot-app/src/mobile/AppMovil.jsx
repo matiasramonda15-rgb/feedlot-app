@@ -129,6 +129,7 @@ function Home({ usuario, nav, onLogout, datos }) {
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
   const totalAnimales = corrales.reduce((s, c) => s + (c.animales || 0), 0)
+  const esSoloLectura = usuario?.rol === 'lectura'
 
   const tareas = []
   if (diasPesada !== null && diasPesada <= 7) {
@@ -187,6 +188,12 @@ function Home({ usuario, nav, onLogout, datos }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Topbar titulo="Feedlot" sub={`Hola, ${usuario?.nombre || 'Empleado'} - ${totalAnimales} animales`} onLogout={onLogout} />
       <Scroll>
+        {esSoloLectura && (
+          <div style={{ background: '#1A3D6B', border: `1px solid #2E5FA3`, borderRadius: 10, padding: '.75rem .9rem', marginBottom: '.9rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>👁️</span>
+            <span style={{ fontSize: 12, color: '#D6E4F5' }}>Modo solo lectura — podés ver todo, pero no se pueden guardar cambios.</span>
+          </div>
+        )}
         <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.65rem' }}>Tareas del dia</div>
         {tareas.map((t, i) => (
           <div key={i}
