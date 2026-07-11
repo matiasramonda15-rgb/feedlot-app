@@ -232,8 +232,8 @@ function Home({ usuario, nav, onLogout, datos }) {
             { icon: '🌾', label: 'Alimentacion', p: 'alimentacion' },
             { icon: '💊', label: 'Sanidad', p: 'sanidad' },
             { icon: '💰', label: 'Carga venta', p: 'venta' },
-            ...(['matias_eu@hotmail.com','martin@campo.com','braian@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
-            ...(usuario?.rol === 'dueno' ? [{ icon: '🌱', label: 'Agricultura', p: 'agricultura' }] : []),
+            ...(['matias_eu@hotmail.com','martin@campo.com','braian@campo.com','oscar@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
+            ...(usuario?.rol === 'dueno' || usuario?.rol === 'lectura' ? [{ icon: '🌱', label: 'Agricultura', p: 'agricultura' }] : []),
           ].map((a, i) => (
             <div key={i} onClick={() => nav(a.p)}
               style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.85rem', cursor: 'pointer', textAlign: 'center' }}>
