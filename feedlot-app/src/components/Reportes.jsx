@@ -362,7 +362,12 @@ export default function Reportes({ usuario }) {
                   <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
                   <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`${mesActual.cabVendidas} animales`} />
                   <Stat label="Existencia promedio (feedlot)" val={Math.round(mesActual.existenciaPromedio)} sub={`total de cabezas · inicio: ${mesActual.stockInicial} → fin: ${mesActual.stockFinal}`} />
-                  <Stat label="Kg producidos estim." val={mesActual.kgProducidos ? `${Math.round(mesActual.kgProducidos).toLocaleString('es-AR')} kg` : '—'} sub="GDP × exist. × días" color={S.green} />
+                  <Stat label="Kg producidos estim." val={(() => {
+                    // Si el mes actual no tiene GDP calculable (ej. sin ventas todavía
+                    // este mes), se usa el promedio de 6 o 3 meses como respaldo.
+                    const kgProd = mesActual.kgProducidos || (gdpEstimado ? gdpEstimado * mesActual.existenciaPromedio * mesActual.dias : null)
+                    return kgProd ? `${Math.round(kgProd).toLocaleString('es-AR')} kg` : '—'
+                  })()} sub="GDP × exist. × días" color={S.green} />
                 </div>
               </div>
 

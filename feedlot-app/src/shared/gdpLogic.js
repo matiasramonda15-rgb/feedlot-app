@@ -132,12 +132,16 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
 
   const conversion = gdp && consumoDiarioCalc && kgAlimentoMS != null ? (kgAlimentoMS / (gdp * existenciaPromedio * dias)) : null
   const conversionCorregida = gdpCorregido && consumoDiarioCalc && kgAlimentoMS != null ? (kgAlimentoMS / (gdpCorregido * existenciaPromedio * dias)) : null
+  // Kg producidos estimados = cuánto engordó, en total, todo lo que había en el
+  // feedlot en el período (GDP diario × cuántos animales en promedio × cuántos días)
+  const kgProducidos = gdp ? gdp * existenciaPromedio * dias : null
+  const kgProducidosCorregido = gdpCorregido ? gdpCorregido * existenciaPromedio * dias : null
 
   return {
     dias, stockInicial, stockFinal, existenciaPromedio, cabIngresadas, kgIngresados,
     cabVendidas, kgVendidos, pesoProm_ingreso, pesoProm_venta, permanencia, permanenciaCorregida,
     variacionStock, gdp, gdpCorregido, consumoDiario, consumoDiarioCalc, kgAlimento, kgAlimentoMS,
-    conversion, conversionCorregida,
+    conversion, conversionCorregida, kgProducidos, kgProducidosCorregido,
   }
 }
 

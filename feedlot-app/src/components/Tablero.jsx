@@ -149,13 +149,33 @@ export default function Tablero({ usuario }) {
       raciones: racionesGDP || [], stock: stockItems || [], formulasMixer: formulasMixerDB || [],
     })
 
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotesVenc: lotesVenc || [], indicadores })
+    // Consumo diario de los últimos 30 días, calculado directo desde las raciones
+    // (no depende de que también se pueda calcular el GDP — antes, si el GDP
+    // fallaba por cualquier motivo, esto quedaba escondido aunque hubiera datos
+    // de alimentación cargados todos los días).
+    const hace30consumo = new Date(); hace30consumo.setDate(hace30consumo.getDate() - 30)
+    const porDiaConsumo = {}
+    ;(racionesGDP || []).filter(r => new Date(r.creado_en) >= hace30consumo).forEach(r => {
+      const dia = r.creado_en.split('T')[0]
+      if (!porDiaConsumo[dia]) porDiaConsumo[dia] = { kgTotal: 0, animales: 0, corralesVistos: new Set() }
+      porDiaConsumo[dia].kgTotal += r.kg_total || 0
+      if (r.corral_id && !porDiaConsumo[dia].corralesVistos.has(r.corral_id)) {
+        porDiaConsumo[dia].animales += (r.cantidad_animales ?? r.corrales?.animales) || 0
+        porDiaConsumo[dia].corralesVistos.add(r.corral_id)
+      }
+    })
+    const diasConDatosConsumo = Object.values(porDiaConsumo).filter(d => d.animales > 0 && d.kgTotal > 0)
+    const consumoDiarioIndependiente = diasConDatosConsumo.length > 0
+      ? diasConDatosConsumo.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatosConsumo.length
+      : null
+
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotesVenc: lotesVenc || [], indicadores, consumoDiarioIndependiente })
     setLoading(false)
   }
 
   if (loading) return <Loader />
 
-  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotesVenc = [], indicadores } = datos
+  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotesVenc = [], indicadores, consumoDiarioIndependiente } = datos
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre')
   const totalAnimales = corralesActivos.reduce((s, c) => s + (c.animales || 0), 0)
@@ -185,7 +205,10 @@ export default function Tablero({ usuario }) {
     : null
 
   // Consumo diario promedio (último dato calculado, del mismo período que el GDP)
-  const consumoDiarioGlobal = indicadoresPrincipales?.consumoDiarioCalc || null
+  // Consumo diario: se prioriza el cálculo directo de las raciones (no depende
+  // de que el GDP también esté disponible) — el de indicadoresPrincipales
+  // queda de respaldo.
+  const consumoDiarioGlobal = consumoDiarioIndependiente || indicadoresPrincipales?.consumoDiarioCalc || null
 
   // Ventas este mes
   const hoy = new Date()
