@@ -39,6 +39,9 @@ export default function Reportes({ usuario }) {
   const [pesadas, setPesadas] = useState([])
   const [raciones, setRaciones] = useState([])
   const [stock, setStock] = useState([])
+  const [gastosGenerales, setGastosGenerales] = useState([])
+  const [comprasSanitario, setComprasSanitario] = useState([])
+  const [pagosEmpleados, setPagosEmpleados] = useState([])
   const [lotes, setLotes] = useState([])
   const [ventas, setVentas] = useState([])
   const [formulasMixer, setFormulasMixer] = useState([])
@@ -47,7 +50,7 @@ export default function Reportes({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: cs }, { data: pe }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(500),
@@ -56,6 +59,9 @@ export default function Reportes({ usuario }) {
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
       supabase.from('formulas_mixer').select('*'),
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }),
+      supabase.from('gastos_generales').select('*').eq('actividad', 'Feedlot'),
+      supabase.from('compras_insumos').select('total, insumo_tipo, fecha, creado_en').eq('insumo_tipo', 'sanitario'),
+      supabase.from('pagos_empleados').select('*, empleados(nombre, actividad)'),
     ])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
@@ -65,6 +71,9 @@ export default function Reportes({ usuario }) {
     setVentas(v || [])
     setFormulasMixer(fm || [])
     setMortalidad(m || [])
+    setGastosGenerales(gg || [])
+    setComprasSanitario(cs || [])
+    setPagosEmpleados(pe || [])
     setLoading(false)
   }
 
@@ -200,6 +209,73 @@ export default function Reportes({ usuario }) {
     const margenPct = costoCompra && margen ? (margen / costoCompra * 100) : null
     return { ...v, costoCompra, ingreso, margen, margenPct }
   })
+
+  // ── Rentabilidad mensual/anual — toda la inversión del feedlot (compra de
+  // hacienda + alimentación + gastos generales) contra todo el ingreso (ventas) ──
+  const mesKey = f => f ? String(f).slice(0, 7) : null
+  const rentabilidadPorMes = {}
+  const asegurarMes = key => {
+    if (!rentabilidadPorMes[key]) rentabilidadPorMes[key] = { ingreso: 0, costoHacienda: 0, costoAlim: 0, costoSanidad: 0, costoManoObra: 0, costoGastos: 0 }
+  }
+  ventas.forEach(v => {
+    const key = mesKey(v.fecha || v.creado_en)
+    if (!key) return
+    asegurarMes(key)
+    rentabilidadPorMes[key].ingreso += v.total || 0
+  })
+  lotes.forEach(l => {
+    const key = mesKey(l.fecha_ingreso || l.created_at)
+    if (!key) return
+    asegurarMes(key)
+    rentabilidadPorMes[key].costoHacienda += (l.kg_bascula || 0) * (l.precio_compra || 0)
+  })
+  raciones.forEach(r => {
+    const key = mesKey(r.creado_en)
+    if (!key) return
+    asegurarMes(key)
+    const kgRollo = r.kg_rollo_extra || (r.solo_rollo ? (r.kg_total || 0) : 0)
+    const kgMixer = (r.kg_total || 0) - kgRollo
+    const dietaH = r.tipo_dieta || 'seco'
+    const etapaH = r.mezclador === 'Acostumbramiento' ? 'acostumbramiento' : r.mezclador === 'Recria' ? 'recria' : 'terminacion'
+    const precioMixer = precioPorDieta[`${dietaH}_${etapaH}`]?.precio ?? precioPromAlim ?? 0
+    const precioRolloUsado = precioRollo ?? precioPromAlim ?? 0
+    rentabilidadPorMes[key].costoAlim += kgRollo * precioRolloUsado + kgMixer * precioMixer
+  })
+  comprasSanitario.forEach(cs => {
+    const key = mesKey(cs.fecha || cs.creado_en)
+    if (!key || !cs.total) return
+    asegurarMes(key)
+    rentabilidadPorMes[key].costoSanidad += cs.total || 0
+  })
+  pagosEmpleados.forEach(pe => {
+    const key = mesKey(pe.fecha || pe.creado_en)
+    if (!key) return
+    asegurarMes(key)
+    const actividad = pe.empleados?.actividad
+    // Feedlot = cuenta entero. General = se reparte entre las 3 actividades de
+    // la empresa (Feedlot/Agricultura/Servicios). Cualquier otra (ej. Servicios,
+    // Agricultura) no se cuenta acá, porque no es costo del feedlot.
+    if (actividad === 'Feedlot') rentabilidadPorMes[key].costoManoObra += pe.monto || 0
+    else if (actividad === 'General') rentabilidadPorMes[key].costoManoObra += (pe.monto || 0) / 3
+  })
+  gastosGenerales.forEach(g => {
+    const key = mesKey(g.fecha)
+    if (!key) return
+    asegurarMes(key)
+    rentabilidadPorMes[key].costoGastos += g.monto || 0
+  })
+  const rentabilidadMensual = Object.entries(rentabilidadPorMes).sort((a, b) => b[0].localeCompare(a[0])).map(([mes, d]) => {
+    const costoTotal = d.costoHacienda + d.costoAlim + d.costoSanidad + d.costoManoObra + d.costoGastos
+    const resultado = d.ingreso - costoTotal
+    const indice = costoTotal > 0 ? (resultado / costoTotal * 100) : null
+    return { mes, ...d, costoTotal, resultado, indice }
+  })
+  const anioActualStr = String(new Date().getFullYear())
+  const mesesDelAnio = rentabilidadMensual.filter(m => m.mes.startsWith(anioActualStr))
+  const rentabilidadAnual = mesesDelAnio.reduce((acc, m) => ({
+    ingreso: acc.ingreso + m.ingreso, costoTotal: acc.costoTotal + m.costoTotal, resultado: acc.resultado + m.resultado,
+  }), { ingreso: 0, costoTotal: 0, resultado: 0 })
+  const indiceAnual = rentabilidadAnual.costoTotal > 0 ? (rentabilidadAnual.resultado / rentabilidadAnual.costoTotal * 100) : null
 
   if (loading) return <Loader />
 
@@ -616,6 +692,56 @@ export default function Reportes({ usuario }) {
       {tab === 'rentabilidad' && (
         <div>
           <SectionHeader title="Rentabilidad" sub="Análisis económico de ventas realizadas" />
+
+          {/* Índice de rentabilidad — toda la inversión vs todo el ingreso */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+              Índice de rentabilidad — {anioActualStr}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
+              <Stat label={`Ingreso ${anioActualStr}`} val={rentabilidadAnual.ingreso > 0 ? `$${(rentabilidadAnual.ingreso / 1000000).toFixed(1)}M` : '—'} color={S.green} />
+              <Stat label={`Inversión total ${anioActualStr}`} val={rentabilidadAnual.costoTotal > 0 ? `$${(rentabilidadAnual.costoTotal / 1000000).toFixed(1)}M` : '—'} sub="hacienda + alimentación + sanidad + mano de obra + gastos" />
+              <Stat label="Resultado" val={rentabilidadAnual.costoTotal > 0 ? `$${(rentabilidadAnual.resultado / 1000000).toFixed(1)}M` : '—'} color={rentabilidadAnual.resultado >= 0 ? S.green : S.red} />
+              <Stat label="Índice de rentabilidad" val={indiceAnual !== null ? `${indiceAnual.toFixed(1)}%` : '—'} sub="resultado / inversión total" color={indiceAnual !== null ? (indiceAnual >= 0 ? S.green : S.red) : S.hint} />
+            </div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
+              Compara, mes a mes, todo lo que entró (ventas) contra todo lo que salió (compra de hacienda, alimentación, sanidad, mano de obra y gastos generales del feedlot).
+              La mano de obra cuenta entero para el personal asignado a Feedlot, y un tercio para el personal "General" (se reparte entre Feedlot, Agricultura y Servicios).
+            </div>
+            {rentabilidadMensual.length === 0 ? (
+              <div style={{ padding: '1.5rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin datos suficientes todavía.</div>
+            ) : (
+              <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Mes', 'Ingreso (ventas)', 'Compra hacienda', 'Alimentación', 'Sanidad', 'Mano de obra', 'Gastos generales', 'Inversión total', 'Resultado', 'Índice'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Mes' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rentabilidadMensual.map(m => (
+                      <tr key={m.mes} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '9px 12px', fontWeight: 600, fontFamily: 'monospace' }}>
+                          {new Date(m.mes + '-01T12:00:00').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{m.ingreso > 0 ? `$${(m.ingreso / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoHacienda > 0 ? `$${(m.costoHacienda / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoAlim > 0 ? `$${(m.costoAlim / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoSanidad > 0 ? `$${(m.costoSanidad / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoManoObra > 0 ? `$${(m.costoManoObra / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoGastos > 0 ? `$${(m.costoGastos / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{m.costoTotal > 0 ? `$${(m.costoTotal / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: m.resultado >= 0 ? S.green : S.red }}>{m.costoTotal > 0 || m.ingreso > 0 ? `$${(m.resultado / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.indice !== null ? (m.indice >= 0 ? S.green : S.red) : S.hint }}>{m.indice !== null ? `${m.indice.toFixed(1)}%` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           {/* Resumen */}
           {(() => {
