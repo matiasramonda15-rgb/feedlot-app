@@ -22,6 +22,9 @@ function Card({ children, style = {} }) {
 }
 
 const TIPOS = ['tractor', 'maquinaria', 'herramienta', 'vehiculo', 'infraestructura', 'otro']
+// Años de vida útil sugeridos por tipo, para calcular la amortización mensual —
+// se puede ajustar por cada activo en particular.
+const VIDA_UTIL_DEFAULT = { tractor: 10, maquinaria: 8, herramienta: 5, vehiculo: 5, infraestructura: 20, otro: 10 }
 const ESTADOS = { activo: { bg: '#E8F4EB', color: '#1E5C2E' }, en_reparacion: { bg: '#FDF0E0', color: '#7A4500' }, dado_de_baja: { bg: '#FDF0F0', color: '#7A1A1A' }, vendido: { bg: '#EDE7F6', color: '#4A2E8A' } }
 const SOCIOS = [
   { nombre: 'Oscar',   pct: 75.17 },
@@ -56,7 +59,7 @@ export default function Activos({ usuario }) {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
 
-  const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0 })
+  const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0, vida_util_anios: 10 })
   const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
 
   useEffect(() => { cargar() }, [])
@@ -82,12 +85,13 @@ export default function Activos({ usuario }) {
       fecha_compra: formActivo.fecha_compra || null,
       valor_compra: formActivo.valor_compra ? parseFloat(formActivo.valor_compra) : null,
       valor_actual: formActivo.valor_actual ? parseFloat(formActivo.valor_actual) : null,
+      vida_util_anios: formActivo.vida_util_anios ? parseInt(formActivo.vida_util_anios) : null,
       registrado_por: usuario?.id,
     })
     if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormActivo(false)
-    setFormActivo({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '' })
+    setFormActivo({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0, vida_util_anios: 10 })
     setGuardando(false)
   }
 
@@ -285,6 +289,7 @@ export default function Activos({ usuario }) {
       pct_agricultura: parseFloat(editandoActivo.pct_agricultura) || 0,
       pct_servicios: parseFloat(editandoActivo.pct_servicios) || 0,
       pct_alfalfa: parseFloat(editandoActivo.pct_alfalfa) || 0,
+      vida_util_anios: editandoActivo.vida_util_anios ? parseInt(editandoActivo.vida_util_anios) : null,
     }).eq('id', editandoActivo.id)
     if (error) { alert('Error al guardar los cambios: ' + error.message); return }
     setEditandoActivo(null)
@@ -437,7 +442,7 @@ export default function Activos({ usuario }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '.75rem' }}>
                 <div style={{ gridColumn: '1/3' }}><Label>Nombre</Label><input type="text" value={formActivo.nombre} onChange={e => setFormActivo({...formActivo, nombre: e.target.value})} style={inputStyle} placeholder="ej. Tractor John Deere 5090" /></div>
                 <div><Label>Tipo</Label>
-                  <select value={formActivo.tipo} onChange={e => setFormActivo({...formActivo, tipo: e.target.value})} style={inputStyle}>
+                  <select value={formActivo.tipo} onChange={e => setFormActivo({...formActivo, tipo: e.target.value, vida_util_anios: VIDA_UTIL_DEFAULT[e.target.value] || 10})} style={inputStyle}>
                     {TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
                   </select>
                 </div>
@@ -447,6 +452,7 @@ export default function Activos({ usuario }) {
                 <div><Label>Fecha de compra</Label><input type="date" value={formActivo.fecha_compra} onChange={e => setFormActivo({...formActivo, fecha_compra: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Valor de compra $</Label><input type="number" value={formActivo.valor_compra} onChange={e => setFormActivo({...formActivo, valor_compra: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Valor actual $</Label><input type="number" value={formActivo.valor_actual} onChange={e => setFormActivo({...formActivo, valor_actual: e.target.value})} style={inputStyle} placeholder="Si difiere del de compra" /></div>
+                <div><Label>Vida útil (años)</Label><input type="number" value={formActivo.vida_util_anios} onChange={e => setFormActivo({...formActivo, vida_util_anios: e.target.value})} style={inputStyle} placeholder="Años antes de vender/reponer" /></div>
                 <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={formActivo.observaciones} onChange={e => setFormActivo({...formActivo, observaciones: e.target.value})} style={inputStyle} /></div>
                 <div style={{ gridColumn: '1/-1' }}>
                   <Label>Distribución por actividad (debe sumar 100%)</Label>
@@ -533,6 +539,7 @@ export default function Activos({ usuario }) {
                       observaciones: a.observaciones || '',
                       pct_feedlot: a.pct_feedlot || 0, pct_agricultura: a.pct_agricultura || 0,
                       pct_servicios: a.pct_servicios || 0, pct_alfalfa: a.pct_alfalfa || 0,
+                      vida_util_anios: a.vida_util_anios || VIDA_UTIL_DEFAULT[a.tipo] || 10,
                     })}
                       style={{ flex: 1, padding: '5px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                       ✏ Editar
@@ -613,6 +620,7 @@ export default function Activos({ usuario }) {
                   <div><Label>Fecha de compra</Label><input type="date" value={editandoActivo.fecha_compra} onChange={e => setEditandoActivo({...editandoActivo, fecha_compra: e.target.value})} style={inputStyle} /></div>
                   <div><Label>Valor de compra $</Label><input type="number" value={editandoActivo.valor_compra} onChange={e => setEditandoActivo({...editandoActivo, valor_compra: e.target.value})} style={inputStyle} /></div>
                   <div><Label>Valor actual $</Label><input type="number" value={editandoActivo.valor_actual} onChange={e => setEditandoActivo({...editandoActivo, valor_actual: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Vida útil (años)</Label><input type="number" value={editandoActivo.vida_util_anios} onChange={e => setEditandoActivo({...editandoActivo, vida_util_anios: e.target.value})} style={inputStyle} placeholder="Años antes de vender/reponer" /></div>
                   <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={editandoActivo.observaciones} onChange={e => setEditandoActivo({...editandoActivo, observaciones: e.target.value})} style={inputStyle} /></div>
                 </div>
                 <div style={{ marginBottom: '1rem' }}>
