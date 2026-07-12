@@ -56,13 +56,14 @@ export default function Personal({ usuario }) {
 
   async function guardarEditEmpleado() {
     if (!editandoEmp?.nombre?.trim()) { alert('Ingresá el nombre'); return }
-    await supabase.from('empleados').update({
+    const { error } = await supabase.from('empleados').update({
       nombre: editandoEmp.nombre.trim(),
       rol: editandoEmp.rol || null,
       sueldo_base: editandoEmp.sueldo_base ? parseFloat(editandoEmp.sueldo_base) : null,
       tipo: editandoEmp.tipo || 'fijo',
       aparece_en_servicios: editandoEmp.aparece_en_servicios !== false,
     }).eq('id', editandoEmp.id)
+    if (error) { alert('Error al guardar los cambios: ' + error.message); return }
     setEditandoEmp(null)
     await cargarDatos()
   }
@@ -70,7 +71,8 @@ export default function Personal({ usuario }) {
   async function guardarEmpleado() {
     if (!formEmp.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    await supabase.from('empleados').insert({ nombre: formEmp.nombre, rol: formEmp.rol || null, sueldo_base: formEmp.sueldo_base ? parseFloat(formEmp.sueldo_base) : null, tipo: formEmp.tipo || 'fijo', aparece_en_servicios: formEmp.aparece_en_servicios !== false, activo: true })
+    const { error } = await supabase.from('empleados').insert({ nombre: formEmp.nombre, rol: formEmp.rol || null, sueldo_base: formEmp.sueldo_base ? parseFloat(formEmp.sueldo_base) : null, tipo: formEmp.tipo || 'fijo', aparece_en_servicios: formEmp.aparece_en_servicios !== false, activo: true })
+    if (error) { alert('Error al guardar el empleado: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormEmp(false)
     setFormEmp({ nombre: '', rol: '', sueldo_base: '' })
@@ -89,17 +91,20 @@ export default function Personal({ usuario }) {
       const monto = parseFloat(p.monto) || 0
       if (!monto) continue
       if (p.es_paralelo) {
-        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+        const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+        if (errCp) { alert('Error al registrar en caja paralela: ' + errCp.message); setGuardando(false); return }
         caja_paralela_id = cp?.id
       } else {
-        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Personal', descripcion: desc, monto, forma_pago: p.tipo }).select().single()
+        const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Personal', descripcion: desc, monto, forma_pago: p.tipo }).select().single()
+        if (errCo) { alert('Error al registrar en caja oficial: ' + errCo.message); setGuardando(false); return }
         caja_oficial_id = co?.id
         if (p.tipo === 'cheque_propio' && p.cheque_propio?.fecha_vencimiento) {
-          await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, librador: emp?.nombre || null, estado: 'emitido', caja_oficial_id })
+          const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, librador: emp?.nombre || null, estado: 'emitido', caja_oficial_id })
+          if (errCheq) { alert('Error al registrar el cheque: ' + errCheq.message); setGuardando(false); return }
         }
       }
     }
-    await supabase.from('pagos_empleados').insert({
+    const { error: errPago } = await supabase.from('pagos_empleados').insert({
       ...formPago,
       monto: totalPagos,
       empleado_id: parseInt(formPago.empleado_id),
@@ -107,6 +112,7 @@ export default function Personal({ usuario }) {
       caja_oficial_id,
       caja_paralela_id,
     })
+    if (errPago) { alert('El pago se registró en caja, pero no se pudo guardar el detalle del pago: ' + errPago.message); setGuardando(false); return }
     await cargar()
     setShowFormPago(false)
     setFormPago({ empleado_id: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', tipo: 'sueldo' })
@@ -116,12 +122,14 @@ export default function Personal({ usuario }) {
 
   async function eliminarPago(id) {
     if (!confirm('¿Eliminar este pago?')) return
-    await supabase.from('pagos_empleados').delete().eq('id', id)
+    const { error } = await supabase.from('pagos_empleados').delete().eq('id', id)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
   }
 
   async function toggleActivo(id, activo) {
-    await supabase.from('empleados').update({ activo: !activo }).eq('id', id)
+    const { error } = await supabase.from('empleados').update({ activo: !activo }).eq('id', id)
+    if (error) { alert('Error: ' + error.message); return }
     await cargar()
   }
 

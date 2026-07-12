@@ -257,11 +257,10 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
     if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
     setGuardando(true)
     const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_qq_ha: parseFloat(form.arrendamiento_qq_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
-    if (editando) {
-      await supabase.from('campos').update(campoData).eq('id', editando)
-    } else {
-      await supabase.from('campos').insert({ ...campoData, activo: true })
-    }
+    const { error } = editando
+      ? await supabase.from('campos').update(campoData).eq('id', editando)
+      : await supabase.from('campos').insert({ ...campoData, activo: true })
+    if (error) { alert('Error al guardar el campo: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
     setEditando(null)
@@ -271,7 +270,8 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
 
   async function guardarLote() {
     if (!formLote.numero) { alert('Ingresá el número de lote'); return }
-    await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null, imagen_url: formLote.imagen_url || null })
+    const { error } = await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null, imagen_url: formLote.imagen_url || null })
+    if (error) { alert('Error al guardar el lote: ' + error.message); return }
     await cargar()
     setShowLoteForm(false)
     setFormLote({ numero: '', superficie_ha: '', imagen_url: '' })
@@ -279,7 +279,8 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
 
   async function eliminarLote(id) {
     if (!confirm('¿Eliminar este lote?')) return
-    await supabase.from('lotes_agricolas').delete().eq('id', id)
+    const { error } = await supabase.from('lotes_agricolas').delete().eq('id', id)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
   }
 
@@ -465,7 +466,8 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    await supabase.from('campanas').insert({ ...form, año_inicio: parseInt(form.año_inicio), año_fin: parseInt(form.año_fin), activa: true })
+    const { error } = await supabase.from('campanas').insert({ ...form, año_inicio: parseInt(form.año_inicio), año_fin: parseInt(form.año_fin), activa: true })
+    if (error) { alert('Error al guardar la campaña: ' + error.message); setGuardando(false); return }
     await supabase.from('campanas').update({ activa: false }).neq('nombre', form.nombre)
     await cargar()
     setShowForm(false)
@@ -474,14 +476,15 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
 
   async function activar(c) {
     await supabase.from('campanas').update({ activa: false }).neq('id', c.id)
-    await supabase.from('campanas').update({ activa: true }).eq('id', c.id)
+    const { error } = await supabase.from('campanas').update({ activa: true }).eq('id', c.id)
+    if (error) { alert('Error al activar la campaña: ' + error.message); return }
     setCampanaActiva(c)
     await cargar()
   }
 
   async function guardarPlan() {
     if (!formPlan.campo_id || !formPlan.cultivo) { alert('Seleccioná campo y cultivo'); return }
-    await supabase.from('plan_cultivos').insert({
+    const { error } = await supabase.from('plan_cultivos').insert({
       campo_id: parseInt(formPlan.campo_id),
       lote_id: formPlan.lote_id ? parseInt(formPlan.lote_id) : null,
       campana_id: campanaVista,
@@ -490,6 +493,7 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
       fecha_siembra: formPlan.fecha_siembra || null,
       variedad: formPlan.variedad || null,
     })
+    if (error) { alert('Error al guardar el plan: ' + error.message); return }
     await cargarPlanes(campanaVista)
     setShowPlanForm(false)
     setFormPlan({ campo_id: '', lote_id: '', cultivo: '', superficie_ha: '', fecha_siembra: '', variedad: '' })
@@ -1719,7 +1723,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
     const lote = campo?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
     const supRef = lote?.superficie_ha || campo?.superficie_ha
     const rendimiento = form.rendimiento_qq_ha || (form.kg_totales && supRef ? ((parseFloat(form.kg_totales) / 1000) / supRef * 100).toFixed(1) : null)
-    await supabase.from('cosechas').insert({
+    const { error } = await supabase.from('cosechas').insert({
       campo_id: parseInt(form.campo_id),
       campana_id: parseInt(form.campana_id) || null,
       lote_id: form.lote_id ? parseInt(form.lote_id) : null,
@@ -1732,6 +1736,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       acopio: form.destino === 'acopio' ? (form.acopio || null) : null,
       observaciones: form.observaciones || null,
     })
+    if (error) { alert('Error al guardar la cosecha: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
     setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
@@ -2082,11 +2087,10 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
     if (!form.concepto || !form.monto) { alert('Completá concepto y monto'); return }
     setGuardando(true)
     const data = { campo_id: parseInt(form.campo_id) || null, campana_id: parseInt(form.campana_id) || null, concepto: form.concepto, monto: parseFloat(form.monto), fecha: form.fecha, proveedor: form.proveedor || null, observaciones: form.observaciones || null }
-    if (editando) {
-      await supabase.from('gastos_agro').update(data).eq('id', editando)
-    } else {
-      await supabase.from('gastos_agro').insert(data)
-    }
+    const { error } = editando
+      ? await supabase.from('gastos_agro').update(data).eq('id', editando)
+      : await supabase.from('gastos_agro').insert(data)
+    if (error) { alert('Error al guardar el gasto: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
     setEditando(null)

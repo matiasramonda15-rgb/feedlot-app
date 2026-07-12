@@ -110,16 +110,18 @@ export default function Sanidad({ usuario, mobile, nav }) {
     if (!formMort.corral_id) { alert('Seleccioná un corral'); return }
     setGuardandoMort(true)
     const cant = parseInt(formMort.cantidad) || 1
-    await supabase.from('mortalidad').insert({
+    const { error: errMort } = await supabase.from('mortalidad').insert({
       fecha: formMort.fecha, corral_id: parseInt(formMort.corral_id),
       cantidad: cant, causa: formMort.causa || null, registrado_por: usuario?.id,
     })
+    if (errMort) { alert('Error al registrar la muerte: ' + errMort.message); setGuardandoMort(false); return }
     // Descontar del corral
     const { data: corral } = await supabase.from('corrales').select('animales').eq('id', formMort.corral_id).single()
     const nuevos = Math.max(0, (corral?.animales || 0) - cant)
     const update = { animales: nuevos }
     if (nuevos === 0) { update.rol = 'libre'; update.sub = null }
-    await supabase.from('corrales').update(update).eq('id', parseInt(formMort.corral_id))
+    const { error: errCorral } = await supabase.from('corrales').update(update).eq('id', parseInt(formMort.corral_id))
+    if (errCorral) { alert('La muerte se registró, pero no se pudo descontar del corral: ' + errCorral.message) }
     await cargarDatos()
     setShowFormMort(false)
     setFormMort({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
@@ -134,7 +136,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
     const tipoFinal = formNuevoProd.tipo === '__nuevo__' ? tipoCustomNuevo.trim() : formNuevoProd.tipo
     if (!tipoFinal) { alert('Ingresá el tipo'); return }
     setGuardandoProd(true)
-    await supabase.from('stock_sanitario').insert({
+    const { error } = await supabase.from('stock_sanitario').insert({
       producto: formNuevoProd.nombre.trim(),
       tipo: tipoFinal,
       laboratorio: formNuevoProd.lab || null,
@@ -144,6 +146,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
       minimo_stock: parseFloat(formNuevoProd.minimo) || 0,
       activo: true,
     })
+    if (error) { alert('Error al guardar el producto: ' + error.message); setGuardandoProd(false); return }
     setFormNuevoProd({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: 'ml', minimo: '' })
     setTipoCustomNuevo('')
     setShowNuevoProd(false)
@@ -156,7 +159,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
     const tipoFinal = editProd.tipo === '__nuevo__' ? tipoCustomEdit.trim() : editProd.tipo
     if (!tipoFinal) { alert('Ingresá el tipo'); return }
     setGuardandoProd(true)
-    await supabase.from('stock_sanitario').update({
+    const { error } = await supabase.from('stock_sanitario').update({
       producto: editProd.nombre.trim(),
       tipo: tipoFinal,
       laboratorio: editProd.lab || null,
@@ -166,6 +169,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
       cantidad_ml: parseFloat(editProd.cantidad_actual) || 0,
       actualizado_en: new Date().toISOString(),
     }).eq('id', editProd.id)
+    if (error) { alert('Error al guardar los cambios: ' + error.message); setGuardandoProd(false); return }
     setEditProd(null)
     setTipoCustomEdit('')
     setGuardandoProd(false)
@@ -174,7 +178,8 @@ export default function Sanidad({ usuario, mobile, nav }) {
 
   async function eliminarProd(p) {
     if (!confirm(`¿Eliminar "${p.n}"?`)) return
-    await supabase.from('stock_sanitario').update({ activo: false }).eq('id', p.id)
+    const { error } = await supabase.from('stock_sanitario').update({ activo: false }).eq('id', p.id)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargarProductos()
   }
 
@@ -186,7 +191,8 @@ export default function Sanidad({ usuario, mobile, nav }) {
       const cant = parseFloat(formStockSan.cantidad)
       // Actualizar stock de forma atómica (suma en la base, no en la app) para
       // no pisar otra operación que toque el mismo producto casi al mismo tiempo
-      await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: cant })
+      const { error: errRpc } = await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: cant })
+      if (errRpc) { alert('Error al actualizar el stock: ' + errRpc.message); setGuardandoStockSan(false); return }
       await supabase.from('stock_sanitario').update({ pedido_realizado: false }).eq('id', prod.id)
       // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
       const hoy = new Date()

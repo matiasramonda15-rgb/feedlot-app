@@ -192,7 +192,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   }
 
   async function guardarEdit() {
-    await supabase.from('servicios_terceros').update({
+    const { error } = await supabase.from('servicios_terceros').update({
       campania: formEdit.campania,
       cliente: formEdit.cliente,
       labor: formEdit.labor,
@@ -205,6 +205,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       empleado1: formEdit.empleado1 || null,
       empleado2: formEdit.empleado2 || null,
     }).eq('id', editandoId)
+    if (error) { alert('Error al guardar los cambios: ' + error.message); return }
     setEditandoId(null)
     await cargar()
   }
@@ -214,7 +215,8 @@ export default function Servicios({ usuario, mobile, nav }) {
     setGuardandoMO(true)
     const pct = parseFloat(formMO.porcentaje)
     const monto = s.precio_ha && s.hectareas ? Math.round(s.precio_ha * s.hectareas * pct / 100) : null
-    await supabase.from('mano_obra_servicios').insert({ servicio_id: servicioId, trabajador: formMO.trabajador, rol: formMO.rol, porcentaje: pct, monto_calculado: monto })
+    const { error } = await supabase.from('mano_obra_servicios').insert({ servicio_id: servicioId, trabajador: formMO.trabajador, rol: formMO.rol, porcentaje: pct, monto_calculado: monto })
+    if (error) { alert('Error al guardar la mano de obra: ' + error.message); setGuardandoMO(false); return }
     setFormMO({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
     setGuardandoMO(false)
     await cargar()
@@ -376,13 +378,14 @@ export default function Servicios({ usuario, mobile, nav }) {
     async function guardarDescargaM(regId) {
       if (!formDescM.kg) { alert('Ingresá los kg'); return }
       setGuardandoDescM(true)
-      await supabase.from('descargas_mercaderia').insert({
+      const { error } = await supabase.from('descargas_mercaderia').insert({
         registro_id: regId, fecha: formDescM.fecha, tipo: formDescM.tipo,
         patente: formDescM.tipo === 'camion' ? (formDescM.patente || null) : null,
         kg: parseFloat(formDescM.kg),
         observaciones: formDescM.tipo !== 'camion' ? (formDescM.observaciones || null) : null,
         registrado_por: usuario?.id,
       })
+      if (error) { alert('Error al guardar la descarga: ' + error.message); setGuardandoDescM(false); return }
       setFormDescM({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
       setGuardandoDescM(false)
       await cargarDescargasReg(regId)
@@ -763,7 +766,8 @@ export default function Servicios({ usuario, mobile, nav }) {
                       <span>{c.nombre}</span>
                       <button onClick={async () => {
                         if (!confirm(`¿Desactivar campaña ${c.nombre}?`)) return
-                        await supabase.from('campanas').update({ activa: false }).eq('id', c.id)
+                        const { error } = await supabase.from('campanas').update({ activa: false }).eq('id', c.id)
+                        if (error) { alert('Error: ' + error.message); return }
                         await cargar()
                       }} style={{ fontSize: 10, padding: '2px 6px', background: S.redLight, border: 'none', color: S.red, borderRadius: 3, cursor: 'pointer' }}>✕</button>
                     </div>
@@ -776,7 +780,8 @@ export default function Servicios({ usuario, mobile, nav }) {
                         style={{ ...inp, padding: '5px 8px', fontSize: 12, flex: 1 }} />
                       <button onClick={async () => {
                         if (!nuevaCampana.trim()) return
-                        await supabase.from('campanas').insert({ nombre: nuevaCampana.trim(), activa: true })
+                        const { error } = await supabase.from('campanas').insert({ nombre: nuevaCampana.trim(), activa: true })
+                        if (error) { alert('Error al crear la campaña: ' + error.message); return }
                         setNuevaCampana('')
                         await cargar()
                       }} style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
@@ -1567,9 +1572,11 @@ export default function Servicios({ usuario, mobile, nav }) {
                             if (!monto) continue
                             if (p.tipo === 'canje') continue  // canje: no toca caja
                             if (p.es_paralelo) {
-                              await supabase.from('caja_paralela').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', descripcion: desc, monto })
+                              const { error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', descripcion: desc, monto })
+                              if (errCp) { alert('Error al registrar en caja paralela: ' + errCp.message); return }
                             } else {
-                              await supabase.from('caja_oficial').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', categoria: 'Mano de obra', descripcion: desc, monto, forma_pago: p.tipo })
+                              const { error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', categoria: 'Mano de obra', descripcion: desc, monto, forma_pago: p.tipo })
+                              if (errCo) { alert('Error al registrar en caja oficial: ' + errCo.message); return }
                             }
                           }
                           // Marcar como pagado — crear entrada si no existe
