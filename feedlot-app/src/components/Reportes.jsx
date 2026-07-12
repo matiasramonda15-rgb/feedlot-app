@@ -106,12 +106,34 @@ export default function Reportes({ usuario }) {
 
   // ── Costo alimentación por corral/día ──
   const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
-  // Precio promedio ponderado de alimentación (kg × precio_referencia)
+  // Precio promedio ponderado de alimentación (kg × precio_referencia) — se usa
+  // solo como respaldo cuando no se puede calcular el precio específico de la dieta
   const stockConPrecio = stock.filter(s => s.precio_referencia && s.cantidad_kg > 0)
   const totalKgStock = stockConPrecio.reduce((s, i) => s + i.cantidad_kg, 0)
   const precioPromAlim = totalKgStock > 0
     ? stockConPrecio.reduce((s, i) => s + i.precio_referencia * i.cantidad_kg, 0) / totalKgStock
     : null
+
+  // Precio real $/kg MF de cada dieta, según su fórmula (% de cada ingrediente
+  // x precio de referencia de ese ingrediente) — mucho más preciso que un
+  // promedio general del stock, porque una dieta de terminación (más grano)
+  // no cuesta lo mismo que una de acostumbramiento.
+  const precioPorDieta = {}
+  ;['seco', 'humedo'].forEach(dieta => {
+    ;['acostumbramiento', 'recria', 'terminacion'].forEach(etapa => {
+      const ingredientes = formulasMixer.filter(f => f.dieta === dieta && f.etapa === etapa)
+      let totalKgF = 0, totalCostoF = 0, faltaPrecio = false
+      ingredientes.forEach(ing => {
+        const stockItem = stock.find(s => s.insumo === ing.ingrediente)
+        if (!stockItem?.precio_referencia) faltaPrecio = true
+        totalKgF += ing.kg || 0
+        totalCostoF += (ing.kg || 0) * (stockItem?.precio_referencia || 0)
+      })
+      precioPorDieta[`${dieta}_${etapa}`] = totalKgF > 0 ? { precio: totalCostoF / totalKgF, completo: !faltaPrecio } : null
+    })
+  })
+  const rolloStockItem = stock.find(s => s.insumo === 'Rollo (heno)')
+  const precioRollo = rolloStockItem?.precio_referencia || null
 
   const raciones30 = raciones.filter(r => new Date(r.creado_en) >= hace30)
 
@@ -136,7 +158,15 @@ export default function Reportes({ usuario }) {
     const num = r.corrales?.numero
     if (!num) return
     if (!costoAlimPorCorral[num]) costoAlimPorCorral[num] = { totalCosto: 0, totalKg: 0, dias: new Set() }
-    const costo = precioPromAlim ? (r.kg_total || 0) * precioPromAlim : 0
+    // Separar rollo (precio propio) del resto del mixer (precio según fórmula
+    // real de esa dieta/etapa) — si falta algún dato, cae al promedio general.
+    const kgRollo = r.kg_rollo_extra || (r.solo_rollo ? (r.kg_total || 0) : 0)
+    const kgMixer = (r.kg_total || 0) - kgRollo
+    const dietaH = r.tipo_dieta || 'seco'
+    const etapaH = r.mezclador === 'Acostumbramiento' ? 'acostumbramiento' : r.mezclador === 'Recria' ? 'recria' : 'terminacion'
+    const precioMixer = precioPorDieta[`${dietaH}_${etapaH}`]?.precio ?? precioPromAlim ?? 0
+    const precioRolloUsado = precioRollo ?? precioPromAlim ?? 0
+    const costo = kgRollo * precioRolloUsado + kgMixer * precioMixer
     costoAlimPorCorral[num].totalCosto += costo
     costoAlimPorCorral[num].totalKg += r.kg_total || 0
     costoAlimPorCorral[num].dias.add(new Date(r.creado_en).toDateString())
@@ -448,6 +478,33 @@ export default function Reportes({ usuario }) {
       {tab === 'costos' && (
         <div>
           <SectionHeader title="Costos de producción" sub="Alimentación · últimos 30 días con precios de referencia cargados" />
+
+          {/* Precio por kg de cada dieta */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Precio por kg MF de cada dieta</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+              {['acostumbramiento', 'recria', 'terminacion'].map(etapa => (
+                <div key={etapa} style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: '.9rem' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: S.text, textTransform: 'capitalize', marginBottom: 8 }}>{etapa}</div>
+                  {['seco', 'humedo'].map(dieta => {
+                    const d = precioPorDieta[`${dieta}_${etapa}`]
+                    return (
+                      <div key={dieta} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+                        <span style={{ color: S.muted, textTransform: 'capitalize' }}>{dieta}</span>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: d?.precio ? (d.completo ? S.text : S.amber) : S.hint }}>
+                          {d?.precio ? `$${Math.round(d.precio).toLocaleString('es-AR')}/kg${!d.completo ? ' *' : ''}` : '—'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: S.hint, marginTop: 10 }}>
+              Calculado con la fórmula real de cada dieta (% de cada ingrediente) y el precio de referencia de cada insumo en Insumos.
+              {' * '}= a algún ingrediente de esa dieta todavía le falta precio de referencia, así que el número es aproximado.
+            </div>
+          </div>
 
           {/* Resumen global */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>

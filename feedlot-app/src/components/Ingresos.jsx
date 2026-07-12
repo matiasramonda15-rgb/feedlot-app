@@ -73,7 +73,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   const [contactos, setContactos] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('lista') // 'lista' | 'nuevo' | 'editar'
-  const [filtroIngresos, setFiltroIngresos] = useState('')
+  const [filtroListaIngresos, setFiltroListaIngresos] = useState('')
   const [editandoLote, setEditandoLote] = useState(null)
   const [guardando, setGuardando] = useState(false)
 
@@ -850,6 +850,14 @@ export default function Ingresos({ usuario, mobile, nav }) {
       {/* ── TAB INGRESOS ── */}
       {tab === 'lista' && (
         <div>
+          <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select value={filtroListaIngresos} onChange={e => setFiltroListaIngresos(e.target.value)}
+              style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroListaIngresos ? S.accent : S.muted, fontWeight: filtroListaIngresos ? 600 : 400 }}>
+              <option value="">Todos los proveedores</option>
+              {[...new Set(lotes.map(l => l.procedencia).filter(Boolean))].sort().map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            {filtroListaIngresos && <button onClick={() => setFiltroListaIngresos('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>}
+          </div>
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 800 }}>
               <thead>
@@ -860,10 +868,10 @@ export default function Ingresos({ usuario, mobile, nav }) {
                 </tr>
               </thead>
               <tbody>
-                {lotes.length === 0 && (
+                {lotes.filter(l => !filtroListaIngresos || l.procedencia === filtroListaIngresos).length === 0 && (
                   <tr><td colSpan={12} style={{ padding: '3rem', textAlign: 'center', color: S.hint }}>No hay ingresos registrados.</td></tr>
                 )}
-                {lotes.map(l => {
+                {lotes.filter(l => !filtroListaIngresos || l.procedencia === filtroListaIngresos).map(l => {
                   const kgBas = l.kg_bascula || 0
                   const kgFac = l.kg_factura || 0
                   const diffKg = kgBas && kgFac ? kgBas - kgFac : null
@@ -1319,6 +1327,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
+  const [filtroIngresos, setFiltroIngresos] = useState('')
   const [filtroArchivadas, setFiltroArchivadas] = useState({ proveedor: '', desde: '', hasta: '' })
 
   useEffect(() => { cargarPagos() }, [lotes])

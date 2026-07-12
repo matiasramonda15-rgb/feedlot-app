@@ -1014,12 +1014,13 @@ export default function Alimentacion({ usuario, mobile, nav }) {
           })}
         {/* ── INGREDIENTES (STOCK-PRECIO) ── */}
         <div style={{ marginTop: '2rem' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: '.75rem' }}>Ingredientes — Stock y precio</div>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 2 }}>Ingredientes — Stock y precio</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '.75rem' }}>El precio de cada insumo es el promedio de sus últimas 3 compras con precio cargado (se actualiza solo desde Insumos).</div>
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: S.bg }}>
-                  {['Nombre', 'Base húmeda', '% MS', 'Materia seca', 'Precio/kg MS', 'Total stock'].map(h => (
+                  {['Nombre', 'Base húmeda', '% MS', 'Materia seca', 'Precio/kg', 'Precio/kg MS', 'Total stock'].map(h => (
                     <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Nombre' ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                   ))}
                 </tr>
@@ -1055,6 +1056,9 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                         <span style={{ fontSize: 11, color: S.muted, marginLeft: 2 }}>%</span>
                       </td>
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{kgMS.toLocaleString('es-AR')} kg</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: s.precio_referencia ? S.text : S.hint }}>
+                        {s.precio_referencia ? `$${Math.round(s.precio_referencia).toLocaleString('es-AR')}` : '—'}
+                      </td>
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: precioKgMS ? S.green : S.hint, fontWeight: 600 }}>
                         {precioKgMS ? `$${precioKgMS.toLocaleString('es-AR')}` : '—'}
                       </td>
