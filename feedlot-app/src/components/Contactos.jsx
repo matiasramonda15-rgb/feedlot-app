@@ -135,6 +135,125 @@ export default function Contactos({ usuario }) {
     if (contactoSeleccionado?.id === id) setContactoSeleccionado(null)
   }
 
+  // Arma la lista de movimientos de una cuenta (oficial o paralela) para un
+  // contacto — misma lógica/fórmulas que la tabla de la ficha, para que el
+  // resumen impreso coincida con lo que se ve en pantalla.
+  function construirMovimientosParaImpresion(nombre, esParalela) {
+    const data = calcularSaldo(nombre)
+    const movs = []
+    const vistos = new Set()
+    ;(data.ventas || []).forEach(v => {
+      if (v.grupo_venta_id) { if (vistos.has(v.grupo_venta_id)) return; vistos.add(v.grupo_venta_id) }
+      const grupo = v.grupo_venta_id ? data.ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
+      const tieneFacturado = grupo.some(vv => vv.monto_facturado != null)
+      const sumFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
+      const sumIva = grupo.reduce((s, vv) => s + (vv.iva_monto || 0), 0)
+      const sumCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
+      const sumRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
+      const sumNegro = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
+      const montoFact = tieneFacturado ? (sumFact + sumIva - sumCom - sumRet) : grupo.reduce((s, vv) => s + (vv.total || 0), 0)
+      const fecha = v.fecha || v.creado_en?.split('T')[0]
+      if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (paralelo)', credito: sumNegro, debito: 0 }) }
+      else { if (montoFact > 0) movs.push({ fecha, tipo: 'Venta hacienda', credito: montoFact, debito: 0 }) }
+    })
+    ;(data.lotes || []).forEach(l => {
+      const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
+      const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
+      const montoFact = l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc : total
+      const montoParalelo = l.monto_negro || 0
+      const fecha = l.created_at?.split('T')[0]
+      if (esParalela) { if (montoParalelo > 0) movs.push({ fecha, tipo: 'Compra hacienda (paralelo)', credito: 0, debito: montoParalelo }) }
+      else { if (montoFact > 0) movs.push({ fecha, tipo: 'Compra hacienda', credito: 0, debito: montoFact }) }
+    })
+    ;(data.comprasInsumos || []).forEach(ci => {
+      const esParaleloCi = ci.es_paralelo || false
+      if (esParalela !== esParaleloCi) return
+      if (ci.total > 0) movs.push({ fecha: ci.fecha, tipo: ci.insumo_nombre || 'Insumo', credito: 0, debito: ci.total })
+    })
+    ;(data.comprasAgro || []).forEach(ca => {
+      const esParaleloCa = ca.es_paralelo || false
+      if (esParalela !== esParaleloCa) return
+      if (ca.total > 0) movs.push({ fecha: ca.fecha, tipo: ca.insumo_nombre || 'Agroquímico', credito: 0, debito: ca.total })
+    })
+    if (!esParalela) {
+      ;(data.ventasActivos || []).forEach(va => {
+        if (va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'}`, credito: va.monto, debito: 0 })
+      })
+    } else {
+      ;(data.ventasActivos || []).forEach(va => {
+        if (va.es_paralelo && va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'} (paralelo)`, credito: va.monto, debito: 0 })
+      })
+    }
+    movs.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+    let saldoAcum = 0
+    return movs.map(m => { saldoAcum += (m.credito || 0) - (m.debito || 0); return { ...m, saldoAcum } })
+  }
+
+  function generarResumenCuenta(nombre) {
+    const contactoData = contactos.find(c => c.nombre === nombre)
+    const movOficial = construirMovimientosParaImpresion(nombre, false)
+    const movParalela = puedeVerParalelo ? construirMovimientosParaImpresion(nombre, true) : []
+    const fmt = n => `$ ${Math.round(n || 0).toLocaleString('es-AR')}`
+    const fmtFecha = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+
+    const tabla = (movs, titulo) => movs.length === 0 ? '' : `
+      <div class="titulo-cuenta">${titulo}</div>
+      <table>
+        <thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Débito</th><th class="num">Crédito</th><th class="num">Saldo</th></tr></thead>
+        <tbody>
+          ${movs.map(m => `<tr>
+            <td>${fmtFecha(m.fecha)}</td>
+            <td>${m.tipo}</td>
+            <td class="num">${m.debito ? fmt(m.debito) : ''}</td>
+            <td class="num">${m.credito ? fmt(m.credito) : ''}</td>
+            <td class="num saldo">${fmt(m.saldoAcum)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr><td colspan="4">Saldo final</td><td class="num saldo">${fmt(movs[movs.length - 1]?.saldoAcum || 0)}</td></tr></tfoot>
+      </table>
+    `
+
+    const html = `
+      <html><head><title>Resumen de cuenta — ${nombre}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 40px; color: #1A1916; }
+        .header { text-align: center; margin-bottom: 24px; border-bottom: 2px solid #1A1916; padding-bottom: 14px; }
+        .empresa { font-size: 20px; font-weight: 700; }
+        .sub { font-size: 12px; color: #6B6760; margin-top: 4px; }
+        .contacto { font-size: 16px; font-weight: 700; margin: 20px 0 4px; }
+        .datos { font-size: 12px; color: #6B6760; margin-bottom: 20px; }
+        .titulo-cuenta { font-size: 13px; font-weight: 700; margin: 24px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 10px; }
+        th { text-align: left; background: #F7F5F0; padding: 8px 10px; border-bottom: 2px solid #1A1916; }
+        td { padding: 7px 10px; border-bottom: 1px solid #E2DDD6; }
+        .num { text-align: right; font-family: monospace; }
+        .saldo { font-weight: 700; }
+        tfoot td { font-weight: 700; background: #F7F5F0; border-top: 2px solid #1A1916; }
+        .fecha-emision { text-align: right; font-size: 11px; color: #6B6760; margin-top: 30px; }
+        button { margin-top: 24px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
+        @media print { button { display: none; } }
+      </style></head>
+      <body>
+        <div class="header">
+          <div class="empresa">RAMONDA HNOS S.A.</div>
+          <div class="sub">Resumen de cuenta</div>
+        </div>
+        <div class="contacto">${nombre}</div>
+        <div class="datos">
+          ${contactoData?.cuit ? `CUIT: ${contactoData.cuit} · ` : ''}${contactoData?.localidad ? `${contactoData.localidad} · ` : ''}${contactoData?.telefono || ''}
+        </div>
+        ${tabla(movOficial, 'Cuenta corriente oficial')}
+        ${movOficial.length === 0 ? '<p style="color:#9E9A94;font-size:13px;">Sin movimientos en la cuenta oficial.</p>' : ''}
+        ${tabla(movParalela, 'Cuenta paralela')}
+        <div class="fecha-emision">Emitido el ${new Date().toLocaleDateString('es-AR')}</div>
+        <div style="text-align:center;"><button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button></div>
+      </body></html>
+    `
+    const win = window.open('', '_blank')
+    win.document.write(html)
+    win.document.close()
+  }
+
   function calcularSaldo(nombre) {
     const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
     // Agrupar ventas multi-corral para no contar de más
@@ -275,6 +394,10 @@ export default function Contactos({ usuario }) {
             {contactoData?.tipo && <div style={{ fontSize: 12, color: S.muted, textTransform: 'capitalize' }}>{contactoData.tipo.replace('_', ' ')}</div>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            <button onClick={() => generarResumenCuenta(nombre)}
+              style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer' }}>
+              🖨️ Imprimir / Enviar resumen
+            </button>
             {contactoData && (
               <>
                 <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
