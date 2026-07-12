@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { abrirReciboDoble } from '../shared/reciboLogic'
 
 const PAGO_INIT_P = { tipo: 'transferencia', monto: '', es_paralelo: false, cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' } }
 
@@ -383,51 +384,24 @@ export default function Personal({ usuario }) {
                       <td style={{ padding: '9px 12px' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={() => {
-                            const win = window.open('', '_blank')
-                            const nroRecibo = String(p.id).padStart(6, '0')
-                            const copiaHtml = (etiqueta) => `
-                              <div class="copia">
-                                <div class="etiqueta">${etiqueta}</div>
-                                <h2>Recibo de Pago — Ramonda Hnos S.A.</h2>
-                                <p>Recibo N° ${nroRecibo} · Emitido el ${new Date().toLocaleDateString('es-AR')}</p>
-                                <div class="box">
-                                  <div class="row"><span class="label">Empleado</span><span class="val">${p.empleados?.nombre || '—'}</span></div>
-                                  <div class="row"><span class="label">Fecha de pago</span><span class="val">${new Date(p.fecha).toLocaleDateString('es-AR')}</span></div>
-                                  <div class="row"><span class="label">Tipo</span><span class="val">${p.tipo}</span></div>
-                                  <div class="row"><span class="label">Concepto</span><span class="val">${p.concepto || '—'}</span></div>
-                                </div>
-                                <div class="montobox">
-                                  <div style="color:#6B6760;font-size:11px;margin-bottom:3px">TOTAL ABONADO</div>
-                                  <div class="monto">$${p.monto?.toLocaleString('es-AR')}</div>
-                                </div>
-                                <div class="firma">
-                                  <div class="firma-line">Firma empleado</div>
-                                  <div class="firma-line">Firma empleador</div>
-                                </div>
-                              </div>`
-                            win.document.write(`<!DOCTYPE html><html><head><title>Recibo de Pago</title><style>
-                              @page{size:A4;margin:10mm} body{font-family:'IBM Plex Sans',sans-serif;margin:0;font-size:12px}
-                              .hoja{display:flex;flex-direction:column;height:277mm}
-                              .copia{flex:1;padding:14px 28px;box-sizing:border-box;position:relative}
-                              .copia:first-child{border-bottom:2px dashed #999}
-                              .etiqueta{position:absolute;top:8px;right:20px;font-size:10px;color:#6B6760;text-transform:uppercase;letter-spacing:.05em;border:1px solid #999;border-radius:4px;padding:2px 8px}
-                              h2{margin:0 0 2px;font-size:15px} p{color:#6B6760;font-size:11px;margin-bottom:10px}
-                              .box{border:1px solid #E2DDD6;border-radius:8px;padding:10px;margin-bottom:10px}
-                              .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:12px}
-                              .row:last-child{border-bottom:none} .label{color:#6B6760} .val{font-weight:600}
-                              .montobox{text-align:center;padding:10px;border:2px solid #1E5C2E;border-radius:8px;margin-bottom:14px}
-                              .monto{font-size:18px;font-weight:700;color:#1E5C2E;font-family:monospace}
-                              .firma{display:flex;gap:40px;margin-top:14px}
-                              .firma-line{flex:1;border-top:1px solid #ccc;padding-top:6px;font-size:10px;color:#9E9A94}
-                              .no-print{text-align:center;margin-top:12px} @media print{.no-print{display:none}}
-                            </style></head><body>
-                              <div class="hoja">
-                                ${copiaHtml('Copia — ' + (p.empleados?.nombre || 'empleado'))}
-                                ${copiaHtml('Copia — Ramonda Hnos S.A.')}
-                              </div>
-                              <div class="no-print"><button onclick="window.print()" style="padding:8px 16px;background:#1A3D6B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir recibo</button></div>
-                            </body></html>`)
-                            win.document.close()
+                            abrirReciboDoble({
+                              titulo: 'Recibo de Pago',
+                              numero: String(p.id).padStart(6, '0'),
+                              fecha: new Date(p.fecha).toLocaleDateString('es-AR'),
+                              filas: [
+                                ['Empleado', p.empleados?.nombre || '—'],
+                                ['Fecha de pago', new Date(p.fecha).toLocaleDateString('es-AR')],
+                                ['Tipo', p.tipo],
+                                ['Concepto', p.concepto || '—'],
+                              ],
+                              montoLabel: 'TOTAL ABONADO',
+                              monto: `$${p.monto?.toLocaleString('es-AR')}`,
+                              colorMonto: '#1E5C2E',
+                              firmaIzq: 'Firma empleado',
+                              firmaDer: 'Firma empleador',
+                              etiquetaCopia1: 'Copia — ' + (p.empleados?.nombre || 'empleado'),
+                              etiquetaCopia2: 'Copia — Ramonda Hnos S.A.',
+                            })
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨 Recibo</button>
                           <button onClick={() => eliminarPago(p.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                         </div>

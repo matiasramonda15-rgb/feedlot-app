@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { abrirReciboDoble } from '../shared/reciboLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -157,62 +158,24 @@ export default function Activos({ usuario }) {
   // Recibo imprimible de un pago a tercero hecho con la plata del socio (factura a
   // nombre de la sociedad para descargar IVA, pero la plata no sale de la caja).
   function generarReciboRetiro(r) {
-    const fechaStr = r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : ''
-    const nroRecibo = Date.now().toString().slice(-6)
-    const copia = (etiqueta) => `
-        <div class="copia">
-          <div class="etiqueta">${etiqueta}</div>
-          <div class="header">
-            <div class="empresa">RAMONDA HNOS S.A.</div>
-            <div class="sub">Recibo de pago</div>
-          </div>
-          <div class="titulo">Recibo N° ${nroRecibo}</div>
-          <div class="fila"><span>Fecha</span><span>${fechaStr}</span></div>
-          <div class="fila"><span>Pagado a</span><span>${r.tercero}</span></div>
-          <div class="fila"><span>Concepto</span><span>${r.concepto || '—'}</span></div>
-          <div class="fila"><span>Forma de pago</span><span>${r.forma_pago}</span></div>
-          <div class="monto">$ ${Number(r.monto).toLocaleString('es-AR')}</div>
-          <div class="observ">
-            Pago realizado por cuenta y orden de Ramonda Hnos S.A., aportado directamente por el socio ${r.socio}.
-          </div>
-          <div class="firma">
-            <div>Recibí conforme</div>
-            <div>Ramonda Hnos S.A.</div>
-          </div>
-        </div>`
-    const html = `
-      <html><head><title>Recibo</title>
-      <style>
-        @page { size: A4; margin: 10mm; }
-        body { font-family: Arial, sans-serif; color: #1A1916; margin: 0; }
-        .hoja { display: flex; flex-direction: column; height: 277mm; }
-        .copia { flex: 1; padding: 14px 24px; box-sizing: border-box; position: relative; }
-        .copia:first-child { border-bottom: 2px dashed #999; }
-        .etiqueta { position: absolute; top: 8px; right: 20px; font-size: 10px; color: #6B6760; text-transform: uppercase; letter-spacing: .05em; border: 1px solid #999; border-radius: 4px; padding: 2px 8px; }
-        .header { text-align: center; margin-bottom: 14px; border-bottom: 2px solid #1A1916; padding-bottom: 10px; }
-        .empresa { font-size: 18px; font-weight: 700; }
-        .sub { font-size: 11px; color: #6B6760; margin-top: 2px; }
-        .titulo { font-size: 13px; font-weight: 700; margin: 10px 0 8px; text-transform: uppercase; letter-spacing: .05em; }
-        .fila { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #E2DDD6; font-size: 12px; }
-        .monto { font-size: 20px; font-weight: 700; text-align: center; margin: 12px 0; padding: 10px; background: #F7F5F0; border-radius: 8px; }
-        .observ { font-size: 10px; color: #6B6760; text-align: center; }
-        .firma { margin-top: 20px; display: flex; justify-content: space-around; text-align: center; font-size: 10px; }
-        .firma div { border-top: 1px solid #1A1916; padding-top: 5px; width: 160px; }
-        .no-print { text-align: center; margin-top: 14px; }
-        button { padding: 10px 20px; font-size: 14px; cursor: pointer; }
-        @media print { .no-print { display: none; } }
-      </style></head>
-      <body>
-        <div class="hoja">
-          ${copia('Copia — ' + (r.tercero || 'tercero'))}
-          ${copia('Copia — Ramonda Hnos S.A.')}
-        </div>
-        <div class="no-print"><button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button></div>
-      </body></html>
-    `
-    const win = window.open('', '_blank')
-    win.document.write(html)
-    win.document.close()
+    const fechaStr = r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR') : ''
+    abrirReciboDoble({
+      titulo: 'Recibo de pago',
+      numero: Date.now().toString().slice(-6),
+      fecha: fechaStr,
+      filas: [
+        ['Pagado a', r.tercero],
+        ['Concepto', r.concepto || '—'],
+        ['Forma de pago', r.forma_pago],
+      ],
+      monto: `$ ${Number(r.monto).toLocaleString('es-AR')}`,
+      colorMonto: '#1E5C2E',
+      notaPie: `Pago realizado por cuenta y orden de Ramonda Hnos S.A., aportado directamente por el socio ${r.socio}.`,
+      firmaIzq: 'Recibí conforme',
+      firmaDer: 'Ramonda Hnos S.A.',
+      etiquetaCopia1: 'Copia — ' + (r.tercero || 'tercero'),
+      etiquetaCopia2: 'Copia — Ramonda Hnos S.A.',
+    })
   }
 
   async function guardarCredito() {
@@ -1036,52 +999,25 @@ export default function Activos({ usuario }) {
                       <td style={{ padding: '9px 12px' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={() => {
-                            const win = window.open('', '_blank')
-                            const nroRecibo = String(r.id).padStart(6, '0')
-                            const copiaHtml = (etiqueta) => `
-                              <div class="copia">
-                                <div class="etiqueta">${etiqueta}</div>
-                                <h2>Comprobante de Retiro — Ramonda Hnos S.A.</h2>
-                                <p>Recibo N° ${nroRecibo} · Emitido el ${new Date().toLocaleDateString('es-AR')}</p>
-                                <div class="box">
-                                  <div class="row"><span class="label">Socio</span><span class="val">${r.socio}</span></div>
-                                  <div class="row"><span class="label">Fecha</span><span class="val">${new Date(r.fecha+'T12:00:00').toLocaleDateString('es-AR')}</span></div>
-                                  <div class="row"><span class="label">Concepto</span><span class="val">${r.concepto || '—'}</span></div>
-                                  <div class="row"><span class="label">Forma de pago</span><span class="val">${r.forma_pago}${r.caja_paralela_id ? ' (paralelo)' : ''}</span></div>
-                                  ${r.observaciones ? `<div class="row"><span class="label">Observaciones</span><span class="val">${r.observaciones}</span></div>` : ''}
-                                </div>
-                                <div class="montobox">
-                                  <div style="color:#6B6760;font-size:11px;margin-bottom:3px">MONTO RETIRADO</div>
-                                  <div class="monto">-$${r.monto?.toLocaleString('es-AR')}</div>
-                                </div>
-                                <div class="firma">
-                                  <div class="firma-line">Firma socio</div>
-                                  <div class="firma-line">Firma responsable</div>
-                                </div>
-                              </div>`
-                            win.document.write(`<!DOCTYPE html><html><head><title>Comprobante de Retiro</title><style>
-                              @page{size:A4;margin:10mm} body{font-family:'IBM Plex Sans',sans-serif;margin:0;font-size:12px}
-                              .hoja{display:flex;flex-direction:column;height:277mm}
-                              .copia{flex:1;padding:14px 28px;box-sizing:border-box;position:relative}
-                              .copia:first-child{border-bottom:2px dashed #999}
-                              .etiqueta{position:absolute;top:8px;right:20px;font-size:10px;color:#6B6760;text-transform:uppercase;letter-spacing:.05em;border:1px solid #999;border-radius:4px;padding:2px 8px}
-                              h2{margin:0 0 2px;font-size:15px} p{color:#6B6760;font-size:11px;margin-bottom:10px}
-                              .box{border:1px solid #E2DDD6;border-radius:8px;padding:10px;margin-bottom:10px}
-                              .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:12px}
-                              .row:last-child{border-bottom:none} .label{color:#6B6760} .val{font-weight:600}
-                              .montobox{text-align:center;padding:10px;border:2px solid #7A1A1A;border-radius:8px;margin-bottom:14px}
-                              .monto{font-size:18px;font-weight:700;color:#7A1A1A;font-family:monospace}
-                              .firma{display:flex;gap:40px;margin-top:14px}
-                              .firma-line{flex:1;border-top:1px solid #ccc;padding-top:6px;font-size:10px;color:#9E9A94}
-                              .no-print{text-align:center;margin-top:12px} @media print{.no-print{display:none}}
-                            </style></head><body>
-                              <div class="hoja">
-                                ${copiaHtml('Copia — ' + r.socio)}
-                                ${copiaHtml('Copia — Ramonda Hnos S.A.')}
-                              </div>
-                              <div class="no-print"><button onclick="window.print()" style="padding:8px 16px;background:#1A3D6B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir</button></div>
-                            </body></html>`)
-                            win.document.close()
+                            abrirReciboDoble({
+                              titulo: 'Comprobante de Retiro',
+                              numero: String(r.id).padStart(6, '0'),
+                              fecha: new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR'),
+                              filas: [
+                                ['Socio', r.socio],
+                                ['Fecha', new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR')],
+                                ['Concepto', r.concepto || '—'],
+                                ['Forma de pago', `${r.forma_pago}${r.caja_paralela_id ? ' (paralelo)' : ''}`],
+                                ['Observaciones', r.observaciones || null],
+                              ],
+                              montoLabel: 'MONTO RETIRADO',
+                              monto: `-$${r.monto?.toLocaleString('es-AR')}`,
+                              colorMonto: '#7A1A1A',
+                              firmaIzq: 'Firma socio',
+                              firmaDer: 'Firma responsable',
+                              etiquetaCopia1: 'Copia — ' + r.socio,
+                              etiquetaCopia2: 'Copia — Ramonda Hnos S.A.',
+                            })
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨 Recibo</button>
                           {r.tercero && (
                             <button onClick={() => generarReciboRetiro(r)}
