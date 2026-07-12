@@ -102,11 +102,15 @@ function generarArchivoRaciones(porFecha, titulo) {
     const totalDia = items.reduce((s, h) => s + (h.kg_total || 0), 0)
     const filas = items
       .sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99))
-      .map(h => `<tr>
+      .map(h => {
+        const rango = h.corrales?.rol === 'clasificado' && h.corrales?.sub ? `Rango ${h.corrales.sub}` : '—'
+        return `<tr>
         <td style="padding:7px 12px;border-bottom:1px solid #eee;font-weight:600;">C-${h.corrales?.numero || '—'}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #eee;color:#666;">${rango}</td>
         <td style="padding:7px 12px;border-bottom:1px solid #eee;color:#666;">${h.mezclador || h.mixer || '—'}</td>
         <td style="padding:7px 12px;border-bottom:1px solid #eee;text-align:right;font-weight:700;font-family:monospace;color:#1A6B3C;">${(h.kg_total || 0).toLocaleString('es-AR')} kg</td>
-      </tr>`).join('')
+      </tr>`
+      }).join('')
     const nombreFecha = new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
     return `
       <div style="margin-bottom:28px;page-break-inside:avoid;">
@@ -117,12 +121,13 @@ function generarArchivoRaciones(porFecha, titulo) {
         <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #ddd;border-top:none;">
           <thead><tr style="background:#f5f5f5;">
             <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #ddd;">Corral</th>
+            <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #ddd;">Rango</th>
             <th style="padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #ddd;">Etapa</th>
             <th style="padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #ddd;">Kg cargados</th>
           </tr></thead>
           <tbody>${filas}</tbody>
           <tfoot><tr style="background:#f0f7f1;">
-            <td colspan="2" style="padding:7px 12px;font-weight:700;font-size:12px;">Total del día</td>
+            <td colspan="3" style="padding:7px 12px;font-weight:700;font-size:12px;">Total del día</td>
             <td style="padding:7px 12px;text-align:right;font-weight:700;font-family:monospace;color:#1A6B3C;">${totalDia.toLocaleString('es-AR')} kg</td>
           </tr></tfoot>
         </table>
@@ -172,7 +177,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     hace7dias.setDate(hace7dias.getDate() - 7)
     hace7dias.setHours(0, 0, 0, 0)
     const { data } = await supabase.from('raciones_app')
-      .select('*, corrales(numero)')
+      .select('*, corrales(numero, rol, sub)')
       .lt('creado_en', hace7dias.toISOString())
       .order('creado_en', { ascending: false })
       .limit(2000)
@@ -254,11 +259,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }, { data: compras }, { data: legacy }, { data: ct }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('stock_insumos').select('*').order('insumo'),
-      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(200),
-      supabase.from('raciones_app').select('*, corrales(numero)').order('creado_en', { ascending: false }).limit(100).range(200, 299),
+      supabase.from('raciones_app').select('*, corrales(numero, rol, sub)').order('creado_en', { ascending: false }).limit(200),
+      supabase.from('raciones_app').select('*, corrales(numero, rol, sub)').order('creado_en', { ascending: false }).limit(100).range(200, 299),
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_acostumbramiento', 'capacidad_mixer_recria', 'capacidad_mixer_terminacion', 'fecha_term_c']),
-      supabase.from('raciones_app').select('*, corrales(numero)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
+      supabase.from('raciones_app').select('*, corrales(numero, rol, sub)').gte('creado_en', hace7diasISO).order('creado_en', { ascending: false }),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'alimentacion').order('fecha', { ascending: false }).limit(50),
       supabase.from('ingresos_stock').select('*').eq('tipo', 'alimentacion').order('creado_en', { ascending: false }).limit(10),
       supabase.from('contactos').select('id, nombre').eq('activo', true).order('nombre'),
@@ -1262,7 +1267,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: S.bg }}>
-                          {['Corral', 'Etapa', 'Dieta', 'Kg cargados', 'Animales', 'Consumo/animal'].map(h => (
+                          {['Corral', 'Categoría', 'Etapa', 'Dieta', 'Kg cargados', 'Animales', 'Consumo/animal'].map(h => (
                             <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                           ))}
                         </tr>
@@ -1274,6 +1279,15 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                           return (
                           <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                             <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {h.corrales?.rol === 'clasificado' && h.corrales?.sub ? (
+                                <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>
+                                  Rango {h.corrales.sub}
+                                </span>
+                              ) : h.corrales?.rol ? (
+                                <span style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize' }}>{h.corrales.rol}</span>
+                              ) : '—'}
+                            </td>
                             <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
                             <td style={{ padding: '8px 12px' }}>
                               <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: h.tipo_dieta === 'humedo' ? '#FFF3DC' : '#E8F4FF', color: h.tipo_dieta === 'humedo' ? '#B07000' : '#1A5A8A' }}>
@@ -1372,7 +1386,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                               <thead>
                                 <tr style={{ background: S.bg }}>
-                                  {['Corral', 'Etapa', 'Dieta', 'Kg cargados', 'Animales', 'Consumo/animal'].map(h => (
+                                  {['Corral', 'Categoría', 'Etapa', 'Dieta', 'Kg cargados', 'Animales', 'Consumo/animal'].map(h => (
                                     <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                                   ))}
                                 </tr>
@@ -1384,6 +1398,15 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                                   return (
                                   <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                                     <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
+                                    <td style={{ padding: '8px 12px' }}>
+                                      {h.corrales?.rol === 'clasificado' && h.corrales?.sub ? (
+                                        <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>
+                                          Rango {h.corrales.sub}
+                                        </span>
+                                      ) : h.corrales?.rol ? (
+                                        <span style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize' }}>{h.corrales.rol}</span>
+                                      ) : '—'}
+                                    </td>
                                     <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
                                     <td style={{ padding: '8px 12px' }}>
                                       <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: h.tipo_dieta === 'humedo' ? '#FFF3DC' : '#E8F4FF', color: h.tipo_dieta === 'humedo' ? '#B07000' : '#1A5A8A' }}>
