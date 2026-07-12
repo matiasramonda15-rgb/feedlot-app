@@ -42,6 +42,11 @@ export default function Reportes({ usuario }) {
   const [gastosGenerales, setGastosGenerales] = useState([])
   const [comprasSanitario, setComprasSanitario] = useState([])
   const [pagosEmpleados, setPagosEmpleados] = useState([])
+  const [comprasAgro, setComprasAgro] = useState([])
+  const [serviciosTerceros, setServiciosTerceros] = useState([])
+  const [manoObraServicios, setManoObraServicios] = useState([])
+  const [ventasGranos, setVentasGranos] = useState([])
+  const [actividadVista, setActividadVista] = useState('feedlot')
   const [lotes, setLotes] = useState([])
   const [ventas, setVentas] = useState([])
   const [formulasMixer, setFormulasMixer] = useState([])
@@ -50,7 +55,7 @@ export default function Reportes({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: cs }, { data: pe }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: cs }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(500),
@@ -59,9 +64,13 @@ export default function Reportes({ usuario }) {
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
       supabase.from('formulas_mixer').select('*'),
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }),
-      supabase.from('gastos_generales').select('*').eq('actividad', 'Feedlot'),
+      supabase.from('gastos_generales').select('*'),
       supabase.from('compras_insumos').select('total, insumo_tipo, fecha, creado_en').eq('insumo_tipo', 'sanitario'),
       supabase.from('pagos_empleados').select('*, empleados(nombre, actividad)'),
+      supabase.from('ingresos_agroquimicos').select('total, fecha, creado_en'),
+      supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, tipo_servicio').eq('tipo_servicio', 'tercero'),
+      supabase.from('mano_obra_servicios').select('monto_calculado, creado_en'),
+      supabase.from('ventas_granos').select('total, fecha, creado_en'),
     ])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
@@ -74,6 +83,10 @@ export default function Reportes({ usuario }) {
     setGastosGenerales(gg || [])
     setComprasSanitario(cs || [])
     setPagosEmpleados(pe || [])
+    setComprasAgro(iag || [])
+    setServiciosTerceros(st || [])
+    setManoObraServicios(mos || [])
+    setVentasGranos(vg || [])
     setLoading(false)
   }
 
@@ -258,7 +271,7 @@ export default function Reportes({ usuario }) {
     if (actividad === 'Feedlot') rentabilidadPorMes[key].costoManoObra += pe.monto || 0
     else if (actividad === 'General') rentabilidadPorMes[key].costoManoObra += (pe.monto || 0) / 3
   })
-  gastosGenerales.forEach(g => {
+  gastosGenerales.filter(g => g.actividad === 'Feedlot').forEach(g => {
     const key = mesKey(g.fecha)
     if (!key) return
     asegurarMes(key)
@@ -276,6 +289,97 @@ export default function Reportes({ usuario }) {
     ingreso: acc.ingreso + m.ingreso, costoTotal: acc.costoTotal + m.costoTotal, resultado: acc.resultado + m.resultado,
   }), { ingreso: 0, costoTotal: 0, resultado: 0 })
   const indiceAnual = rentabilidadAnual.costoTotal > 0 ? (rentabilidadAnual.resultado / rentabilidadAnual.costoTotal * 100) : null
+
+  // ── Rentabilidad Agricultura (ingreso = ventas de granos; costo = agroquímicos + gastos generales + mano de obra) ──
+  const rentabilidadPorMesAgro = {}
+  const asegurarMesAgro = key => { if (!rentabilidadPorMesAgro[key]) rentabilidadPorMesAgro[key] = { ingreso: 0, costoInsumos: 0, costoManoObra: 0, costoGastos: 0 } }
+  ventasGranos.forEach(vg => {
+    const key = mesKey(vg.fecha || vg.creado_en)
+    if (!key) return
+    asegurarMesAgro(key)
+    rentabilidadPorMesAgro[key].ingreso += vg.total || 0
+  })
+  comprasAgro.forEach(ca => {
+    const key = mesKey(ca.fecha || ca.creado_en)
+    if (!key || !ca.total) return
+    asegurarMesAgro(key)
+    rentabilidadPorMesAgro[key].costoInsumos += ca.total || 0
+  })
+  gastosGenerales.filter(g => g.actividad === 'Agricultura').forEach(g => {
+    const key = mesKey(g.fecha)
+    if (!key) return
+    asegurarMesAgro(key)
+    rentabilidadPorMesAgro[key].costoGastos += g.monto || 0
+  })
+  pagosEmpleados.forEach(pe => {
+    const key = mesKey(pe.fecha || pe.creado_en)
+    if (!key) return
+    const actividad = pe.empleados?.actividad
+    if (actividad === 'Agricultura') { asegurarMesAgro(key); rentabilidadPorMesAgro[key].costoManoObra += pe.monto || 0 }
+    else if (actividad === 'General') { asegurarMesAgro(key); rentabilidadPorMesAgro[key].costoManoObra += (pe.monto || 0) / 3 }
+  })
+  const rentabilidadMensualAgro = Object.entries(rentabilidadPorMesAgro).sort((a, b) => b[0].localeCompare(a[0])).map(([mes, d]) => {
+    const costoTotal = d.costoInsumos + d.costoManoObra + d.costoGastos
+    const resultado = d.ingreso - costoTotal
+    const indice = costoTotal > 0 ? (resultado / costoTotal * 100) : null
+    return { mes, ...d, costoTotal, resultado, indice }
+  })
+  const mesesDelAnioAgro = rentabilidadMensualAgro.filter(mm => mm.mes.startsWith(anioActualStr))
+  const rentabilidadAnualAgro = mesesDelAnioAgro.reduce((acc, mm) => ({
+    ingreso: acc.ingreso + mm.ingreso, costoTotal: acc.costoTotal + mm.costoTotal, resultado: acc.resultado + mm.resultado,
+  }), { ingreso: 0, costoTotal: 0, resultado: 0 })
+  const indiceAnualAgro = rentabilidadAnualAgro.costoTotal > 0 ? (rentabilidadAnualAgro.resultado / rentabilidadAnualAgro.costoTotal * 100) : null
+
+  // ── Rentabilidad Servicios (ingreso = servicios a terceros; costo = mano de obra de esos servicios + gastos generales + personal) ──
+  const rentabilidadPorMesServ = {}
+  const asegurarMesServ = key => { if (!rentabilidadPorMesServ[key]) rentabilidadPorMesServ[key] = { ingreso: 0, costoManoObraServ: 0, costoManoObra: 0, costoGastos: 0 } }
+  serviciosTerceros.forEach(st => {
+    const key = mesKey(st.fecha || st.creado_en)
+    if (!key) return
+    asegurarMesServ(key)
+    rentabilidadPorMesServ[key].ingreso += (st.total || 0) + (st.monto_negro || 0)
+  })
+  manoObraServicios.forEach(mo => {
+    const key = mesKey(mo.creado_en)
+    if (!key) return
+    asegurarMesServ(key)
+    rentabilidadPorMesServ[key].costoManoObraServ += mo.monto_calculado || 0
+  })
+  gastosGenerales.filter(g => g.actividad === 'Servicios').forEach(g => {
+    const key = mesKey(g.fecha)
+    if (!key) return
+    asegurarMesServ(key)
+    rentabilidadPorMesServ[key].costoGastos += g.monto || 0
+  })
+  pagosEmpleados.forEach(pe => {
+    const key = mesKey(pe.fecha || pe.creado_en)
+    if (!key) return
+    const actividad = pe.empleados?.actividad
+    if (actividad === 'Servicios') { asegurarMesServ(key); rentabilidadPorMesServ[key].costoManoObra += pe.monto || 0 }
+    else if (actividad === 'General') { asegurarMesServ(key); rentabilidadPorMesServ[key].costoManoObra += (pe.monto || 0) / 3 }
+  })
+  const rentabilidadMensualServ = Object.entries(rentabilidadPorMesServ).sort((a, b) => b[0].localeCompare(a[0])).map(([mes, d]) => {
+    const costoTotal = d.costoManoObraServ + d.costoManoObra + d.costoGastos
+    const resultado = d.ingreso - costoTotal
+    const indice = costoTotal > 0 ? (resultado / costoTotal * 100) : null
+    return { mes, ...d, costoTotal, resultado, indice }
+  })
+  const mesesDelAnioServ = rentabilidadMensualServ.filter(mm => mm.mes.startsWith(anioActualStr))
+  const rentabilidadAnualServ = mesesDelAnioServ.reduce((acc, mm) => ({
+    ingreso: acc.ingreso + mm.ingreso, costoTotal: acc.costoTotal + mm.costoTotal, resultado: acc.resultado + mm.resultado,
+  }), { ingreso: 0, costoTotal: 0, resultado: 0 })
+  const indiceAnualServ = rentabilidadAnualServ.costoTotal > 0 ? (rentabilidadAnualServ.resultado / rentabilidadAnualServ.costoTotal * 100) : null
+
+  // ── Comparativa entre actividades ──
+  const actividadesComparativa = [
+    { key: 'feedlot', label: 'Feedlot', icon: '🐄', color: S.accent, anual: rentabilidadAnual, indice: indiceAnual, mensual: rentabilidadMensual },
+    { key: 'agricultura', label: 'Agricultura', icon: '🌾', color: S.green, anual: rentabilidadAnualAgro, indice: indiceAnualAgro, mensual: rentabilidadMensualAgro },
+    { key: 'servicios', label: 'Servicios', icon: '🚜', color: '#B5651D', anual: rentabilidadAnualServ, indice: indiceAnualServ, mensual: rentabilidadMensualServ },
+  ]
+  const ingresoTotalEmpresa = actividadesComparativa.reduce((s, a) => s + a.anual.ingreso, 0)
+  const inversionTotalEmpresa = actividadesComparativa.reduce((s, a) => s + a.anual.costoTotal, 0)
+  const resultadoTotalEmpresa = actividadesComparativa.reduce((s, a) => s + a.anual.resultado, 0)
+  const indiceTotalEmpresa = inversionTotalEmpresa > 0 ? (resultadoTotalEmpresa / inversionTotalEmpresa * 100) : null
 
   if (loading) return <Loader />
 
@@ -296,10 +400,29 @@ export default function Reportes({ usuario }) {
   return (
     <div>
       <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 3 }}>Reportes</div>
-      <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', marginBottom: '1.5rem' }}>
-        Análisis de performance · feedlot {new Date().getFullYear()}
+      <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', marginBottom: '1.25rem' }}>
+        Análisis de performance · {new Date().getFullYear()}
       </div>
 
+      {/* Selector de actividad */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: '1.5rem' }}>
+        {[
+          { key: 'feedlot', icon: '🐄', label: 'Feedlot' },
+          { key: 'agricultura', icon: '🌾', label: 'Agricultura' },
+          { key: 'servicios', icon: '🚜', label: 'Servicios' },
+          { key: 'comparativa', icon: '📊', label: 'Comparativa' },
+        ].map(a => (
+          <button key={a.key} onClick={() => setActividadVista(a.key)}
+            style={{ padding: '9px 18px', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
+              border: `1px solid ${actividadVista === a.key ? S.accent : S.border}`,
+              background: actividadVista === a.key ? S.accentLight : S.surface,
+              color: actividadVista === a.key ? S.accent : S.muted }}>
+            {a.icon} {a.label}
+          </button>
+        ))}
+      </div>
+
+      {actividadVista === 'feedlot' && (<>
       <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.5rem' }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -1042,7 +1165,255 @@ export default function Reportes({ usuario }) {
           </div>
         </div>
       )}
+      </>)}
 
+      {actividadVista === 'agricultura' && (
+        <SeccionRentabilidadActividad
+          S={S} titulo="Agricultura" anio={anioActualStr}
+          anual={rentabilidadAnualAgro} indiceAnual={indiceAnualAgro} mensual={rentabilidadMensualAgro}
+          columnas={[
+            { key: 'ingreso', label: 'Ingreso (venta granos)', color: S.green },
+            { key: 'costoInsumos', label: 'Agroquímicos', color: S.muted },
+            { key: 'costoManoObra', label: 'Mano de obra', color: S.muted },
+            { key: 'costoGastos', label: 'Gastos generales', color: S.muted },
+          ]}
+          subInversion="agroquímicos + mano de obra + gastos"
+          nota="Compara ventas de granos contra compras de agroquímicos, mano de obra (Feedlot no incluido, General se reparte en tercios) y gastos generales de Agricultura. Con pocos datos cargados todavía, muchos meses van a aparecer vacíos — a medida que cargues cosechas, ventas de granos y compras, se va completando solo."
+        />
+      )}
+
+      {actividadVista === 'servicios' && (
+        <SeccionRentabilidadActividad
+          S={S} titulo="Servicios" anio={anioActualStr}
+          anual={rentabilidadAnualServ} indiceAnual={indiceAnualServ} mensual={rentabilidadMensualServ}
+          columnas={[
+            { key: 'ingreso', label: 'Ingreso (servicios a terceros)', color: S.green },
+            { key: 'costoManoObraServ', label: 'Mano de obra (por servicio)', color: S.muted },
+            { key: 'costoManoObra', label: 'Sueldos', color: S.muted },
+            { key: 'costoGastos', label: 'Gastos generales', color: S.muted },
+          ]}
+          subInversion="mano de obra por servicio + sueldos + gastos"
+          nota="Compara lo cobrado por servicios a terceros contra la mano de obra de esos trabajos, los sueldos del personal de Servicios (Feedlot no incluido, General se reparte en tercios) y los gastos generales de Servicios. Con pocos datos cargados todavía, muchos meses van a aparecer vacíos — a medida que cargues servicios, se va completando solo."
+        />
+      )}
+
+      {actividadVista === 'comparativa' && (
+        <SeccionComparativa S={S} anio={anioActualStr} actividades={actividadesComparativa}
+          ingresoTotal={ingresoTotalEmpresa} inversionTotal={inversionTotalEmpresa}
+          resultadoTotal={resultadoTotalEmpresa} indiceTotal={indiceTotalEmpresa} />
+      )}
+
+    </div>
+  )
+}
+
+// Cuadro de rentabilidad mensual/anual reutilizable, para Agricultura y Servicios
+// (Feedlot tiene el suyo propio más completo, arriba, con más pestañas).
+function SeccionRentabilidadActividad({ S, titulo, anio, anual, indiceAnual, mensual, columnas, subInversion, nota }) {
+  return (
+    <div>
+      <SectionHeader title={`Rentabilidad — ${titulo}`} sub={`Índice de rentabilidad ${anio}`} />
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
+          <Stat label={`Ingreso ${anio}`} val={anual.ingreso > 0 ? `$${(anual.ingreso / 1000000).toFixed(1)}M` : '—'} color={S.green} />
+          <Stat label={`Inversión total ${anio}`} val={anual.costoTotal > 0 ? `$${(anual.costoTotal / 1000000).toFixed(1)}M` : '—'} sub={subInversion} />
+          <Stat label="Resultado" val={anual.costoTotal > 0 || anual.ingreso > 0 ? `$${(anual.resultado / 1000000).toFixed(1)}M` : '—'} color={anual.resultado >= 0 ? S.green : S.red} />
+          <Stat label="Índice de rentabilidad" val={indiceAnual !== null ? `${indiceAnual.toFixed(1)}%` : '—'} sub="resultado / inversión total" color={indiceAnual !== null ? (indiceAnual >= 0 ? S.green : S.red) : S.hint} />
+        </div>
+        <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>{nota}</div>
+        {mensual.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Todavía no hay datos suficientes de {titulo} para calcular nada acá — a medida que cargues información, esta pantalla se va a ir completando sola.</div>
+        ) : (
+          <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: S.bg }}>
+                  <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>Mes</th>
+                  {columnas.map(c => (
+                    <th key={c.key} style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{c.label}</th>
+                  ))}
+                  <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>Inversión total</th>
+                  <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>Resultado</th>
+                  <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>Índice</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mensual.map(m => (
+                  <tr key={m.mes} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: '9px 12px', fontWeight: 600, fontFamily: 'monospace' }}>
+                      {new Date(m.mes + '-01T12:00:00').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
+                    </td>
+                    {columnas.map(c => (
+                      <td key={c.key} style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: c.color }}>{m[c.key] > 0 ? `$${(m[c.key] / 1000000).toFixed(2)}M` : '—'}</td>
+                    ))}
+                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{m.costoTotal > 0 ? `$${(m.costoTotal / 1000000).toFixed(2)}M` : '—'}</td>
+                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: m.resultado >= 0 ? S.green : S.red }}>{m.costoTotal > 0 || m.ingreso > 0 ? `$${(m.resultado / 1000000).toFixed(2)}M` : '—'}</td>
+                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.indice !== null ? (m.indice >= 0 ? S.green : S.red) : S.hint }}>{m.indice !== null ? `${m.indice.toFixed(1)}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Sección "Comparativa" — participación de cada actividad en el total de la
+// empresa, índice de rentabilidad comparado, y evolución mensual del resultado.
+function SeccionComparativa({ S, anio, actividades, ingresoTotal, inversionTotal, resultadoTotal, indiceTotal }) {
+  const fmtM = (n) => n ? `$${(n / 1000000).toFixed(1)}M` : '—'
+  const pct = (parte, total) => total > 0 ? (parte / total * 100) : 0
+
+  // Gráfico de torta con CSS conic-gradient
+  function Donut({ valores }) {
+    let acumulado = 0
+    const stops = valores.filter(v => v.valor > 0).map(v => {
+      const desde = acumulado
+      acumulado += pct(v.valor, valores.reduce((s, x) => s + x.valor, 0))
+      return `${v.color} ${desde}% ${acumulado}%`
+    })
+    const total = valores.reduce((s, x) => s + x.valor, 0)
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{
+          width: 120, height: 120, borderRadius: '50%', flexShrink: 0,
+          background: total > 0 ? `conic-gradient(${stops.join(', ')})` : S.border,
+        }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {valores.map(v => (
+            <div key={v.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: v.color, flexShrink: 0 }} />
+              <span style={{ color: S.text }}>{v.label}</span>
+              <span style={{ color: S.muted, fontFamily: 'monospace' }}>{total > 0 ? pct(v.valor, total).toFixed(0) : 0}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Meses unificados de las tres actividades, para el gráfico de evolución
+  const todosLosMeses = [...new Set(actividades.flatMap(a => a.mensual.map(m => m.mes)))].sort()
+  const ultimos12 = todosLosMeses.slice(-12)
+  const maxAbs = Math.max(1, ...ultimos12.flatMap(mes => actividades.map(a => Math.abs((a.mensual.find(m => m.mes === mes)?.resultado) || 0))))
+
+  return (
+    <div>
+      <SectionHeader title="Comparativa entre actividades" sub={`Participación e índices comparados · ${anio}`} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+        <Stat label={`Ingreso total empresa ${anio}`} val={fmtM(ingresoTotal)} color={S.green} />
+        <Stat label={`Inversión total empresa ${anio}`} val={fmtM(inversionTotal)} />
+        <Stat label="Resultado total" val={fmtM(resultadoTotal)} color={resultadoTotal >= 0 ? S.green : S.red} />
+        <Stat label="Índice general" val={indiceTotal !== null ? `${indiceTotal.toFixed(1)}%` : '—'} color={indiceTotal !== null ? (indiceTotal >= 0 ? S.green : S.red) : S.hint} />
+      </div>
+
+      {/* Tabla comparativa */}
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Resumen por actividad</div>
+        <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: S.bg }}>
+                {['Actividad', 'Ingreso', '% del ingreso', 'Inversión', '% de la inversión', 'Resultado', 'Índice'].map(h => (
+                  <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Actividad' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {actividades.map(a => (
+                <tr key={a.key} style={{ borderBottom: `1px solid ${S.border}` }}>
+                  <td style={{ padding: '10px 12px', fontWeight: 600 }}>{a.icon} {a.label}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{fmtM(a.anual.ingreso)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{ingresoTotal > 0 ? `${pct(a.anual.ingreso, ingresoTotal).toFixed(0)}%` : '—'}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{fmtM(a.anual.costoTotal)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{inversionTotal > 0 ? `${pct(a.anual.costoTotal, inversionTotal).toFixed(0)}%` : '—'}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: a.anual.resultado >= 0 ? S.green : S.red }}>{fmtM(a.anual.resultado)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: a.indice !== null ? (a.indice >= 0 ? S.green : S.red) : S.hint }}>{a.indice !== null ? `${a.indice.toFixed(1)}%` : '—'}</td>
+                </tr>
+              ))}
+              <tr style={{ background: S.bg, fontWeight: 700 }}>
+                <td style={{ padding: '10px 12px' }}>Total empresa</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{fmtM(ingresoTotal)}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace' }}>100%</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{fmtM(inversionTotal)}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace' }}>100%</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: resultadoTotal >= 0 ? S.green : S.red }}>{fmtM(resultadoTotal)}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: indiceTotal !== null ? (indiceTotal >= 0 ? S.green : S.red) : S.hint }}>{indiceTotal !== null ? `${indiceTotal.toFixed(1)}%` : '—'}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Participación en ingreso e inversión */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '1.5rem' }}>
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Participación en el ingreso</div>
+          <Donut valores={actividades.map(a => ({ label: a.label, valor: a.anual.ingreso, color: a.color }))} />
+        </div>
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Participación en la inversión</div>
+          <Donut valores={actividades.map(a => ({ label: a.label, valor: a.anual.costoTotal, color: a.color }))} />
+        </div>
+      </div>
+
+      {/* Índice de rentabilidad comparado */}
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Índice de rentabilidad comparado — dónde rinde más cada peso invertido</div>
+        {actividades.map(a => {
+          const maxIndice = Math.max(1, ...actividades.map(x => Math.abs(x.indice || 0)))
+          const ancho = a.indice !== null ? Math.min(100, Math.abs(a.indice) / maxIndice * 100) : 0
+          return (
+            <div key={a.key} style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                <span>{a.icon} {a.label}</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: a.indice !== null ? (a.indice >= 0 ? S.green : S.red) : S.hint }}>{a.indice !== null ? `${a.indice.toFixed(1)}%` : 'sin datos'}</span>
+              </div>
+              <div style={{ background: S.bg, borderRadius: 6, height: 10, overflow: 'hidden' }}>
+                <div style={{ width: `${ancho}%`, height: '100%', background: a.indice !== null ? (a.indice >= 0 ? a.color : S.red) : 'transparent', borderRadius: 6 }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Evolución mensual del resultado */}
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Evolución mensual del resultado (últimos {ultimos12.length} meses con datos)</div>
+        {ultimos12.length === 0 ? (
+          <div style={{ padding: '1.5rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Todavía no hay suficientes meses con datos para ver una evolución.</div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 180, borderBottom: `1px solid ${S.border}`, paddingBottom: 4 }}>
+            {ultimos12.map(mes => (
+              <div key={mes} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%' }}>
+                  {actividades.map(a => {
+                    const val = a.mensual.find(m => m.mes === mes)?.resultado || 0
+                    const alturaPx = Math.max(2, Math.abs(val) / maxAbs * 140)
+                    return (
+                      <div key={a.key} title={`${a.label}: ${fmtM(val)}`}
+                        style={{ width: 8, height: alturaPx, background: val >= 0 ? a.color : S.red, borderRadius: '2px 2px 0 0', alignSelf: 'flex-end' }} />
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 9, color: S.hint, writingMode: 'vertical-rl', textOrientation: 'mixed', whiteSpace: 'nowrap' }}>
+                  {new Date(mes + '-01T12:00:00').toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
+          {actividades.map(a => (
+            <div key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: S.muted }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: a.color }} /> {a.label}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
