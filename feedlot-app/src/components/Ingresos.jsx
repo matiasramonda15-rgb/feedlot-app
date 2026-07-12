@@ -73,6 +73,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   const [contactos, setContactos] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('lista') // 'lista' | 'nuevo' | 'editar'
+  const [filtroIngresos, setFiltroIngresos] = useState('')
   const [editandoLote, setEditandoLote] = useState(null)
   const [guardando, setGuardando] = useState(false)
 
@@ -1788,6 +1789,14 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       })()}
 
 
+      <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <select value={filtroIngresos} onChange={e => setFiltroIngresos(e.target.value)}
+          style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroIngresos ? S.accent : S.muted, fontWeight: filtroIngresos ? 600 : 400 }}>
+          <option value="">Todos los proveedores</option>
+          {[...new Set(lotesActivos.map(l => l.procedencia).filter(Boolean))].sort().map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        {filtroIngresos && <button onClick={() => setFiltroIngresos('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>}
+      </div>
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
           <thead><tr style={{ background: S.bg }}>
@@ -1796,8 +1805,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
             ))}
           </tr></thead>
           <tbody>
-            {lotesActivos.length === 0 && <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ingresos.</td></tr>}
-            {lotesActivos.map(l => {
+            {lotesActivos.filter(l => !filtroIngresos || l.procedencia === filtroIngresos).length === 0 && <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ingresos.</td></tr>}
+            {lotesActivos.filter(l => !filtroIngresos || l.procedencia === filtroIngresos).map(l => {
               const pagos = pagosMap[l.id] || []
               const total = totalLoteCalc(l)
               const totalPagado = pagos.reduce((s, p) => s + (p.monto || 0), 0)

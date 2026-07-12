@@ -826,6 +826,10 @@ export default function Ventas({ usuario, mobile, nav }) {
     )
   }
 
+  // Solo para los filtros (no para el select de "elegir comprador" al cargar/editar,
+  // que sigue mostrando todos los contactos) — acá solo los que ya aparecen en ventas reales
+  const compradoresEnHistorial = [...new Set(ventas.map(v => v.comprador).filter(Boolean))].sort()
+
   return (
     <div>
       <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 3 }}>Compra y venta</div>
@@ -1049,7 +1053,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                 <select value={filtroVentas} onChange={e => setFiltroVentas(e.target.value)}
                   style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroVentas ? S.accent : S.muted, fontWeight: filtroVentas ? 600 : 400 }}>
                   <option value="">Todos los compradores</option>
-                  {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+                  {compradoresEnHistorial.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 {filtroVentas && <button onClick={() => setFiltroVentas('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>}
                 <button onClick={() => { setTab('nueva-venta'); setPaso(1); setVentaConfirmada(null) }}
@@ -1920,7 +1924,7 @@ export default function Ventas({ usuario, mobile, nav }) {
             <select value={filtroGestion} onChange={e => setFiltroGestion(e.target.value)}
               style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #E2DDD6', borderRadius: 6, background: '#fff', color: filtroGestion ? '#1A3D6B' : '#6B6760', fontWeight: filtroGestion ? 600 : 400 }}>
               <option value="">Todos los compradores</option>
-              {compradores.map(c => <option key={c} value={c}>{c}</option>)}
+              {compradoresEnHistorial.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             {filtroGestion && <button onClick={() => setFiltroGestion('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer' }}>✕</button>}
           </div>

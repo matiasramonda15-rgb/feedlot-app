@@ -155,6 +155,14 @@ export default function Contactos({ usuario }) {
       const fecha = v.fecha || v.creado_en?.split('T')[0]
       if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (paralelo)', credito: sumNegro, debito: 0 }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Venta hacienda', credito: montoFact, debito: 0 }) }
+      // Cobros ya registrados contra esta venta — bajan lo que nos deben
+      grupo.forEach(vv => {
+        (pagosVenta[vv.id] || []).forEach(p => {
+          const esPagoParalelo = p.es_paralelo || false
+          if (esParalela !== esPagoParalelo) return
+          if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: 'Cobro', credito: 0, debito: p.monto })
+        })
+      })
     })
     ;(data.lotes || []).forEach(l => {
       const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
@@ -164,16 +172,28 @@ export default function Contactos({ usuario }) {
       const fecha = l.created_at?.split('T')[0]
       if (esParalela) { if (montoParalelo > 0) movs.push({ fecha, tipo: 'Compra hacienda (paralelo)', credito: 0, debito: montoParalelo }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Compra hacienda', credito: 0, debito: montoFact }) }
+      // Pagos ya realizados de esta compra — bajan lo que le debemos
+      ;(pagosCompra[l.id] || []).forEach(p => {
+        const esPagoParalelo = p.es_paralelo || p.es_negro || false
+        if (esParalela !== esPagoParalelo) return
+        if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
+      })
     })
     ;(data.comprasInsumos || []).forEach(ci => {
       const esParaleloCi = ci.es_paralelo || false
       if (esParalela !== esParaleloCi) return
       if (ci.total > 0) movs.push({ fecha: ci.fecha, tipo: ci.insumo_nombre || 'Insumo', credito: 0, debito: ci.total })
+      ;(ci.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
+        movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
+      })
     })
     ;(data.comprasAgro || []).forEach(ca => {
       const esParaleloCa = ca.es_paralelo || false
       if (esParalela !== esParaleloCa) return
       if (ca.total > 0) movs.push({ fecha: ca.fecha, tipo: ca.insumo_nombre || 'Agroquímico', credito: 0, debito: ca.total })
+      ;(ca.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
+        movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
+      })
     })
     if (!esParalela) {
       ;(data.ventasActivos || []).forEach(va => {
