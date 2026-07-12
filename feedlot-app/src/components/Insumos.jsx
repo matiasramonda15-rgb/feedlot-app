@@ -229,10 +229,10 @@ export default function Insumos({ usuario }) {
     // Actualizar stock (siempre, tenga o no precio)
     if (form.tipo === 'alimentacion') {
       const item = stockAlim.find(s => s.id === parseInt(form.insumo_id))
-      if (item) await supabase.from('stock_insumos').update({ cantidad_kg: (item.cantidad_kg || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      if (item) await supabase.from('stock_insumos').update({ cantidad_kg: (item.cantidad_kg || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
     } else {
       const item = stockSan.find(s => s.id === parseInt(form.insumo_id))
-      if (item) await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      if (item) await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
     }
 
     setShowForm(false)
@@ -498,7 +498,7 @@ export default function Insumos({ usuario }) {
                       // Actualizar precio de referencia en stock (alimentación o sanidad)
                       if (precioUnit && c?.insumo_id) {
                         if (c.insumo_tipo === 'alimentacion') {
-                          await supabase.from('stock_insumos').update({ precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                          await supabase.from('stock_insumos').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
                         } else {
                           await supabase.from('stock_sanitario').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
                         }
@@ -1148,6 +1148,7 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngres
                             await supabase.from(tabla).update({
                               [cantCol2]: parseFloat(formIng.cantidad_kg) || 0,
                               precio_referencia: formIng.precio_por_kg ? parseFloat(formIng.precio_por_kg) : null,
+                              precio_referencia_actualizado_en: formIng.precio_por_kg ? new Date().toISOString() : undefined,
                               [minCol2]: parseFloat(formIng.proveedor) || 0,
                               actualizado_en: new Date().toISOString(),
                             }).eq('id', s.id)

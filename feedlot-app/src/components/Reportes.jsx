@@ -185,6 +185,10 @@ export default function Reportes({ usuario }) {
   const permanenciaPromedio = prom6?.permanencia || prom3?.permanencia || mesActual?.permanencia || null
   const kgGanadosPorAnimal = mesActual ? mesActual.pesoProm_venta - mesActual.pesoProm_ingreso : null
   const conversionGlobal = prom6?.conversion || prom3?.conversion || mesActual?.conversion || null
+  // Ganancia diaria estimada (movimientos de stock, no depende de repesar los
+  // mismos animales en el mismo corral — los animales se mueven de corral, así
+  // que esto es más confiable que comparar dos pesadas sueltas).
+  const gdpEstimado = prom6?.gdp || prom3?.gdp || mesActual?.gdp || null
   const totalKgAlimConsumido = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
 
   // Rentabilidad por venta
@@ -513,12 +517,15 @@ export default function Reportes({ usuario }) {
               const totalKgAlim = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
               const diasMedidos = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.dias.size, 0)
               const costoPorAnimal = totalAnimales > 0 && totalCostoAlim > 0 ? totalCostoAlim / totalAnimales : null
-              const costoPorKgProd = gdpGlobal && costoPorAnimal ? costoPorAnimal / gdpGlobal : null
+              // Ganancia diaria: se prioriza la estimada por movimientos (no depende
+              // de repesar los mismos animales) — la de pesadas queda de respaldo.
+              const gdpParaCosto = gdpEstimado || gdpGlobal
+              const costoPorKgProd = gdpParaCosto && costoPorAnimal ? costoPorAnimal / gdpParaCosto : null
               return [
                 { label: 'Costo alim. total (30d)', val: totalCostoAlim > 0 ? `$${Math.round(totalCostoAlim).toLocaleString('es-AR')}` : '—', sub: precioPromAlim ? `$${Math.round(precioPromAlim).toLocaleString('es-AR')}/kg prom. ponderado` : 'sin precio de referencia en stock' },
                 { label: 'Costo por animal/día', val: costoPorAnimal ? `$${Math.round(costoPorAnimal / 30).toLocaleString('es-AR')}` : '—', sub: 'promedio últimos 30 días' },
                 { label: 'Kg alimento total', val: totalKgAlim > 0 ? totalKgAlim.toLocaleString('es-AR') + ' kg' : '—', sub: 'últimos 30 días' },
-                { label: 'Costo por kg producido', val: costoPorKgProd ? `$${Math.round(costoPorKgProd).toLocaleString('es-AR')}` : '—', sub: 'costo alim. / GDP promedio' },
+                { label: 'Costo por kg producido', val: costoPorKgProd ? `$${Math.round(costoPorKgProd).toLocaleString('es-AR')}` : '—', sub: gdpParaCosto ? `costo alim. / ${gdpParaCosto.toFixed(2)} kg/d ganados` : 'sin ganancia diaria calculable todavía' },
               ]
             })().map((m, i) => <Stat key={i} {...m} />)}
           </div>
@@ -547,7 +554,7 @@ export default function Reportes({ usuario }) {
                       const diasCount = datos.dias.size
                       const costoDia = diasCount > 0 ? datos.totalCosto / diasCount : 0
                       const costoAnimalDia = animales > 0 && costoDia > 0 ? costoDia / animales : null
-                      const gdp = gdpPorCorral[num]?.gdp
+                      const gdp = gdpPorCorral[num]?.gdp || gdpEstimado
                       const costoKgProd = costoAnimalDia && gdp ? costoAnimalDia / gdp : null
                       return (
                         <tr key={num} style={{ borderBottom: `1px solid ${S.border}` }}>
