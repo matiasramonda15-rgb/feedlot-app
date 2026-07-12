@@ -182,7 +182,8 @@ export default function Pesada({ usuario, mobile, nav }) {
 
   async function guardarFecha() {
     if (!nuevaFecha) { alert('Seleccioná una fecha'); return }
-    await supabase.from('configuracion').update({ valor: nuevaFecha }).eq('clave', 'proxima_pesada')
+    const { error } = await supabase.from('configuracion').update({ valor: nuevaFecha }).eq('clave', 'proxima_pesada')
+    if (error) { alert('Error al guardar la fecha: ' + error.message); return }
     setProximaPesada(nuevaFecha)
     setEditandoFecha(false)
     await cargar()

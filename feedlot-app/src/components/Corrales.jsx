@@ -85,7 +85,8 @@ export default function Corrales({ usuario, mobile, nav }) {
   }
 
   async function cambiarRol(corralId, nuevoRol, sub = null) {
-    await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null }).eq('id', corralId)
+    const { error } = await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null }).eq('id', corralId)
+    if (error) { alert('Error: ' + error.message); return }
     await cargarCorrales()
     setSeleccionado(prev => prev ? {...prev, rol: nuevoRol, sub} : prev)
   }
@@ -120,7 +121,11 @@ export default function Corrales({ usuario, mobile, nav }) {
 
   async function eliminarMovimiento(id, mov) {
     if (!confirm('¿Eliminar este movimiento? Se revertirán los animales a sus corrales originales.')) return
-    if (!mov) { await supabase.from('movimientos').delete().eq('id', id); await cargarCorrales(); return }
+    if (!mov) {
+      const { error } = await supabase.from('movimientos').delete().eq('id', id)
+      if (error) { alert('Error al eliminar: ' + error.message); return }
+      await cargarCorrales(); return
+    }
 
     // Revertir: devolver animales al origen y sacar del destino
     const { data: origen } = await supabase.from('corrales').select('animales, rol').eq('id', mov.corral_origen_id).single()
@@ -131,17 +136,20 @@ export default function Corrales({ usuario, mobile, nav }) {
       const updateOrigen = { animales: nuevosOrigen }
       // Si el origen estaba libre (porque quedó vacío al mover), volver a acumulacion o el rol que tenía
       if (origen.rol === 'libre') updateOrigen.rol = 'acumulacion'
-      await supabase.from('corrales').update(updateOrigen).eq('id', mov.corral_origen_id)
+      const { error } = await supabase.from('corrales').update(updateOrigen).eq('id', mov.corral_origen_id)
+      if (error) { alert('Error al revertir el corral origen: ' + error.message); return }
     }
 
     if (destino) {
       const nuevosDestino = Math.max(0, (destino.animales || 0) - mov.cantidad)
       const updateDestino = { animales: nuevosDestino }
       if (nuevosDestino === 0) { updateDestino.rol = 'libre'; updateDestino.sub = null }
-      await supabase.from('corrales').update(updateDestino).eq('id', mov.corral_destino_id)
+      const { error } = await supabase.from('corrales').update(updateDestino).eq('id', mov.corral_destino_id)
+      if (error) { alert('Error al revertir el corral destino: ' + error.message); return }
     }
 
-    await supabase.from('movimientos').delete().eq('id', id)
+    const { error: errDel } = await supabase.from('movimientos').delete().eq('id', id)
+    if (errDel) { alert('Error al eliminar el movimiento: ' + errDel.message); return }
     await cargarCorrales()
   }
 
@@ -562,7 +570,8 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
     const nuevo = parseInt(ajusteValor)
     if (isNaN(nuevo) || nuevo < 0) { alert('Ingresá un número válido'); return }
     setGuardandoAjuste(true)
-    await supabase.from('corrales').update({ animales: nuevo }).eq('id', corral.id)
+    const { error } = await supabase.from('corrales').update({ animales: nuevo }).eq('id', corral.id)
+    if (error) { alert('Error al guardar el ajuste: ' + error.message); setGuardandoAjuste(false); return }
     await supabase.from('movimientos').insert({
       corral_origen_id: corral.id,
       corral_destino_id: corral.id,

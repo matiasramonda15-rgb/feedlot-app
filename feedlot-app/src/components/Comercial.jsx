@@ -215,16 +215,17 @@ export default function Comercial({ usuario }) {
   async function guardarCajaOf() {
     if (!formOf.monto) { alert('Ingresá el monto'); return }
     setGuardando(true)
-    const { data: mov } = await supabase.from('caja_oficial').insert({
+    const { data: mov, error: errMov } = await supabase.from('caja_oficial').insert({
       fecha: formOf.fecha, tipo: formOf.tipo, categoria: formOf.categoria,
       descripcion: formOf.descripcion, monto: parseFloat(formOf.monto),
       forma_pago: formOf.forma_pago, comprobante: formOf.comprobante || null,
       contacto_id: formOf.contacto_id ? parseInt(formOf.contacto_id) : null,
       registrado_por: usuario?.id,
     }).select().single()
+    if (errMov) { alert('Error al guardar el movimiento: ' + errMov.message); setGuardando(false); return }
 
     if (['cheque', 'e-cheq'].includes(formOf.forma_pago) && formOf.fecha_vencimiento_cheque) {
-      await supabase.from('cheques').insert({
+      const { error: errCheq } = await supabase.from('cheques').insert({
         tipo: formOf.tipo === 'ingreso' ? 'recibido' : 'emitido',
         numero: formOf.numero_cheque || null, banco: formOf.banco_cheque || null,
         monto: parseFloat(formOf.monto), fecha_emision: formOf.fecha,
@@ -234,6 +235,7 @@ export default function Comercial({ usuario }) {
         estado: 'en_cartera', caja_oficial_id: mov?.id || null, registrado_por: usuario?.id,
         es_electronico: formOf.forma_pago === 'e-cheq',
       })
+      if (errCheq) alert('El movimiento se guardó, pero no se pudo guardar el cheque: ' + errCheq.message)
     }
     await cargar()
     setShowFormOf(false)
@@ -244,7 +246,8 @@ export default function Comercial({ usuario }) {
   async function guardarCajaPar() {
     if (!formPar.monto || !formPar.descripcion) { alert('Completá descripción y monto'); return }
     setGuardando(true)
-    await supabase.from('caja_paralela').insert({ ...formPar, monto: parseFloat(formPar.monto), registrado_por: usuario?.id })
+    const { error } = await supabase.from('caja_paralela').insert({ ...formPar, monto: parseFloat(formPar.monto), registrado_por: usuario?.id })
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormPar(false)
     setFormPar({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', descripcion: '', monto: '', observaciones: '' })
@@ -254,7 +257,8 @@ export default function Comercial({ usuario }) {
   async function guardarContacto() {
     if (!formContacto.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    await supabase.from('contactos').insert({ ...formContacto, activo: true })
+    const { error } = await supabase.from('contactos').insert({ ...formContacto, activo: true })
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormContacto(false)
     setFormContacto({ nombre: '', tipo: 'comprador_hacienda', cuit: '', telefono: '', email: '', banco: '', cbu: '', observaciones: '' })
@@ -262,25 +266,28 @@ export default function Comercial({ usuario }) {
   }
 
   async function cambiarEstadoCheque(id, estado) {
-    await supabase.from('cheques').update({ estado }).eq('id', id)
+    const { error } = await supabase.from('cheques').update({ estado }).eq('id', id)
+    if (error) { alert('Error: ' + error.message); return }
     await cargar()
   }
 
   async function eliminar(tabla, id) {
     if (!confirm('Eliminar este registro?')) return
+    let error = null
     if (tabla === 'cheques') {
       // Si tiene pago_venta_id, borrar el pago (cascade borra cheque y caja)
       const cheque = cheques.find(c => c.id === id)
       if (cheque?.pago_venta_id) {
-        await supabase.from('pagos_ventas').delete().eq('id', cheque.pago_venta_id)
+        ;({ error } = await supabase.from('pagos_ventas').delete().eq('id', cheque.pago_venta_id))
       } else if (cheque?.pago_compra_id) {
-        await supabase.from('pagos_compras').delete().eq('id', cheque.pago_compra_id)
+        ;({ error } = await supabase.from('pagos_compras').delete().eq('id', cheque.pago_compra_id))
       } else {
-        await supabase.from('cheques').delete().eq('id', id)
+        ;({ error } = await supabase.from('cheques').delete().eq('id', id))
       }
     } else {
-      await supabase.from(tabla).delete().eq('id', id)
+      ;({ error } = await supabase.from(tabla).delete().eq('id', id))
     }
+    if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
   }
 
