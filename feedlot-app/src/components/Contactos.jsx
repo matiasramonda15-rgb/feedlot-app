@@ -130,7 +130,8 @@ export default function Contactos({ usuario }) {
 
   async function eliminarContacto(id) {
     if (!confirm('¿Eliminar este contacto?')) return
-    await supabase.from('contactos').delete().eq('id', id)
+    const { error } = await supabase.from('contactos').delete().eq('id', id)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
     if (contactoSeleccionado?.id === id) setContactoSeleccionado(null)
   }
@@ -533,13 +534,16 @@ export default function Contactos({ usuario }) {
                     <button onClick={async () => {
                       if (r.tabla === 'ingresos_agroquimicos') {
                         const { data: item } = await supabase.from('stock_agro').select('cantidad').eq('id', r.insumoId).single()
-                        await supabase.from('stock_agro').update({ cantidad: (item?.cantidad || 0) + (r.cant || 0), actualizado_en: new Date().toISOString() }).eq('id', r.insumoId)
-                        await supabase.from('ingresos_agroquimicos').update({ retirado: true }).eq('id', r.id)
+                        const { error: errStock } = await supabase.from('stock_agro').update({ cantidad: (item?.cantidad || 0) + (r.cant || 0), actualizado_en: new Date().toISOString() }).eq('id', r.insumoId)
+                        if (errStock) { alert('Error al sumar al stock: ' + errStock.message); return }
+                        const { error: errAgro } = await supabase.from('ingresos_agroquimicos').update({ retirado: true }).eq('id', r.id)
+                        if (errAgro) { alert('El stock se actualizó, pero no se pudo marcar como retirado: ' + errAgro.message); return }
                       } else {
                         const rpc = r.tipo === 'sanitario' ? 'incrementar_stock_sanitario' : 'incrementar_stock_insumo'
                         const { error: errRpc } = await supabase.rpc(rpc, { p_id: r.insumoId, p_delta: r.cant })
                         if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
-                        await supabase.from('compras_insumos').update({ retirado: true }).eq('id', r.id)
+                        const { error: errCi } = await supabase.from('compras_insumos').update({ retirado: true }).eq('id', r.id)
+                        if (errCi) { alert('El stock se actualizó, pero no se pudo marcar como retirado: ' + errCi.message); return }
                       }
                       await cargar()
                     }} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>

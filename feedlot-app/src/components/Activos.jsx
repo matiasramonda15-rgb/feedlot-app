@@ -263,11 +263,13 @@ export default function Activos({ usuario }) {
       if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardandoPagoCredito(false); return }
       caja_oficial_id = co?.id
     }
-    await supabase.from('pagos_creditos').update({ estado: 'pagado', fecha_pago: formPagoCredito.fecha || cuota.fecha, caja_oficial_id, caja_paralela_id }).eq('id', cuota.id)
+    const { error: errCuota } = await supabase.from('pagos_creditos').update({ estado: 'pagado', fecha_pago: formPagoCredito.fecha || cuota.fecha, caja_oficial_id, caja_paralela_id }).eq('id', cuota.id)
+    if (errCuota) { alert('El pago se registró en caja, pero no se pudo marcar la cuota como pagada: ' + errCuota.message); setGuardandoPagoCredito(false); return }
     const pagos = pagosCreditos[credito.id] || []
     const totalPagado = pagos.filter(p => p.estado === 'pagado').reduce((a, p) => a + (p.monto || 0), 0) + monto
     const cuotasPagadas = pagos.filter(p => p.estado === 'pagado').length + 1
-    await supabase.from('creditos').update({ saldo_pendiente: Math.max(0, credito.monto_total - totalPagado), cuotas_pagadas: cuotasPagadas, estado: totalPagado >= credito.monto_total ? 'cancelado' : 'activo' }).eq('id', credito.id)
+    const { error: errCredito } = await supabase.from('creditos').update({ saldo_pendiente: Math.max(0, credito.monto_total - totalPagado), cuotas_pagadas: cuotasPagadas, estado: totalPagado >= credito.monto_total ? 'cancelado' : 'activo' }).eq('id', credito.id)
+    if (errCredito) alert('La cuota se marcó como pagada, pero no se pudo actualizar el saldo del crédito: ' + errCredito.message)
     setFormPagoCredito({ fecha: new Date().toISOString().split('T')[0], monto: '', es_paralelo: false })
     setGuardandoPagoCredito(false)
     await cargar()
@@ -297,13 +299,15 @@ export default function Activos({ usuario }) {
   }
 
   async function cambiarEstado(id, estado) {
-    await supabase.from('activos').update({ estado }).eq('id', id)
+    const { error } = await supabase.from('activos').update({ estado }).eq('id', id)
+    if (error) { alert('Error: ' + error.message); return }
     await cargar()
   }
 
   async function eliminar(tabla, id) {
     if (!confirm('¿Eliminar este registro?')) return
-    await supabase.from(tabla).delete().eq('id', id)
+    const { error } = await supabase.from(tabla).delete().eq('id', id)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
   }
 

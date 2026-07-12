@@ -199,20 +199,24 @@ export default function Insumos({ usuario }) {
       if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
       if (pago.es_paralelo) {
-        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+        const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+        if (errCp) { alert('Error al registrar en caja paralela: ' + errCp.message); setGuardando(false); return }
         if (!caja_paralela_id) caja_paralela_id = cp?.id || null
       } else {
-        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: formaPago }).select().single()
+        const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: formaPago }).select().single()
+        if (errCo) { alert('Error al registrar en caja oficial: ' + errCo.message); setGuardando(false); return }
         if (!caja_oficial_id) caja_oficial_id = co?.id || null
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: form.proveedor || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+        const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: form.proveedor || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+        if (errCheq) { alert('Error al registrar el cheque: ' + errCheq.message); setGuardando(false); return }
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
-        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+        const { error: errCheqT } = await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+        if (errCheqT) { alert('Error al actualizar el cheque: ' + errCheqT.message); setGuardando(false); return }
       }
     }
 
-    await supabase.from('compras_insumos').insert({
+    const { error: errCompra } = await supabase.from('compras_insumos').insert({
       fecha: form.fecha, insumo_id: parseInt(form.insumo_id), insumo_tipo: form.tipo, insumo_nombre: form.insumo_nombre,
       cantidad, unidad: form.unidad, precio_unitario: precioUnit, total,
       proveedor: form.proveedor || null, domicilio: form.domicilio || null, localidad: form.localidad || null,
@@ -225,14 +229,21 @@ export default function Insumos({ usuario }) {
       registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id,
       estado_pago: pagarAhora && total ? 'pagado' : 'pendiente',
     })
+    if (errCompra) { alert((caja_oficial_id || caja_paralela_id ? 'El pago ya se registró en caja, pero hubo ' : 'Hubo ') + 'un error al guardar la compra: ' + errCompra.message); setGuardando(false); return }
 
     // Actualizar stock (siempre, tenga o no precio)
     if (form.tipo === 'alimentacion') {
       const item = stockAlim.find(s => s.id === parseInt(form.insumo_id))
-      if (item) await supabase.from('stock_insumos').update({ cantidad_kg: (item.cantidad_kg || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      if (item) {
+        const { error: errStock } = await supabase.from('stock_insumos').update({ cantidad_kg: (item.cantidad_kg || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+        if (errStock) alert('La compra se guardó, pero no se pudo actualizar el stock: ' + errStock.message)
+      }
     } else {
       const item = stockSan.find(s => s.id === parseInt(form.insumo_id))
-      if (item) await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      if (item) {
+        const { error: errStock } = await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + cantidad, ...(precioUnit ? { precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() } : {}), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+        if (errStock) alert('La compra se guardó, pero no se pudo actualizar el stock: ' + errStock.message)
+      }
     }
 
     setShowForm(false)
@@ -992,11 +1003,10 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngres
   async function guardarInsumo() {
     if (!form.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    if (tipo === 'alimentacion') {
-      await supabase.from('stock_insumos').insert({ insumo: form.nombre, unidad: form.unidad, cantidad_kg: 0, minimo_kg: parseFloat(form.minimo) || 0 })
-    } else {
-      await supabase.from('stock_sanitario').insert({ producto: form.nombre, tipo: form.tipo || 'Vacuna', laboratorio: form.lab || null, carencia_dias: parseInt(form.car) || 0, unidad: form.unidad, cantidad_ml: 0, minimo_stock: parseFloat(form.minimo) || 0, activo: true })
-    }
+    const { error } = tipo === 'alimentacion'
+      ? await supabase.from('stock_insumos').insert({ insumo: form.nombre, unidad: form.unidad, cantidad_kg: 0, minimo_kg: parseFloat(form.minimo) || 0 })
+      : await supabase.from('stock_sanitario').insert({ producto: form.nombre, tipo: form.tipo || 'Vacuna', laboratorio: form.lab || null, carencia_dias: parseInt(form.car) || 0, unidad: form.unidad, cantidad_ml: 0, minimo_stock: parseFloat(form.minimo) || 0, activo: true })
+    if (error) { alert('Error al guardar el insumo: ' + error.message); setGuardando(false); return }
     setShowForm(false)
     setForm({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
     setGuardando(false)
@@ -1375,253 +1385,4 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngres
     </div>
   )
 }
-
-function BannerSinPrecio({ ingresos, stockAlim, stockSan = [], usuario, onCargar, chequesCartera = [], S, contactos = [] }) {
-  const [editando, setEditando] = useState({})
-  const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', canje_detalle: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
-
-  function initEp(ing) {
-    return {
-      precio: '', proveedor: ing.proveedor || '', localidad: ing.localidad || '', cuit: ing.cuit || '', iva: ing.iva || '', cbu: ing.cbu || '',
-      numero_factura: ing.numero_factura || '', fecha: new Date().toISOString().split('T')[0],
-      pagarAhora: false, pagos: [{ ...PAGO_INIT }]
-    }
-  }
-
-  async function guardarPrecio(ing) {
-    const ep = editando[ing.id]
-    if (!ep) { alert('Abrí el formulario primero'); return }
-    const fecha = ep.fecha || new Date().toISOString().split('T')[0]
-    const precioNum = parseFloat(ep.precio) || null
-    const total = precioNum ? Math.round(ing.cantidad_kg * precioNum) : null
-    const estadoPago = ep.pagarAhora ? 'pagado' : 'pendiente'
-
-    let caja_oficial_id = null, caja_paralela_id = null
-    const desc = `Compra ${ing.insumo_nombre}${ep.proveedor ? ` — ${ep.proveedor}` : ''}`
-
-    if (ep.pagarAhora && total) {
-      for (const pago of ep.pagos) {
-        const monto = parseFloat(pago.monto) || 0
-        if (!monto) continue
-        if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
-        const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
-        if (pago.es_paralelo) {
-          const { data: cp } = await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-          if (!caja_paralela_id) caja_paralela_id = cp?.id
-        } else {
-          const { data: co } = await supabase.from('caja_oficial').insert({ fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp }).select().single()
-          if (!caja_oficial_id) caja_oficial_id = co?.id
-        }
-        if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-          await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-        } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-          for (const chId of pago.cheque_tercero_ids) {
-            await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
-          }
-        }
-      }
-    }
-
-    if (ing._source === 'compras_insumos') {
-      // Nuevo flujo — actualizar compras_insumos directamente
-      await supabase.from('compras_insumos').update({
-        precio_unitario: precioNum,
-        total,
-        proveedor: ep.proveedor || ing.proveedor || null,
-        numero_factura: ep.numero_factura || null,
-        forma_pago: ep.pagarAhora && total ? ep.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
-        pagos_detalle: ep.pagarAhora && total ? ep.pagos : null,
-        estado_pago: estadoPago,
-        caja_oficial_id: ep.pagarAhora ? caja_oficial_id : null,
-        caja_paralela_id: ep.pagarAhora ? caja_paralela_id : null,
-      }).eq('id', ing._compra_id)
-    } else {
-      // Flujo viejo — ingresos_stock
-      await supabase.from('ingresos_stock').update({
-        precio_por_kg: precioNum,
-        total,
-        proveedor: ep.proveedor || null,
-        localidad: ep.localidad || null,
-        cuit: ep.cuit || null,
-        numero_factura: ep.numero_factura || null,
-        estado_pago: estadoPago,
-      }).eq('id', ing.id)
-      // Insertar en compras_insumos para historial
-      const insumo = stockAlim.find(s => s.id === ing.insumo_id)
-      await supabase.from('compras_insumos').insert({
-        fecha, insumo_id: ing.insumo_id,
-        insumo_tipo: insumo?.tipo || 'alimentacion',
-        insumo_nombre: ing.insumo_nombre,
-        cantidad: ing.cantidad_kg, unidad: 'kg',
-        precio_unitario: precioNum, total,
-        proveedor: ep.proveedor || null, localidad: ep.localidad || null,
-        cuit: ep.cuit || null, iva: ep.iva || null, cbu: ep.cbu || null,
-        numero_factura: ep.numero_factura || null,
-        forma_pago: ep.pagarAhora ? ep.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
-        es_paralelo: ep.pagarAhora ? ep.pagos.some(p => p.es_paralelo) : false,
-        pagos_detalle: ep.pagarAhora ? ep.pagos : null,
-        estado_pago: estadoPago,
-        registrado_por: usuario?.id,
-        caja_oficial_id, caja_paralela_id,
-      })
-    }
-
-    // Actualizar precio_referencia en el stock
-    if (precioNum) {
-      if (ing.tipo === 'sanitario') {
-        const prodSan = stockSan.find(s => s.id === ing.insumo_id)
-        if (prodSan) {
-          await supabase.from('stock_sanitario').update({ precio_referencia: precioNum, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', prodSan.id)
-        }
-      } else {
-        const prodAlim = stockAlim.find(s => s.id === ing.insumo_id)
-        if (prodAlim) {
-          await supabase.from('stock_insumos').update({ precio_referencia: precioNum, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', prodAlim.id)
-        }
-      }
-    }
-
-    setEditando(prev => { const n = {...prev}; delete n[ing.id]; return n })
-    await onCargar()
-  }
-
-  return (
-    <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
-        📦 {ingresos.length} ingreso{ingresos.length !== 1 ? 's' : ''} sin datos de remito — completar
-      </div>
-      {ingresos.map(ing => {
-        const ep = editando[ing.id]
-        const totalPagos = ep ? ep.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0) : 0
-        const totalCalc = ep?.precio ? Math.round(ing.cantidad_kg * parseFloat(ep.precio)) : null
-        return (
-          <div key={ing.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: ep ? '1rem' : 0 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{ing.insumo_nombre}</div>
-                <div style={{ fontSize: 12, color: S.muted }}>
-                  {ing.cantidad_kg?.toLocaleString('es-AR')} {ing.unidad || 'kg'}
-                  {ing.tipo === 'sanitario' && <span style={{ marginLeft: 6, padding: '2px 6px', fontSize: 10, fontWeight: 600, background: S.purpleLight, color: S.purple, borderRadius: 4 }}>Sanidad</span>}
-                  {' · '}{ing.proveedor ? `${ing.proveedor} · ` : ''}{ing.creado_en ? new Date(ing.creado_en).toLocaleDateString('es-AR') : '—'}
-                  {ing.remito && <span style={{ marginLeft: 6, color: S.hint }}>Remito: {ing.remito}</span>}
-                </div>
-              </div>
-              <button onClick={() => setEditando(prev => ({ ...prev, [ing.id]: prev[ing.id] ? undefined : initEp(ing) }))}
-                style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: ep ? S.redLight : S.accentLight, border: `1px solid ${ep ? '#F09595' : S.accent}`, color: ep ? S.red : S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                {ep ? 'Cancelar' : 'Completar remito'}
-              </button>
-            </div>
-            {ep && (
-              <div>
-                {ing.proveedor ? (
-                  // El proveedor ya se cargó al registrar el remito (en Alimentación/Sanidad) —
-                  // no hace falta volver a pedirlo, solo mostrarlo.
-                  <div style={{ marginBottom: 10, padding: '8px 10px', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13 }}>
-                    <span style={{ color: S.muted }}>Proveedor: </span><strong>{ing.proveedor}</strong>
-                    {ing.localidad ? <span style={{ color: S.muted }}> · {ing.localidad}</span> : ''}
-                    {ing.cuit ? <span style={{ color: S.muted }}> · CUIT {ing.cuit}</span> : ''}
-                  </div>
-                ) : (
-                  <>
-                    {/* Proveedor desde contactos */}
-                    <div style={{ marginBottom: 10 }}>
-                      <Lbl>Proveedor</Lbl>
-                      <select onChange={e => {
-                        const ct = contactos.find(c => String(c.id) === e.target.value)
-                        if (ct) setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: ct.nombre, localidad: ct.localidad||'', cuit: ct.cuit||'', iva: ct.iva||'', cbu: ct.cbu||''}}))
-                      }} style={inp} defaultValue="">
-                        <option value="">— Seleccionar de contactos —</option>
-                        {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                      </select>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-                      <div><Lbl>Nombre proveedor</Lbl><input type="text" value={ep.proveedor} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], proveedor: e.target.value}}))} style={inp} /></div>
-                      <div><Lbl>Localidad</Lbl><input type="text" value={ep.localidad} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], localidad: e.target.value}}))} style={inp} /></div>
-                      <div><Lbl>CUIT</Lbl><input type="text" value={ep.cuit} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], cuit: e.target.value}}))} style={inp} /></div>
-                    </div>
-                  </>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-                  <div><Lbl>N° Factura</Lbl><input type="text" value={ep.numero_factura} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], numero_factura: e.target.value}}))} style={inp} /></div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-                  <div><Lbl>Precio $/{ing.unidad || 'kg'}</Lbl><input type="number" value={ep.precio} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], precio: e.target.value}}))} style={inp} placeholder="ej. 1500" /></div>
-                  <div><Lbl>Total calculado</Lbl>
-                    <div style={{ padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: totalCalc ? S.green : S.hint }}>
-                      {totalCalc ? `$${totalCalc.toLocaleString('es-AR')}` : '—'}
-                    </div>
-                  </div>
-                  <div><Lbl>Fecha</Lbl><input type="date" value={ep.fecha} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], fecha: e.target.value}}))} style={inp} /></div>
-                </div>
-
-                {/* Toggle pagar ahora / pendiente */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
-                  {[{ v: false, l: '⏳ Dejar pendiente' }, { v: true, l: '💳 Pagar ahora' }].map(opt => (
-                    <button key={String(opt.v)} onClick={() => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagarAhora: opt.v}}))}
-                      style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${ep.pagarAhora === opt.v ? S.accent : S.border}`, background: ep.pagarAhora === opt.v ? S.accentLight : 'transparent', color: ep.pagarAhora === opt.v ? S.accent : S.muted }}>
-                      {opt.l}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Formas de pago */}
-                {ep.pagarAhora && (
-                  <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <Lbl>Formas de pago</Lbl>
-                      <button onClick={() => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: [...prev[ing.id].pagos, { ...PAGO_INIT }]}}))} style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
-                    </div>
-                    {ep.pagos.map((pago, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: 6 }}>
-                        <div><Lbl>Forma</Lbl>
-                          <select value={pago.tipo} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p)}}))} style={inp}>
-                            <option value="transferencia">Transferencia</option>
-                          <option value="canje">🔄 Canje / Trueque</option>
-                            <option value="efectivo">Efectivo</option>
-                            <option value="e-cheq">E-cheq</option>
-                            <option value="cuenta_corriente">Cta. corriente</option>
-                          </select>
-                        </div>
-                        <div><Lbl>Monto $</Lbl>
-                          <input type="number" value={pago.monto} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p)}}))} style={inp} />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={pago.es_paralelo} onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p)}}))} />
-                            Paralelo
-                          </label>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                          {ep.pagos.length > 1 && <button onClick={() => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.filter((_,i)=>i!==idx)}}))} style={{ padding: '4px 7px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
-                        </div>
-                        {pago.tipo === 'canje' && (
-                          <div style={{ gridColumn: '1 / -1' }}>
-                            <Lbl>A cambio de</Lbl>
-                            <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
-                              onChange={e => setEditando(prev => ({...prev, [ing.id]: {...prev[ing.id], pagos: prev[ing.id].pagos.map((p,i) => i===idx ? {...p, canje_detalle: e.target.value} : p)}}))} style={inp} />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {totalCalc > 0 && (
-                      <div style={{ background: Math.abs(totalCalc-totalPagos) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalCalc-totalPagos) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 5, padding: '6px 10px', fontSize: 12 }}>
-                        Total: <strong>${totalCalc.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <button onClick={() => guardarPrecio(ing)}
-                  style={{ padding: '7px 16px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                  💾 Guardar
-                </button>
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 
