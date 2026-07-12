@@ -378,7 +378,7 @@ export default function Ventas({ usuario, mobile, nav }) {
         const montoV = ep.monto_total_con_iva && totalKgNetoGrupo > 0
           ? Math.round(montoTotalGrupo * kgNetoCv / totalKgNetoGrupo)
           : montoCv
-        await supabase.from('ventas').update({
+        const { error } = await supabase.from('ventas').update({
           precio_kg: precioCv || null,
           desbaste_pct: desbCv,
           kg_neto: kgNetoCv,
@@ -391,11 +391,12 @@ export default function Ventas({ usuario, mobile, nav }) {
           comprador: compradorFinal,
           observaciones: ep.observaciones || venta.observaciones || null,
         }).eq('id', gv.id)
+        if (error) { alert('Error al guardar los datos de la venta: ' + error.message); return }
       }
     } else {
       const kgNeto = Math.round((venta.kg_vivo_total || 0) * (1 - desbastePct / 100) * 10) / 10
       const montoTotal = ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : (precioKg ? Math.round(kgNeto * precioKg * 100) / 100 : null)
-      await supabase.from('ventas').update({
+      const { error } = await supabase.from('ventas').update({
         precio_kg: precioKg,
         desbaste_pct: desbastePct,
         kg_neto: kgNeto,
@@ -407,6 +408,7 @@ export default function Ventas({ usuario, mobile, nav }) {
         comprador: compradorFinal,
         observaciones: ep.observaciones || venta.observaciones || null,
       }).eq('id', venta.id)
+      if (error) { alert('Error al guardar los datos de la venta: ' + error.message); return }
     }
     setEditandoBanner(null)
     setEditandoVenta(null)
@@ -1171,8 +1173,10 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
                                 const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
                                 if (corral?.rol === 'libre') updateCorral.rol = 'clasificado'
-                                await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
-                                await supabase.from('ventas').delete().eq('id', v.id)
+                                const { error: errC } = await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
+                                if (errC) { alert('Error al devolver los animales al corral: ' + errC.message); return }
+                                const { error: errV } = await supabase.from('ventas').delete().eq('id', v.id)
+                                if (errV) { alert('Error al eliminar la venta: ' + errV.message); return }
                                 cargar()
                               }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
                                 Eliminar
@@ -1296,8 +1300,10 @@ export default function Ventas({ usuario, mobile, nav }) {
                                   const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
                                   const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
                                   if (corral?.rol === 'libre') updateCorral.rol = 'clasificado'
-                                  await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
-                                  await supabase.from('ventas').delete().eq('id', v.id)
+                                  const { error: errC } = await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
+                                  if (errC) { alert('Error al devolver los animales al corral: ' + errC.message); return }
+                                  const { error: errV } = await supabase.from('ventas').delete().eq('id', v.id)
+                                  if (errV) { alert('Error al eliminar la venta: ' + errV.message); return }
                                 }
                                 cargar()
                               }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>

@@ -135,12 +135,13 @@ export default function Ingresos({ usuario, mobile, nav }) {
     if (!editandoLote) return
     setGuardando(true)
     const procFinal = form.procedencia || null
-    await supabase.from('lotes').update({
+    const { error } = await supabase.from('lotes').update({
       procedencia: procFinal || null, categoria: form.categoria,
       cantidad: parseInt(form.cantidad) || null, kg_bascula: parseFloat(form.kg_bascula) || null,
       observaciones: form.observaciones || null,
       corral_cuarentena_id: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
     }).eq('id', editandoLote.id)
+    if (error) { alert('Error al guardar los cambios: ' + error.message); setGuardando(false); return }
     await cargarDatos()
     setVista('lista')
     setEditandoLote(null)
@@ -217,7 +218,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     const totalNetoFacturasExistente = (lote.facturas_feria || []).reduce((s, f) => s + (f.monto_neto || 0), 0)
     const montoNegro = lote.facturas_feria?.length > 0 ? Math.max(0, montoTotal - totalNetoFacturasExistente) : montoTotal
 
-    await supabase.from('lotes').update({
+    const { error } = await supabase.from('lotes').update({
       kg_factura: kgFac,
       precio_compra: precio,
       monto_total_con_iva: montoTotal,
@@ -232,6 +233,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
       // nro_factura, feria_nombre, gastos_feria y cuotas_pago NO se tocan acá:
       // esos se cargan y editan exclusivamente en la pestaña "Gestión comercial".
     }).eq('id', lote.id)
+    if (error) { alert('Error al guardar el precio: ' + error.message); return }
     setEditandoPrecio(null)
     await cargarDatos()
   }
@@ -245,9 +247,11 @@ export default function Ingresos({ usuario, mobile, nav }) {
       const nuevosAnim = Math.max(0, (corral?.animales || 0) - lote.cantidad)
       const upd = { animales: nuevosAnim }
       if (nuevosAnim === 0) { upd.rol = 'libre'; upd.sub = null }
-      await supabase.from('corrales').update(upd).eq('id', lote.corral_cuarentena_id)
+      const { error: errCorral } = await supabase.from('corrales').update(upd).eq('id', lote.corral_cuarentena_id)
+      if (errCorral) { alert('Error al descontar del corral: ' + errCorral.message); return }
     }
-    await supabase.from('lotes').delete().eq('id', id)
+    const { error: errDel } = await supabase.from('lotes').delete().eq('id', id)
+    if (errDel) { alert('Error al eliminar el ingreso: ' + errDel.message); return }
     await cargarDatos()
   }
 
@@ -1397,7 +1401,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     // próximos y el resto del sistema, que ya lo leen, sigan funcionando sin cambios.
     const cuotasPagoCompat = facturasCalc.map(f => ({ nro_factura: f.nro_factura, vencimientos: f.vencimientos }))
 
-    await supabase.from('lotes').update({
+    const { error } = await supabase.from('lotes').update({
       numero_factura: primeraFactura,
       fecha_factura: formFactura.fecha_factura || null,
       monto_facturado: totalNeto > 0 ? totalNeto : null,
@@ -1408,6 +1412,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       facturas_feria: facturasCalc.length > 0 ? facturasCalc : null,
       cuotas_pago: cuotasPagoCompat.length > 0 ? cuotasPagoCompat : null,
     }).eq('id', lote.id)
+    if (error) { alert('Error al guardar la factura: ' + error.message); return }
     setEditandoFactura(null)
     await cargarDatos()
   }
@@ -1637,7 +1642,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
         }).filter(Boolean)
       }
 
-      const { data: pagoInsertado } = await supabase.from('pagos_compras').insert({
+      const { data: pagoInsertado, error: errPago } = await supabase.from('pagos_compras').insert({
         lote_id: lote.id, fecha: formPago.fecha, monto,
         forma_pago: formaPago,
         subtipo_cheque: pago.subtipo_cheque || null,
@@ -1650,16 +1655,19 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
         es_negro: pago.es_paralela || false,
         descripcion: pago.tipo === 'canje' && pago.canje_detalle ? `${desc} — Canje, a cambio de: ${pago.canje_detalle}` : desc,
       }).select().single()
+      if (errPago) { alert('Error al registrar el pago: ' + errPago.message); setGuardando(false); return }
 
       let pagoCajaId = null
       // Canje: no sale plata de ninguna caja — se compensa solo en Contactos
       // contra la otra operación (la que se recibió a cambio).
       if (pago.tipo !== 'canje') {
         if (pago.es_paralela) {
-          const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
+          const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
+          if (errCp) { alert('El pago se registró, pero no se pudo cargar en caja paralela: ' + errCp.message); setGuardando(false); return }
           pagoCajaId = cp?.id || null
         } else {
-          const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
+          const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
+          if (errCo) { alert('El pago se registró, pero no se pudo cargar en caja oficial: ' + errCo.message); setGuardando(false); return }
           pagoCajaId = co?.id || null
         }
       }
@@ -1710,7 +1718,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     }
     await supabase.from('caja_oficial').delete().eq('pago_compra_id', p.id)
     await supabase.from('caja_paralela').delete().eq('pago_compra_id', p.id)
-    await supabase.from('pagos_compras').delete().eq('id', p.id)
+    const { error: errDelPago } = await supabase.from('pagos_compras').delete().eq('id', p.id)
+    if (errDelPago) { alert('Error al eliminar el pago: ' + errDelPago.message); return }
     const pagosRest = pagos.filter(pp => pp.id !== p.id)
     const totalPagadoRest = pagosRest.reduce((s, pp) => s + (pp.monto || 0), 0)
     const nuevoEstado = total && totalPagadoRest > 0 && totalPagadoRest >= total * 0.99 ? 'pagado' : 'pendiente'
