@@ -43,11 +43,13 @@ export default function AppMovil({ usuario, onLogout }) {
     ])
     const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
     const ayerStr = ayer.toISOString().split('T')[0]
-    const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }, { data: revisionesHoy }] = await Promise.all([
+    const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }, { data: revisionesHoy }, { data: remitosSinPrecio }, { data: insumosSinRetirar }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento', 'fecha_term_c']),
       supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
       supabase.from('revisiones').select('id, creado_en').eq('tipo', 'bisemanal').order('creado_en', { ascending: false }).limit(1),
+      supabase.from('compras_insumos').select('id, insumo_nombre, fecha, proveedor').is('total', null).neq('insumo_tipo', 'agro').order('fecha'),
+      supabase.from('compras_insumos').select('id, insumo_nombre, fecha, proveedor, cantidad, unidad').eq('retirado', false).eq('estado_pago', 'pagado').neq('insumo_tipo', 'agro').order('fecha'),
     ])
     // Construir formulas desde BD
     const formulasObj = {
@@ -88,7 +90,11 @@ export default function AppMovil({ usuario, onLogout }) {
     }
     const hoyStr = new Date().toISOString().split('T')[0]
     const revisionHoyHecha = (revisionesHoy || []).some(r => (r.creado_en || '').split('T')[0] === hoyStr)
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0) && (!s.pedido_realizado_hasta || s.pedido_realizado_hasta < hoyStr)), stockSanitario: (stockSan || []).filter(p => !p.pedido_realizado_hasta || p.pedido_realizado_hasta < hoyStr), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [], revisionHoyHecha })
+    const diasDesde = (fecha) => fecha ? Math.floor((new Date(hoyStr) - new Date(fecha)) / (1000 * 60 * 60 * 24)) : null
+    // Solo avisar de lo que ya lleva unos días — recién cargado no es urgente
+    const remitosSinPrecioViejos = (remitosSinPrecio || []).filter(r => (diasDesde(r.fecha) || 0) >= 3)
+    const insumosSinRetirarViejos = (insumosSinRetirar || []).filter(r => (diasDesde(r.fecha) || 0) >= 5)
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0) && (!s.pedido_realizado_hasta || s.pedido_realizado_hasta < hoyStr)), stockSanitario: (stockSan || []).filter(p => !p.pedido_realizado_hasta || p.pedido_realizado_hasta < hoyStr), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [], revisionHoyHecha, remitosSinPrecio: remitosSinPrecioViejos, insumosSinRetirar: insumosSinRetirarViejos })
   }
 
   const pantallas = {
@@ -125,7 +131,7 @@ function Scroll({ children }) {
   return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>{children}</div>
 }
 function Home({ usuario, nav, onLogout, datos }) {
-  const { proximaPesada, alertas, corrales, stockBajo, stockSanitario } = datos
+  const { proximaPesada, alertas, corrales, stockBajo, stockSanitario, remitosSinPrecio, insumosSinRetirar } = datos
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
   const totalAnimales = corrales.reduce((s, c) => s + (c.animales || 0), 0)
@@ -178,6 +184,35 @@ function Home({ usuario, nav, onLogout, datos }) {
   const diaSemana = new Date().getDay()
   if ((diaSemana === 1 || diaSemana === 4) && !datos.revisionHoyHecha) {
     tareas.unshift({ icon: '🔍', titulo: 'Revision bisemanal de corrales', sub: 'Hoy corresponde revisar todos los corrales', pantalla: 'sanidad', tabDestino: 'revision', urgente: true })
+  }
+
+  // Estas dos alertas (remitos sin precio, insumos sin retirar) son temas de
+  // gestión/pago — solo le sirven a quien maneja esa parte, no a todo el equipo.
+  const puedeVerAlertasGestion = ['matias_eu@hotmail.com', 'martin@campo.com'].includes(usuario?.email) || usuario?.rol === 'secretaria'
+
+  // Remitos sin precio acumulándose (3+ días) — avisar para que alguien lo
+  // complete en Insumos antes de que se junten muchos.
+  if (puedeVerAlertasGestion && remitosSinPrecio && remitosSinPrecio.length > 0) {
+    const nombres = [...new Set(remitosSinPrecio.map(r => r.insumo_nombre).filter(Boolean))].slice(0, 3).join(', ')
+    tareas.push({
+      icon: '🧾',
+      titulo: `${remitosSinPrecio.length} remito${remitosSinPrecio.length !== 1 ? 's' : ''} sin precio hace días`,
+      sub: `${nombres}${remitosSinPrecio.length > 3 ? '...' : ''} · completar en Insumos`,
+      pantalla: 'alimentacion', urgente: true,
+    })
+  }
+  // Insumos ya pagados pero sin retirar hace rato — avisar para que alguien
+  // vaya a buscarlos antes de que se olviden.
+  if (puedeVerAlertasGestion && insumosSinRetirar && insumosSinRetirar.length > 0) {
+    const porProveedor = {}
+    insumosSinRetirar.forEach(r => { porProveedor[r.proveedor || 'sin proveedor'] = (porProveedor[r.proveedor || 'sin proveedor'] || 0) + 1 })
+    const proveedores = Object.keys(porProveedor).slice(0, 3).join(', ')
+    tareas.push({
+      icon: '📦',
+      titulo: `${insumosSinRetirar.length} insumo${insumosSinRetirar.length !== 1 ? 's' : ''} pagado${insumosSinRetirar.length !== 1 ? 's' : ''} sin retirar`,
+      sub: `Hace más de 5 días · ${proveedores} · marcar retirado en Contactos`,
+      pantalla: 'alimentacion', urgente: true,
+    })
   }
 
   if (tareas.length === 0) {

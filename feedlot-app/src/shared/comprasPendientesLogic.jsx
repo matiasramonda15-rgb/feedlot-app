@@ -1,0 +1,111 @@
+import { ListaPagos } from './PagoFormulario'
+
+// Checklist de compras pendientes de pago — selección, precio (si falta) y
+// N° factura (si falta) por cada una. Usado tanto en Insumos (Alimentación
+// y Sanidad) como en Agricultura (agroquímicos), que comparten la misma
+// tabla de compras por atrás.
+export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSeleccionadas, precios, setPrecios, facturas, setFacturas, S }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {pendientes.map(c => {
+        const sel = seleccionadas.includes(c.id)
+        const montoCalc = precios[c.id] && c.cantidad ? Math.round(parseFloat(precios[c.id]) * c.cantidad) : null
+        return (
+          <div key={c.id} style={{ border: `1px solid ${sel ? '#EF9F27' : S.border}`, borderRadius: 6, background: sel ? '#FFF8EC' : S.surface }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sel} onChange={e => {
+                setSeleccionadas(e.target.checked ? [...seleccionadas, c.id] : seleccionadas.filter(id => id !== c.id))
+                if (!e.target.checked && setPrecios) { const np = {...precios}; delete np[c.id]; setPrecios(np) }
+              }} />
+              <div style={{ flex: 1, fontSize: 13 }}>
+                <strong>{c.insumo_nombre || '—'}</strong>
+                <span style={{ color: S.muted, marginLeft: 8 }}>{c.cantidad?.toLocaleString('es-AR')} {c.unidad}</span>
+                <span style={{ color: S.muted, marginLeft: 8 }}>· {c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                {c.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {c.proveedor}</span>}
+              </div>
+              {c.total || c.precio_unitario
+                ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${(c.total || 0).toLocaleString('es-AR')}</span>
+                : null}
+            </label>
+            {sel && !(c.total || c.precio_unitario) && (
+              <div onClick={e => e.preventDefault()} style={{ padding: '0 12px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 11, color: S.amber, whiteSpace: 'nowrap' }}>$/{c.unidad || 'u'}:</div>
+                <input type="number" value={precios[c.id] || ''} onChange={e => setPrecios({...precios, [c.id]: e.target.value})}
+                  placeholder="ej. 850" style={{ padding: '5px 8px', border: `1px solid ${S.amber}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', width: 110 }} />
+                {montoCalc != null && <span style={{ fontSize: 12, color: S.green, fontWeight: 600 }}>= ${montoCalc.toLocaleString('es-AR')}</span>}
+                {setFacturas && !c.numero_factura && (
+                  <>
+                    <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap', marginLeft: 8 }}>N° Factura:</div>
+                    <input type="text" value={facturas?.[c.id] || ''} onChange={e => setFacturas({...facturas, [c.id]: e.target.value})}
+                      placeholder="opcional" style={{ padding: '5px 8px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 12, width: 130 }} />
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Registra el pago agrupado de varias compras pendientes: crea los
+// movimientos de caja / cheques según la lista de pagos (usando ListaPagos),
+// actualiza cada compra seleccionada (precio si faltaba, factura si se
+// cargó, estado a pagado), y actualiza el precio de referencia del insumo
+// en el stock correspondiente vía el callback que le pases.
+//
+// actualizarPrecioReferencia(compra, precioUnit) — se llama solo cuando la
+// compra no tenía precio y se cargó ahora; cada módulo sabe a qué tabla de
+// stock (stock_insumos / stock_sanitario / stock_agro) le corresponde.
+export async function pagarComprasPendientes(supabase, {
+  seleccionadas, pendientes, precios, facturas, pagos, fecha,
+  descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
+}) {
+  let caja_oficial_id = null, caja_paralela_id = null
+  for (const pago of pagos) {
+    const monto = parseFloat(pago.monto) || 0
+    if (!monto) continue
+    if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
+    const formaPago = pago.subtipo_cheque || pago.tipo
+    if (pago.es_paralelo) {
+      const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion, monto }).select().single()
+      if (errCp) return { error: errCp }
+      if (!caja_paralela_id) caja_paralela_id = cp?.id || null
+    } else {
+      const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion, monto, forma_pago: formaPago, contacto_id: contactoId ? parseInt(contactoId) : null }).select().single()
+      if (errCo) return { error: errCo }
+      if (!caja_oficial_id) caja_oficial_id = co?.id || null
+      if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
+        const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: contactoNombre || null, estado: 'en_cartera', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: registradoPor || null })
+        if (errCheq) return { error: errCheq }
+      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+      }
+    }
+  }
+
+  for (const id of seleccionadas) {
+    const c = pendientes.find(x => x.id === id)
+    if (!c) continue
+    const upd = {
+      estado_pago: 'pagado', caja_oficial_id, caja_paralela_id,
+      pagos_detalle: pagos,
+      forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
+      es_paralelo: pagos.some(p => p.es_paralelo),
+    }
+    if (contactoId) upd.contacto_id = parseInt(contactoId)
+    // Si la compra se cargó sin precio, se define recién ahora al pagar
+    if (!(c.total || c.precio_unitario) && precios[id]) {
+      const precioFinal = parseFloat(precios[id])
+      upd.precio_unitario = precioFinal
+      upd.total = Math.round((c.cantidad || 0) * precioFinal)
+      if (facturas?.[id]) upd.numero_factura = facturas[id]
+      if (actualizarPrecioReferencia) await actualizarPrecioReferencia(c, precioFinal)
+    }
+    const { error } = await supabase.from('compras_insumos').update(upd).eq('id', id)
+    if (error) return { error }
+  }
+
+  return { error: null }
+}

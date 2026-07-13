@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -86,8 +87,12 @@ export default function Agricultura({ usuario, mobile, nav }) {
     setStockAgro(sa || [])
     setIngresosAgro(ia || [])
     setContactos(ct || [])
-    const activa = (ca || []).find(c => c.activa)
-    if (activa) setCampanaActiva(activa)
+    // Si hay más de una campaña activa a la vez (algo normal, por ejemplo trigo
+    // sin cosechar de la anterior + algo recién sembrado de la nueva), se usa
+    // la más nueva como "la" campaña activa por defecto para cargar datos —
+    // las demás siguen accesibles igual desde la lista de campañas.
+    const activas = (ca || []).filter(c => c.activa).sort((a, b) => (b.año_inicio || 0) - (a.año_inicio || 0))
+    if (activas.length > 0) setCampanaActiva(activas[0])
     setLoading(false)
   }
 
@@ -468,19 +473,27 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    const { error } = await supabase.from('campanas').insert({ ...form, año_inicio: parseInt(form.año_inicio), año_fin: parseInt(form.año_fin), activa: true })
+    const { error } = await supabase.from('campanas').insert({ ...form, año_inicio: parseInt(form.año_inicio), año_fin: parseInt(form.año_fin), activa: false })
     if (error) { alert('Error al guardar la campaña: ' + error.message); setGuardando(false); return }
-    await supabase.from('campanas').update({ activa: false }).neq('nombre', form.nombre)
     await cargar()
     setShowForm(false)
     setGuardando(false)
   }
 
   async function activar(c) {
-    await supabase.from('campanas').update({ activa: false }).neq('id', c.id)
+    // No se desactivan las demás — es normal tener más de una campaña activa
+    // a la vez (ej. trigo sin cosechar de la campaña anterior conviviendo con
+    // maíz recién sembrado de la nueva).
     const { error } = await supabase.from('campanas').update({ activa: true }).eq('id', c.id)
     if (error) { alert('Error al activar la campaña: ' + error.message); return }
     setCampanaActiva(c)
+    await cargar()
+  }
+
+  async function desactivar(c) {
+    if (!confirm(`¿Desactivar la campaña ${c.nombre}? (por ejemplo, porque ya se terminó de cosechar todo)`)) return
+    const { error } = await supabase.from('campanas').update({ activa: false }).eq('id', c.id)
+    if (error) { alert('Error al desactivar la campaña: ' + error.message); return }
     await cargar()
   }
 
@@ -496,6 +509,16 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
       variedad: formPlan.variedad || null,
     })
     if (error) { alert('Error al guardar el plan: ' + error.message); return }
+    // Si este plan ya tiene fecha de siembra (no es solo una intención, ya se
+    // sembró de verdad) y la campaña todavía no estaba activa, se activa sola
+    // — sin desactivar las demás, porque es normal tener más de una campaña
+    // activa a la vez (por ejemplo, trigo sin cosechar de la campaña anterior
+    // conviviendo con maíz recién sembrado de la nueva).
+    const campanaDeEsteItem = campanas.find(c => c.id === campanaVista)
+    if (formPlan.fecha_siembra && campanaDeEsteItem && !campanaDeEsteItem.activa) {
+      await supabase.from('campanas').update({ activa: true }).eq('id', campanaVista)
+      await cargar()  // refresca campanaActiva a nivel de todo el módulo
+    }
     await cargarPlanes(campanaVista)
     setShowPlanForm(false)
     setFormPlan({ campo_id: '', lote_id: '', cultivo: '', superficie_ha: '', fecha_siembra: '', variedad: '' })
@@ -543,9 +566,13 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{campanaSeleccionada.nombre} — Plan de cultivos</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {!campanaSeleccionada.activa && (
+              {!campanaSeleccionada.activa ? (
                 <button onClick={() => activar(campanaSeleccionada)} style={{ padding: '6px 12px', fontSize: 12, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer' }}>
                   Activar campaña
+                </button>
+              ) : (
+                <button onClick={() => desactivar(campanaSeleccionada)} style={{ padding: '6px 12px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>
+                  Desactivar campaña
                 </button>
               )}
               <button onClick={() => setShowPlanForm(!showPlanForm)} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -734,7 +761,7 @@ function generarReciboOrden(orden, campo, lote, campana, stockAgro) {
 
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
-    if (p.es_paralelo) desc += ' (PARALELO)'
+    if (p.es_paralelo) desc += ' (CAJA 2)'
     if (p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
       return [`<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
@@ -830,7 +857,7 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
-    if (p.es_paralelo) desc += ' (PARALELO)'
+    if (p.es_paralelo) desc += ' (CAJA 2)'
     if (p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
       return [`<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
@@ -1978,7 +2005,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Campo', 'Cultivo', 'Kg', 'Tn', '$/tn', 'Total', 'Facturado', 'Paralelo', 'Comprador', ''].map(h => (
+            {['Fecha', 'Campo', 'Cultivo', 'Kg', 'Tn', '$/tn', 'Total', 'Facturado', 'Caja 2', 'Comprador', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
@@ -2127,7 +2154,7 @@ function generarReciboArriendo(v, campo, pagos) {
   const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.qq_ha || ''} qq/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/qq` : ''}`
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
-    if (p.es_paralelo) desc += ' (PARALELO)'
+    if (p.es_paralelo) desc += ' (CAJA 2)'
     if (p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
       return [`<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.cheque_propio.numero || ''} · ${p.cheque_propio.banco || ''}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${new Date(p.cheque_propio.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR')}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${parseFloat(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>`]
     }
@@ -2690,40 +2717,19 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           if (faltaPrecio) { alert('Falta cargar el precio de la factura en alguna de las compras seleccionadas.'); return }
           if (Math.abs(totalSel - totalPagGrupal) > 0.5) { alert(`El total de pagos no coincide`); return }
           setGuardandoPago(true)
-          let caja_oficial_id = null, caja_paralela_id = null
-          const desc = `Pago compras agroquímicos`
-          for (const pago of formPagoGrupal.pagos) {
-            const monto = parseFloat(pago.monto) || 0
-            if (!monto) continue
-            const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
-            if (pago.es_paralelo) {
-              const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-              if (!caja_paralela_id) caja_paralela_id = cp?.id || null
-            } else {
-              const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Compra agroquímicos', descripcion: desc, monto, forma_pago: fp }).select().single()
-              if (!caja_oficial_id) caja_oficial_id = co?.id || null
-            }
-            if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-              await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-            } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-              for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
-            }
-          }
-          for (const id of seleccionadas) {
-            const i = pendientes.find(x => x.id === id)
-            const upd = { estado_pago: 'pagado', caja_oficial_id, caja_paralela_id }
-            // Si el remito se cargó sin precio, se define recién ahora, al pagar la factura
-            if (i && !i.precio_unitario && preciosPend[id]) {
-              const precioFinal = parseFloat(preciosPend[id])
-              upd.precio_unitario = precioFinal
-              upd.total = Math.round((i.cantidad || 0) * precioFinal)
+          const comprasPagadas = seleccionadas.map(id => ingresos.find(i => i.id === id)).filter(Boolean)
+          const { error } = await pagarComprasPendientes(supabase, {
+            seleccionadas, pendientes, precios: preciosPend, facturas: null,
+            pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
+            descripcion: 'Pago compras agroquímicos', registradoPor: usuario?.id,
+            actualizarPrecioReferencia: async (i, precioFinal) => {
+              if (!i.insumo_id) return
               await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
-            }
-            await supabase.from('compras_insumos').update(upd).eq('id', id)
-          }
+            },
+          })
+          if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
           setSeleccionadas([])
           setShowPagosPend(false)
-          const comprasPagadas = seleccionadas.map(id => ingresos.find(i => i.id === id)).filter(Boolean)
           setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_AGRO }] })
           setPreciosPend({})
           setGuardandoPago(false)
@@ -2743,28 +2749,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                 {showPagosPend ? 'Cerrar' : 'Registrar pago'}
               </button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: showPagosPend ? '1rem' : 0 }}>
-              {pendientes.map(i => (
-                <label key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${seleccionadas.includes(i.id) ? '#EF9F27' : S.border}`, borderRadius: 6, background: seleccionadas.includes(i.id) ? '#FFF8EC' : S.surface, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={seleccionadas.includes(i.id)} onChange={e => setSeleccionadas(e.target.checked ? [...seleccionadas, i.id] : seleccionadas.filter(id => id !== i.id))} />
-                  <div style={{ flex: 1, fontSize: 13 }}>
-                    <strong>{i.insumo_nombre || '—'}</strong>
-                    <span style={{ color: S.muted, marginLeft: 8 }}>{i.cantidad?.toLocaleString('es-AR')} {i.unidad} · {i.fecha ? new Date(i.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
-                    {i.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {i.proveedor}</span>}
-                  </div>
-                  {i.precio_unitario
-                    ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${i.total?.toLocaleString('es-AR')}</span>
-                    : (
-                      <div onClick={e => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 11, color: S.amber }}>Precio $/u:</span>
-                        <input type="number" value={preciosPend[i.id] || ''} onChange={e => setPreciosPend({...preciosPend, [i.id]: e.target.value})}
-                          placeholder="ej. 1500" style={{ width: 90, padding: '4px 8px', border: `1px solid ${S.amber}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace' }} />
-                        {preciosPend[i.id] && <span style={{ fontFamily: 'monospace', fontSize: 12, color: S.muted }}>= ${montoItem(i).toLocaleString('es-AR')}</span>}
-                      </div>
-                    )}
-                </label>
-              ))}
-            </div>
+            <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
+              precios={preciosPend} setPrecios={setPreciosPend} S={S} />
             {showPagosPend && seleccionadas.length > 0 && (
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>
@@ -2989,7 +2975,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{i.precio_unitario ? `$${i.precio_unitario.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>}</td>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{i.total ? `$${i.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}</td>
                   <td style={{ padding: '8px 12px', color: S.muted }}>{i.proveedor || '—'}</td>
-                  <td style={{ padding: '8px 12px', fontSize: 11 }}>{i.es_paralelo ? <span style={{ color: '#3D1A6B', fontWeight: 600 }}>Paralelo</span> : i.forma_pago || '—'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 11 }}>{i.es_paralelo ? <span style={{ color: '#3D1A6B', fontWeight: 600 }}>Caja 2</span> : i.forma_pago || '—'}</td>
                   <td style={{ padding: '8px 12px' }}>
                     {i.estado_pago === 'pagado'
                       ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Pagado</span>

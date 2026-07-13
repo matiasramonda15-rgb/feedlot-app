@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -41,7 +42,7 @@ function generarRecibo(datos, pagos) {
 
   const filasPago = pagos.map(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : 'E-CHEQ TERCERO'
-    if (p.es_paralelo) desc += ' (PARALELO)'
+    if (p.es_paralelo) desc += ' (CAJA 2)'
     const nro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.numero || '') : ''
     const fechaCobro = p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''
     return `<tr><td style="padding:6px 8px;border-bottom:1px solid #ddd;">${desc}</td><td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${nro}</td><td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${fechaCobro}</td><td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;font-weight:600;">$ ${parseFloat(p.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>`
@@ -202,7 +203,7 @@ export default function Insumos({ usuario }) {
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
       if (pago.es_paralelo) {
         const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-        if (errCp) { alert('Error al registrar en caja paralela: ' + errCp.message); setGuardando(false); return }
+        if (errCp) { alert('Error al registrar en Caja 2: ' + errCp.message); setGuardando(false); return }
         if (!caja_paralela_id) caja_paralela_id = cp?.id || null
       } else {
         const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: formaPago }).select().single()
@@ -306,52 +307,8 @@ export default function Insumos({ usuario }) {
                     </button>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 0 }}>
-                  {pendientes.map(c => (
-                    <div key={c.id} style={{ border: `1px solid ${seleccionadas.includes(c.id) ? '#EF9F27' : S.border}`, borderRadius: 6, background: seleccionadas.includes(c.id) ? '#FFF8EC' : S.surface }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={seleccionadas.includes(c.id)} onChange={e => {
-                          setSeleccionadas(e.target.checked ? [...seleccionadas, c.id] : seleccionadas.filter(id => id !== c.id))
-                          if (!e.target.checked) { const np = {...preciosGrupal}; delete np[c.id]; setPreciosGrupal(np) }
-                        }} />
-                        <div style={{ flex: 1, fontSize: 13 }}>
-                          <strong>{c.insumo_nombre}</strong>
-                          <span style={{ color: S.muted, marginLeft: 8 }}>{c.cantidad?.toLocaleString('es-AR')} {c.unidad}</span>
-                          <span style={{ color: S.muted, marginLeft: 8 }}>· {c.fecha ? new Date(c.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
-                          {c.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {c.proveedor}</span>}
-                        </div>
-                        {c.total ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${c.total.toLocaleString('es-AR')}</span> : null}
-                      </label>
-                      {seleccionadas.includes(c.id) && (
-                        <div style={{ padding: '0 12px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap' }}>$/{c.unidad || 'kg'}:</div>
-                          <input type="number" value={preciosGrupal[c.id] || ''} onChange={e => {
-                            const precio = e.target.value
-                            const np = {...preciosGrupal, [c.id]: precio}
-                            setPreciosGrupal(np)
-                            const totalAuto = pendientes.filter(x => seleccionadas.includes(x.id)).reduce((s, x) => {
-                              const px = np[x.id] && x.cantidad ? Math.round(parseFloat(np[x.id]) * x.cantidad) : (x.total || 0)
-                              return s + px
-                            }, 0)
-                            if (totalAuto > 0) setFormPagoGrupal(prev => ({...prev, pagos: prev.pagos.map((pg, i) => i === 0 ? {...pg, monto: String(totalAuto)} : pg)}))
-                          }} placeholder="ej. 850" style={{ padding: '5px 8px', border: `1px solid ${S.accent}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', width: 120 }} />
-                          {preciosGrupal[c.id] && c.cantidad && (
-                            <span style={{ fontSize: 12, color: S.green, fontWeight: 600 }}>
-                              = ${Math.round(parseFloat(preciosGrupal[c.id]) * c.cantidad).toLocaleString('es-AR')}
-                            </span>
-                          )}
-                          {!c.numero_factura && (
-                            <>
-                              <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap', marginLeft: 8 }}>N° Factura:</div>
-                              <input type="text" value={facturasGrupal[c.id] || ''} onChange={e => setFacturasGrupal({...facturasGrupal, [c.id]: e.target.value})}
-                                placeholder="opcional" style={{ padding: '5px 8px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 12, width: 130 }} />
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
+                  precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} />
               </div>
             )
           })()}
@@ -407,48 +364,19 @@ export default function Insumos({ usuario }) {
                     if (totalPagGrupal2 === 0) { alert('Ingresá el monto a pagar'); return }
                     if (totalSel2 > 0 && Math.abs(totalSel2 - totalPagGrupal2) > 0.5) { alert('El total de pagos no coincide con el total de las compras'); return }
                     setGuardandoPago(true)
-                    let caja_oficial_id = null, caja_paralela_id = null
-                    const desc = `Pago insumos${formPagoGrupal.contacto_id ? ' — ' + (contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre || '') : ''}`
-                    for (const pago of formPagoGrupal.pagos) {
-                      const monto = parseFloat(pago.monto) || 0
-                      if (!monto) continue
-                      if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
-                      const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
-                      if (pago.es_paralelo) {
-                        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-                        if (!caja_paralela_id) caja_paralela_id = cp?.id || null
-                      } else {
-                        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null }).select().single()
-                        if (!caja_oficial_id) caja_oficial_id = co?.id || null
-                      }
-                      if (!pago.es_paralelo && pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-                        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-                      }
-                    }
-                    for (const id of seleccionadas) {
-                      const c = compras.find(x => x.id === id)
-                      const precioUnit = preciosGrupal[id] ? parseFloat(preciosGrupal[id]) : (c?.precio_unitario || null)
-                      const totalItem = precioUnit && c?.cantidad ? Math.round(precioUnit * c.cantidad) : null
-                      await supabase.from('compras_insumos').update({
-                        estado_pago: 'pagado',
-                        precio_unitario: precioUnit,
-                        total: totalItem || c?.total || totalPagGrupal2 || undefined,
-                        numero_factura: facturasGrupal[id] || c?.numero_factura || null,
-                        caja_oficial_id, caja_paralela_id,
-                        pagos_detalle: formPagoGrupal.pagos,
-                        forma_pago: formPagoGrupal.pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+'),
-                        es_paralelo: formPagoGrupal.pagos.some(p => p.es_paralelo),
-                        contacto_id: formPagoGrupal.contacto_id ? parseInt(formPagoGrupal.contacto_id) : null,
-                      }).eq('id', id)
-                      // Actualizar precio de referencia en stock (alimentación o sanidad)
-                      if (precioUnit && c?.insumo_id) {
-                        if (c.insumo_tipo === 'alimentacion') {
-                          await supabase.from('stock_insumos').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
-                        } else {
-                          await supabase.from('stock_sanitario').update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
-                        }
-                      }
-                    }
+                    const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
+                    const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`
+                    const { error } = await pagarComprasPendientes(supabase, {
+                      seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal,
+                      pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha, descripcion: desc,
+                      contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
+                      actualizarPrecioReferencia: async (c, precioFinal) => {
+                        if (!c.insumo_id) return
+                        const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
+                        await supabase.from(tabla).update({ precio_referencia: precioFinal, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                      },
+                    })
+                    if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
                     setSeleccionadas([])
                     setPreciosGrupal({})
                     setFacturasGrupal({})
@@ -496,7 +424,7 @@ export default function Insumos({ usuario }) {
                     <td style={{ padding: '8px 12px', color: S.muted }}>{c.proveedor || '—'}</td>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, color: S.muted }}>{c.numero_factura || '—'}</td>
                     <td style={{ padding: '8px 12px', fontSize: 11 }}>
-                      {c.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Paralelo</span> : c.forma_pago}
+                      {c.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Caja 2</span> : c.forma_pago}
                     </td>
                     <td style={{ padding: '9px 12px' }}>
                       {c.estado_pago === 'pagado'
