@@ -2628,7 +2628,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [tab, setTab] = useState('stock')
   const [showForm, setShowForm] = useState(false)
   const [editandoStock, setEditandoStock] = useState(null)
-  const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '' })
+  const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '' })
   const [showFormCompra, setShowFormCompra] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
@@ -2695,11 +2695,16 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (!formStock.insumo) { alert('Ingresá el nombre'); return }
     setGuardando(true)
     const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, actualizado_en: new Date().toISOString() }
-    if (editandoStock) await supabase.from('stock_agro').update(data).eq('id', editandoStock)
-    else await supabase.from('stock_agro').insert(data)
+    // El precio solo se pisa si se cargó algo en el campo — así no se borra
+    // el precio de referencia que ya se venía calculando solo con las compras.
+    if (formStock.precio_referencia) data.precio_referencia = parseFloat(formStock.precio_referencia)
+    const { error } = editandoStock
+      ? await supabase.from('stock_agro').update(data).eq('id', editandoStock)
+      : await supabase.from('stock_agro').insert(data)
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false); setEditandoStock(null)
-    setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '' })
+    setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '' })
     setGuardando(false)
   }
 
@@ -2872,7 +2877,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             + Registrar compra
           </button>
-          <button onClick={() => { setShowForm(!showForm); setShowFormCompra(false); setEditandoStock(null); setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '' }) }}
+          <button onClick={() => { setShowForm(!showForm); setShowFormCompra(false); setEditandoStock(null); setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '' }) }}
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             + Nuevo insumo
           </button>
@@ -2902,6 +2907,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             <div><Label>Tipo</Label><select value={formStock.tipo} onChange={e => setFormStock({...formStock, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select></div>
             <div><Label>Unidad</Label><select value={formStock.unidad} onChange={e => setFormStock({...formStock, unidad: e.target.value})} style={inputStyle}>{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
             <div><Label>Cantidad inicial</Label><input type="number" value={formStock.cantidad} onChange={e => setFormStock({...formStock, cantidad: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Precio de referencia $/{formStock.unidad}</Label><input type="number" value={formStock.precio_referencia} onChange={e => setFormStock({...formStock, precio_referencia: e.target.value})} placeholder="ej. 850" style={inputStyle} /></div>
             <div><Label>Stock mínimo alerta</Label><input type="number" value={formStock.minimo_stock} onChange={e => setFormStock({...formStock, minimo_stock: e.target.value})} style={inputStyle} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -3021,7 +3027,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     </td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'' }); setShowForm(true); setShowFormCompra(false) }}
+                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'' }); setShowForm(true); setShowFormCompra(false) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                         <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('stock_agro').delete().eq('id', s.id); cargar() }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
