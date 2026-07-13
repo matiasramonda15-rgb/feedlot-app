@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
+import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
-const PAGO_INIT_P = { tipo: 'transferencia', monto: '', es_paralelo: false, cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' } }
+const PAGO_INIT_P = PAGO_INIT
+
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -29,6 +31,7 @@ const TIPOS_PAGO = ['sueldo', 'jornal', 'bonificacion', 'adelanto', 'vacaciones'
 export default function Personal({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [empleados, setEmpleados] = useState([])
+  const [chequesCartera, setChequesCartera] = useState([])
   const [pagos, setPagos] = useState([])
   const [empleadoSelId, setEmpleadoSelId] = useState('')
   const [editandoEmp, setEditandoEmp] = useState(null) // { id, nombre, rol, sueldo_base, tipo, aparece_en_servicios }
@@ -46,12 +49,14 @@ export default function Personal({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: e }, { data: p }] = await Promise.all([
+    const [{ data: e }, { data: p }, { data: ch }] = await Promise.all([
       supabase.from('empleados').select('*').order('nombre'),
       supabase.from('pagos_empleados').select('*, empleados(nombre)').order('fecha', { ascending: false }),
+      supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento'),
     ])
     setEmpleados(e || [])
     setPagos(p || [])
+    setChequesCartera(ch || [])
     setLoading(false)
   }
 
@@ -96,12 +101,14 @@ export default function Personal({ usuario }) {
         if (errCp) { alert('Error al registrar en caja paralela: ' + errCp.message); setGuardando(false); return }
         caja_paralela_id = cp?.id
       } else {
-        const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Personal', descripcion: desc, monto, forma_pago: p.tipo }).select().single()
+        const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Personal', descripcion: desc, monto, forma_pago: p.subtipo_cheque || p.tipo }).select().single()
         if (errCo) { alert('Error al registrar en caja oficial: ' + errCo.message); setGuardando(false); return }
         caja_oficial_id = co?.id
-        if (p.tipo === 'cheque_propio' && p.cheque_propio?.fecha_vencimiento) {
-          const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, librador: emp?.nombre || null, estado: 'emitido', caja_oficial_id })
+        if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
+          const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, beneficiario: emp?.nombre || null, estado: 'en_cartera', caja_oficial_id, es_electronico: p.tipo === 'e-cheq' })
           if (errCheq) { alert('Error al registrar el cheque: ' + errCheq.message); setGuardando(false); return }
+        } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
+          for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
         }
       }
     }
@@ -322,38 +329,10 @@ export default function Personal({ usuario }) {
               </div>
 
               {/* Formas de pago */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Label>Formas de pago</Label>
-                <button onClick={() => setPagosForm([...pagosForm, { ...PAGO_INIT_P }])}
-                  style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
+              <Label>Formas de pago</Label>
+              <div style={{ marginTop: 4 }}>
+                <ListaPagos pagos={pagosForm} onChangePagos={setPagosForm} chequesCartera={chequesCartera} S={S} mostrarCanje={false} soloTerceroSiParalelo />
               </div>
-              {pagosForm.map((p, pi) => (
-                <div key={pi} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.75rem', marginBottom: 6 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
-                    <div><Label>Forma de pago</Label>
-                      <select value={p.tipo} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, tipo: e.target.value} : x); setPagosForm(pf) }} style={inputStyle}>
-                        {['transferencia','efectivo','cheque_propio','cheque_tercero'].map(t => (
-                          <option key={t} value={t}>{t === 'cheque_propio' ? 'E-cheq propio' : t === 'cheque_tercero' ? 'Cheque tercero' : t.charAt(0).toUpperCase()+t.slice(1)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div><Label>Monto $</Label>
-                      <input type="number" value={p.monto} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, monto: e.target.value} : x); setPagosForm(pf) }} style={inputStyle} />
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 2 }}>
-                      <input type="checkbox" checked={p.es_paralelo} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, es_paralelo: e.target.checked} : x); setPagosForm(pf) }} />
-                      Paralelo
-                    </label>
-                  </div>
-                  {p.tipo === 'cheque_propio' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                      <div><Label>N° Cheque</Label><input type="text" value={p.cheque_propio?.numero || ''} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, cheque_propio: {...x.cheque_propio, numero: e.target.value}} : x); setPagosForm(pf) }} style={inputStyle} /></div>
-                      <div><Label>Banco</Label><input type="text" value={p.cheque_propio?.banco || ''} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, cheque_propio: {...x.cheque_propio, banco: e.target.value}} : x); setPagosForm(pf) }} style={inputStyle} /></div>
-                      <div><Label>Vencimiento</Label><input type="date" value={p.cheque_propio?.fecha_vencimiento || ''} onChange={e => { const pf = pagosForm.map((x,i) => i===pi ? {...x, cheque_propio: {...x.cheque_propio, fecha_vencimiento: e.target.value}} : x); setPagosForm(pf) }} style={inputStyle} /></div>
-                    </div>
-                  )}
-                </div>
-              ))}
               <div style={{ padding: '8px 12px', background: S.greenLight, borderRadius: 6, fontSize: 13, color: S.green, fontWeight: 600, marginTop: 8, marginBottom: 12 }}>
                 Total: ${pagosForm.reduce((a, p) => a + (parseFloat(p.monto) || 0), 0).toLocaleString('es-AR')}
               </div>

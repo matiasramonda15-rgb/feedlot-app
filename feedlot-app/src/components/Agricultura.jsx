@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { abrirReciboDoble } from '../shared/reciboLogic'
+import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -71,7 +73,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       supabase.from('ventas_granos').select('*').order('fecha', { ascending: false }),
       supabase.from('gastos_agro').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('stock_agro').select('*').order('insumo'),
-      supabase.from('ingresos_agroquimicos').select('*, stock_agro(insumo, unidad)').order('fecha', { ascending: false }).limit(200),
+      supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'agro').order('fecha', { ascending: false }).limit(200),
       supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
     ])
     setCampos(c || [])
@@ -634,9 +636,11 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
   )
 }
 
-const PAGO_INIT_ORDEN = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
-const PAGO_INIT_AGRO = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
-const PAGO_INIT_ARR = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_id: '' }
+// (PAGO_INIT_ORDEN, PAGO_INIT_AGRO, PAGO_INIT_ARR ahora vienen unificadas del
+// módulo compartido ./PagoFormulario, como PAGO_INIT)
+const PAGO_INIT_ORDEN = PAGO_INIT
+const PAGO_INIT_AGRO = PAGO_INIT
+const PAGO_INIT_ARR = PAGO_INIT
 
 function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
@@ -1045,8 +1049,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
         await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
-        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
       }
     }
 
@@ -1619,71 +1623,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     <input type="date" value={formPagoGrupal.fecha} onChange={e => setFormPagoGrupal({...formPagoGrupal, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
-                    <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: [...formPagoGrupal.pagos, { ...PAGO_INIT_ORDEN }]})} style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
-                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
+                  <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
 
-                  {formPagoGrupal.pagos.map((pago, idx) => (
-                    <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: '8px', marginBottom: 6 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 8 : 0 }}>
-                        <div><Label>Forma</Label>
-                          <select value={pago.tipo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle}>
-                            <option value="transferencia">Transferencia</option>
-                            <option value="efectivo">Efectivo</option>
-                            <option value="e-cheq">E-cheq</option>
-                            <option value="cuenta_corriente">Cuenta corriente</option>
-                          </select>
-                        </div>
-                        <div><Label>Monto $</Label>
-                          <input type="number" value={pago.monto} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                            <input type="checkbox" checked={pago.es_paralelo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
-                            Paralelo
-                          </label>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                          {formPagoGrupal.pagos.length > 1 && <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: formPagoGrupal.pagos.filter((_,i)=>i!==idx)})} style={{ padding: '5px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
-                        </div>
-                      </div>
-                      {pago.tipo === 'e-cheq' && (
-                        <div style={{ marginTop: 8 }}>
-                          <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
-                            {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
-                              <button key={t} onClick={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque===t?'':t} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque===t ? S.accent : S.border}`, background: pago.subtipo_cheque===t ? S.accentLight : 'transparent', color: pago.subtipo_cheque===t ? S.accent : S.muted }}>
-                                {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
-                              </button>
-                            ))}
-                          </div>
-                          {pago.subtipo_cheque === 'propio' && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                              <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, numero: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} /></div>
-                              <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, banco: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} /></div>
-                              <div><Label>Vencimiento</Label><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, fecha_vencimiento: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={{ ...inputStyle, borderColor: S.amber }} /></div>
-                            </div>
-                          )}
-                          {pago.subtipo_cheque === 'tercero' && (
-                            <div style={{ marginTop: 8 }}>
-                              {(() => {
-                                const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
-                                return lista.length === 0
-                                  ? <div style={{ fontSize: 12, color: S.hint }}>No hay cheques en cartera.</div>
-                                  : lista.map(ch => (
-                                    <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: `1px solid ${pago.cheque_tercero_id===String(ch.id) ? S.accent : S.border}`, borderRadius: 5, background: pago.cheque_tercero_id===String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 4 }}>
-                                      <input type="radio" name={`cheq_ord_${idx}`} value={ch.id} checked={pago.cheque_tercero_id===String(ch.id)} onChange={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: String(ch.id)} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
-                                      <span style={{ fontSize: 12 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong> · #{ch.numero||'sin nro'} · {ch.banco||'—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
-                                    </label>
-                                  ))
-                              })()}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
 
                   <div style={{ background: Math.abs(totalSelec-totalPagoGrupal) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalSelec-totalPagoGrupal) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: '1rem' }}>
                     Total órdenes: <strong>${totalSelec.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagoGrupal.toLocaleString('es-AR')}</strong>
@@ -2300,8 +2242,8 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
         await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: v.campos?.propietario || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
-        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
       }
     }
 
@@ -2517,70 +2459,9 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                           <Label>Fecha de pago</Label>
                           <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
-                          <button onClick={() => setFormPago({...formPago, pagos: [...formPago.pagos, { ...PAGO_INIT_ARR }]})} style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
-                        </div>
-                        {formPago.pagos.map((pago, idx) => (
-                          <div key={idx} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: '8px', marginBottom: 6 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 8 : 0 }}>
-                              <div><Label>Forma de pago</Label>
-                                <select value={pago.tipo} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPago({...formPago, pagos: n}) }} style={inputStyle}>
-                                  <option value="transferencia">Transferencia</option>
-                                  <option value="efectivo">Efectivo</option>
-                                  <option value="e-cheq">E-cheq</option>
-                                  <option value="cuenta_corriente">Cuenta corriente</option>
-                                </select>
-                              </div>
-                              <div><Label>Monto $</Label>
-                                <input type="number" value={pago.monto} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPago({...formPago, pagos: n}) }} style={inputStyle} />
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                  <input type="checkbox" checked={pago.es_paralelo} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormPago({...formPago, pagos: n}) }} />
-                                  Paralelo
-                                </label>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                                {formPago.pagos.length > 1 && <button onClick={() => setFormPago({...formPago, pagos: formPago.pagos.filter((_,i)=>i!==idx)})} style={{ padding: '5px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
-                              </div>
-                            </div>
-                            {pago.tipo === 'e-cheq' && (
-                              <div style={{ marginTop: 8 }}>
-                                <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
-                                  {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
-                                    <button key={t} onClick={() => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque===t?'':t} : p); setFormPago({...formPago, pagos: n}) }}
-                                      style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque===t ? S.accent : S.border}`, background: pago.subtipo_cheque===t ? S.accentLight : 'transparent', color: pago.subtipo_cheque===t ? S.accent : S.muted }}>
-                                      {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
-                                    </button>
-                                  ))}
-                                </div>
-                                {pago.subtipo_cheque === 'propio' && (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                                    <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, numero: e.target.value}} : p); setFormPago({...formPago, pagos: n}) }} style={inputStyle} /></div>
-                                    <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, banco: e.target.value}} : p); setFormPago({...formPago, pagos: n}) }} style={inputStyle} /></div>
-                                    <div><Label>Vencimiento *</Label><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, fecha_vencimiento: e.target.value}} : p); setFormPago({...formPago, pagos: n}) }} style={{ ...inputStyle, borderColor: S.amber }} /></div>
-                                  </div>
-                                )}
-                                {pago.subtipo_cheque === 'tercero' && (
-                                  <div style={{ marginTop: 8 }}>
-                                    {(() => {
-                                      const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
-                                      return lista.length === 0
-                                        ? <div style={{ fontSize: 12, color: S.hint }}>No hay cheques en cartera.</div>
-                                        : lista.map(ch => (
-                                          <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: `1px solid ${pago.cheque_tercero_id===String(ch.id) ? S.accent : S.border}`, borderRadius: 5, background: pago.cheque_tercero_id===String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 4 }}>
-                                            <input type="radio" name={`cheq_arr_${idx}_${v.id}`} value={ch.id} checked={pago.cheque_tercero_id===String(ch.id)} onChange={() => { const n = formPago.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: String(ch.id)} : p); setFormPago({...formPago, pagos: n}) }} />
-                                            <span style={{ fontSize: 12 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong> · #{ch.numero||'sin nro'} · {ch.banco||'—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
-                                          </label>
-                                        ))
-                                    })()}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                        <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
+                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
+
                         {v.monto_total && (
                           <div style={{ background: Math.abs(v.monto_total - totalPagos) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(v.monto_total - totalPagos) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
                             Total arriendo: <strong>${v.monto_total.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong>
@@ -2611,6 +2492,33 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 
 
 function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav }) {
+  // Recibo imprimible de pago de agroquímicos — acepta una compra sola o varias
+  // juntas (pago agrupado), y arma un recibo doble (proveedor + empresa).
+  function generarReciboAgro(compraOCompras, pagos, stockRef) {
+    const compras = Array.isArray(compraOCompras) ? compraOCompras : [compraOCompras]
+    const totalMonto = compras.reduce((s, c) => s + (c.total || 0), 0)
+    const proveedor = compras[0]?.proveedor || '—'
+    const fecha = compras[0]?.fecha ? new Date(compras[0].fecha + 'T12:00:00').toLocaleDateString('es-AR') : new Date().toLocaleDateString('es-AR')
+    const detalle = compras.map(c => `${c.insumo_nombre || 'Agroquímico'} · ${(c.cantidad || 0).toLocaleString('es-AR')} ${c.unidad || ''}`).join(' + ')
+    const formaPago = (pagos || []).map(p => p.subtipo_cheque || p.tipo).filter(Boolean).join(' + ') || '—'
+    abrirReciboDoble({
+      titulo: 'Recibo de pago',
+      numero: Date.now().toString().slice(-6),
+      fecha,
+      filas: [
+        ['Proveedor', proveedor],
+        ['Insumo(s)', detalle],
+        ['Forma de pago', formaPago],
+      ],
+      monto: `$ ${totalMonto.toLocaleString('es-AR')}`,
+      colorMonto: '#1E5C2E',
+      firmaIzq: 'Recibí conforme',
+      firmaDer: 'Ramonda Hnos S.A.',
+      etiquetaCopia1: 'Copia — ' + proveedor,
+      etiquetaCopia2: 'Copia — Ramonda Hnos S.A.',
+    })
+  }
+
   const [tab, setTab] = useState('stock')
   const [showForm, setShowForm] = useState(false)
   const [editandoStock, setEditandoStock] = useState(null)
@@ -2715,13 +2623,14 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
         await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formCompra.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: formCompra.proveedor || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
-        await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
       }
     }
 
-    const { error: errIngresoAgro } = await supabase.from('ingresos_agroquimicos').insert({
-      agroquimico_id: parseInt(formCompra.agroquimico_id), cantidad, precio_unitario: precioUnit, total,
+    const { error: errIngresoAgro } = await supabase.from('compras_insumos').insert({
+      insumo_id: parseInt(formCompra.agroquimico_id), insumo_tipo: 'agro', insumo_nombre: formCompra.insumo_nombre, unidad: formCompra.unidad || null,
+      cantidad, precio_unitario: precioUnit, total,
       proveedor: formCompra.proveedor || null, domicilio: formCompra.domicilio || null, localidad: formCompra.localidad || null,
       cuit: formCompra.cuit || null, iva: formCompra.iva || null, cbu: formCompra.cbu || null,
       numero_factura: formCompra.numero_factura || null, observaciones: formCompra.observaciones || null,
@@ -2796,8 +2705,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             }
             if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
               await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
-            } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
-              await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
+            } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+              for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
             }
           }
           for (const id of seleccionadas) {
@@ -2808,9 +2717,9 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               const precioFinal = parseFloat(preciosPend[id])
               upd.precio_unitario = precioFinal
               upd.total = Math.round((i.cantidad || 0) * precioFinal)
-              await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.agroquimico_id)
+              await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
             }
-            await supabase.from('ingresos_agroquimicos').update(upd).eq('id', id)
+            await supabase.from('compras_insumos').update(upd).eq('id', id)
           }
           setSeleccionadas([])
           setShowPagosPend(false)
@@ -2839,8 +2748,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                 <label key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: `1px solid ${seleccionadas.includes(i.id) ? '#EF9F27' : S.border}`, borderRadius: 6, background: seleccionadas.includes(i.id) ? '#FFF8EC' : S.surface, cursor: 'pointer' }}>
                   <input type="checkbox" checked={seleccionadas.includes(i.id)} onChange={e => setSeleccionadas(e.target.checked ? [...seleccionadas, i.id] : seleccionadas.filter(id => id !== i.id))} />
                   <div style={{ flex: 1, fontSize: 13 }}>
-                    <strong>{i.stock_agro?.insumo || '—'}</strong>
-                    <span style={{ color: S.muted, marginLeft: 8 }}>{i.cantidad?.toLocaleString('es-AR')} {i.stock_agro?.unidad} · {i.fecha ? new Date(i.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                    <strong>{i.insumo_nombre || '—'}</strong>
+                    <span style={{ color: S.muted, marginLeft: 8 }}>{i.cantidad?.toLocaleString('es-AR')} {i.unidad} · {i.fecha ? new Date(i.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
                     {i.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {i.proveedor}</span>}
                   </div>
                   {i.precio_unitario
@@ -2866,70 +2775,9 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   <Label>Fecha de pago</Label>
                   <input type="date" value={formPagoGrupal.fecha} onChange={e => setFormPagoGrupal({...formPagoGrupal, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
-                  <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: [...formPagoGrupal.pagos, { ...PAGO_INIT_AGRO }]})} style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Agregar</button>
-                </div>
-                {formPagoGrupal.pagos.map((pago, idx) => (
-                  <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 7, padding: '8px', marginBottom: 6 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end' }}>
-                      <div><Label>Forma</Label>
-                        <select value={pago.tipo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle}>
-                          <option value="transferencia">Transferencia</option>
-                          <option value="efectivo">Efectivo</option>
-                          <option value="e-cheq">E-cheq</option>
-                          <option value="cuenta_corriente">Cuenta corriente</option>
-                        </select>
-                      </div>
-                      <div><Label>Monto $</Label>
-                        <input type="number" value={pago.monto} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} />
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                          <input type="checkbox" checked={pago.es_paralelo} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
-                          Paralelo
-                        </label>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                        {formPagoGrupal.pagos.length > 1 && <button onClick={() => setFormPagoGrupal({...formPagoGrupal, pagos: formPagoGrupal.pagos.filter((_,i)=>i!==idx)})} style={{ padding: '5px 8px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>✕</button>}
-                      </div>
-                    </div>
-                    {pago.tipo === 'e-cheq' && (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
-                          {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
-                            <button key={t} onClick={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque===t?'':t} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }}
-                              style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque===t ? S.accent : S.border}`, background: pago.subtipo_cheque===t ? S.accentLight : 'transparent', color: pago.subtipo_cheque===t ? S.accent : S.muted }}>
-                              {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
-                            </button>
-                          ))}
-                        </div>
-                        {pago.subtipo_cheque === 'propio' && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                            <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, numero: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} /></div>
-                            <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, banco: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={inputStyle} /></div>
-                            <div><Label>Vencimiento</Label><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, fecha_vencimiento: e.target.value}} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} style={{ ...inputStyle, borderColor: S.amber }} /></div>
-                          </div>
-                        )}
-                        {pago.subtipo_cheque === 'tercero' && (
-                          <div style={{ marginTop: 8 }}>
-                            {(() => {
-                              const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
-                              return lista.length === 0
-                                ? <div style={{ fontSize: 12, color: S.hint }}>No hay cheques en cartera.</div>
-                                : lista.map(ch => (
-                                  <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', border: `1px solid ${pago.cheque_tercero_id===String(ch.id) ? S.accent : S.border}`, borderRadius: 5, background: pago.cheque_tercero_id===String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 4 }}>
-                                    <input type="radio" name={`cheq_grp_agro_${idx}`} value={ch.id} checked={pago.cheque_tercero_id===String(ch.id)} onChange={() => { const n = formPagoGrupal.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: String(ch.id)} : p); setFormPagoGrupal({...formPagoGrupal, pagos: n}) }} />
-                                    <span style={{ fontSize: 12 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong> · #{ch.numero||'sin nro'} · {ch.banco||'—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
-                                  </label>
-                                ))
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
+                <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
+
                 <div style={{ background: Math.abs(totalSel-totalPagGrupal) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalSel-totalPagGrupal) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
                   Total: <strong>${totalSel.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagGrupal.toLocaleString('es-AR')}</strong>
                   {Math.abs(totalSel-totalPagGrupal) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${(totalSel-totalPagGrupal).toLocaleString('es-AR')}</span>}
@@ -3006,7 +2854,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               <Label>Insumo *</Label>
               <select value={formCompra.agroquimico_id} onChange={e => {
                 const item = stock.find(s => s.id === parseInt(e.target.value))
-                setFormCompra({...formCompra, agroquimico_id: e.target.value, insumo_nombre: item?.insumo || ''})
+                setFormCompra({...formCompra, agroquimico_id: e.target.value, insumo_nombre: item?.insumo || '', unidad: item?.unidad || ''})
               }} style={inputStyle}>
                 <option value="">— Seleccioná —</option>
                 {stock.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
@@ -3058,76 +2906,9 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
 
           {/* Formas de pago */}
           {pagarAhora && <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
-              <button onClick={() => setFormCompra({...formCompra, pagos: [...formCompra.pagos, { ...PAGO_INIT_AGRO }]})}
-                style={{ padding: '4px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>+ Agregar</button>
-            </div>
-            {formCompra.pagos.map((pago, idx) => (
-              <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px', marginBottom: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 8 : 0 }}>
-                  <div>
-                    <Label>Forma de pago</Label>
-                    <select value={pago.tipo} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, tipo: e.target.value, subtipo_cheque: ''} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle}>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="efectivo">Efectivo</option>
-                      <option value="e-cheq">E-cheq</option>
-                      <option value="cuenta_corriente">Cuenta corriente</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label>Monto $</Label>
-                    <input type="number" value={pago.monto} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, monto: e.target.value} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#3D1A6B', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input type="checkbox" checked={pago.es_paralelo} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, es_paralelo: e.target.checked} : p); setFormCompra({...formCompra, pagos: n}) }} />
-                      Paralelo
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    {formCompra.pagos.length > 1 && (
-                      <button onClick={() => setFormCompra({...formCompra, pagos: formCompra.pagos.filter((_,i) => i!==idx)})}
-                        style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                    )}
-                  </div>
-                </div>
-                {pago.tipo === 'e-cheq' && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 8 : 0 }}>
-                      {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
-                        <button key={t} onClick={() => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, subtipo_cheque: p.subtipo_cheque===t ? '' : t} : p); setFormCompra({...formCompra, pagos: n}) }}
-                          style={{ padding: '4px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque===t ? S.accent : S.border}`, background: pago.subtipo_cheque===t ? S.accentLight : 'transparent', color: pago.subtipo_cheque===t ? S.accent : S.muted }}>
-                          {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
-                        </button>
-                      ))}
-                    </div>
-                    {pago.subtipo_cheque === 'propio' && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                        <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, numero: e.target.value}} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle} /></div>
-                        <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, banco: e.target.value}} : p); setFormCompra({...formCompra, pagos: n}) }} style={inputStyle} /></div>
-                        <div><Label>Vencimiento *</Label><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_propio: {...p.cheque_propio, fecha_vencimiento: e.target.value}} : p); setFormCompra({...formCompra, pagos: n}) }} style={{ ...inputStyle, borderColor: S.amber }} /></div>
-                      </div>
-                    )}
-                    {pago.subtipo_cheque === 'tercero' && (
-                      <div style={{ marginTop: 8 }}>
-                        {(() => {
-                          const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
-                          return lista.length === 0
-                            ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
-                            : lista.map(ch => (
-                              <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_id === String(ch.id) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_id === String(ch.id) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
-                                <input type="radio" name={`cheq_agro_${idx}`} value={ch.id} checked={pago.cheque_tercero_id === String(ch.id)} onChange={() => { const n = formCompra.pagos.map((p,i) => i===idx ? {...p, cheque_tercero_id: String(ch.id)} : p); setFormCompra({...formCompra, pagos: n}) }} />
-                                <div style={{ fontSize: 13 }}><strong>${ch.monto?.toLocaleString('es-AR')}</strong><span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span></div>
-                              </label>
-                            ))
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+            <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Formas de pago</div>
+            <ListaPagos pagos={formCompra.pagos} onChangePagos={n => setFormCompra({...formCompra, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
+
             {formCompra.total && (() => {
               const tp = formCompra.pagos.reduce((s,p) => s + (parseFloat(p.monto)||0), 0)
               const t = parseFloat(formCompra.total) || 0
@@ -3203,8 +2984,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               {ingresos.map(i => (
                 <tr key={i.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(i.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{i.stock_agro?.insumo || '—'}</td>
-                  <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{i.cantidad?.toLocaleString('es-AR')} {i.stock_agro?.unidad || ''}</td>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{i.insumo_nombre || '—'}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{i.cantidad?.toLocaleString('es-AR')} {i.unidad || ''}</td>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{i.precio_unitario ? `$${i.precio_unitario.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>}</td>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{i.total ? `$${i.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}</td>
                   <td style={{ padding: '8px 12px', color: S.muted }}>{i.proveedor || '—'}</td>
@@ -3221,9 +3002,9 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     <div style={{ display: 'flex', gap: 4 }}>
                       {i.retirado === false && (
                         <button onClick={async () => {
-                          const item = stock.find(s => s.id === i.agroquimico_id)
+                          const item = stock.find(s => s.id === i.insumo_id)
                           if (item) await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + (i.cantidad || 0), actualizado_en: new Date().toISOString() }).eq('id', item.id)
-                          await supabase.from('ingresos_agroquimicos').update({ retirado: true }).eq('id', i.id)
+                          await supabase.from('compras_insumos').update({ retirado: true }).eq('id', i.id)
                           await cargar()
                         }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
                           📦 Marcar retirado
@@ -3239,10 +3020,10 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                         if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
                         // Si nunca se retiró, nunca se sumó al stock — no hay nada que restar
                         if (i.retirado !== false) {
-                          const item = stock.find(s => s.id === i.agroquimico_id)
+                          const item = stock.find(s => s.id === i.insumo_id)
                           if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - (i.cantidad || 0)), actualizado_en: new Date().toISOString() }).eq('id', item.id)
                         }
-                        await supabase.from('ingresos_agroquimicos').delete().eq('id', i.id)
+                        await supabase.from('compras_insumos').delete().eq('id', i.id)
                         await cargar()
                       }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
                         Eliminar

@@ -68,7 +68,7 @@ export default function Reportes({ usuario }) {
       supabase.from('gastos_generales').select('*'),
       supabase.from('compras_insumos').select('total, insumo_tipo, fecha, creado_en').eq('insumo_tipo', 'sanitario'),
       supabase.from('pagos_empleados').select('*, empleados(nombre, actividad)'),
-      supabase.from('ingresos_agroquimicos').select('total, fecha, creado_en'),
+      supabase.from('compras_insumos').select('total, fecha, creado_en').eq('insumo_tipo', 'agro'),
       supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, tipo_servicio').eq('tipo_servicio', 'tercero'),
       supabase.from('mano_obra_servicios').select('monto_calculado, creado_en'),
       supabase.from('ventas_granos').select('total, fecha, creado_en'),

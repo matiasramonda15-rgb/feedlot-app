@@ -20,7 +20,6 @@ export default function Contactos({ usuario }) {
   const [ventas, setVentas] = useState([])
   const [lotes, setLotes] = useState([])
   const [comprasInsumos, setComprasInsumos] = useState([])
-  const [comprasAgro, setComprasAgro] = useState([])
   const [cosechas, setCosechas] = useState([])
   const [ventasGranos, setVentasGranos] = useState([])
   const [ventasActivos, setVentasActivos] = useState([])
@@ -50,7 +49,6 @@ export default function Contactos({ usuario }) {
       { data: vc },
       { data: ci },
       { data: va },
-      { data: iag },
       { data: cos },
       { data: vgr },
     ] = await Promise.all([
@@ -60,9 +58,10 @@ export default function Contactos({ usuario }) {
       supabase.from('pagos_ventas').select('*'),
       supabase.from('pagos_compras').select('*'),
       supabase.from('vencimientos_compra').select('*').order('fecha_vencimiento'),
+      // Insumos de Alimentación, Sanidad Y Agricultura (insumo_tipo='agro') —
+      // las tres comparten esta misma tabla.
       supabase.from('compras_insumos').select('*').order('creado_en', { ascending: false }),
       supabase.from('ventas_activos').select('*').order('creado_en', { ascending: false }),
-      supabase.from('ingresos_agroquimicos').select('*').order('creado_en', { ascending: false }),
       supabase.from('cosechas').select('*'),
       supabase.from('ventas_granos').select('id, cosecha_id, kg'),
     ])
@@ -72,7 +71,6 @@ export default function Contactos({ usuario }) {
     setLotes(l || [])
     setComprasInsumos(ci || [])
     setVentasActivos(va || [])
-    setComprasAgro(iag || [])
     setCosechas(cos || [])
     setVentasGranos(vgr || [])
 
@@ -188,14 +186,6 @@ export default function Contactos({ usuario }) {
         movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
       })
     })
-    ;(data.comprasAgro || []).forEach(ca => {
-      const esParaleloCa = ca.es_paralelo || false
-      if (esParalela !== esParaleloCa) return
-      if (ca.total > 0) movs.push({ fecha: ca.fecha, tipo: ca.insumo_nombre || 'Agroquímico', credito: 0, debito: ca.total })
-      ;(ca.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
-        movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
-      })
-    })
     if (!esParalela) {
       ;(data.ventasActivos || []).forEach(va => {
         if (va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'}`, credito: va.monto, debito: 0 })
@@ -276,7 +266,7 @@ export default function Contactos({ usuario }) {
   }
 
   function calcularSaldo(nombre) {
-    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
+    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     // Agrupar ventas multi-corral para no contar de más
     const gruposVistos = new Set()
     const ventasAgrupadas = data.ventas.filter(v => {
@@ -313,14 +303,13 @@ export default function Contactos({ usuario }) {
       return s + (totalLote || 0)
     }, 0)
     const pagadoComprasHacienda = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
-    // Compras de insumos (rollo, maíz, remedios, etc.) — nosotros le debemos al proveedor
+    // Compras de insumos (rollo, maíz, remedios, agroquímicos, etc.) — nosotros
+    // le debemos al proveedor. Incluye Alimentación, Sanidad y Agricultura, que
+    // comparten la misma tabla.
     const totalComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.total || 0), 0)
     const pagadoComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
-    // Compras de agroquímicos (herbicida, silobolsa, etc.) — mismo criterio
-    const totalComprasAgro = (data.comprasAgro || []).reduce((s, ca) => s + (ca.total || 0), 0)
-    const pagadoComprasAgro = (data.comprasAgro || []).reduce((s, ca) => s + (ca.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
-    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalComprasAgro
-    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoComprasAgro
+    const totalCompras = totalComprasHacienda + totalComprasInsumos
+    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos
     const pendienteCompras = totalCompras - pagadoCompras
     return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
   }
@@ -332,13 +321,13 @@ export default function Contactos({ usuario }) {
   ventas.forEach(v => {
     const nombre = v.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     transaccionesPorNombre[nombre].ventas.push(v)
   })
   lotes.forEach(l => {
     const nombre = l.procedencia
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     transaccionesPorNombre[nombre].lotes.push(l)
   })
   // Compras de insumos (rollo, maíz, remedios, etc.) — funcionan igual que una
@@ -346,7 +335,7 @@ export default function Contactos({ usuario }) {
   comprasInsumos.forEach(ci => {
     const nombre = ci.proveedor
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     transaccionesPorNombre[nombre].comprasInsumos.push(ci)
   })
   // Ventas de activos (maquinaria, equipos) — funcionan igual que una venta de
@@ -354,16 +343,8 @@ export default function Contactos({ usuario }) {
   ventasActivos.forEach(va => {
     const nombre = va.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
     transaccionesPorNombre[nombre].ventasActivos.push(va)
-  })
-  // Compras de agroquímicos (herbicida, silobolsa, etc. — de Agricultura) —
-  // funcionan igual que una compra de insumos: nosotros le debemos al proveedor.
-  comprasAgro.forEach(ca => {
-    const nombre = ca.proveedor
-    if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], comprasAgro: [] }
-    transaccionesPorNombre[nombre].comprasAgro.push(ca)
   })
 
   // Lista unificada de contactos (de tabla + de transacciones)
@@ -379,17 +360,11 @@ export default function Contactos({ usuario }) {
   // Vista ficha de contacto
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
-    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, comprasAgro: comprasAgroCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
+    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
     // Remitos sin precio todavía — se muestran en su propia pestaña, sin sumar al saldo
-    const remitosSinPrecio = [
-      ...(comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha })),
-      ...(comprasAgroCto || []).filter(ca => !ca.total).map(ca => ({ desc: ca.insumo_nombre || 'Agroquímico', cant: ca.cantidad, unidad: '', fecha: ca.fecha })),
-    ]
+    const remitosSinPrecio = (comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha }))
     // Insumos ya cargados/pagados pero todavía no retirados físicamente
-    const insumosPendRetiro = [
-      ...(comprasInsumosCto || []).filter(ci => ci.retirado === false).map(ci => ({ id: ci.id, tabla: 'compras_insumos', insumoId: ci.insumo_id, tipo: ci.insumo_tipo, desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha, total: ci.total })),
-      ...(comprasAgroCto || []).filter(ca => ca.retirado === false).map(ca => ({ id: ca.id, tabla: 'ingresos_agroquimicos', insumoId: ca.agroquimico_id, tipo: 'agro', desc: ca.insumo_nombre || 'Agroquímico', cant: ca.cantidad, unidad: '', fecha: ca.fecha, total: ca.total })),
-    ]
+    const insumosPendRetiro = (comprasInsumosCto || []).filter(ci => ci.retirado === false).map(ci => ({ id: ci.id, tabla: 'compras_insumos', insumoId: ci.insumo_id, tipo: ci.insumo_tipo, desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha, total: ci.total }))
     // Mercadería entregada a este contacto (acopio) desde una cosecha, y
     // todavía sin vender — sale de comparar lo cosechado contra lo ya vendido
     // de esa misma cosecha.
@@ -532,19 +507,11 @@ export default function Contactos({ usuario }) {
                       </div>
                     </div>
                     <button onClick={async () => {
-                      if (r.tabla === 'ingresos_agroquimicos') {
-                        const { data: item } = await supabase.from('stock_agro').select('cantidad').eq('id', r.insumoId).single()
-                        const { error: errStock } = await supabase.from('stock_agro').update({ cantidad: (item?.cantidad || 0) + (r.cant || 0), actualizado_en: new Date().toISOString() }).eq('id', r.insumoId)
-                        if (errStock) { alert('Error al sumar al stock: ' + errStock.message); return }
-                        const { error: errAgro } = await supabase.from('ingresos_agroquimicos').update({ retirado: true }).eq('id', r.id)
-                        if (errAgro) { alert('El stock se actualizó, pero no se pudo marcar como retirado: ' + errAgro.message); return }
-                      } else {
-                        const rpc = r.tipo === 'sanitario' ? 'incrementar_stock_sanitario' : 'incrementar_stock_insumo'
-                        const { error: errRpc } = await supabase.rpc(rpc, { p_id: r.insumoId, p_delta: r.cant })
-                        if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
-                        const { error: errCi } = await supabase.from('compras_insumos').update({ retirado: true }).eq('id', r.id)
-                        if (errCi) { alert('El stock se actualizó, pero no se pudo marcar como retirado: ' + errCi.message); return }
-                      }
+                      const rpc = r.tipo === 'sanitario' ? 'incrementar_stock_sanitario' : r.tipo === 'agro' ? 'incrementar_stock_agro' : 'incrementar_stock_insumo'
+                      const { error: errRpc } = await supabase.rpc(rpc, { p_id: r.insumoId, p_delta: r.cant })
+                      if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
+                      const { error: errCi } = await supabase.from('compras_insumos').update({ retirado: true }).eq('id', r.id)
+                      if (errCi) { alert('El stock se actualizó, pero no se pudo marcar como retirado: ' + errCi.message); return }
                       await cargar()
                     }} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       📦 Marcar retirado
@@ -683,7 +650,8 @@ export default function Contactos({ usuario }) {
             })
           })
 
-          // Compras de insumos (rollo, maíz, remedios, etc.) — le debemos al proveedor
+          // Compras de insumos (rollo, maíz, remedios, agroquímicos, etc.) — le
+          // debemos al proveedor, sea de Alimentación, Sanidad o Agricultura.
           ;(comprasInsumosCto || []).forEach(ci => {
             const esParaleloCi = ci.es_paralelo || false
             if (esParalela && !esParaleloCi) return
@@ -691,7 +659,7 @@ export default function Contactos({ usuario }) {
             if (ci.total > 0) {
               movimientos.push({
                 fecha: ci.fecha || ci.creado_en?.split('T')[0],
-                fechaVto: null, tipo: esParaleloCi ? 'PAR' : 'INSUMO', nro: ci.id,
+                fechaVto: null, tipo: esParaleloCi ? 'PAR' : (ci.insumo_tipo === 'agro' ? 'AGRO' : 'INSUMO'), nro: ci.id,
                 descripcion: `${ci.insumo_nombre || 'Insumo'} · ${ci.cantidad || ''}${ci.unidad ? ' ' + ci.unidad : ''}`,
                 credito: 0, debito: ci.total, factura: ci.numero_factura,
               })
@@ -704,29 +672,6 @@ export default function Contactos({ usuario }) {
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `${ci.id}-${pi}`,
                 descripcion: `Pago ${ci.insumo_nombre || 'insumo'} · ${p.forma_pago || ''}`,
-                credito: p.monto, debito: 0, esPago: true,
-              })
-            })
-          })
-
-          // Compras de agroquímicos (herbicida, silobolsa, etc. — de Agricultura) —
-          // le debemos al proveedor, mismo criterio que compras de insumos.
-          ;(comprasAgroCto || []).forEach(ca => {
-            const esParaleloCa = ca.es_paralelo || false
-            if (esParalela && !esParaleloCa) return
-            if (!esParalela && esParaleloCa) return
-            if (ca.total > 0) {
-              movimientos.push({
-                fecha: ca.fecha || ca.creado_en?.split('T')[0],
-                fechaVto: null, tipo: esParaleloCa ? 'PAR' : 'AGRO', nro: ca.id,
-                descripcion: `${ca.insumo_nombre || 'Agroquímico'} · ${ca.cantidad || ''}`,
-                credito: 0, debito: ca.total, factura: ca.numero_factura,
-              })
-            }
-            ;(ca.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
-              movimientos.push({
-                fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `agro-${ca.id}-${pi}`,
-                descripcion: `Pago ${ca.insumo_nombre || 'agroquímico'} · ${p.forma_pago || ''}`,
                 credito: p.monto, debito: 0, esPago: true,
               })
             })
