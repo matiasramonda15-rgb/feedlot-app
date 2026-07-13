@@ -72,7 +72,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       supabase.from('ordenes_trabajo').select('*, campos(nombre, superficie_ha, imagen_url, lotes_agricolas(id, numero, superficie_ha, imagen_url)), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('cosechas').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
       supabase.from('ventas_granos').select('*').order('fecha', { ascending: false }),
-      supabase.from('gastos_agro').select('*, campos(nombre), campanas(nombre)').order('fecha', { ascending: false }),
+      supabase.from('gastos_generales').select('*, campos(nombre), campanas(nombre)').eq('actividad', 'Agricultura').order('fecha', { ascending: false }),
       supabase.from('stock_agro').select('*').order('insumo'),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'agro').order('fecha', { ascending: false }).limit(200),
       supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
@@ -239,7 +239,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} />}
-      {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} />}
+      {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} />}
       {tab === 'lluvias' && <TabLluvias usuario={usuario} />}
     </div>
   )
@@ -2041,29 +2041,69 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
 // ── TAB GASTOS ──
 function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
   const [showForm, setShowForm] = useState(false)
-  const [pagarAhora, setPagarAhora] = useState(true)
-  const [showPagos, setShowPagos] = useState(false)
-  const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
-  const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '' })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
+  const [chequesCartera, setChequesCartera] = useState([])
+
+  useEffect(() => {
+    supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento').then(({ data }) => setChequesCartera(data || []))
+  }, [])
 
   const totalGastos = gastos.reduce((s, g) => s + (g.monto || 0), 0)
+  const totalPagos = form.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
 
   async function guardar() {
     if (!form.concepto || !form.monto) { alert('Completá concepto y monto'); return }
     setGuardando(true)
-    const data = { campo_id: parseInt(form.campo_id) || null, campana_id: parseInt(form.campana_id) || null, concepto: form.concepto, monto: parseFloat(form.monto), fecha: form.fecha, proveedor: form.proveedor || null, observaciones: form.observaciones || null }
+    const monto = parseFloat(form.monto)
+
+    let caja_oficial_id = null, caja_paralela_id = null
+    if (!editando) {
+      // El pago solo se registra al crear el gasto (no se vuelve a cobrar caja al editar)
+      for (const pago of form.pagos.filter(p => p.monto)) {
+        const m = parseFloat(pago.monto) || 0
+        if (!m) continue
+        if (pago.tipo === 'canje') continue
+        const desc = `${form.concepto} — Agricultura${form.proveedor ? ' — ' + form.proveedor : ''}`
+        if (pago.es_paralelo) {
+          const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto: m }).select().single()
+          if (ep) { alert('Error al registrar en Caja 2: ' + ep.message); setGuardando(false); return }
+          if (!caja_paralela_id) caja_paralela_id = cp?.id
+        } else {
+          const { data: co, error: eo } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'egreso', categoria: 'Gastos Agricultura', descripcion: desc, monto: m, forma_pago: pago.subtipo_cheque || pago.tipo }).select().single()
+          if (eo) { alert('Error al registrar en caja oficial: ' + eo.message); setGuardando(false); return }
+          if (!caja_oficial_id) caja_oficial_id = co?.id
+          if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
+            const { error: ec } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: form.proveedor || null, estado: 'en_cartera', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq' })
+            if (ec) { alert('Error al registrar el cheque: ' + ec.message); setGuardando(false); return }
+          } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+            for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+          }
+        }
+      }
+    }
+
+    const data = {
+      campo_id: parseInt(form.campo_id) || null, campana_id: parseInt(form.campana_id) || null,
+      categoria: form.concepto, descripcion: form.concepto, monto, fecha: form.fecha,
+      proveedor: form.proveedor || null, actividad: 'Agricultura',
+    }
+    if (!editando) {
+      data.forma_pago = form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+')
+      data.es_paralelo = form.pagos.some(p => p.es_paralelo)
+      data.pagos_detalle = form.pagos
+      data.caja_oficial_id = caja_oficial_id
+      data.caja_paralela_id = caja_paralela_id
+    }
     const { error } = editando
-      ? await supabase.from('gastos_agro').update(data).eq('id', editando)
-      : await supabase.from('gastos_agro').insert(data)
+      ? await supabase.from('gastos_generales').update(data).eq('id', editando)
+      : await supabase.from('gastos_generales').insert(data)
     if (error) { alert('Error al guardar el gasto: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
     setGuardando(false)
   }
 
@@ -2071,7 +2111,7 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Gastos agrícolas</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Gastos de Agricultura</div>
           <div style={{ fontSize: 12, color: S.red, marginTop: 2 }}>Total: <strong>-${totalGastos.toLocaleString('es-AR')}</strong></div>
         </div>
         <button onClick={() => { setShowForm(!showForm); setEditando(null) }}
@@ -2079,18 +2119,31 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
           + Registrar gasto
         </button>
       </div>
+      <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem', marginTop: -8 }}>
+        Si elegís un campo, el gasto también se va a sumar a la rentabilidad de ese lote — dejalo vacío para un gasto general de Agricultura (seguro, administración, etc.).
+      </div>
 
       {showForm && (
         <Card titulo={editando ? 'Editar gasto' : 'Nuevo gasto'}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
-            <div><Label>Campo</Label><select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value})} style={inputStyle}><option value="">— Todos —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+            <div><Label>Campo (opcional)</Label><select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value})} style={inputStyle}><option value="">— Gasto general —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
             <div><Label>Campaña</Label><select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
-            <div><Label>Concepto *</Label><input type="text" value={form.concepto} onChange={e => setForm({...form, concepto: e.target.value})} placeholder="ej. Arrendamiento, Seguro, etc." style={inputStyle} /></div>
+            <div><Label>Concepto *</Label><input type="text" value={form.concepto} onChange={e => setForm({...form, concepto: e.target.value})} placeholder="ej. Seguro, Análisis de suelo, etc." style={inputStyle} /></div>
             <div><Label>Monto $ *</Label><input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} /></div>
             <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
             <div><Label>Proveedor</Label><input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} /></div>
-            <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} /></div>
           </div>
+          {!editando && (
+            <div style={{ marginBottom: '1rem' }}>
+              <Label>Formas de pago</Label>
+              <div style={{ marginTop: 4 }}>
+                <ListaPagos pagos={form.pagos} onChangePagos={n => setForm({...form, pagos: n})} chequesCartera={chequesCartera} S={S} />
+              </div>
+              <div style={{ fontSize: 12, color: Math.abs(totalPagos - (parseFloat(form.monto) || 0)) < 0.5 ? S.green : S.amber, marginTop: 4 }}>
+                Total pagos: ${totalPagos.toLocaleString('es-AR')} {form.monto ? `de $${parseFloat(form.monto).toLocaleString('es-AR')}` : ''}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
             <button onClick={() => { setShowForm(false); setEditando(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -2110,16 +2163,22 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
             {gastos.map(g => (
               <tr key={g.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>{g.fecha ? new Date(g.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12 }}>{g.campos?.nombre || '—'}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12 }}>{g.campos?.nombre || '— general —'}</td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{g.campanas?.nombre || '—'}</td>
-                <td style={{ padding: '8px 12px' }}>{g.concepto}</td>
+                <td style={{ padding: '8px 12px' }}>{g.categoria || g.descripcion}</td>
                 <td style={{ padding: '8px 12px', color: S.muted }}>{g.proveedor || '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>-${g.monto ? g.monto.toLocaleString('es-AR') : '—'}</td>
                 <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
-                  <button onClick={() => { setEditando(g.id); setForm({ campo_id: g.campo_id || '', campana_id: g.campana_id || '', concepto: g.concepto, monto: g.monto || '', fecha: g.fecha || '', proveedor: g.proveedor || '', observaciones: g.observaciones || '' }); setShowForm(true) }}
+                  <button onClick={() => { setEditando(g.id); setForm({ campo_id: g.campo_id || '', campana_id: g.campana_id || '', concepto: g.categoria || g.descripcion || '', monto: g.monto || '', fecha: g.fecha || '', proveedor: g.proveedor || '', observaciones: '', pagos: [{ ...PAGO_INIT }] }); setShowForm(true) }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
-                  <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('gastos_agro').delete().eq('id', g.id); cargar() }}
-                    style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                  <button onClick={async () => {
+                    if (!confirm('¿Eliminar? Esto también va a sacar el movimiento de caja asociado.')) return
+                    if (g.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', g.caja_oficial_id)
+                    if (g.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', g.caja_paralela_id)
+                    const { error } = await supabase.from('gastos_generales').delete().eq('id', g.id)
+                    if (error) { alert('Error al eliminar: ' + error.message); return }
+                    cargar()
+                  }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                 </td>
               </tr>
             ))}
@@ -3027,7 +3086,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
 } 
 
 // ── TAB RENTABILIDAD POR LOTE ──
-function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, ventasGranos, stockAgro }) {
+function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, ventasGranos, stockAgro, planes, gastos }) {
   const [vencimientos, setVencimientos] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroCampana, setFiltroCampana] = useState(campanaActiva?.id ? String(campanaActiva.id) : '')
@@ -3063,7 +3122,20 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     (!filtroCultivo || c.cultivo === filtroCultivo) &&
     (!filtroCampo || c.campo_id === parseInt(filtroCampo))
   )
+  // Lo sembrado (plan_cultivos con fecha de siembra) que entra en el mismo
+  // filtro — así el lote ya aparece en el cuadro con sus costos apenas se
+  // siembra, aunque todavía falten meses para la cosecha.
+  const planesFiltrados = (planes || []).filter(p =>
+    p.fecha_siembra &&
+    (!filtroCampana || p.campana_id === parseInt(filtroCampana)) &&
+    (!filtroCultivo || p.cultivo === filtroCultivo) &&
+    (!filtroCampo || p.campo_id === parseInt(filtroCampo))
+  )
   const grupos = {}
+  planesFiltrados.forEach(p => {
+    const key = `${p.campo_id}_${p.lote_id || 'campo'}_${p.cultivo}`
+    if (!grupos[key]) grupos[key] = { campo_id: p.campo_id, lote_id: p.lote_id || null, cultivo: p.cultivo, kg: 0 }
+  })
   cosechasFiltradas.forEach(c => {
     const key = `${c.campo_id}_${c.lote_id || 'campo'}_${c.cultivo}`
     if (!grupos[key]) grupos[key] = { campo_id: c.campo_id, lote_id: c.lote_id || null, cultivo: c.cultivo, kg: 0 }
@@ -3108,21 +3180,30 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     const totalArriendoCampo = arriendosCampo.reduce((s, v) => s + (v.monto_total || 0), 0)
     const costoAlquiler = campo?.superficie_ha ? totalArriendoCampo * (ha / campo.superficie_ha) : 0
 
-    const costosDirectos = costoInsumos + costoAlquiler
-    const precioTn = precioReferencia(g.cultivo, g.campo_id)
-    const ingresos = precioTn ? (g.kg / 1000) * precioTn : 0
+    // Gastos puntuales de este campo (los que se cargaron con campo elegido en
+    // "Gastos" — seguro de ese campo, análisis de suelo, etc.), prorrateados
+    // por hectárea igual que el arriendo. Los gastos generales (sin campo) no
+    // entran acá, solo cuentan para el total de la actividad en Reportes.
+    const gastosCampo = (gastos || []).filter(gg => gg.campo_id === g.campo_id && (!filtroCampana || gg.campana_id === parseInt(filtroCampana)))
+    const totalGastosCampo = gastosCampo.reduce((s, gg) => s + (gg.monto || 0), 0)
+    const costoGastos = campo?.superficie_ha ? totalGastosCampo * (ha / campo.superficie_ha) : 0
 
-    const mb = ingresos - costosDirectos
-    const mbHa = ha ? mb / ha : 0
-    const mbCD = costosDirectos ? mb / costosDirectos : null
+    const costosDirectos = costoInsumos + costoAlquiler + costoGastos
+    const sinCosechaAun = g.kg === 0
+    const precioTn = precioReferencia(g.cultivo, g.campo_id)
+    const ingresos = (!sinCosechaAun && precioTn) ? (g.kg / 1000) * precioTn : 0
+
+    const mb = sinCosechaAun ? null : ingresos - costosDirectos
+    const mbHa = (sinCosechaAun || !ha) ? null : mb / ha
+    const mbCD = (!sinCosechaAun && costosDirectos) ? mb / costosDirectos : null
     const rentabilidadPct = mbCD !== null ? mbCD * 100 : null
     const rtoIndifTnHa = (precioTn && ha) ? ((costosDirectos / ha) / precioTn) : null
 
     return {
       key: `${g.campo_id}_${g.lote_id || 'campo'}_${g.cultivo}`,
       campoNombre: campo?.nombre || '—', loteNombre: lote ? `Lote ${lote.numero}` : 'Todo el campo',
-      campo_id: g.campo_id, lote_id: g.lote_id, cultivo: g.cultivo,
-      ha, kg: g.kg, rtoQqHa, costoInsumos, costoLabores, costoAlquiler, costosDirectos,
+      campo_id: g.campo_id, lote_id: g.lote_id, cultivo: g.cultivo, sinCosechaAun,
+      ha, kg: g.kg, rtoQqHa, costoInsumos, costoLabores, costoAlquiler, costoGastos, costosDirectos,
       precioTn, ingresos, mb, mbHa, mbCD, rentabilidadPct, rtoIndifTnHa, detalleInsumos,
     }
   }).filter(Boolean)
@@ -3178,6 +3259,11 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
               <div>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{f.campoNombre} · {f.loteNombre}</div>
                 <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{f.cultivo} · {numAR(f.ha, 1)} ha</div>
+                {f.sinCosechaAun && (
+                  <div style={{ fontSize: 11, color: S.amber, background: S.amberLight, display: 'inline-block', padding: '2px 8px', borderRadius: 4, marginTop: 4, fontWeight: 600 }}>
+                    🌱 Sembrado, sin cosechar todavía — los costos ya se van acumulando
+                  </div>
+                )}
               </div>
               <button onClick={() => setDetalleAbierto(abierto ? null : f.key)}
                 style={{ padding: '6px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
@@ -3188,10 +3274,10 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
             {/* Indicadores */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: abierto ? '1.25rem' : 0 }}>
               {[
-                { label: 'Rendimiento', val: `${numAR(f.rtoQqHa, 1)} qq/ha`, sub: `${numAR(f.kg / 1000, 1)} tn totales` },
-                { label: 'Ingresos (proy.)', val: f.precioTn ? `$${numAR(f.ingresos)}` : 'Sin precio ref.', sub: f.precioTn ? `$${numAR(f.precioTn)}/tn` : 'cargá una venta de este cultivo', color: S.green },
-                { label: 'Costos directos', val: `$${numAR(f.costosDirectos)}`, sub: `Insumos $${numAR(f.costoInsumos)} · Alquiler $${numAR(f.costoAlquiler)}`, color: S.red },
-                { label: 'Margen Bruto', val: `$${numAR(f.mb)}`, sub: `$${numAR(f.mbHa)}/ha`, color: f.mb >= 0 ? S.green : S.red },
+                { label: 'Rendimiento', val: f.sinCosechaAun ? 'Sin cosechar' : `${numAR(f.rtoQqHa, 1)} qq/ha`, sub: f.sinCosechaAun ? '—' : `${numAR(f.kg / 1000, 1)} tn totales` },
+                { label: 'Ingresos (proy.)', val: f.sinCosechaAun ? '—' : (f.precioTn ? `$${numAR(f.ingresos)}` : 'Sin precio ref.'), sub: f.sinCosechaAun ? 'todavía no hay cosecha' : (f.precioTn ? `$${numAR(f.precioTn)}/tn` : 'cargá una venta de este cultivo'), color: S.green },
+                { label: 'Costos directos', val: `$${numAR(f.costosDirectos)}`, sub: `Insumos $${numAR(f.costoInsumos)} · Alquiler $${numAR(f.costoAlquiler)}${f.costoGastos ? ' · Gastos $' + numAR(f.costoGastos) : ''}`, color: S.red },
+                { label: 'Margen Bruto', val: f.mb === null ? '—' : `$${numAR(f.mb)}`, sub: f.mb === null ? 'a definir con la cosecha' : `$${numAR(f.mbHa)}/ha`, color: f.mb === null ? S.muted : (f.mb >= 0 ? S.green : S.red) },
               ].map((m, i) => (
                 <div key={i} style={{ background: S.bg, borderRadius: 8, padding: '.75rem .9rem' }}>
                   <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
