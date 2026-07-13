@@ -184,7 +184,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
     { key: 'cosechas', label: 'Cosechas' },
     { key: 'ventas', label: 'Ventas de granos' },
     { key: 'gastos', label: 'Gastos' },
-    { key: 'stock', label: 'Stock agroquímicos' },
+    { key: 'stock', label: 'Stock general' },
     { key: 'rentabilidad', label: '📊 Rentabilidad por lote' },
     { key: 'lluvias', label: '🌧️ Lluvias' },
   ]
@@ -2647,6 +2647,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav, cotizacionDolar }) {
   const [editandoCotiz, setEditandoCotiz] = useState(false)
   const [nuevaCotiz, setNuevaCotiz] = useState(cotizacionDolar)
+  const [filtroTipoStock, setFiltroTipoStock] = useState('')
 
   async function guardarCotizacion() {
     const valor = parseFloat(nuevaCotiz)
@@ -2704,7 +2705,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
   })
 
-  const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Otro']
+  const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Silobolsa', 'Otro']
   const UNIDADES = ['litros', 'kg', 'bolsas', 'unidades']
 
   // ── MODO CELULAR: solo lectura ──
@@ -2792,12 +2793,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (pagarAhora) for (const pago of formCompra.pagos) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
+      if (pago.tipo === 'credito') continue  // no mueve caja — se registra en Créditos después de guardar la compra
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
       if (pago.es_paralelo) {
         const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formCompra.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
         if (!caja_paralela_id) caja_paralela_id = cp?.id || null
       } else {
-        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formCompra.fecha, tipo: 'egreso', categoria: 'Compra agroquímicos', descripcion: desc, monto, forma_pago: formaPago }).select().single()
+        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formCompra.fecha, tipo: 'egreso', categoria: 'Compra insumos Agricultura', descripcion: desc, monto, forma_pago: formaPago }).select().single()
         if (!caja_oficial_id) caja_oficial_id = co?.id || null
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
@@ -2807,7 +2809,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       }
     }
 
-    const { error: errIngresoAgro } = await supabase.from('compras_insumos').insert({
+    const { data: compraInsertada, error: errIngresoAgro } = await supabase.from('compras_insumos').insert({
       insumo_id: parseInt(formCompra.agroquimico_id), insumo_tipo: 'agro', insumo_nombre: formCompra.insumo_nombre, unidad: formCompra.unidad || null,
       cantidad, precio_unitario: precioUnit, total,
       precio_unitario_usd: precioUnitUsd, cotizacion_dolar: precioUnitUsd ? cotizacionDolar : null,
@@ -2824,8 +2826,26 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       caja_oficial_id, caja_paralela_id, registrado_por: usuario?.id,
       estado_pago: pagarAhora ? 'pagado' : 'pendiente',
       retirado: formCompra.retirado,
-    })
+    }).select().single()
     if (errIngresoAgro) { alert('Error al guardar la compra: ' + errIngresoAgro.message); setGuardando(false); return }
+
+    // Si se pagó (parte) con crédito, el proveedor ya cobró (se lo pagó la
+    // financiera) — se registra la deuda en Créditos, vinculada a esta compra.
+    const pagoCredito = formCompra.pagos.find(p => p.tipo === 'credito' && parseFloat(p.monto) > 0)
+    if (pagarAhora && pagoCredito) {
+      const montoCredito = parseFloat(pagoCredito.monto)
+      const cuotas = parseInt(formCompra.credito_cuotas) || 1
+      const { error: errCredito } = await supabase.from('creditos').insert({
+        compra_insumos_id: compraInsertada?.id,
+        entidad: formCompra.credito_entidad || null,
+        descripcion: `${formCompra.insumo_nombre} — ${formCompra.proveedor || ''}`,
+        monto_total: montoCredito, cant_cuotas: cuotas, monto_cuota: Math.round(montoCredito / cuotas),
+        fecha_inicio: formCompra.fecha, fecha_vencimiento: formCompra.credito_vencimiento || null,
+        cuotas_pagadas: 0, saldo_pendiente: montoCredito, estado: 'activo',
+        registrado_por: usuario?.id,
+      })
+      if (errCredito) alert('La compra se guardó, pero no se pudo registrar el crédito: ' + errCredito.message + ' — cargalo a mano en Créditos.')
+    }
 
     // Actualizar stock: la cantidad se suma solo si ya se retiró físicamente.
     // Si se dejó marcado "todavía no lo retiramos", el stock queda igual hasta
@@ -2844,7 +2864,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     }
 
     setShowFormCompra(false)
-    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true })
+    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
@@ -2877,7 +2897,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           const { error } = await pagarComprasPendientes(supabase, {
             seleccionadas, pendientes, precios: preciosPend, facturas: null,
             pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
-            descripcion: 'Pago compras agroquímicos', registradoPor: usuario?.id,
+            descripcion: 'Pago compras insumos Agricultura', registradoPor: usuario?.id,
             actualizarPrecioReferencia: async (i, precioFinal) => {
               if (!i.insumo_id) return
               await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
@@ -3075,7 +3095,19 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           {/* Formas de pago */}
           {pagarAhora && <div style={{ marginBottom: '1rem' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Formas de pago</div>
-            <ListaPagos pagos={formCompra.pagos} onChangePagos={n => setFormCompra({...formCompra, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
+            <ListaPagos pagos={formCompra.pagos} onChangePagos={n => setFormCompra({...formCompra, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }, { value: 'credito', label: '🏦 Crédito (financiera/banco)' }]} />
+            {formCompra.pagos.some(p => p.tipo === 'credito') && (
+              <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginBottom: '1rem' }}>
+                <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
+                  El proveedor ya cobró (se lo pagó la financiera) — la deuda queda registrada en Créditos, a nombre de esta entidad, y esta compra queda marcada como pagada.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <div><Label>Entidad (banco/financiera)</Label><input type="text" value={formCompra.credito_entidad || ''} onChange={e => setFormCompra({...formCompra, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Banco Galicia" /></div>
+                  <div><Label>Cant. de cuotas</Label><input type="number" value={formCompra.credito_cuotas || '1'} onChange={e => setFormCompra({...formCompra, credito_cuotas: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formCompra.credito_vencimiento || ''} onChange={e => setFormCompra({...formCompra, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                </div>
+              </div>
+            )}
 
             {formCompra.total && (() => {
               const tp = formCompra.pagos.reduce((s,p) => s + (parseFloat(p.monto)||0), 0)
@@ -3099,6 +3131,15 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
 
       {/* TAB STOCK */}
       {tab === 'stock' && (
+        <div>
+          <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select value={filtroTipoStock} onChange={e => setFiltroTipoStock(e.target.value)}
+              style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroTipoStock ? S.accent : S.muted, fontWeight: filtroTipoStock ? 600 : 400 }}>
+              <option value="">Todos los tipos</option>
+              {[...new Set(stock.map(s => s.tipo).filter(Boolean))].sort().map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            {filtroTipoStock && <button onClick={() => setFiltroTipoStock('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>}
+          </div>
         <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead><tr style={{ background: S.bg }}>
@@ -3107,8 +3148,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               ))}
             </tr></thead>
             <tbody>
-              {stock.length === 0 && <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay insumos cargados.</td></tr>}
-              {stock.map(s => {
+              {stock.filter(s => !filtroTipoStock || s.tipo === filtroTipoStock).length === 0 && <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay insumos cargados.</td></tr>}
+              {stock.filter(s => !filtroTipoStock || s.tipo === filtroTipoStock).map(s => {
                 const bajo = s.minimo_stock > 0 && s.cantidad <= s.minimo_stock
                 return (
                   <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}`, background: bajo ? S.redLight : 'transparent' }}>
@@ -3138,6 +3179,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               })}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 
