@@ -543,29 +543,24 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     // física real), para que la recorrida del mixer sea corta y no haya que
     // partir un corral entre dos cargas. Balancea los kilos entre cargas para
     // que ninguna quede muy chica (evita que no mezcle bien).
+    // Reparte los corrales de un mixer en cargas — cada carga son corrales
+    // ENTEROS y CONTIGUOS por número (que en este feedlot refleja la ubicación
+    // física real), para que la recorrida del mixer sea corta y no haya que
+    // partir un corral entre dos cargas. Prioriza llenar cada carga lo más
+    // cerca posible de la capacidad del mixer antes de pasar a la siguiente,
+    // para usar la mínima cantidad de cargas posible (en vez de repartir el
+    // total parejo entre varias cargas, que puede dejar una carga final chica
+    // aunque las anteriores tuvieran lugar de sobra).
     function repartirCorralesEnCargas(corralesConKg, cap) {
-      const totalKg = corralesConKg.reduce((s, c) => s + c.kg, 0)
-      const n = Math.max(1, Math.ceil(totalKg / cap))
       const ordenados = [...corralesConKg].sort((a, b) => parseInt(a.numero) - parseInt(b.numero))
-      if (n <= 1) return [ordenados]
       const cargas = []
       let cargaActual = []
       let sumaActual = 0
-      let kgRestante = totalKg
-      let cargasRestantes = n
       for (const c of ordenados) {
-        // Cerrar la carga actual ANTES de agregar este corral si:
-        // (a) agregarlo se pasaría de la capacidad real del mixer — esto es
-        //     obligatorio, nunca se puede violar, sea cual sea el objetivo parejo; o
-        // (b) ya alcanzamos el objetivo balanceado y todavía quedan cargas por armar
-        //     (esto es solo una preferencia de reparto parejo, no una obligación)
-        const seExcede = cargaActual.length > 0 && (sumaActual + c.kg > cap)
-        const targetDinamico = cargasRestantes > 0 ? kgRestante / cargasRestantes : cap
-        const alcanzoObjetivo = cargaActual.length > 0 && cargasRestantes > 1 && sumaActual >= targetDinamico
-        if (seExcede || alcanzoObjetivo) {
+        // Cerrar la carga actual antes de agregar este corral si agregarlo se
+        // pasaría de la capacidad real del mixer — la única razón para cerrar.
+        if (cargaActual.length > 0 && sumaActual + c.kg > cap) {
           cargas.push(cargaActual)
-          kgRestante -= sumaActual
-          cargasRestantes = Math.max(1, cargasRestantes - 1)
           cargaActual = []
           sumaActual = 0
         }
@@ -734,12 +729,21 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                               🚚 Descargar en cada corral
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              {carga.map(c => (
-                                <div key={c.numero} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, fontWeight: 600, color: CM.blue, background: 'rgba(126,184,247,0.08)', border: `1px solid rgba(126,184,247,0.25)`, borderRadius: 6, padding: '5px 10px' }}>
-                                  <span>C-{c.numero}</span>
-                                  <span style={{ fontFamily: CM.mono, fontWeight: 700 }}>{c.kg.toLocaleString('es-AR')} kg</span>
-                                </div>
-                              ))}
+                              {(() => {
+                                let restante = kgCarga
+                                return carga.map(c => {
+                                  restante -= c.kg
+                                  return (
+                                    <div key={c.numero} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, fontWeight: 600, color: CM.blue, background: 'rgba(126,184,247,0.08)', border: `1px solid rgba(126,184,247,0.25)`, borderRadius: 6, padding: '5px 10px' }}>
+                                      <span>C-{c.numero}</span>
+                                      <div style={{ textAlign: 'right' }}>
+                                        <span style={{ fontFamily: CM.mono, fontWeight: 700 }}>{c.kg.toLocaleString('es-AR')} kg</span>
+                                        <div style={{ fontSize: 12, fontFamily: CM.mono, fontWeight: 700, color: restante > 0 ? CM.amber : CM.muted }}>↓ queda {Math.max(0, restante).toLocaleString('es-AR')} kg</div>
+                                      </div>
+                                    </div>
+                                  )
+                                })
+                              })()}
                             </div>
                           </div>
                         </div>
