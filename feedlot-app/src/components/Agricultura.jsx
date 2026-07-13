@@ -50,6 +50,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
   const [stockAgro, setStockAgro] = useState([])
   const [ingresosAgro, setIngresosAgro] = useState([])
   const [contactos, setContactos] = useState([])
+  const [cotizacionDolar, setCotizacionDolar] = useState(1000)
 
   // UI states
   const [showForm, setShowForm] = useState(false)
@@ -64,7 +65,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
     const [
       { data: c }, { data: ca }, { data: pl }, { data: or },
       { data: co }, { data: vg }, { data: ga }, { data: sa },
-      { data: ia }, { data: ct }
+      { data: ia }, { data: ct }, { data: cfg }
     ] = await Promise.all([
       supabase.from('campos').select('*, lotes_agricolas(*)').order('nombre'),
       supabase.from('campanas').select('*').order('año_inicio', { ascending: false }),
@@ -76,6 +77,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       supabase.from('stock_agro').select('*').order('insumo'),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'agro').order('fecha', { ascending: false }).limit(200),
       supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
+      supabase.from('configuracion').select('clave, valor').eq('clave', 'cotizacion_dolar_agro'),
     ])
     setCampos(c || [])
     setCampanas(ca || [])
@@ -87,6 +89,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
     setStockAgro(sa || [])
     setIngresosAgro(ia || [])
     setContactos(ct || [])
+    setCotizacionDolar(parseFloat(cfg?.[0]?.valor) || 1000)
     // Si hay más de una campaña activa a la vez (algo normal, por ejemplo trigo
     // sin cosechar de la anterior + algo recién sembrado de la nueva), se usa
     // la más nueva como "la" campaña activa por defecto para cargar datos —
@@ -104,7 +107,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} />
     }
     if (pantAgroM === 'stock') {
-      return <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} />
+      return <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} cotizacionDolar={cotizacionDolar} />
     }
     const CM = { bg: '#1A2E1A', surface: '#243324', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', sans: "'IBM Plex Sans', sans-serif" }
     return (
@@ -238,7 +241,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
-      {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} />}
+      {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} />}
       {tab === 'lluvias' && <TabLluvias usuario={usuario} />}
     </div>
@@ -2597,7 +2600,19 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 }
 
 
-function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav }) {
+function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav, cotizacionDolar }) {
+  const [editandoCotiz, setEditandoCotiz] = useState(false)
+  const [nuevaCotiz, setNuevaCotiz] = useState(cotizacionDolar)
+
+  async function guardarCotizacion() {
+    const valor = parseFloat(nuevaCotiz)
+    if (!valor || valor <= 0) { alert('Ingresá un valor válido'); return }
+    const { error } = await supabase.from('configuracion').update({ valor: String(valor) }).eq('clave', 'cotizacion_dolar_agro')
+    if (error) { alert('Error al guardar: ' + error.message); return }
+    setEditandoCotiz(false)
+    await cargar()
+  }
+
   // Recibo imprimible de pago de agroquímicos — acepta una compra sola o varias
   // juntas (pago agrupado), y arma un recibo doble (proveedor + empresa).
   function generarReciboAgro(compraOCompras, pagos, stockRef) {
@@ -2628,7 +2643,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [tab, setTab] = useState('stock')
   const [showForm, setShowForm] = useState(false)
   const [editandoStock, setEditandoStock] = useState(null)
-  const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '' })
+  const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '' })
   const [showFormCompra, setShowFormCompra] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
@@ -2639,7 +2654,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [chequesCartera, setChequesCartera] = useState([])
   const [preciosPend, setPreciosPend] = useState({})
   const [formCompra, setFormCompra] = useState({
-    agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '',
+    agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
     fecha: new Date().toISOString().split('T')[0], proveedor: '',
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
     numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
@@ -2695,24 +2710,33 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (!formStock.insumo) { alert('Ingresá el nombre'); return }
     setGuardando(true)
     const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, actualizado_en: new Date().toISOString() }
-    // El precio solo se pisa si se cargó algo en el campo — así no se borra
-    // el precio de referencia que ya se venía calculando solo con las compras.
-    if (formStock.precio_referencia) data.precio_referencia = parseFloat(formStock.precio_referencia)
+    // Si se cargó precio en dólares, el precio en pesos se calcula solo con
+    // la cotización del momento — si se cargó directo en pesos, se respeta eso.
+    if (formStock.precio_referencia_usd) {
+      data.precio_referencia_usd = parseFloat(formStock.precio_referencia_usd)
+      data.precio_referencia = Math.round(parseFloat(formStock.precio_referencia_usd) * cotizacionDolar)
+    } else if (formStock.precio_referencia) {
+      data.precio_referencia = parseFloat(formStock.precio_referencia)
+    }
     const { error } = editandoStock
       ? await supabase.from('stock_agro').update(data).eq('id', editandoStock)
       : await supabase.from('stock_agro').insert(data)
     if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false); setEditandoStock(null)
-    setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '' })
+    setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '' })
     setGuardando(false)
   }
 
   async function guardarCompra() {
     if (!formCompra.agroquimico_id || !formCompra.cantidad) { alert('Completá insumo y cantidad'); return }
-    if (pagarAhora && !formCompra.precio_unitario) { alert('Para pagar ahora necesitás ingresar el precio unitario. Si todavía no llegó la factura, desmarcá "Pagar ahora" y cargá el remito sin precio.'); return }
+    // Si se cargó precio en dólares, el precio unitario en pesos se calcula
+    // solo con la cotización de hoy — si se cargó directo en pesos, se respeta eso.
+    const precioUnitUsd = formCompra.precio_unitario_usd ? parseFloat(formCompra.precio_unitario_usd) : null
+    const precioUnitDesdeUsd = precioUnitUsd ? Math.round(precioUnitUsd * cotizacionDolar) : null
+    if (pagarAhora && !formCompra.precio_unitario && !precioUnitDesdeUsd) { alert('Para pagar ahora necesitás ingresar el precio unitario (en pesos o en dólares). Si todavía no llegó la factura, desmarcá "Pagar ahora" y cargá el remito sin precio.'); return }
     const cantidad = parseFloat(formCompra.cantidad)
-    const precioUnit = formCompra.precio_unitario ? parseFloat(formCompra.precio_unitario) : null
+    const precioUnit = precioUnitDesdeUsd || (formCompra.precio_unitario ? parseFloat(formCompra.precio_unitario) : null)
     const total = precioUnit ? (formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit)) : null
     const totalPagos = formCompra.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     if (pagarAhora && Math.abs(total - totalPagos) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`); return }
@@ -2742,6 +2766,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     const { error: errIngresoAgro } = await supabase.from('compras_insumos').insert({
       insumo_id: parseInt(formCompra.agroquimico_id), insumo_tipo: 'agro', insumo_nombre: formCompra.insumo_nombre, unidad: formCompra.unidad || null,
       cantidad, precio_unitario: precioUnit, total,
+      precio_unitario_usd: precioUnitUsd, cotizacion_dolar: precioUnitUsd ? cotizacionDolar : null,
       proveedor: formCompra.proveedor || null, domicilio: formCompra.domicilio || null, localidad: formCompra.localidad || null,
       cuit: formCompra.cuit || null, iva: formCompra.iva || null, cbu: formCompra.cbu || null,
       numero_factura: formCompra.numero_factura || null, observaciones: formCompra.observaciones || null,
@@ -2766,13 +2791,16 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (item && formCompra.retirado) {
       const upd = { cantidad: (item.cantidad || 0) + cantidad, actualizado_en: new Date().toISOString() }
       if (precioUnit) upd.precio_referencia = precioUnit
+      if (precioUnitUsd) upd.precio_referencia_usd = precioUnitUsd
       await supabase.from('stock_agro').update(upd).eq('id', item.id)
     } else if (item && precioUnit) {
-      await supabase.from('stock_agro').update({ precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+      const upd = { precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }
+      if (precioUnitUsd) upd.precio_referencia_usd = precioUnitUsd
+      await supabase.from('stock_agro').update(upd).eq('id', item.id)
     }
 
     setShowFormCompra(false)
-    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true })
+    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
@@ -2862,6 +2890,24 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         )
       })()}
 
+      {/* Cotización del dólar — usada para traducir los precios en USD a pesos */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#EAF4EC', border: '1px solid #97C459', borderRadius: 8, padding: '8px 14px', marginBottom: '1rem' }}>
+        <span style={{ fontSize: 13 }}>💵 Cotización del dólar (Agricultura):</span>
+        {editandoCotiz ? (
+          <>
+            <input type="number" value={nuevaCotiz} onChange={e => setNuevaCotiz(e.target.value)}
+              style={{ width: 100, padding: '4px 8px', border: '1px solid #97C459', borderRadius: 5, fontSize: 13, fontFamily: 'monospace' }} autoFocus />
+            <button onClick={guardarCotizacion} style={{ padding: '4px 10px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>Guardar</button>
+            <button onClick={() => { setEditandoCotiz(false); setNuevaCotiz(cotizacionDolar) }} style={{ padding: '4px 10px', fontSize: 12, background: 'transparent', border: '1px solid #97C459', color: S.green, borderRadius: 5, cursor: 'pointer' }}>Cancelar</button>
+          </>
+        ) : (
+          <>
+            <strong style={{ fontFamily: 'monospace', fontSize: 14 }}>${cotizacionDolar?.toLocaleString('es-AR')}</strong>
+            <button onClick={() => { setNuevaCotiz(cotizacionDolar); setEditandoCotiz(true) }} style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: '1px solid #97C459', color: S.green, borderRadius: 5, cursor: 'pointer' }}>Actualizar</button>
+          </>
+        )}
+      </div>
+
       {/* Tabs internos */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -2877,7 +2923,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             + Registrar compra
           </button>
-          <button onClick={() => { setShowForm(!showForm); setShowFormCompra(false); setEditandoStock(null); setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '' }) }}
+          <button onClick={() => { setShowForm(!showForm); setShowFormCompra(false); setEditandoStock(null); setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '' }) }}
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             + Nuevo insumo
           </button>
@@ -2907,7 +2953,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             <div><Label>Tipo</Label><select value={formStock.tipo} onChange={e => setFormStock({...formStock, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select></div>
             <div><Label>Unidad</Label><select value={formStock.unidad} onChange={e => setFormStock({...formStock, unidad: e.target.value})} style={inputStyle}>{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
             <div><Label>Cantidad inicial</Label><input type="number" value={formStock.cantidad} onChange={e => setFormStock({...formStock, cantidad: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Precio de referencia $/{formStock.unidad}</Label><input type="number" value={formStock.precio_referencia} onChange={e => setFormStock({...formStock, precio_referencia: e.target.value})} placeholder="ej. 850" style={inputStyle} /></div>
+            <div><Label>Precio en USD (si aplica)</Label><input type="number" value={formStock.precio_referencia_usd} onChange={e => setFormStock({...formStock, precio_referencia_usd: e.target.value})} placeholder="ej. 8.5" style={{...inputStyle, borderColor: '#97C459'}} /></div>
+            <div><Label>Precio en $ {formStock.precio_referencia_usd ? '(calculado)' : ''}</Label><input type="number" value={formStock.precio_referencia_usd ? Math.round(parseFloat(formStock.precio_referencia_usd) * cotizacionDolar) : formStock.precio_referencia} onChange={e => setFormStock({...formStock, precio_referencia: e.target.value})} disabled={!!formStock.precio_referencia_usd} style={{...inputStyle, background: formStock.precio_referencia_usd ? S.bg : '#fff'}} /></div>
             <div><Label>Stock mínimo alerta</Label><input type="number" value={formStock.minimo_stock} onChange={e => setFormStock({...formStock, minimo_stock: e.target.value})} style={inputStyle} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -2932,7 +2979,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               </select>
             </div>
             <div><Label>Cantidad</Label><input type="number" value={formCompra.cantidad} onChange={e => { const c = e.target.value; const t = c && formCompra.precio_unitario ? String(Math.round(parseFloat(c) * parseFloat(formCompra.precio_unitario))) : formCompra.total; setFormCompra({...formCompra, cantidad: c, total: t}) }} style={inputStyle} /></div>
-            <div><Label>Precio unitario $ {!pagarAhora && <span style={{ fontWeight: 400, textTransform: 'none', color: S.hint }}>(opcional, si aún no llegó la factura)</span>}</Label><input type="number" value={formCompra.precio_unitario} onChange={e => { const p = e.target.value; const t = p && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(p))) : formCompra.total; setFormCompra({...formCompra, precio_unitario: p, total: t}) }} style={inputStyle} placeholder={pagarAhora ? '' : 'se puede cargar después, al pagar'} /></div>
+            <div><Label>Precio en USD (opcional)</Label><input type="number" value={formCompra.precio_unitario_usd} onChange={e => {
+              const pu = e.target.value
+              const puArs = pu ? String(Math.round(parseFloat(pu) * cotizacionDolar)) : ''
+              const t = puArs && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(puArs))) : formCompra.total
+              setFormCompra({...formCompra, precio_unitario_usd: pu, precio_unitario: puArs || formCompra.precio_unitario, total: t})
+            }} placeholder="ej. 8.5" style={{...inputStyle, borderColor: '#97C459'}} /></div>
+            <div><Label>Precio unitario $ {formCompra.precio_unitario_usd ? '(calculado)' : (!pagarAhora && <span style={{ fontWeight: 400, textTransform: 'none', color: S.hint }}>(opcional, si aún no llegó la factura)</span>)}</Label><input type="number" value={formCompra.precio_unitario} disabled={!!formCompra.precio_unitario_usd} onChange={e => { const p = e.target.value; const t = p && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(p))) : formCompra.total; setFormCompra({...formCompra, precio_unitario: p, total: t}) }} style={{...inputStyle, background: formCompra.precio_unitario_usd ? S.bg : '#fff'}} placeholder={pagarAhora ? '' : 'se puede cargar después, al pagar'} /></div>
             <div><Label>Total $</Label><input type="number" value={formCompra.total} onChange={e => setFormCompra({...formCompra, total: e.target.value})} style={inputStyle} /></div>
             <div><Label>Fecha</Label><input type="date" value={formCompra.fecha} onChange={e => setFormCompra({...formCompra, fecha: e.target.value})} style={inputStyle} /></div>
             <div><Label>N° Factura</Label><input type="text" value={formCompra.numero_factura} onChange={e => setFormCompra({...formCompra, numero_factura: e.target.value})} style={inputStyle} /></div>
@@ -3019,7 +3072,10 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     <td style={{ padding: '8px 12px' }}>{s.tipo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11 }}>{s.tipo}</span> : '—'}</td>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: bajo ? S.red : S.green }}>{s.cantidad?.toLocaleString('es-AR')}</td>
                     <td style={{ padding: '8px 12px', color: S.muted }}>{s.unidad}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}` : '—'}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>
+                      {s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}` : '—'}
+                      {s.precio_referencia_usd ? <div style={{ fontSize: 11, color: S.green }}>US$ {s.precio_referencia_usd.toLocaleString('es-AR')}</div> : null}
+                    </td>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{s.minimo_stock || '—'}</td>
                     <td style={{ padding: '8px 12px' }}>
                       {bajo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.redLight, color: S.red, fontSize: 11, fontWeight: 600 }}>⚠ Stock bajo</span>
@@ -3027,7 +3083,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     </td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'' }); setShowForm(true); setShowFormCompra(false) }}
+                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'' }); setShowForm(true); setShowFormCompra(false) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                         <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('stock_agro').delete().eq('id', s.id); cargar() }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
