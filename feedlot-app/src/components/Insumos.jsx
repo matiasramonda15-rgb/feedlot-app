@@ -125,7 +125,9 @@ export default function Insumos({ usuario }) {
   async function cargar() {
     setLoading(true)
     const [{ data: c }, { data: sa }, { data: ss }, { data: hiSan }, { data: huSan }, { data: ip }, { data: is_ }, { data: ch }, { data: ct }, { data: cp }] = await Promise.all([
-      supabase.from('compras_insumos').select('*').order('fecha', { ascending: false }),
+      // Esta pantalla es solo Alimentación + Sanidad — Agricultura (insumo_tipo
+      // 'agro') tiene su propio flujo en Agricultura, aunque comparta la tabla.
+      supabase.from('compras_insumos').select('*').neq('insumo_tipo', 'agro').order('fecha', { ascending: false }),
       supabase.from('stock_insumos').select('*').order('insumo'),
       supabase.from('stock_sanitario').select('*').order('producto'),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'sanitario').order('fecha', { ascending: false }).limit(10),
@@ -134,7 +136,7 @@ export default function Insumos({ usuario }) {
       supabase.from('ingresos_stock').select('*').order('creado_en', { ascending: false }).limit(200),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
       supabase.from('contactos').select('*').order('nombre'),
-      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').is('precio_unitario', null).order('fecha', { ascending: false }),
+      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').is('precio_unitario', null).neq('insumo_tipo', 'agro').order('fecha', { ascending: false }),
     ])
     setCompras(c || [])
     setStockAlim(sa || [])
