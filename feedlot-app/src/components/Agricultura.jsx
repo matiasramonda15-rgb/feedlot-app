@@ -737,11 +737,15 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   win.document.close()
 }
 
-function generarReciboOrden(orden, campo, lote, campana, stockAgro) {
-  const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
-  const superficie = lote?.superficie_ha || campo?.superficie_ha || '—'
-  const pagos = orden.pagos_detalle || []
-  const totalMonto = orden.costo_total || 0
+function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro) {
+  // Acepta una sola orden (uso normal desde la fila individual) o un array de
+  // varias (cuando se pagan juntas, aunque sean de campos distintos) — en ese
+  // caso arma UN SOLO comprobante con el detalle de cada campo, no uno por cada.
+  const ordenes = Array.isArray(ordenOrdenes) ? ordenOrdenes : [ordenOrdenes]
+  const primera = ordenes[0]
+  const fecha = primera.fecha ? new Date(primera.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+  const pagos = primera.pagos_detalle || []
+  const totalMonto = ordenes.reduce((s, o) => s + (o.costo_total || 0), 0)
 
   const unidades = ['','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE']
   const decenas = ['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA']
@@ -758,6 +762,17 @@ function generarReciboOrden(orden, campo, lote, campana, stockAgro) {
   const entero = Math.floor(totalMonto)
   const centavos = Math.round((totalMonto - entero) * 100)
   const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
+
+  const filasConcepto = ordenes.map(o => {
+    const campo = camposLista.find(c => c.id === o.campo_id)
+    const lote = campo?.lotes_agricolas?.find(l => l.id === o.lote_id)
+    const campana = campanas.find(c => c.id === o.campana_id)
+    const superficie = lote?.superficie_ha || campo?.superficie_ha || '—'
+    return `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${o.tipo} — ${campo?.nombre || ''}${lote ? ` Lote ${lote.numero}` : ''} · ${superficie} ha${campana ? ` · ${campana.nombre}` : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(o.costo_total || 0).toLocaleString('es-AR')}</td>
+    </tr>`
+  }).join('')
 
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
@@ -795,13 +810,13 @@ function generarReciboOrden(orden, campo, lote, campana, stockAgro) {
     <hr style="border:1px solid #333;margin:8px 0;">
     <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
       <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;">Entrego a:</td></tr>
-      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${orden.proveedor || ''}</strong></td><td style="padding:4px 8px;">I.V.A.: ${orden.iva || ''}</td></tr>
-      <tr><td style="padding:4px 8px;">Localidad: ${orden.localidad || ''}</td><td style="padding:4px 8px;">CUIT/DNI: ${orden.cuit || ''}</td></tr>
-      <tr><td style="padding:4px 8px;">C.B.U: ${orden.cbu || ''}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
+      <tr><td style="padding:4px 8px;width:50%;">Nombre: <strong>${primera.proveedor || ''}</strong></td><td style="padding:4px 8px;">I.V.A.: ${primera.iva || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">Localidad: ${primera.localidad || ''}</td><td style="padding:4px 8px;">CUIT/DNI: ${primera.cuit || ''}</td></tr>
+      <tr><td style="padding:4px 8px;">C.B.U: ${primera.cbu || ''}</td><td style="padding:4px 8px;">FECHA &nbsp;<strong>${fecha}</strong></td></tr>
     </table>
     <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
-      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
-      <tr><td colspan="2" style="padding:6px 8px;">${orden.tipo} — ${campo?.nombre || ''}${lote ? ` Lote ${lote.numero}` : ''} · ${superficie} ha${campana ? ` · ${campana.nombre}` : ''}</td></tr>
+      <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto${ordenes.length > 1 ? ` (${ordenes.length} trabajos)` : ''}</td></tr>
+      ${filasConcepto}
     </table>
     ${pagos.length > 0 ? `
     <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
@@ -826,7 +841,7 @@ function generarReciboOrden(orden, campo, lote, campana, stockAgro) {
   </div>`
 
   const win = window.open('', '_blank')
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo — ${orden.tipo}</title><style>@media print{.no-print{display:none;}}body{font-family:Arial,sans-serif;background:#fff;padding:10px;}</style></head><body>
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo — ${primera.tipo}</title><style>@media print{.no-print{display:none;}}body{font-family:Arial,sans-serif;background:#fff;padding:10px;}</style></head><body>
     <div style="text-align:right;margin-bottom:10px;" class="no-print"><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;">🖨️ Imprimir / Guardar PDF</button></div>
     ${bloque}<div style="border-top:2px dashed #999;margin:16px 0;text-align:center;font-size:11px;color:#999;padding:4px 0;">✂ &nbsp;&nbsp; CORTAR AQUÍ &nbsp;&nbsp; ✂</div>${bloque}
   </body></html>`)
@@ -1101,11 +1116,17 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     setCostosPend({})
     setGuardandoPago(false)
     await cargar()
+    // Un solo comprobante por proveedor, con el detalle de todos los campos
+    // que se pagaron juntos — no uno por cada orden, aunque sean de campos
+    // distintos, si se le está pagando a la misma persona de una vez.
+    const porProveedor = {}
     ordenesPagadas.forEach(o => {
-      const campoO = campos.find(c => c.id === o.campo_id)
-      const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
-      const campanaO = campanas.find(c => c.id === o.campana_id)
-      generarReciboOrden({ ...o, fecha: formPagoGrupal.fecha, pagos_detalle: pagosFinal, ...formPagoGrupal }, campoO, loteO, campanaO, stockAgro)
+      const key = o.proveedor || 'sin proveedor'
+      if (!porProveedor[key]) porProveedor[key] = []
+      porProveedor[key].push({ ...o, fecha: formPagoGrupal.fecha, pagos_detalle: pagosFinal, ...formPagoGrupal })
+    })
+    Object.values(porProveedor).forEach(grupo => {
+      generarReciboOrden(grupo, campos, campanas, stockAgro)
     })
   }
 
@@ -1149,7 +1170,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               style={{ display: 'block', textAlign: 'center', width: '100%', background: '#25D366', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', textDecoration: 'none', boxSizing: 'border-box', marginBottom: 10 }}>
               📲 Enviar por WhatsApp
             </a>
-            <button onClick={() => generarReciboOrden(o, campo, loteG, campanaG, stockAgro)}
+            <button onClick={() => generarReciboOrden(o, campos, campanas, stockAgro)}
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.blue}`, borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: CM.blue, cursor: 'pointer', fontFamily: CM.sans, marginBottom: 10 }}>
               🖨️ Ver / Descargar PDF
             </button>
@@ -1551,8 +1572,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                             })
                           }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>📎 Copiar imagen</button>
                           {o.estado_pago === 'pagado' && o.costo_total && <button onClick={() => {
-                            const campanaO = campanas.find(c => c.id === o.campana_id)
-                            generarReciboOrden(o, campoO, loteO, campanaO, stockAgro)
+                            generarReciboOrden(o, campos, campanas, stockAgro)
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>}
                           <button onClick={async () => {
                             if (!confirm('¿Eliminar esta orden? Se repondrá el stock de los insumos que se habían descontado.')) return
