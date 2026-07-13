@@ -987,7 +987,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0],
     descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '',
     productos: [], gastos_propios: [],
-    costo_total: '', costo_ha: '', observaciones: '',
+    costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false,
   })
   const [guardando, setGuardando] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('')
@@ -1059,10 +1059,31 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     }).select().single()
     if (errOrden) { alert('Error al guardar la orden: ' + errOrden.message); setGuardando(false); return }
 
+    // Si el trabajo propio se hizo con maquinaria/personal de Servicios, se
+    // refleja como un "servicio interno" — mismo monto, sin caja de por medio
+    // (no sale ni entra plata real, es la misma empresa). Así Agricultura ve
+    // el costo real de la labor, y Servicios recibe el crédito por el uso de
+    // su maquinaria, sin inflar el resultado consolidado de la empresa (se
+    // cancelan solos al sumar todas las actividades).
+    if (form.es_propia && form.usa_maquinaria_servicios && costoNum > 0) {
+      const campoNombre = campos.find(c => c.id === parseInt(form.campo_id))?.nombre || ''
+      const campanaNombre = campanas.find(c => c.id === parseInt(form.campana_id))?.nombre || ''
+      const { error: errServ } = await supabase.from('servicios_terceros').insert({
+        cliente: 'Agricultura (interno)', labor: form.tipo, fecha: form.fecha,
+        hectareas: superficie || null, precio_ha: costoHa, total: costoNum,
+        campo: campoNombre, nro_lote: form.lote_id ? String(form.lote_id) : null,
+        cultivo: null, campania: campanaNombre, tipo_servicio: 'tercero',
+        estado_pago: 'pagado', estado: 'completado',
+        observaciones: `Trabajo propio para Agricultura — orden #${ordenInsertada?.id}`,
+        registrado_por: usuario?.id,
+      })
+      if (errServ) alert('La orden se guardó, pero no se pudo reflejar el ingreso en Servicios: ' + errServ.message)
+    }
+
     if (!mobile) await cargar() // en el celular, la recarga se hace recién al volver al inicio (ver más abajo), para no remontar el formulario y perder la confirmación
     setShowForm(false)
     if (mobile) setOrdenGuardadaM(ordenInsertada)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false })
     setGuardando(false)
   }
 
@@ -1320,9 +1341,23 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
           </div>
 
-          <div style={{ fontSize: 11, color: CM.muted, marginBottom: 12 }}>
-            El costo del contratista se carga después (cuando se paga), en la pestaña Órdenes de la PC.
-          </div>
+          {form.es_propia ? (
+            <div style={{ marginTop: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Costo total $ (valor del trabajo propio)</div>
+              <input type="number" value={form.costo_total} onChange={e => setForm({...form, costo_total: e.target.value})}
+                placeholder="ej. combustible + hs de trabajo"
+                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+              <div style={{ fontSize: 11, color: CM.muted, marginTop: 4 }}>Aunque sea con maquinaria propia, tiene un costo real — cargarlo hace más precisa la rentabilidad del lote.</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.usa_maquinaria_servicios} onChange={e => setForm({...form, usa_maquinaria_servicios: e.target.checked})} />
+                <span style={{ fontSize: 13, color: CM.text }}>Se usó maquinaria/personal de Servicios</span>
+              </label>
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: CM.muted, marginBottom: 12 }}>
+              El costo del contratista se carga después (cuando se paga), en la pestaña Órdenes de la PC.
+            </div>
+          )}
 
           <button onClick={guardar} disabled={guardando}
             style={{ width: '100%', background: CM.green, border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer', fontFamily: CM.sans, marginBottom: 8 }}>
@@ -1455,12 +1490,21 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 })}
               </div>
 
-              {/* Costo (contratista) */}
-              {!form.es_propia && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                  <div><Label>Costo total $ (opcional)</Label><input type="number" value={form.costo_total} onChange={e => setForm({...form, costo_total: e.target.value})} style={inputStyle} placeholder="Se puede cargar al pagar" /></div>
-                  <div><Label>Costo $/ha</Label><input type="number" value={form.costo_ha} onChange={e => setForm({...form, costo_ha: e.target.value})} style={inputStyle} /></div>
-                </div>
+              {/* Costo */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div><Label>Costo total $ {form.es_propia ? '(valor del trabajo propio)' : '(opcional)'}</Label><input type="number" value={form.costo_total} onChange={e => setForm({...form, costo_total: e.target.value})} style={inputStyle} placeholder={form.es_propia ? 'ej. costo de combustible + hs de trabajo' : 'Se puede cargar al pagar'} /></div>
+                <div><Label>Costo $/ha</Label><input type="number" value={form.costo_ha} onChange={e => setForm({...form, costo_ha: e.target.value})} style={inputStyle} /></div>
+              </div>
+              {form.es_propia && (
+                <>
+                  <div style={{ fontSize: 11, color: S.hint, marginTop: -8, marginBottom: '.6rem' }}>
+                    Aunque sea trabajo con maquinaria propia, tiene un costo real (combustible, desgaste, hs de trabajo) — ponerle un valor acá hace que la rentabilidad del lote sea más precisa.
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={form.usa_maquinaria_servicios} onChange={e => setForm({...form, usa_maquinaria_servicios: e.target.checked})} />
+                    <span style={{ fontSize: 13 }}>Se usó maquinaria/personal de <strong>Servicios</strong> — reflejar este monto como ingreso de Servicios (sin mover caja)</span>
+                  </label>
+                </>
               )}
 
               <div style={{ display: 'flex', gap: 8 }}>
@@ -3241,18 +3285,32 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     )
     let costoInsumos = 0, costoLabores = 0
     const detalleInsumos = []
+    const detalleOrdenes = []
     ordenesRel.forEach(o => {
       const factor = o.lote_id ? 1 : (campo?.superficie_ha ? ha / campo.superficie_ha : 1)
+      const insumosOrden = []
       ;(o.productos || []).forEach(p => {
         const item = stockAgro.find(s => s.id === parseInt(p.id))
         const qty = (parseFloat(p.total) || 0) * factor
         const precio = item?.precio_referencia || 0
         const subtotal = qty * precio
         costoInsumos += subtotal
-        if (qty > 0) detalleInsumos.push({ nombre: item?.insumo || '—', fecha: o.fecha, dosis: p.dosis, unidad: p.unidad || item?.unidad || '', cantHa: ha ? (qty / ha) : null, cantTotal: qty, precio, subtotal })
+        if (qty > 0) {
+          const fila = { nombre: item?.insumo || '—', fecha: o.fecha, dosis: p.dosis, unidad: p.unidad || item?.unidad || '', cantHa: ha ? (qty / ha) : null, cantTotal: qty, precio, subtotal }
+          detalleInsumos.push(fila)
+          insumosOrden.push(fila)
+        }
       })
-      costoLabores += (o.costo_total || 0) * factor
+      const costoLaboresOrden = (o.costo_total || 0) * factor
+      costoLabores += costoLaboresOrden
+      const totalInsumosOrden = insumosOrden.reduce((s, i) => s + i.subtotal, 0)
+      detalleOrdenes.push({
+        id: o.id, tipo: o.tipo, fecha: o.fecha, proveedor: o.proveedor, estadoPago: o.estado_pago,
+        costoLabores: costoLaboresOrden, costoInsumos: totalInsumosOrden,
+        costoTotal: costoLaboresOrden + totalInsumosOrden, insumos: insumosOrden,
+      })
     })
+    detalleOrdenes.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
 
     // Arriendo del campo en el rango de años de la campaña, prorrateado por ha
     const arriendosCampo = vencimientos.filter(v => v.campo_id === g.campo_id && (!campana || (
@@ -3261,6 +3319,10 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     )))
     const totalArriendoCampo = arriendosCampo.reduce((s, v) => s + (v.monto_total || 0), 0)
     const costoAlquiler = campo?.superficie_ha ? totalArriendoCampo * (ha / campo.superficie_ha) : 0
+    const detalleArriendo = arriendosCampo.map(v => ({
+      fecha: v.fecha_vencimiento, montoTotal: v.monto_total || 0, estadoPago: v.estado,
+      montoProrrateado: campo?.superficie_ha ? (v.monto_total || 0) * (ha / campo.superficie_ha) : (v.monto_total || 0),
+    }))
 
     // Gastos puntuales de este campo (los que se cargaron con campo elegido en
     // "Gastos" — seguro de ese campo, análisis de suelo, etc.), prorrateados
@@ -3270,7 +3332,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     const totalGastosCampo = gastosCampo.reduce((s, gg) => s + (gg.monto || 0), 0)
     const costoGastos = campo?.superficie_ha ? totalGastosCampo * (ha / campo.superficie_ha) : 0
 
-    const costosDirectos = costoInsumos + costoAlquiler + costoGastos
+    const costosDirectos = costoInsumos + costoLabores + costoAlquiler + costoGastos
     const sinCosechaAun = g.kg === 0
     const precioTn = precioReferencia(g.cultivo, g.campo_id)
     const ingresos = (!sinCosechaAun && precioTn) ? (g.kg / 1000) * precioTn : 0
@@ -3286,7 +3348,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
       campoNombre: campo?.nombre || '—', loteNombre: lote ? `Lote ${lote.numero}` : 'Todo el campo',
       campo_id: g.campo_id, lote_id: g.lote_id, cultivo: g.cultivo, sinCosechaAun,
       ha, kg: g.kg, rtoQqHa, costoInsumos, costoLabores, costoAlquiler, costoGastos, costosDirectos,
-      precioTn, ingresos, mb, mbHa, mbCD, rentabilidadPct, rtoIndifTnHa, detalleInsumos,
+      precioTn, ingresos, mb, mbHa, mbCD, rentabilidadPct, rtoIndifTnHa, detalleInsumos, detalleOrdenes, detalleArriendo,
     }
   }).filter(Boolean)
 
@@ -3358,7 +3420,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
               {[
                 { label: 'Rendimiento', val: f.sinCosechaAun ? 'Sin cosechar' : `${numAR(f.rtoQqHa, 1)} qq/ha`, sub: f.sinCosechaAun ? '—' : `${numAR(f.kg / 1000, 1)} tn totales` },
                 { label: 'Ingresos (proy.)', val: f.sinCosechaAun ? '—' : (f.precioTn ? `$${numAR(f.ingresos)}` : 'Sin precio ref.'), sub: f.sinCosechaAun ? 'todavía no hay cosecha' : (f.precioTn ? `$${numAR(f.precioTn)}/tn` : 'cargá una venta de este cultivo'), color: S.green },
-                { label: 'Costos directos', val: `$${numAR(f.costosDirectos)}`, sub: `Insumos $${numAR(f.costoInsumos)} · Alquiler $${numAR(f.costoAlquiler)}${f.costoGastos ? ' · Gastos $' + numAR(f.costoGastos) : ''}`, color: S.red },
+                { label: 'Costos directos', val: `$${numAR(f.costosDirectos)}`, sub: `Insumos $${numAR(f.costoInsumos)} · Labores $${numAR(f.costoLabores)} · Alquiler $${numAR(f.costoAlquiler)}${f.costoGastos ? ' · Gastos $' + numAR(f.costoGastos) : ''}`, color: S.red },
                 { label: 'Margen Bruto', val: f.mb === null ? '—' : `$${numAR(f.mb)}`, sub: f.mb === null ? 'a definir con la cosecha' : `$${numAR(f.mbHa)}/ha`, color: f.mb === null ? S.muted : (f.mb >= 0 ? S.green : S.red) },
               ].map((m, i) => (
                 <div key={i} style={{ background: S.bg, borderRadius: 8, padding: '.75rem .9rem' }}>
@@ -3384,38 +3446,54 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
 
             {abierto && (
               <div style={{ marginTop: '1.25rem' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Insumos aplicados en este lote</div>
-                {f.detalleInsumos.length === 0
-                  ? <div style={{ fontSize: 13, color: S.hint }}>Sin insumos cargados en las órdenes de trabajo de este lote.</div>
-                  : (
-                    <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                        <thead><tr style={{ background: S.bg }}>
-                          {['Fecha', 'Insumo', 'Cant/ha', 'Cant. total', 'Precio ref.', 'Subtotal'].map(h => (
-                            <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Insumo' || h === 'Fecha' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                          ))}
-                        </tr></thead>
-                        <tbody>
-                          {f.detalleInsumos.map((d, i) => (
-                            <tr key={i} style={{ borderBottom: `1px solid ${S.border}` }}>
-                              <td style={{ padding: '6px 10px', fontFamily: 'monospace' }}>{d.fecha ? new Date(d.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                              <td style={{ padding: '6px 10px', fontWeight: 600 }}>{d.nombre}</td>
-                              <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{d.cantHa ? `${numAR(d.cantHa, 2)} ${d.unidad}` : '—'}</td>
-                              <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{numAR(d.cantTotal, 2)} {d.unidad}</td>
-                              <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{d.precio ? `$${numAR(d.precio, 2)}` : <span style={{ color: S.amber }}>sin precio ref.</span>}</td>
-                              <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>${numAR(d.subtotal)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                {f.detalleArriendo.length > 0 && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Alquiler del campo</div>
+                    <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                      {f.detalleArriendo.map((a, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', fontSize: 12, borderBottom: i < f.detalleArriendo.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                          <span>{a.fecha ? new Date(a.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'} {a.estadoPago === 'pendiente' && <span style={{ color: S.amber, fontWeight: 600 }}> · pendiente de pago</span>}</span>
+                          <span style={{ fontFamily: 'monospace' }}>${numAR(a.montoTotal)} total <strong style={{ marginLeft: 8 }}>${numAR(a.montoProrrateado)} en este lote</strong></span>
+                        </div>
+                      ))}
                     </div>
-                  )
-                }
-                {f.costoLabores > 0 && (
-                  <div style={{ fontSize: 12, color: S.muted, marginTop: 10 }}>
-                    + Labores / contratistas (no incluido en Costos Directos): <strong>${numAR(f.costoLabores)}</strong>
                   </div>
                 )}
+
+                <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Órdenes de trabajo de este lote</div>
+                {f.detalleOrdenes.length === 0
+                  ? <div style={{ fontSize: 13, color: S.hint }}>Sin órdenes de trabajo cargadas todavía para este lote.</div>
+                  : f.detalleOrdenes.map((o, oi) => (
+                    <div key={oi} style={{ border: `1px solid ${S.border}`, borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: S.bg }}>
+                        <div>
+                          <span style={{ fontWeight: 700, fontSize: 13 }}>{o.tipo}</span>
+                          <span style={{ color: S.muted, fontSize: 12, marginLeft: 8 }}>{o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{o.proveedor ? ` · ${o.proveedor}` : ''}</span>
+                          {o.estadoPago === 'pendiente' && <span style={{ color: S.amber, fontWeight: 600, fontSize: 11, marginLeft: 8 }}>⏳ pendiente de pago</span>}
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: 13 }}>
+                          <strong style={{ fontFamily: 'monospace' }}>${numAR(o.costoTotal)}</strong>
+                          <div style={{ fontSize: 10, color: S.muted }}>labor ${numAR(o.costoLabores)} + insumos ${numAR(o.costoInsumos)}</div>
+                        </div>
+                      </div>
+                      {o.insumos.length > 0 && (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                          <tbody>
+                            {o.insumos.map((d, di) => (
+                              <tr key={di} style={{ borderTop: `1px solid ${S.border}` }}>
+                                <td style={{ padding: '5px 12px', fontWeight: 600 }}>{d.nombre}</td>
+                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{d.cantHa ? `${numAR(d.cantHa, 2)} ${d.unidad}/ha` : ''}</td>
+                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{numAR(d.cantTotal, 2)} {d.unidad}</td>
+                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{d.precio ? `$${numAR(d.precio, 2)}` : <span style={{ color: S.amber }}>sin precio ref.</span>}</td>
+                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>${numAR(d.subtotal)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  ))
+                }
               </div>
             )}
           </Card>
