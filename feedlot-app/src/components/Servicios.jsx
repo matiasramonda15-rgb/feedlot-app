@@ -521,7 +521,7 @@ export default function Servicios({ usuario, mobile, nav }) {
               <label style={lblM}>Tipo</label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
                 {[{ v: 'tercero', l: 'Tercero' }, { v: 'propio', l: 'Propio' }].map(t => (
-                  <button key={t.v} onClick={() => setFormM({...formM, tipo_servicio: t.v})}
+                  <button key={t.v} onClick={() => setFormM({...formM, tipo_servicio: t.v, esParaAgricultura: t.v === 'propio'})}
                     style={{ padding: '11px', fontSize: 14, fontWeight: 600, border: `2px solid ${formM.tipo_servicio === t.v ? CM.accent : CM.border}`, background: formM.tipo_servicio === t.v ? CM.accent + '22' : 'transparent', color: formM.tipo_servicio === t.v ? CM.accent : CM.muted, borderRadius: 10, cursor: 'pointer', fontFamily: CM.sans }}>
                     {t.l}
                   </button>
@@ -536,12 +536,6 @@ export default function Servicios({ usuario, mobile, nav }) {
                   </select>
                   <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
                 </>
-              )}
-              {formM.tipo_servicio === 'propio' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={formM.esParaAgricultura} onChange={e => setFormM({...formM, esParaAgricultura: e.target.checked, campo: '', nro_lote: ''})} />
-                  <span style={{ fontSize: 13, color: CM.text }}>🌾 Es para un lote de Agricultura</span>
-                </label>
               )}
               <label style={lblM}>Servicio *</label>
               <select value={formM.labor} onChange={e => setFormM({...formM, labor: e.target.value})} style={inpM}>
@@ -589,12 +583,12 @@ export default function Servicios({ usuario, mobile, nav }) {
                 <>
                   <label style={lblM}>Costo total $ (opcional — se puede completar después)</label>
                   <input type="number" value={formM.costo_total} onChange={e => setFormM({...formM, costo_total: e.target.value})} style={inpM} placeholder="Se puede dejar pendiente" inputMode="decimal" />
-                  <label style={lblM}>Productos usados (semilla, silobolsa, etc.)</label>
+                  <label style={lblM}>{formM.labor === 'Siembra' ? 'Semilla usada' : formM.labor === 'Cosecha' ? 'Silobolsa usado' : 'Productos usados'}</label>
                   {formM.productos.map((p, i) => (
                     <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
                       <select value={p.id} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], id: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 2 }}>
                         <option value="">— Insumo —</option>
-                        {stockAgro.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
+                        {stockAgro.filter(s => form.labor === 'Siembra' ? s.tipo === 'Semilla' : form.labor === 'Cosecha' ? s.tipo === 'Silobolsa' : true).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
                       </select>
                       <input type="number" value={p.total} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], total: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 1 }} placeholder="Cant." inputMode="decimal" />
                       <button onClick={() => setFormM({...formM, productos: formM.productos.filter((_, ix) => ix !== i)})} style={{ padding: '10px 12px', background: CM.redLight || '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 8, cursor: 'pointer' }}>✕</button>
@@ -974,7 +968,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                 </div>
                 <div>
                   <Lbl>Tipo *</Lbl>
-                  <select value={form.tipo_servicio} onChange={e => setForm({ ...form, tipo_servicio: e.target.value })} style={inp}>
+                  <select value={form.tipo_servicio} onChange={e => setForm({ ...form, tipo_servicio: e.target.value, esParaAgricultura: e.target.value === 'propio' })} style={inp}>
                     <option value="tercero">Tercero</option>
                     <option value="propio">Propio</option>
                   </select>
@@ -999,14 +993,6 @@ export default function Servicios({ usuario, mobile, nav }) {
                       {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                     </select>
                     <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
-                  </div>
-                )}
-                {form.tipo_servicio === 'propio' && (
-                  <div style={{ gridColumn: '1 / 3' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={form.esParaAgricultura} onChange={e => setForm({ ...form, esParaAgricultura: e.target.checked, campo: '', nro_lote: '' })} />
-                      <span style={{ fontSize: 13 }}>🌾 Es para un lote de <strong>Agricultura</strong> — elegir campo/lote y qué se usó</span>
-                    </label>
                   </div>
                 )}
                 <div>
@@ -1074,12 +1060,12 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '.75rem' }}>
                     <div><Lbl>Costo total $ (valor del trabajo, para la rentabilidad del lote)</Lbl><input type="number" value={form.costo_total} onChange={e => setForm({ ...form, costo_total: e.target.value })} placeholder="ej. combustible + hs de trabajo" style={inpMono} /></div>
                   </div>
-                  <Lbl>Productos usados en este lote (semilla, silobolsa, etc.)</Lbl>
+                  <Lbl>{form.labor === 'Siembra' ? 'Semilla usada' : form.labor === 'Cosecha' ? 'Silobolsa usado' : 'Productos usados en este lote'}</Lbl>
                   {form.productos.map((p, i) => (
                     <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, marginBottom: 6, alignItems: 'center' }}>
                       <select value={p.id} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], id: e.target.value }; setForm({ ...form, productos: np }) }} style={inp}>
                         <option value="">— Seleccioná el insumo —</option>
-                        {stockAgro.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad}) — stock: {s.cantidad?.toLocaleString('es-AR')}</option>)}
+                        {stockAgro.filter(s => formM.labor === 'Siembra' ? s.tipo === 'Semilla' : formM.labor === 'Cosecha' ? s.tipo === 'Silobolsa' : true).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad}) — stock: {s.cantidad?.toLocaleString('es-AR')}</option>)}
                       </select>
                       <input type="number" value={p.total} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], total: e.target.value }; setForm({ ...form, productos: np }) }} placeholder="Cantidad total" style={inpMono} />
                       <button onClick={() => setForm({ ...form, productos: form.productos.filter((_, ix) => ix !== i) })} style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
