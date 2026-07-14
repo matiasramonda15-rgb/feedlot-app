@@ -1441,6 +1441,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     // Para el Paralelo se compara NETO contra NETO (el total de Ingresos ya es un
     // precio de campo, sin IVA) — no se le suma IVA ni gastos a ninguno de los dos lados.
     const totalNetoTodo = facturas.reduce((s, f) => {
+      const seDeclaroSinFacturar = f.total_factura_manual === '0' || f.total_factura_manual === 0
+      if (seDeclaroSinFacturar) return s
       const kg = parseFloat(f.kg_factura) || 0
       const precio = parseFloat(f.precio_neto) || 0
       const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
@@ -1450,6 +1452,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     // Este es el total REAL sumado (lo que cargaste en "Total esta factura" de cada
     // una, o neto+IVA si todavía no lo cargaste) — es lo que se muestra abajo.
     const totalFacturaTodo = facturas.reduce((s, f) => {
+      const seDeclaroSinFacturar = f.total_factura_manual === '0' || f.total_factura_manual === 0
+      if (seDeclaroSinFacturar) return s
       const kg = parseFloat(f.kg_factura) || 0
       const precio = parseFloat(f.precio_neto) || 0
       const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
@@ -1501,13 +1505,14 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
           const kg = parseFloat(f.kg_factura) || 0
           const precio = parseFloat(f.precio_neto) || 0
           const vencs = (f.vencimientos || []).filter(v => v.fecha || v.monto)
-          const montoNeto = (kg && precio) ? kg * precio : vencs.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
-          const ivaMonto = Math.round(montoNeto * IVA_PCT / 100)
+          const seDeclaroSinFacturar = f.total_factura_manual === '0' || f.total_factura_manual === 0
+          const montoNeto = seDeclaroSinFacturar ? 0 : ((kg && precio) ? kg * precio : vencs.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0))
+          const ivaMonto = seDeclaroSinFacturar ? 0 : Math.round(montoNeto * IVA_PCT / 100)
           const totalManual = parseFloat(f.total_factura_manual) || 0
           // Si cargaste el total real de la factura, la diferencia contra neto+IVA
           // es la comisión + gastos de feria (no hace falta desglosarlos a mano).
-          const totalFactura = totalManual > 0 ? totalManual : (montoNeto + ivaMonto)
-          const gastos = totalManual > 0 ? Math.max(0, totalManual - (montoNeto + ivaMonto)) : 0
+          const totalFactura = seDeclaroSinFacturar ? 0 : (totalManual > 0 ? totalManual : (montoNeto + ivaMonto))
+          const gastos = (!seDeclaroSinFacturar && totalManual > 0) ? Math.max(0, totalManual - (montoNeto + ivaMonto)) : 0
           const totalVencs = vencs.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
           const set = patch => { const n = [...facturas]; n[fi] = { ...n[fi], ...patch }; setFormFactura({...formFactura, facturas: n}) }
 
