@@ -59,7 +59,7 @@ export default function Reportes({ usuario }) {
     const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: cs }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
-      supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(2000),
       supabase.from('stock_insumos').select('*'),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
