@@ -59,7 +59,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [descargasReg, setDescargasReg] = useState({})
   // Estado propio del modo celular
   const [tabM, setTabM] = useState('servicio')
-  const [formM, setFormM] = useState({ campania: '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+  const [formM, setFormM] = useState({ campania: '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
   const [guardandoM, setGuardandoM] = useState(false)
   const [okM, setOkM] = useState('')
   const [registroActivoM, setRegistroActivoM] = useState(null)
@@ -404,21 +404,56 @@ export default function Servicios({ usuario, mobile, nav }) {
     async function guardarServicioM() {
       const nombreCliente = formM.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : formM.cliente
       if (!nombreCliente || !formM.labor || !formM.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
+      if (formM.esParaAgricultura && !formM.campo_id) { alert('Seleccioná el campo de Agricultura'); return }
       setGuardandoM(true)
-      const { error } = await registrarServicioTercero(supabase, {
+      const costoNum = formM.esParaAgricultura ? (parseFloat(formM.costo_total) || null) : null
+      const { data: servicioCreado, error } = await registrarServicioTercero(supabase, {
         campania: formM.campania, tipoServicio: formM.tipo_servicio,
         cliente: formM.tipo_servicio === 'propio' ? null : nombreCliente,
-        labor: formM.labor, cultivo: formM.cultivo, campo: formM.campo, nroLote: formM.nro_lote,
+        labor: formM.labor, cultivo: formM.cultivo,
+        campo: formM.esParaAgricultura ? (campos.find(c => c.id === parseInt(formM.campo_id))?.nombre || '') : formM.campo,
+        nroLote: formM.esParaAgricultura ? (campos.find(c => c.id === parseInt(formM.campo_id))?.lotes_agricolas?.find(l => l.id === parseInt(formM.lote_id))?.numero || '') : formM.nro_lote,
         fecha: formM.fecha, hectareas: formM.hectareas,
         empleado1: formM.empleado1, empleado2: formM.empleado2, observaciones: formM.observaciones,
+        total: costoNum, precioHa: (costoNum && formM.hectareas) ? Math.round(costoNum / parseFloat(formM.hectareas)) : null,
+        estadoPago: (formM.esParaAgricultura && costoNum) ? 'pagado' : 'pendiente',
       })
+      if (error) { alert('Error: ' + error.message); setGuardandoM(false); return }
+
+      // Si es para un lote de Agricultura, se refleja del otro lado como una
+      // orden de trabajo — mismo criterio que en la versión de escritorio.
+      if (formM.esParaAgricultura) {
+        const tipoOrdenMap = { 'Siembra': 'Siembra', 'Cosecha': 'Cosecha', 'Pulverización': 'Pulverizacion', 'Fertilización': 'Fertilizacion', 'Roturación': 'Labranza', 'Rastreo': 'Labranza', 'Flete': 'Otro', 'Otro': 'Otro' }
+        const productosValidos = formM.productos.filter(p => p.id && parseFloat(p.total) > 0)
+        const { data: ordenCreada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
+          campo_id: parseInt(formM.campo_id), lote_id: formM.lote_id ? parseInt(formM.lote_id) : null,
+          campana_id: formM.campana_id ? parseInt(formM.campana_id) : null,
+          tipo: tipoOrdenMap[formM.labor] || 'Otro', fecha: formM.fecha,
+          descripcion: `Cargado desde Servicios (celular) — ${formM.labor}`,
+          proveedor: null, es_propia: true,
+          superficie_ha: parseFloat(formM.hectareas) || null,
+          productos: productosValidos.map(p => ({ id: p.id, total: p.total })),
+          costo_total: costoNum, costo_ha: (costoNum && formM.hectareas) ? Math.round(costoNum / parseFloat(formM.hectareas)) : null,
+          estado: 'completado', estado_pago: costoNum ? 'pagado' : 'pendiente',
+          observaciones: `Servicio interno #${servicioCreado?.id} — usa maquinaria de Servicios`,
+          registrado_por: usuario?.id,
+        }).select().single()
+        if (errOrden) {
+          alert('El servicio se guardó, pero no se pudo reflejar en Agricultura: ' + errOrden.message)
+        } else {
+          await supabase.from('servicios_terceros').update({ orden_trabajo_id: ordenCreada?.id }).eq('id', servicioCreado?.id)
+          for (const p of productosValidos) {
+            await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -parseFloat(p.total) })
+          }
+        }
+      }
+
       setGuardandoM(false)
-      if (error) { alert('Error: ' + error.message); return }
       await cargar()
       setOkM('servicio')
       setTimeout(() => {
         setOkM('')
-        setFormM(f => ({ ...f, cliente: '', campo: '', nro_lote: '', hectareas: '', empleado1: '', empleado2: '', observaciones: '' }))
+        setFormM(f => ({ ...f, cliente: '', campo: '', nro_lote: '', hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] }))
       }, 2000)
     }
 
@@ -502,6 +537,12 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
                 </>
               )}
+              {formM.tipo_servicio === 'propio' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={formM.esParaAgricultura} onChange={e => setFormM({...formM, esParaAgricultura: e.target.checked, campo: '', nro_lote: ''})} />
+                  <span style={{ fontSize: 13, color: CM.text }}>🌾 Es para un lote de Agricultura</span>
+                </label>
+              )}
               <label style={lblM}>Servicio *</label>
               <select value={formM.labor} onChange={e => setFormM({...formM, labor: e.target.value})} style={inpM}>
                 {LABORES.map(l => <option key={l}>{l}</option>)}
@@ -510,20 +551,61 @@ export default function Servicios({ usuario, mobile, nav }) {
               <select value={formM.cultivo} onChange={e => setFormM({...formM, cultivo: e.target.value})} style={inpM}>
                 {CULTIVOS.map(c => <option key={c}>{c}</option>)}
               </select>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div>
-                  <label style={lblM}>Campo</label>
-                  <input type="text" value={formM.campo} onChange={e => setFormM({...formM, campo: e.target.value})} style={inpM} placeholder="ej. La Esperanza" />
+              {formM.esParaAgricultura ? (
+                <>
+                  <label style={lblM}>Campo *</label>
+                  <select value={formM.campo_id} onChange={e => setFormM({...formM, campo_id: e.target.value, lote_id: ''})} style={inpM}>
+                    <option value="">— Seleccioná —</option>
+                    {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                  <label style={lblM}>Lote</label>
+                  <select value={formM.lote_id} onChange={e => setFormM({...formM, lote_id: e.target.value})} style={inpM}>
+                    <option value="">— Todo el campo —</option>
+                    {(campos.find(c => c.id === parseInt(formM.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero}</option>)}
+                  </select>
+                  <label style={lblM}>Campaña</label>
+                  <select value={formM.campana_id} onChange={e => setFormM({...formM, campana_id: e.target.value})} style={inpM}>
+                    <option value="">— Seleccioná —</option>
+                    {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={lblM}>Campo</label>
+                    <input type="text" value={formM.campo} onChange={e => setFormM({...formM, campo: e.target.value})} style={inpM} placeholder="ej. La Esperanza" />
+                  </div>
+                  <div>
+                    <label style={lblM}>N° Lote</label>
+                    <input type="text" value={formM.nro_lote} onChange={e => setFormM({...formM, nro_lote: e.target.value})} style={inpM} placeholder="ej. Lote 5" />
+                  </div>
                 </div>
-                <div>
-                  <label style={lblM}>N° Lote</label>
-                  <input type="text" value={formM.nro_lote} onChange={e => setFormM({...formM, nro_lote: e.target.value})} style={inpM} placeholder="ej. Lote 5" />
-                </div>
-              </div>
+              )}
               <label style={lblM}>Fecha</label>
               <input type="date" value={formM.fecha} onChange={e => setFormM({...formM, fecha: e.target.value})} style={inpM} />
               <label style={lblM}>Hectáreas *</label>
               <input type="number" value={formM.hectareas} onChange={e => setFormM({...formM, hectareas: e.target.value})} style={inpM} placeholder="ej. 120" inputMode="decimal" />
+              {formM.esParaAgricultura && (
+                <>
+                  <label style={lblM}>Costo total $ (opcional — se puede completar después)</label>
+                  <input type="number" value={formM.costo_total} onChange={e => setFormM({...formM, costo_total: e.target.value})} style={inpM} placeholder="Se puede dejar pendiente" inputMode="decimal" />
+                  <label style={lblM}>Productos usados (semilla, silobolsa, etc.)</label>
+                  {formM.productos.map((p, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+                      <select value={p.id} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], id: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 2 }}>
+                        <option value="">— Insumo —</option>
+                        {stockAgro.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
+                      </select>
+                      <input type="number" value={p.total} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], total: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 1 }} placeholder="Cant." inputMode="decimal" />
+                      <button onClick={() => setFormM({...formM, productos: formM.productos.filter((_, ix) => ix !== i)})} style={{ padding: '10px 12px', background: CM.redLight || '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 8, cursor: 'pointer' }}>✕</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setFormM({...formM, productos: [...formM.productos, { id: '', total: '' }]})}
+                    style={{ padding: '9px 14px', fontSize: 13, background: 'transparent', border: `1px dashed ${CM.border}`, color: CM.muted, borderRadius: 8, cursor: 'pointer', marginBottom: 12, width: '100%' }}>
+                    + Agregar producto
+                  </button>
+                </>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <label style={lblM}>Empleado 1</label>
