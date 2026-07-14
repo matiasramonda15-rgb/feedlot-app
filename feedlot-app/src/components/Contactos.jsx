@@ -114,8 +114,39 @@ export default function Contactos({ usuario }) {
       observaciones: formContacto.observaciones || null,
     }
     if (formContacto.id) {
+      // Si se está renombrando (no solo editando otro dato), hay que
+      // actualizar también el nombre "congelado" en cada transacción vieja
+      // que lo tenía guardado como texto — si no, el historial de ese
+      // contacto queda huérfano bajo el nombre anterior, como si fuera
+      // un contacto distinto y nuevo.
+      const contactoOriginal = contactos.find(c => c.id === formContacto.id)
+      const nombreViejo = contactoOriginal?.nombre
+      const nombreNuevo = formContacto.nombre
+      const seRenombro = nombreViejo && nombreNuevo && nombreViejo !== nombreNuevo
+
       const { error } = await supabase.from('contactos').update(datos).eq('id', formContacto.id)
       if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
+
+      if (seRenombro) {
+        const actualizaciones = [
+          supabase.from('ventas').update({ comprador: nombreNuevo }).eq('comprador', nombreViejo),
+          supabase.from('lotes').update({ procedencia: nombreNuevo }).eq('procedencia', nombreViejo),
+          supabase.from('compras_insumos').update({ proveedor: nombreNuevo }).eq('proveedor', nombreViejo),
+          supabase.from('ventas_activos').update({ comprador: nombreNuevo }).eq('comprador', nombreViejo),
+          supabase.from('ventas_granos').update({ comprador: nombreNuevo }).eq('comprador', nombreViejo),
+          supabase.from('servicios_terceros').update({ cliente: nombreNuevo }).eq('cliente', nombreViejo),
+          supabase.from('gastos_generales').update({ proveedor: nombreNuevo }).eq('proveedor', nombreViejo),
+          supabase.from('ordenes_trabajo').update({ proveedor: nombreNuevo }).eq('proveedor', nombreViejo),
+          supabase.from('cheques').update({ beneficiario: nombreNuevo }).eq('beneficiario', nombreViejo),
+          supabase.from('cheques').update({ librador: nombreNuevo }).eq('librador', nombreViejo),
+          supabase.from('creditos').update({ entidad: nombreNuevo }).eq('entidad', nombreViejo),
+        ]
+        const resultados = await Promise.all(actualizaciones)
+        const conError = resultados.filter(r => r.error)
+        if (conError.length > 0) {
+          alert(`El contacto se renombró, pero algunas transacciones viejas no se pudieron actualizar (quedaron con el nombre anterior). Puede que necesites usar "Fusionar" para juntarlas: ${conError.map(r => r.error.message).join(', ')}`)
+        }
+      }
     } else {
       const { error } = await supabase.from('contactos').insert({ ...datos, activo: true })
       if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
@@ -152,7 +183,7 @@ export default function Contactos({ usuario }) {
       const sumNegro = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
       const montoFact = tieneFacturado ? (sumFact + sumIva - sumCom - sumRet) : grupo.reduce((s, vv) => s + (vv.total || 0), 0)
       const fecha = v.fecha || v.creado_en?.split('T')[0]
-      if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (paralelo)', credito: sumNegro, debito: 0 }) }
+      if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (Caja 2)', credito: sumNegro, debito: 0 }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Venta hacienda', credito: montoFact, debito: 0 }) }
       // Cobros ya registrados contra esta venta — bajan lo que nos deben
       grupo.forEach(vv => {
@@ -169,7 +200,7 @@ export default function Contactos({ usuario }) {
       const montoFact = l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc : total
       const montoParalelo = l.monto_negro || 0
       const fecha = l.created_at?.split('T')[0]
-      if (esParalela) { if (montoParalelo > 0) movs.push({ fecha, tipo: 'Compra hacienda (paralelo)', credito: 0, debito: montoParalelo }) }
+      if (esParalela) { if (montoParalelo > 0) movs.push({ fecha, tipo: 'Compra hacienda (Caja 2)', credito: 0, debito: montoParalelo }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Compra hacienda', credito: 0, debito: montoFact }) }
       // Pagos ya realizados de esta compra — bajan lo que le debemos
       ;(pagosCompra[l.id] || []).forEach(p => {
@@ -192,7 +223,7 @@ export default function Contactos({ usuario }) {
       })
     } else {
       ;(data.ventasActivos || []).forEach(va => {
-        if (va.es_paralelo && va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'} (paralelo)`, credito: va.monto, debito: 0 })
+        if (va.es_paralelo && va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'} (Caja 2)`, credito: va.monto, debito: 0 })
       })
     }
     movs.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
@@ -253,9 +284,9 @@ export default function Contactos({ usuario }) {
         <div class="datos">
           ${contactoData?.cuit ? `CUIT: ${contactoData.cuit} · ` : ''}${contactoData?.localidad ? `${contactoData.localidad} · ` : ''}${contactoData?.telefono || ''}
         </div>
-        ${tabla(movOficial, 'Cuenta corriente oficial')}
+        ${tabla(movOficial, 'Caja 1')}
         ${movOficial.length === 0 ? '<p style="color:#9E9A94;font-size:13px;">Sin movimientos en la cuenta oficial.</p>' : ''}
-        ${tabla(movParalela, 'Cuenta paralela')}
+        ${tabla(movParalela, 'Caja 2')}
         <div class="fecha-emision">Emitido el ${new Date().toLocaleDateString('es-AR')}</div>
         <div style="text-align:center;"><button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button></div>
       </body></html>
@@ -451,7 +482,7 @@ export default function Contactos({ usuario }) {
         <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.25rem' }}>
           {[
             { key: 'oficial', label: 'Cuenta corriente' },
-            ...(puedeVerParalelo ? [{ key: 'paralela', label: 'Cuenta paralela' }] : []),
+            ...(puedeVerParalelo ? [{ key: 'paralela', label: 'Caja 2' }] : []),
             { key: 'pendientes', label: `Remitos pendientes${remitosSinPrecio.length > 0 ? ` (${remitosSinPrecio.length})` : ''}` },
             { key: 'retiro', label: `Pendiente de retiro${insumosPendRetiro.length > 0 ? ` (${insumosPendRetiro.length})` : ''}` },
             { key: 'mercaderia', label: `Mercadería entregada${mercaderiaEntregada.length > 0 ? ` (${mercaderiaEntregada.length})` : ''}` },
@@ -717,7 +748,7 @@ export default function Contactos({ usuario }) {
               {/* Encabezado estilo estado de cuenta */}
               <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{esParalela ? 'Cuenta paralela' : 'Cuenta corriente oficial'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{esParalela ? 'Caja 2' : 'Caja 1'}</div>
                   {contactoData?.cuit && <div style={{ fontSize: 11, color: S.muted, fontFamily: 'monospace' }}>CUIT: {contactoData.cuit}</div>}
                 </div>
                 <div style={{ textAlign: 'right' }}>

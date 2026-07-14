@@ -209,8 +209,8 @@ function Home({ usuario, nav, onLogout, datos }) {
     tareas.push({
       icon: '🧾',
       titulo: `${remitosSinPrecio.length} remito${remitosSinPrecio.length !== 1 ? 's' : ''} sin precio hace días`,
-      sub: `${nombres}${remitosSinPrecio.length > 3 ? '...' : ''} · completar en Insumos`,
-      pantalla: 'alimentacion', urgente: true,
+      sub: `${nombres}${remitosSinPrecio.length > 3 ? '...' : ''} · completar en Insumos, desde la compu`,
+      urgente: true,
     })
   }
   // Insumos ya pagados pero sin retirar hace rato — avisar para que alguien
@@ -222,8 +222,8 @@ function Home({ usuario, nav, onLogout, datos }) {
     tareas.push({
       icon: '📦',
       titulo: `${insumosSinRetirar.length} insumo${insumosSinRetirar.length !== 1 ? 's' : ''} pagado${insumosSinRetirar.length !== 1 ? 's' : ''} sin retirar`,
-      sub: `Hace más de 5 días · ${proveedores} · marcar retirado en Contactos`,
-      pantalla: 'alimentacion', urgente: true,
+      sub: `Hace más de 5 días · ${proveedores} · marcar retirado en Contactos, desde la compu`,
+      urgente: true,
     })
   }
 
@@ -246,10 +246,11 @@ function Home({ usuario, nav, onLogout, datos }) {
           <div key={i}
             style={{ background: C.surface, border: `1px solid ${t.urgente ? C.amber : C.border}`, borderRadius: 12, padding: '.9rem', marginBottom: '.65rem', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div onClick={() => { 
+                  if (!t.pantalla) return
                   if (t.tabDestino) { window.__sanidadTab = t.tabDestino; window.__alimentacionTab = t.tabDestino }
                   nav(t.pantalla) 
                 }}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: t.pantalla ? 'pointer' : 'default' }}>
               <div style={{ fontSize: 24 }}>{t.icon}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{t.titulo}</div>
@@ -266,9 +267,9 @@ function Home({ usuario, nav, onLogout, datos }) {
               }} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: C.greenLight || '#1A3D2E', border: `1px solid ${C.green}`, color: C.green, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 ✓ Pedido hecho
               </button>
-            ) : (
+            ) : t.pantalla ? (
               <div onClick={() => nav(t.pantalla)} style={{ fontSize: 18, color: C.muted, cursor: 'pointer' }}>›</div>
-            )}
+            ) : null}
           </div>
         ))}
         <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.07em', margin: '1rem 0 .65rem' }}>Acciones rapidas</div>
