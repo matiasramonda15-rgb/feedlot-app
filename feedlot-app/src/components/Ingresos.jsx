@@ -808,6 +808,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
                             setEditandoPrecio({...editandoPrecio, monto_total: monto, precio_compra: precio})
                           }} placeholder="Total a pagar" style={{...inpMono, border: `1px solid ${S.accent}`, fontWeight: 600, maxWidth: 280}} />
                         )}
+                        <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>Kilos × precio neto (sin IVA) — sin agregar IVA ni descontar nada, eso se carga después en "Gestión comercial".</div>
                       </div>
                     </div>
 
@@ -891,7 +892,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
                   const diffPct = diffKg !== null && kgFac > 0 ? (diffKg / kgFac * 100) : null
                   const alertaDiff = diffPct !== null && Math.abs(diffPct) > 3
                   const kgParaTotal = kgFac > 0 ? kgFac : kgBas
-                  const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
+                  const ivaMontoCalc = l.monto_facturado != null ? (l.iva_monto ?? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100)) : 0
                   const totalGC = (l.monto_facturado != null || l.monto_negro != null)
                     ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0)
                     : null
@@ -1368,7 +1369,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     // los gastos y da un número más chico que la realidad.
     const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
     if (totalFacturasReal > 0) return totalFacturasReal
-    const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || Math.round((l.monto_total_con_iva || 0) * (l.iva_pct || 10.5) / (100 + (l.iva_pct || 10.5))))
+    // El IVA solo corresponde si realmente hay una factura cargada (monto_facturado).
+    // Si la compra es informal (sin factura), no hay que "adivinar" un IVA a partir
+    // del total — eso sumaba un IVA fantasma encima de compras 100% en negro.
+    const ivaMontoCalc = l.monto_facturado != null ? (l.iva_monto ?? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100)) : 0
     const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
     const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
     return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
