@@ -1133,7 +1133,14 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       await supabase.from('ordenes_trabajo').update(upd).eq('id', id)
     }
 
-    const ordenesPagadas = seleccionadas.map(id => pendientes.find(o => o.id === id)).filter(Boolean)
+    const ordenesPagadas = seleccionadas.map(id => {
+      const o = pendientes.find(x => x.id === id)
+      if (!o) return null
+      // Si la orden no tenía costo cargado, usar el que se acaba de definir
+      // ahora al pagar — si no, el recibo sale con $0 en cada renglón.
+      const costoFinal = o.costo_total || (costosPend[id] ? parseFloat(costosPend[id]) : 0)
+      return { ...o, costo_total: costoFinal }
+    }).filter(Boolean)
     const pagosFinal = [...formPagoGrupal.pagos]
     setSeleccionadas([])
     setShowPagos(false)
@@ -2894,7 +2901,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           if (faltaPrecio) { alert('Falta cargar el precio de la factura en alguna de las compras seleccionadas.'); return }
           if (Math.abs(totalSel - totalPagGrupal) > 0.5) { alert(`El total de pagos no coincide`); return }
           setGuardandoPago(true)
-          const comprasPagadas = seleccionadas.map(id => ingresos.find(i => i.id === id)).filter(Boolean)
+          const comprasPagadas = seleccionadas.map(id => {
+            const i = ingresos.find(x => x.id === id)
+            if (!i) return null
+            // Si la compra no tenía precio cargado, usar el que se acaba de
+            // definir ahora al pagar — si no, el recibo sale con $0.
+            return { ...i, total: montoItem(i) }
+          }).filter(Boolean)
           const { error } = await pagarComprasPendientes(supabase, {
             seleccionadas, pendientes, precios: preciosPend, facturas: null,
             pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
