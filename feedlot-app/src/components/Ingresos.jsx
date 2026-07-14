@@ -218,7 +218,14 @@ export default function Ingresos({ usuario, mobile, nav }) {
     // facturado) — así queda bien sin importar desde qué pestaña se guarde último.
     // Si todavía no hay ninguna factura, se registra como informal/negro por defecto.
     const totalNetoFacturasExistente = (lote.facturas_feria || []).reduce((s, f) => s + (f.monto_neto || 0), 0)
-    const montoNegro = lote.facturas_feria?.length > 0 ? Math.max(0, montoTotal - totalNetoFacturasExistente) : montoTotal
+    const montoNegro = lote.facturas_feria?.length > 0
+      ? Math.max(0, montoTotal - totalNetoFacturasExistente)
+      // Compra simple (no feria): si ya hay una factura cargada (monto_facturado),
+      // hay que restar lo que esa factura ya cubre — si no, el total termina
+      // duplicado (factura + IVA + "negro" = el total contado dos veces).
+      : (lote.monto_facturado
+          ? Math.max(0, montoTotal - lote.monto_facturado - (lote.iva_monto || Math.round(lote.monto_facturado * (lote.iva_pct || 10.5) / 100)))
+          : montoTotal)
 
     const { error } = await supabase.from('lotes').update({
       kg_factura: kgFac,
