@@ -86,10 +86,22 @@ export default function AppMovil({ usuario, onLogout }) {
     if (ultimaPesadaFecha) {
       const d = new Date(ultimaPesadaFecha + 'T12:00:00')
       d.setDate(d.getDate() + 40)
-      proximaPesadaCalc = d.toISOString().split('T')[0]
+      proximaPesadaCalc = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     }
-    const hoyStr = new Date().toISOString().split('T')[0]
-    const revisionHoyHecha = (revisionesHoy || []).some(r => (r.creado_en || '').split('T')[0] === hoyStr)
+    // OJO: no usar toISOString() acá — convierte a UTC, y como Argentina va 3
+    // horas atrás, entre las 21:00 y la medianoche el sistema pensaría que ya
+    // es "mañana" (por eso una revisión hecha a la tarde/noche podía volver a
+    // aparecer como pendiente al ratito). Se arma la fecha con la hora local,
+    // y también se convierte creado_en a hora local antes de comparar — la
+    // fecha guardada en la base viene en UTC.
+    const fechaLocal = (fechaIso) => {
+      if (!fechaIso) return null
+      const d = new Date(fechaIso)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    const hoy = new Date()
+    const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+    const revisionHoyHecha = (revisionesHoy || []).some(r => fechaLocal(r.creado_en) === hoyStr)
     const diasDesde = (fecha) => fecha ? Math.floor((new Date(hoyStr) - new Date(fecha)) / (1000 * 60 * 60 * 24)) : null
     // Solo avisar de lo que ya lleva unos días — recién cargado no es urgente
     const remitosSinPrecioViejos = (remitosSinPrecio || []).filter(r => (diasDesde(r.fecha) || 0) >= 3)
@@ -248,7 +260,8 @@ function Home({ usuario, nav, onLogout, datos }) {
               <button onClick={async (e) => {
                 e.stopPropagation()
                 const hasta = new Date(); hasta.setDate(hasta.getDate() + 4)
-                await supabase.from(t.stockTabla).update({ pedido_realizado_hasta: hasta.toISOString().split('T')[0] }).eq('id', t.stockId)
+                const hastaStr = `${hasta.getFullYear()}-${String(hasta.getMonth() + 1).padStart(2, '0')}-${String(hasta.getDate()).padStart(2, '0')}`
+                await supabase.from(t.stockTabla).update({ pedido_realizado_hasta: hastaStr }).eq('id', t.stockId)
                 if (onReload) await onReload()
               }} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: C.greenLight || '#1A3D2E', border: `1px solid ${C.green}`, color: C.green, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 ✓ Pedido hecho
