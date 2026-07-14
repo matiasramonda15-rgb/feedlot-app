@@ -1384,20 +1384,25 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       const kg = parseFloat(f.kg_factura) || 0
       const precioNeto = parseFloat(f.precio_neto) || 0
       const vencsFiltrados = (f.vencimientos || []).filter(v => v.fecha || v.monto)
+      // Si se puso un 0 explícito en "Total esta factura", es la forma de decir
+      // "esto no está facturado" — manda toda esa parte a Caja 2, sin importar
+      // qué se haya llenado en kg/precio (eso puede quedar cargado solo como
+      // referencia de lo que se compró, sin que cuente como facturado).
+      const seDeclaroSinFacturar = f.total_factura_manual === '0' || f.total_factura_manual === 0
       // El monto neto sale de kg×precio; si no cargaron eso, se toma de la suma de los vencimientos cargados
-      const montoNeto = (kg && precioNeto) ? Math.round(kg * precioNeto) : vencsFiltrados.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0)
-      const ivaMonto = Math.round(montoNeto * IVA_PCT / 100)
+      const montoNeto = seDeclaroSinFacturar ? 0 : ((kg && precioNeto) ? Math.round(kg * precioNeto) : vencsFiltrados.reduce((s, v) => s + (parseFloat(v.monto) || 0), 0))
+      const ivaMonto = seDeclaroSinFacturar ? 0 : Math.round(montoNeto * IVA_PCT / 100)
       const totalManual = parseFloat(f.total_factura_manual) || 0
       // El total de la factura es el que cargás vos a mano (el real, de la factura en
       // papel); si todavía no lo cargaste, se usa neto+IVA como estimado provisorio.
       // La comisión y gastos de feria salen solos, de la diferencia entre ambos.
-      const totalFactura = totalManual > 0 ? totalManual : (montoNeto + ivaMonto)
-      const gastos = totalManual > 0 ? Math.max(0, totalManual - (montoNeto + ivaMonto)) : 0
+      const totalFactura = seDeclaroSinFacturar ? 0 : (totalManual > 0 ? totalManual : (montoNeto + ivaMonto))
+      const gastos = (!seDeclaroSinFacturar && totalManual > 0) ? Math.max(0, totalManual - (montoNeto + ivaMonto)) : 0
       return {
         proveedor: f.proveedor || null, cuit: f.cuit || null, localidad: f.localidad || null, condicion_iva: f.condicion_iva || null, cbu: f.cbu || null,
         nro_factura: f.nro_factura || null, feria_nombre: f.feria_nombre || null,
         kg_factura: kg || null, precio_neto: precioNeto || null, monto_neto: montoNeto, iva_monto: ivaMonto,
-        total_factura_manual: totalManual || null, gastos_total: gastos, total_factura: totalFactura,
+        total_factura_manual: (f.total_factura_manual !== '' && f.total_factura_manual != null) ? totalManual : null, gastos_total: gastos, total_factura: totalFactura,
         vencimientos: vencsFiltrados.map(v => ({ fecha: v.fecha || null, monto: parseFloat(v.monto) || 0, pagado: v.pagado || false })),
       }
     })
@@ -1465,10 +1470,27 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Facturas por proveedor (IVA {IVA_PCT}% incluido siempre)</div>
-          <button onClick={() => setFormFactura({...formFactura, facturas: [...facturas, { proveedor: '', cuit: '', localidad: '', condicion_iva: '', cbu: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', total_factura_manual: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]})}
-            style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
-            + Agregar factura
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={async () => {
+              if (!confirm(`¿Marcar esta compra como sin factura? Los $${(l.monto_total_con_iva || 0).toLocaleString('es-AR')} van enteros a Caja 2.`)) return
+              const { error } = await supabase.from('lotes').update({
+                monto_facturado: null, iva_monto: 0, monto_negro: l.monto_total_con_iva || 0,
+                facturas_feria: null, numero_factura: null,
+              }).eq('id', l.id)
+              if (error) { alert('Error: ' + error.message); return }
+              setEditandoFactura(null)
+              await cargarDatos()
+            }} style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.muted}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+              Sin factura — todo a Caja 2
+            </button>
+            <button onClick={() => setFormFactura({...formFactura, facturas: [...facturas, { proveedor: '', cuit: '', localidad: '', condicion_iva: '', cbu: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', total_factura_manual: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]})}
+              style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+              + Agregar factura
+            </button>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: S.hint, marginTop: -4, marginBottom: 10 }}>
+          Solo completá kg y precio de una factura acá si esa parte REALMENTE está facturada — no lo llenes "para que quede prolijo" si en realidad no hay factura, porque eso hace que el sistema lo cuente como facturado en vez de Caja 2.
         </div>
 
         {facturas.length === 0 && (
