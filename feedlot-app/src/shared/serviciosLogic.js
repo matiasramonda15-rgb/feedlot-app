@@ -6,16 +6,17 @@
 // servicio. Crear contactos de verdad es exclusivo del módulo Contactos.
 
 // datos: { campania, tipoServicio ('propio'|'tercero'), cliente, labor, cultivo,
-//          campo, nroLote, fecha, hectareas, empleado1, empleado2, observaciones }
-// Devuelve { error }
+//          campo, nroLote, fecha, hectareas, empleado1, empleado2, observaciones,
+//          total, precioHa, estadoPago }
+// Devuelve { data, error } — data es la fila creada (con su id)
 export async function registrarServicioTercero(supabase, datos) {
-  if (!datos.hectareas || !datos.labor) return { error: { message: 'Completá labor y hectáreas' } }
+  if (!datos.hectareas || !datos.labor) return { data: null, error: { message: 'Completá labor y hectáreas' } }
   const esPropio = datos.tipoServicio === 'propio'
-  if (!esPropio && !datos.cliente) return { error: { message: 'Ingresá el cliente' } }
+  if (!esPropio && !datos.cliente) return { data: null, error: { message: 'Ingresá el cliente' } }
 
   const clienteFinal = esPropio ? 'Ramonda Hnos SA' : (datos.cliente || '').trim()
 
-  const { error } = await supabase.from('servicios_terceros').insert({
+  const { data, error } = await supabase.from('servicios_terceros').insert({
     campania: datos.campania || null,
     cliente: clienteFinal,
     labor: datos.labor,
@@ -28,8 +29,10 @@ export async function registrarServicioTercero(supabase, datos) {
     empleado1: datos.empleado1 || null,
     empleado2: datos.empleado2 || null,
     observaciones: datos.observaciones || null,
+    total: datos.total || null,
+    precio_ha: datos.precioHa || null,
     estado: 'pendiente',
-    estado_pago: 'pendiente',
-  })
-  return { error }
+    estado_pago: datos.estadoPago || 'pendiente',
+  }).select().single()
+  return { data, error }
 }

@@ -53,6 +53,8 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [contactos, setContactos] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
   const [registros, setRegistros] = useState([])
+  const [campos, setCampos] = useState([])
+  const [stockAgro, setStockAgro] = useState([])
   const [descargasReg, setDescargasReg] = useState({})
   // Estado propio del modo celular
   const [tabM, setTabM] = useState('servicio')
@@ -76,7 +78,7 @@ export default function Servicios({ usuario, mobile, nav }) {
 
   // Form nuevo servicio
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+  const [form, setForm] = useState({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
   const [guardando, setGuardando] = useState(false)
 
   // Mano de obra
@@ -142,16 +144,20 @@ export default function Servicios({ usuario, mobile, nav }) {
     setCampanas(camps || [])
     const { data: emps } = await supabase.from('empleados').select('*').eq('activo', true).order('nombre')
     setEmpleados(emps || [])
-    const [{ data: s }, { data: ct }, { data: ch }, { data: regs }] = await Promise.all([
+    const [{ data: s }, { data: ct }, { data: ch }, { data: regs }, { data: cps }, { data: sa }] = await Promise.all([
       supabase.from('servicios_terceros').select('*').order('fecha', { ascending: false }),
       supabase.from('contactos').select('id, nombre').order('nombre'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera'),
       supabase.from('registros_mercaderia').select('*').order('created_at', { ascending: false }),
+      supabase.from('campos').select('*, lotes_agricolas(id, numero, superficie_ha)').eq('activo', true).order('nombre'),
+      supabase.from('stock_agro').select('*').order('insumo'),
     ])
     setServicios(s || [])
     setContactos(ct || [])
     setChequesCartera(ch || [])
     setRegistros(regs || [])
+    setCampos(cps || [])
+    setStockAgro(sa || [])
     // Cargar config mano de obra
     const { data: cmo } = await supabase.from('config_mano_obra').select('*').eq('activo', true).order('id')
     setConfigMO(cmo || [])
@@ -176,18 +182,60 @@ export default function Servicios({ usuario, mobile, nav }) {
   async function guardar() {
     if (!form.labor || !form.hectareas) { alert('Completá labor y hectáreas'); return }
     if (form.tipo_servicio === 'tercero' && !form.cliente) { alert('Ingresá el cliente'); return }
+    if (form.esParaAgricultura && !form.campo_id) { alert('Seleccioná el campo de Agricultura'); return }
     setGuardando(true)
     const clienteTexto = form.tipo_servicio === 'propio' ? null : form.cliente
-    const { error } = await registrarServicioTercero(supabase, {
+    const costoNum = form.esParaAgricultura ? (parseFloat(form.costo_total) || null) : null
+    const { data: servicioCreado, error } = await registrarServicioTercero(supabase, {
       campania: form.campania, tipoServicio: form.tipo_servicio, cliente: clienteTexto,
-      labor: form.labor, cultivo: form.cultivo, campo: form.campo, nroLote: form.nro_lote,
+      labor: form.labor, cultivo: form.cultivo,
+      campo: form.esParaAgricultura ? (campos.find(c => c.id === parseInt(form.campo_id))?.nombre || '') : form.campo,
+      nroLote: form.esParaAgricultura ? (campos.find(c => c.id === parseInt(form.campo_id))?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))?.numero || '') : form.nro_lote,
       fecha: form.fecha, hectareas: form.hectareas,
       empleado1: form.empleado1, empleado2: form.empleado2, observaciones: form.observaciones,
+      total: costoNum, precioHa: (costoNum && form.hectareas) ? Math.round(costoNum / parseFloat(form.hectareas)) : null,
+      // El precio no siempre lo carga quien registra el trabajo — si todavía
+      // no se sabe, queda pendiente para completarlo después desde la oficina.
+      estadoPago: (form.esParaAgricultura && costoNum) ? 'pagado' : 'pendiente',
     })
-    setGuardando(false)
-    if (error) { alert('Error: ' + error.message); return }
+    if (error) { alert('Error: ' + error.message); setGuardando(false); return }
+
+    // Si es para un lote de Agricultura, se refleja del otro lado como una
+    // orden de trabajo — con el mismo costo (sin duplicar caja: acá no se
+    // registró ningún movimiento) y descontando del stock los productos usados.
+    // Si todavía no hay precio, los dos quedan "pendiente" hasta completarlo.
+    if (form.esParaAgricultura) {
+      const tipoOrdenMap = { 'Siembra': 'Siembra', 'Cosecha': 'Cosecha', 'Pulverización': 'Pulverizacion', 'Fertilización': 'Fertilizacion', 'Roturación': 'Labranza', 'Rastreo': 'Labranza', 'Flete': 'Otro', 'Otro': 'Otro' }
+      const productosValidos = form.productos.filter(p => p.id && parseFloat(p.total) > 0)
+      const { data: ordenCreada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
+        campo_id: parseInt(form.campo_id), lote_id: form.lote_id ? parseInt(form.lote_id) : null,
+        campana_id: form.campana_id ? parseInt(form.campana_id) : null,
+        tipo: tipoOrdenMap[form.labor] || 'Otro', fecha: form.fecha,
+        descripcion: `Cargado desde Servicios — ${form.labor}`,
+        proveedor: null, es_propia: true,
+        superficie_ha: parseFloat(form.hectareas) || null,
+        productos: productosValidos.map(p => ({ id: p.id, total: p.total })),
+        costo_total: costoNum, costo_ha: (costoNum && form.hectareas) ? Math.round(costoNum / parseFloat(form.hectareas)) : null,
+        estado: 'completado', estado_pago: costoNum ? 'pagado' : 'pendiente',
+        observaciones: `Servicio interno #${servicioCreado?.id} — usa maquinaria de Servicios`,
+        registrado_por: usuario?.id,
+      }).select().single()
+      if (errOrden) {
+        alert('El servicio se guardó, pero no se pudo reflejar en Agricultura: ' + errOrden.message)
+      } else {
+        // Vincular servicio ↔ orden para poder completar el precio después, en los dos a la vez
+        await supabase.from('servicios_terceros').update({ orden_trabajo_id: ordenCreada?.id }).eq('id', servicioCreado?.id)
+        // Descontar del stock de Agricultura cada producto usado (esto pasa
+        // siempre, tenga precio o no — el insumo se usó físicamente igual)
+        for (const p of productosValidos) {
+          await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -parseFloat(p.total) })
+        }
+      }
+    }
+
     setShowForm(false)
-    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
+    setGuardando(false)
     await cargar()
   }
 
@@ -243,7 +291,7 @@ export default function Servicios({ usuario, mobile, nav }) {
           let pagoCajaId = null
           if (p.es_paralelo) {
             const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
-            if (ep) { alert('Error al registrar caja paralela: ' + ep.message); setGuardandoPago(false); return }
+            if (ep) { alert('Error al registrar Caja 2: ' + ep.message); setGuardandoPago(false); return }
             caja_paralela_id = cp?.id
             pagoCajaId = cp?.id
           } else {
@@ -306,7 +354,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     win.document.write(`<!DOCTYPE html><html><head><title>Recibo Servicios</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px}h2{margin-bottom:1rem}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5;font-weight:600}tfoot td{font-weight:700;background:#e8f4eb}.total{font-size:16px;font-weight:700;margin-top:1rem}@media print{button{display:none}}</style></head><body>
       <h2>Recibo de Servicios — Ramonda Hnos S.A.</h2>
       <p>Fecha: ${formPago.fecha} | Cliente: ${servicios.find(x => x.id === seleccionadas[0])?.cliente || ''}</p>
-      <table><thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Servicio/Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>Total c/IVA</th><th>Paralelo</th></tr></thead>
+      <table><thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Servicio/Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>Total c/IVA</th><th>Caja 2</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="5">TOTAL</td><td>$${totalNeto.toLocaleString('es-AR')}</td><td>$${totalConIva.toLocaleString('es-AR')}</td></tr></tfoot>
       </table>
@@ -870,18 +918,54 @@ export default function Servicios({ usuario, mobile, nav }) {
                     <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                   </div>
                 )}
+                {form.tipo_servicio === 'propio' && (
+                  <div style={{ gridColumn: '1 / 3' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={form.esParaAgricultura} onChange={e => setForm({ ...form, esParaAgricultura: e.target.checked, campo: '', nro_lote: '' })} />
+                      <span style={{ fontSize: 13 }}>🌾 Es para un lote de <strong>Agricultura</strong> — elegir campo/lote y qué se usó</span>
+                    </label>
+                  </div>
+                )}
                 <div>
                   <Lbl>Fecha</Lbl>
                   <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} style={inp} />
                 </div>
-                <div>
-                  <Lbl>Campo</Lbl>
-                  <input type="text" value={form.campo} onChange={e => setForm({ ...form, campo: e.target.value })} placeholder="ej. La Esperanza" style={inp} />
-                </div>
-                <div>
-                  <Lbl>N° Lote</Lbl>
-                  <input type="text" value={form.nro_lote} onChange={e => setForm({ ...form, nro_lote: e.target.value })} placeholder="ej. Lote 5" style={inp} />
-                </div>
+                {form.esParaAgricultura ? (
+                  <>
+                    <div>
+                      <Lbl>Campo *</Lbl>
+                      <select value={form.campo_id} onChange={e => setForm({ ...form, campo_id: e.target.value, lote_id: '' })} style={inp}>
+                        <option value="">— Seleccioná —</option>
+                        {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Lbl>Lote</Lbl>
+                      <select value={form.lote_id} onChange={e => setForm({ ...form, lote_id: e.target.value })} style={inp}>
+                        <option value="">— Todo el campo —</option>
+                        {(campos.find(c => c.id === parseInt(form.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Lbl>Campaña</Lbl>
+                      <select value={form.campana_id} onChange={e => setForm({ ...form, campana_id: e.target.value })} style={inp}>
+                        <option value="">— Seleccioná —</option>
+                        {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <Lbl>Campo</Lbl>
+                      <input type="text" value={form.campo} onChange={e => setForm({ ...form, campo: e.target.value })} placeholder="ej. La Esperanza" style={inp} />
+                    </div>
+                    <div>
+                      <Lbl>N° Lote</Lbl>
+                      <input type="text" value={form.nro_lote} onChange={e => setForm({ ...form, nro_lote: e.target.value })} placeholder="ej. Lote 5" style={inp} />
+                    </div>
+                  </>
+                )}
                 <div>
                   <Lbl>Hectáreas *</Lbl>
                   <input type="number" value={form.hectareas} onChange={e => setForm({ ...form, hectareas: e.target.value })} placeholder="ej. 120" style={inpMono} />
@@ -901,6 +985,33 @@ export default function Servicios({ usuario, mobile, nav }) {
                   </select>
                 </div>
               </div>
+
+              {form.esParaAgricultura && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '.75rem' }}>
+                    <div><Lbl>Costo total $ (valor del trabajo, para la rentabilidad del lote)</Lbl><input type="number" value={form.costo_total} onChange={e => setForm({ ...form, costo_total: e.target.value })} placeholder="ej. combustible + hs de trabajo" style={inpMono} /></div>
+                  </div>
+                  <Lbl>Productos usados en este lote (semilla, silobolsa, etc.)</Lbl>
+                  {form.productos.map((p, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                      <select value={p.id} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], id: e.target.value }; setForm({ ...form, productos: np }) }} style={inp}>
+                        <option value="">— Seleccioná el insumo —</option>
+                        {stockAgro.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad}) — stock: {s.cantidad?.toLocaleString('es-AR')}</option>)}
+                      </select>
+                      <input type="number" value={p.total} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], total: e.target.value }; setForm({ ...form, productos: np }) }} placeholder="Cantidad total" style={inpMono} />
+                      <button onClick={() => setForm({ ...form, productos: form.productos.filter((_, ix) => ix !== i) })} style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setForm({ ...form, productos: [...form.productos, { id: '', total: '' }] })}
+                    style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px dashed ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                    + Agregar producto
+                  </button>
+                  <div style={{ fontSize: 11, color: S.hint, marginTop: 8 }}>
+                    Se descuentan del stock de Agricultura al guardar. Para siembra, cargá acá la semilla; para cosecha, el silobolsa.
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={guardar} disabled={guardando}
                   style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -1038,6 +1149,22 @@ export default function Servicios({ usuario, mobile, nav }) {
                       </td>
                       <td style={{ ...td_, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
+                          {s.orden_trabajo_id && !s.total && (
+                            <button onClick={async () => {
+                              const val = prompt(`Precio del trabajo (${s.labor} — ${s.campo || 'Agricultura'}, ${s.hectareas} ha):`)
+                              if (!val) return
+                              const monto = parseFloat(val)
+                              if (!monto || monto <= 0) { alert('Ingresá un número válido'); return }
+                              const precioHa = s.hectareas ? Math.round(monto / s.hectareas) : null
+                              const { error: e1 } = await supabase.from('servicios_terceros').update({ total: monto, precio_ha: precioHa, estado_pago: 'pagado' }).eq('id', s.id)
+                              if (e1) { alert('Error al actualizar el servicio: ' + e1.message); return }
+                              const { error: e2 } = await supabase.from('ordenes_trabajo').update({ costo_total: monto, costo_ha: precioHa, estado_pago: 'pagado' }).eq('id', s.orden_trabajo_id)
+                              if (e2) alert('El servicio se actualizó, pero no se pudo actualizar la orden en Agricultura: ' + e2.message)
+                              await cargar()
+                            }} style={{ padding: '3px 8px', fontSize: 11, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}>
+                              💲 Completar precio
+                            </button>
+                          )}
                           <button onClick={() => { setEditandoId(s.id); setFormEdit({ ...s, hectareas: String(s.hectareas) }) }}
                             style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 4, cursor: 'pointer' }}>
                             ✏
@@ -1561,7 +1688,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                             let caja_oficial_id = null, caja_paralela_id = null
                             if (p.es_paralelo) {
                               const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-                              if (errCp) { alert('Error al registrar en caja paralela: ' + errCp.message); return }
+                              if (errCp) { alert('Error al registrar en Caja 2: ' + errCp.message); return }
                               caja_paralela_id = cp?.id
                             } else {
                               const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPagoMO.fecha, tipo: 'egreso', categoria: 'Mano de obra', descripcion: desc, monto, forma_pago: p.subtipo_cheque || p.tipo }).select().single()
