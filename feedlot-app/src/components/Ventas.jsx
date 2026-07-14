@@ -2210,7 +2210,12 @@ export default function Ventas({ usuario, mobile, nav }) {
                                       }
                                       if (esCheque && fp.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: fp.numero_cheque || null, banco: fp.banco || null, monto, fecha_emision: fp.fecha, fecha_cobro: fp.fecha_cobro_cheque || null, fecha_vencimiento: fp.fecha_vencimiento_cheque, librador: (fp.subtipo_cheque === 'tercero' ? fp.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: fp.forma_pago === 'e-cheq', pago_venta_id: pagoId })
                                     }
-                                    const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').eq('venta_id', v.id)
+                                    // Sumar los pagos de TODO el grupo (si la venta es de varios corrales
+                                    // juntos) — antes solo miraba los pagos de un corral puntual, así que
+                                    // el total nunca llegaba al 100% del grupo y la venta nunca pasaba a
+                                    // "cobrado" del todo, aunque ya se hubiera cobrado todo en la práctica.
+                                    const idsGrupo = grupo.map(vv => vv.id)
+                                    const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').in('venta_id', idsGrupo)
                                     const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0)
                                     if (totalPag >= totalRealGrupo * 0.99) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
                                     setRegistrandoPago(null)
