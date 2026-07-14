@@ -1,6 +1,7 @@
 import React from 'react'
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { registrarVenta } from '../shared/ventasLogic'
 
@@ -124,7 +125,7 @@ async function generarPdfVenta(titulo, filas, info) {
   doc.setTextColor(150, 150, 150)
   doc.text('Ramonda Hnos. S.A. — Sistema de gestión', 14, 285)
 
-  const nombreArchivo = titulo.replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().split('T')[0] + '.pdf'
+  const nombreArchivo = titulo.replace(/[^a-zA-Z0-9]/g, '_') + '_' + hoyLocal() + '.pdf'
   doc.save(nombreArchivo)
 }
 
@@ -162,7 +163,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
   const [form, setForm] = useState({
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: hoyLocal(),
     corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8',
     precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '',
     monto_facturado: '', iva_pct: '10.5', plazo_dias: '',
@@ -454,7 +455,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   }
 
   function resetNuevaVenta() {
-    setForm({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8', precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '', monto_facturado: '', iva_pct: '10.5', plazo_dias: '' })
+    setForm({ fecha: hoyLocal(), corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8', precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '', monto_facturado: '', iva_pct: '10.5', plazo_dias: '' })
     setCorralesVenta([{ corral_id: '', cantidad: '', kg_vivo: '' }])
     setPaso(1)
     setVentaConfirmada(null)
@@ -748,7 +749,7 @@ export default function Ventas({ usuario, mobile, nav }) {
               <div style={{ fontSize: 11, color: S.green, marginTop: 2 }}>Neto: ${neto.toLocaleString('es-AR')} + IVA: ${ivaMonto.toLocaleString('es-AR')}</div>
             </div>
             <div style={{ background: paralelo > 0 ? '#F0EAFB' : S.bg, border: `1px solid ${paralelo > 0 ? '#9F8ED4' : S.border}`, borderRadius: 6, padding: '10px 12px' }}>
-              <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Cuenta Paralela</div>
+              <div style={{ fontSize: 10, color: paralelo > 0 ? '#3D1A6B' : S.hint, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Caja 2</div>
               <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: paralelo > 0 ? '#3D1A6B' : S.hint }}>${paralelo.toLocaleString('es-AR')}</div>
               {montoTotal > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Total op: ${montoTotal.toLocaleString('es-AR')}</div>}
             </div>
@@ -778,7 +779,7 @@ export default function Ventas({ usuario, mobile, nav }) {
               <div>Retención: <strong style={{ fontFamily: 'monospace', color: S.red }}>-${retMonto.toLocaleString('es-AR')}</strong></div>
               <div style={{ fontWeight: 700, color: S.red, fontSize: 14, marginTop: 4 }}>
                 Neto a cobrar: ${(totalFact - descuento - retMonto).toLocaleString('es-AR')}
-                {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Paralelo: ${paralelo.toLocaleString('es-AR')}</span>}
+                {paralelo > 0 && <span style={{ color: '#3D1A6B', marginLeft: 12 }}>+ Caja 2: ${paralelo.toLocaleString('es-AR')}</span>}
               </div>
             </div>
           )}
@@ -1511,7 +1512,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                 <button onClick={resetNuevaVenta} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                   Ver historial de ventas
                 </button>
-                <button onClick={() => { setVentaConfirmada(null); setPaso(1); setForm({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8', precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '' }) }}
+                <button onClick={() => { setVentaConfirmada(null); setPaso(1); setForm({ fecha: hoyLocal(), corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8', precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '' }) }}
                   style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                   Nueva venta
                 </button>
@@ -2054,7 +2055,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden', marginBottom: 12, maxWidth: 480 }}>
                                   {pagosList.map((p, pi) => (
                                     <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosList.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                      <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralela ? ' · paralelo' : ''}</span>
+                                      <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralela ? ' · Caja 2' : ''}</span>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                         <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
                                         <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }} style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 14 }}>✕</button>
@@ -2064,7 +2065,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 </div>
                               )}
                               {!isReg ? (
-                              <button onClick={() => { setRegistrandoPago(rowKey); setFormPagos([{ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }]) }}
+                              <button onClick={() => { setRegistrandoPago(rowKey); setFormPagos([{ monto: saldo > 0 ? String(Math.round(saldo)) : '', forma_pago: 'transferencia', fecha: hoyLocal(), numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }]) }}
                                 style={{ fontSize: 10, padding: '3px 8px', background: '#E8EFF8', border: '1px solid #1A3D6B', color: '#1A3D6B', borderRadius: 4, cursor: 'pointer', width: '100%' }}>
                                 + Registrar pago
                               </button>
@@ -2117,7 +2118,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                   <div style={{ gridColumn: '1/-1' }}>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3D1A6B', cursor: 'pointer' }}>
                                       <input type="checkbox" checked={fp.es_paralela || false} onChange={e => setFp({ es_paralela: e.target.checked })} />
-                                      Cobro en cuenta paralela
+                                      Cobro en Caja 2
                                     </label>
                                   </div>
                                   {/* Cheque recibido - datos del cheque que nos entregan */}
@@ -2169,7 +2170,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                               </div>
                               )
                             })}
-                            <button onClick={() => setFormPagos([...formPagos, { monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }])}
+                            <button onClick={() => setFormPagos([...formPagos, { monto: '', forma_pago: 'transferencia', fecha: hoyLocal(), numero_cheque: '', banco: '', fecha_cobro_cheque: '', fecha_vencimiento_cheque: '', es_paralela: false, observaciones: '', subtipo_cheque: '', librador_real: '' }])}
                               style={{ width: '100%', padding: '6px', fontSize: 11, fontWeight: 600, background: 'transparent', border: '1px dashed #85B7EB', color: '#1A3D6B', borderRadius: 5, cursor: 'pointer', marginBottom: 8 }}>
                               + Agregar otra forma de pago
                             </button>

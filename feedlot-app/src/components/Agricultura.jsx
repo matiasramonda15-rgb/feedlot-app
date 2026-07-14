@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
@@ -254,7 +255,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
   const [editando, setEditando] = useState(null)
@@ -454,7 +455,7 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ nombre: '', año_inicio: new Date().getFullYear(), año_fin: new Date().getFullYear() + 1 })
   const [guardando, setGuardando] = useState(false)
@@ -984,7 +985,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [tabInner, setTabInner] = useState('ordenes')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
-    campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0],
+    campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(),
     descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '',
     productos: [], gastos_propios: [],
     costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false,
@@ -996,7 +997,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // Pagos
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
   const [costosPend, setCostosPend] = useState({})
@@ -1083,7 +1084,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (!mobile) await cargar() // en el celular, la recarga se hace recién al volver al inicio (ver más abajo), para no remontar el formulario y perder la confirmación
     setShowForm(false)
     if (mobile) setOrdenGuardadaM(ordenInsertada)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: new Date().toISOString().split('T')[0], descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(), descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false })
     setGuardando(false)
   }
 
@@ -1136,7 +1137,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     const pagosFinal = [...formPagoGrupal.pagos]
     setSeleccionadas([])
     setShowPagos(false)
-    setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
+    setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
     setCostosPend({})
     setGuardandoPago(false)
     await cargar()
@@ -1747,9 +1748,9 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   async function guardar() {
@@ -1775,7 +1776,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
     if (error) { alert('Error al guardar la cosecha: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -1925,9 +1926,9 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_ORDEN }] })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
 
@@ -1975,7 +1976,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: new Date().toISOString().split('T')[0], kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -2108,7 +2109,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
 // ── TAB GASTOS ──
 function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: hoyLocal(), proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
   const [chequesCartera, setChequesCartera] = useState([])
@@ -2170,7 +2171,7 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: hoyLocal(), proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
     setGuardando(false)
   }
 
@@ -2332,7 +2333,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pagoAbierto, setPagoAbierto] = useState(null) // id del vencimiento
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
+  const [formPago, setFormPago] = useState({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
 
@@ -2413,7 +2414,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     const pagosFinal = [...formPago.pagos]
     const fechaPago = formPago.fecha
     setPagoAbierto(null)
-    setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
+    setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
     setGuardandoPago(false)
     await cargarVencimientos()
     await cargar()
@@ -2452,7 +2453,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
       campo: c,
       fecha,
       diasHasta: Math.round((fecha - hoy) / 86400000),
-      yaRegistrado: vencimientos.some(v => v.campo_id === c.id && v.fecha_vencimiento === fecha.toISOString().split('T')[0])
+      yaRegistrado: vencimientos.some(v => v.campo_id === c.id && v.fecha_vencimiento === fechaLocal(fecha))
     }))
   }).flat().filter(v => v.diasHasta <= 30 && !v.yaRegistrado).sort((a, b) => a.diasHasta - b.diasHasta)
 
@@ -2548,7 +2549,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                               {v.pagos_detalle && <button onClick={() => generarReciboArriendo(v, campo, v.pagos_detalle)}
                                 style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo</button>}
                             </div>
-                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
+                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
                               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                               💳 Registrar pago
                             </button>
@@ -2694,13 +2695,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagosPend, setShowPagosPend] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_AGRO }] })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
   const [preciosPend, setPreciosPend] = useState({})
   const [formCompra, setFormCompra] = useState({
     agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
-    fecha: new Date().toISOString().split('T')[0], proveedor: '',
+    fecha: hoyLocal(), proveedor: '',
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
     numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
   })
@@ -2864,7 +2865,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     }
 
     setShowFormCompra(false)
-    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: new Date().toISOString().split('T')[0], proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
+    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
@@ -2906,7 +2907,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
           setSeleccionadas([])
           setShowPagosPend(false)
-          setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT_AGRO }] })
+          setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] })
           setPreciosPend({})
           setGuardandoPago(false)
           await cargar()
@@ -3552,7 +3553,7 @@ function TabLluvias({ usuario }) {
   const [lluvias, setLluvias] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ fecha: new Date().toISOString().split('T')[0], mm: '', observaciones: '' })
+  const [form, setForm] = useState({ fecha: hoyLocal(), mm: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [filtroAnio, setFiltroAnio] = useState(new Date().getFullYear())
 
@@ -3573,7 +3574,7 @@ function TabLluvias({ usuario }) {
     await supabase.from('lluvias').insert({ fecha: form.fecha, mm: parseFloat(form.mm), observaciones: form.observaciones || null, registrado_por: usuario?.id })
     await cargar()
     setShowForm(false)
-    setForm({ fecha: new Date().toISOString().split('T')[0], mm: '', observaciones: '' })
+    setForm({ fecha: hoyLocal(), mm: '', observaciones: '' })
     setGuardando(false)
   }
 

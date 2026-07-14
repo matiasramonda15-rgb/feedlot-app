@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
@@ -98,15 +99,15 @@ export default function Insumos({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [pagarInline, setPagarInline] = useState(null)
-  const [formPagoInline, setFormPagoInline] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
+  const [formPagoInline, setFormPagoInline] = useState({ fecha: hoyLocal(), tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
   const [preciosGrupal, setPreciosGrupal] = useState({})
   const [facturasGrupal, setFacturasGrupal] = useState({})
   const [showPagosPend, setShowPagosPend] = useState(false)
-  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
+  const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: hoyLocal(),
     tipo: 'alimentacion',
     insumo_id: '',
     insumo_nombre: '',
@@ -251,7 +252,7 @@ export default function Insumos({ usuario }) {
 
     setShowForm(false)
     setPagarAhora(true)
-    setForm({ fecha: new Date().toISOString().split('T')[0], tipo: 'alimentacion', insumo_id: '', insumo_nombre: '', cantidad: '', unidad: 'kg', precio_unitario: '', total: '', proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
+    setForm({ fecha: hoyLocal(), tipo: 'alimentacion', insumo_id: '', insumo_nombre: '', cantidad: '', unidad: 'kg', precio_unitario: '', total: '', proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
     setGuardando(false)
     await cargar()
   }
@@ -381,7 +382,7 @@ export default function Insumos({ usuario }) {
                     setPreciosGrupal({})
                     setFacturasGrupal({})
                     setShowPagosPend(false)
-                    setFormPagoGrupal({ fecha: new Date().toISOString().split('T')[0], pagos: [{ ...PAGO_INIT }], contacto_id: '' })
+                    setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
                     setGuardandoPago(false)
                     await cargar()
                   }} disabled={guardandoPago}
@@ -438,7 +439,7 @@ export default function Insumos({ usuario }) {
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                               🖨️ Recibo
                             </button>
-                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: new Date().toISOString().split('T')[0], tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: c.cuit || '', iva: c.iva || '', cbu: c.cbu || '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] }) }}
+                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: hoyLocal(), tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: c.cuit || '', iva: c.iva || '', cbu: c.cbu || '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] }) }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                               💳 Pagar
                             </button>

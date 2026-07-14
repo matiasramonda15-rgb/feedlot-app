@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Btn, Loader } from './UI'
 import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
 
@@ -77,7 +78,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
   const [productos, setProductos] = useState([])
   const [revState, setRevState] = useState([])
   const [showFormMort, setShowFormMort] = useState(false)
-  const [formMort, setFormMort] = useState({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
+  const [formMort, setFormMort] = useState({ fecha: hoyLocal(), corral_id: '', cantidad: '1', causa: '' })
   const [guardandoMort, setGuardandoMort] = useState(false)
   const [vacunacionLote, setVacunacionLote] = useState({}) // { [lote_id]: { vacunas: [{prod_id, dosis}], guardando, confirmada, resumen } }
   const [showFormStockSan, setShowFormStockSan] = useState(false)
@@ -124,7 +125,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
     if (errCorral) { alert('La muerte se registró, pero no se pudo descontar del corral: ' + errCorral.message) }
     await cargarDatos()
     setShowFormMort(false)
-    setFormMort({ fecha: new Date().toISOString().split('T')[0], corral_id: '', cantidad: '1', causa: '' })
+    setFormMort({ fecha: hoyLocal(), corral_id: '', cantidad: '1', causa: '' })
     setGuardandoMort(false)
   }
 

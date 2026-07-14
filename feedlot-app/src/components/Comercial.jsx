@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 
 const S = {
@@ -118,7 +119,7 @@ export default function Comercial({ usuario }) {
   const [tab, setTab] = useState('caja_oficial')
   const [dolares, setDolares] = useState([])
   const [showFormDolar, setShowFormDolar] = useState(false)
-  const [formDolar, setFormDolar] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
+  const [formDolar, setFormDolar] = useState({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
   const [guardandoDolar, setGuardandoDolar] = useState(false)
   const [tcActual, setTcActual] = useState('')
   const [loading, setLoading] = useState(true)
@@ -138,8 +139,8 @@ export default function Comercial({ usuario }) {
   const [showFormPar, setShowFormPar] = useState(false)
   const [showFormContacto, setShowFormContacto] = useState(false)
 
-  const [formOf, setFormOf] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', beneficiario: '' })
-  const [formPar, setFormPar] = useState({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', descripcion: '', monto: '', observaciones: '' })
+  const [formOf, setFormOf] = useState({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', beneficiario: '' })
+  const [formPar, setFormPar] = useState({ fecha: hoyLocal(), tipo: 'ingreso', descripcion: '', monto: '', observaciones: '' })
   const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'comprador_hacienda', cuit: '', telefono: '', email: '', banco: '', cbu: '', observaciones: '' })
 
   useEffect(() => { cargar() }, [])
@@ -173,7 +174,7 @@ export default function Comercial({ usuario }) {
     const monto_ars = tc ? Math.round(parseFloat(formDolar.monto_usd) * tc) : (formDolar.monto_ars ? parseFloat(formDolar.monto_ars) : null)
     const desc = `${formDolar.categoria} · U$S ${parseFloat(formDolar.monto_usd).toLocaleString('es-AR')}${formDolar.descripcion ? ' · ' + formDolar.descripcion : ''}`
 
-    // Registrar en caja paralela para compras y ventas de USD
+    // Registrar en Caja 2 para compras y ventas de USD
     let caja_paralela_id = null
     // Compra USD → egreso de pesos (sale plata para comprar dólares)
     // Venta USD → ingreso de pesos (entra plata al vender dólares)
@@ -191,7 +192,7 @@ export default function Comercial({ usuario }) {
       }).select().single()
       caja_paralela_id = cp?.id
     } else if (tipoCaja && !monto_ars) {
-      alert('⚠ Atención: no se ingresó tipo de cambio, por lo que no se registró movimiento en caja paralela. Podés registrarlo manualmente.')
+      alert('⚠ Atención: no se ingresó tipo de cambio, por lo que no se registró movimiento en Caja 2. Podés registrarlo manualmente.')
     }
 
     const { error } = await supabase.from('caja_dolares').insert({
@@ -207,7 +208,7 @@ export default function Comercial({ usuario }) {
     })
     if (error) { alert('Error: ' + error.message); setGuardandoDolar(false); return }
     setShowFormDolar(false)
-    setFormDolar({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
+    setFormDolar({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Compra de dólares', descripcion: '', monto_usd: '', tipo_cambio: '', monto_ars: '' })
     setGuardandoDolar(false)
     await cargar()
   }
@@ -239,7 +240,7 @@ export default function Comercial({ usuario }) {
     }
     await cargar()
     setShowFormOf(false)
-    setFormOf({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', beneficiario: '' })
+    setFormOf({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', beneficiario: '' })
     setGuardando(false)
   }
 
@@ -250,7 +251,7 @@ export default function Comercial({ usuario }) {
     if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormPar(false)
-    setFormPar({ fecha: new Date().toISOString().split('T')[0], tipo: 'ingreso', descripcion: '', monto: '', observaciones: '' })
+    setFormPar({ fecha: hoyLocal(), tipo: 'ingreso', descripcion: '', monto: '', observaciones: '' })
     setGuardando(false)
   }
 

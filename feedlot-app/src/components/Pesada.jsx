@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { confirmarPesadaClasificacion, eliminarPesadaClasificacion } from '../shared/pesadaLogic'
 
@@ -81,7 +82,7 @@ export default function Pesada({ usuario, mobile, nav }) {
   const [corrales, setCorrales] = useState([])
   const [pesadasHist, setPesadasHist] = useState([])
   const [proximaPesada, setProximaPesada] = useState(null)
-  const [fechaPesada, setFechaPesada] = useState(new Date().toISOString().split('T')[0])
+  const [fechaPesada, setFechaPesada] = useState(hoyLocal())
   const [pesos, setPesos] = useState(Array(20).fill(''))
   const [filasExtra, setFilasExtra] = useState(0)
   const [guardando, setGuardando] = useState(false)
@@ -108,7 +109,7 @@ export default function Pesada({ usuario, mobile, nav }) {
     if (ultimaFecha) {
       const d = new Date(ultimaFecha + 'T12:00:00')
       d.setDate(d.getDate() + 40)
-      setProximaPesada(d.toISOString().split('T')[0])
+      setProximaPesada(fechaLocal(d))
     } else {
       setProximaPesada(null)
     }

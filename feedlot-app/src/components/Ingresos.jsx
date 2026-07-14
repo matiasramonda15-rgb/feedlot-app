@@ -1,6 +1,7 @@
 // v3 - reescrito desde cero
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
@@ -90,7 +91,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   // { id, kg_factura, precio_compra, monto_total, plazo_dias, comision_monto, comision_a_quien, comision_es_paralela }
 
   // Estado pagos
-  const [formPagoCompra, setFormPagoCompra] = useState({ monto: '', forma_pago: 'transferencia', fecha: new Date().toISOString().split('T')[0], numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', es_negro: false })
+  const [formPagoCompra, setFormPagoCompra] = useState({ monto: '', forma_pago: 'transferencia', fecha: hoyLocal(), numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', es_negro: false })
 
   // Calculadora
   const [calc, setCalc] = useState({ precio_venta: '', kg_venta: '', desbaste_venta: '8', kg_compra: '', conversion_mf: '6.8', aumento_diario: '1.25', costo_dieta: '220', sanidad_animal: '9500', gastos_fijos_mes: '20000', flete_compra: '', flete_venta: '', comision_compra_pct: '', comision_venta_pct: '', margen_deseado: '15' })
@@ -364,7 +365,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   // Detalle por mes
   const ingresosPorMes = {}
   lotes.forEach(l => {
-    const fecha = l.created_at ? new Date(l.created_at) : new Date((l.fecha_ingreso || new Date().toISOString().split('T')[0]) + 'T12:00:00')
+    const fecha = l.created_at ? new Date(l.created_at) : new Date((l.fecha_ingreso || hoyLocal()) + 'T12:00:00')
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
     if (!ingresosPorMes[key]) ingresosPorMes[key] = { cantidad: 0, ingresos: 0, kgTotal: 0, precioSum: 0, precioCount: 0 }
     ingresosPorMes[key].cantidad += l.cantidad || 0
@@ -1200,7 +1201,7 @@ function generarReciboCompra(lote, pagos, corrales) {
     const esParalelo = p.es_paralelo || p.es_negro
     const medioCheque = tipo === 'cheque' ? 'CHEQUE' : 'E-CHEQ'
     let desc = tipo === 'transferencia' ? 'TRANSFERENCIA' : tipo === 'efectivo' ? 'EFECTIVO' : tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : subtipo === 'propio' ? `${medioCheque} PROPIO` : subtipo === 'tercero' ? `${medioCheque} TERCERO` : tipo.toUpperCase()
-    if (esParalelo) desc += ' (PARALELO)'
+    if (esParalelo) desc += ' (CAJA 2)'
 
     // E-cheq propio — usa cheque_propio (nuevo) o campos legacy
     if (subtipo === 'propio') {
@@ -1328,7 +1329,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   const [chequesCartera, setChequesCartera] = useState([])
   // (PAGO_INIT ahora viene del módulo compartido ./PagoFormulario)
   const [registrandoPago, setRegistrandoPago] = useState(null)
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], pagos: [{...PAGO_INIT}] })
+  const [formPago, setFormPago] = useState({ fecha: hoyLocal(), pagos: [{...PAGO_INIT}] })
   const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
@@ -1592,7 +1593,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
               <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>${totalFacturaTodo.toLocaleString('es-AR')}</div>
             </div>
             <div>
-              <div style={{ fontSize: 10, color: paralelo > 0 ? S.purple : S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Paralelo</div>
+              <div style={{ fontSize: 10, color: paralelo > 0 ? S.purple : S.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Caja 2</div>
               <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: paralelo > 0 ? S.purple : S.hint, background: paralelo > 0 ? '#F3E8FF' : 'transparent', padding: '2px 6px', borderRadius: 4 }}>
                 {totalOperacion > 0 ? `$${paralelo.toLocaleString('es-AR')}` : '—'}
               </div>
@@ -1664,7 +1665,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       if (pago.tipo !== 'canje') {
         if (pago.es_paralelo) {
           const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
-          if (errCp) { alert('El pago se registró, pero no se pudo cargar en caja paralela: ' + errCp.message); setGuardando(false); return }
+          if (errCp) { alert('El pago se registró, pero no se pudo cargar en Caja 2: ' + errCp.message); setGuardando(false); return }
           pagoCajaId = cp?.id || null
         } else {
           const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Pago compra hacienda', descripcion: desc, monto, forma_pago: formaPago, pago_compra_id: pagoInsertado?.id }).select().single()
@@ -1701,7 +1702,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     }
 
     setRegistrandoPago(null)
-    setFormPago({ fecha: new Date().toISOString().split('T')[0], vencimientos_sel: [], pagos: [{...PAGO_INIT}] })
+    setFormPago({ fecha: hoyLocal(), vencimientos_sel: [], pagos: [{...PAGO_INIT}] })
     setGuardando(false)
     await cargarDatos()
     await cargarPagos()
@@ -1911,7 +1912,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                                 {pagos.map((p, pi) => (
                                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagos.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                    <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · paralelo' : ''}</span>
+                                    <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                       <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
                                       <button onClick={() => eliminarPago(p, l, pagos, total)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
@@ -1927,7 +1928,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                 style={{ padding: '7px 14px', fontSize: 12, background: S.surface, border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer' }}>🖨️ Recibo</button>
                             )}
                             {!isReg && l.precio_compra && (
-                              <button onClick={() => { setRegistrandoPago(l.id); setFormPago({ fecha: new Date().toISOString().split('T')[0], cuota_idx: null, vencimientos_sel: [], pagos: [{...PAGO_INIT, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
+                              <button onClick={() => { setRegistrandoPago(l.id); setFormPago({ fecha: hoyLocal(), cuota_idx: null, vencimientos_sel: [], pagos: [{...PAGO_INIT, monto: saldo > 0 ? String(Math.round(saldo)) : ''}] }) }}
                                 style={{ flex: 1, padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 6, cursor: 'pointer' }}>+ Registrar pago</button>
                             )}
                           </div>

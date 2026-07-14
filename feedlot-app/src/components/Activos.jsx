@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
 
@@ -42,7 +43,7 @@ export default function Activos({ usuario }) {
   const [activos, setActivos] = useState([])
   const [contactos, setContactos] = useState([])
   const [vendiendoActivo, setVendiendoActivo] = useState(null)
-  const [formVentaActivo, setFormVentaActivo] = useState({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', es_paralelo: false })
+  const [formVentaActivo, setFormVentaActivo] = useState({ comprador: '', monto: '', fecha: hoyLocal(), observaciones: '', es_paralelo: false })
   const [retiros, setRetiros] = useState([])
   const [guardando, setGuardando] = useState(false)
   const [showFormActivo, setShowFormActivo] = useState(false)
@@ -54,14 +55,14 @@ export default function Activos({ usuario }) {
   const [cuotasForm, setCuotasForm] = useState([{ fecha: '', monto: '' }])
   const [guardandoCredito, setGuardandoCredito] = useState(false)
   const [creditoSelId, setCreditoSelId] = useState(null)
-  const [formPagoCredito, setFormPagoCredito] = useState({ fecha: new Date().toISOString().split('T')[0], monto: '', nro_cuota: '', es_paralelo: false, observaciones: '' })
+  const [formPagoCredito, setFormPagoCredito] = useState({ fecha: hoyLocal(), monto: '', nro_cuota: '', es_paralelo: false, observaciones: '' })
   const [guardandoPagoCredito, setGuardandoPagoCredito] = useState(false)
   const [showFormRetiro, setShowFormRetiro] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
 
   const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0, vida_util_anios: 10 })
-  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
+  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
 
   useEffect(() => { cargar() }, [])
 
@@ -115,7 +116,7 @@ export default function Activos({ usuario }) {
     if (activo) await supabase.from('activos').update({ estado: 'vendido' }).eq('id', activo.id)
     await cargar()
     setVendiendoActivo(null)
-    setFormVentaActivo({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', activoNombreManual: '', es_paralelo: false })
+    setFormVentaActivo({ comprador: '', monto: '', fecha: hoyLocal(), observaciones: '', activoNombreManual: '', es_paralelo: false })
     setGuardando(false)
     alert('Venta registrada. El monto ya figura como deuda del comprador en su cuenta corriente, en Contactos.')
   }
@@ -151,7 +152,7 @@ export default function Activos({ usuario }) {
     if (formRetiro.no_afecta_caja) {
       generarReciboRetiro({ ...formRetiro, monto, fecha: formRetiro.fecha })
     }
-    setFormRetiro({ socio: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
+    setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
     setGuardando(false)
   }
 
@@ -233,7 +234,7 @@ export default function Activos({ usuario }) {
     const cuotasPagadas = pagos.filter(p => p.estado === 'pagado').length + 1
     const { error: errCredito } = await supabase.from('creditos').update({ saldo_pendiente: Math.max(0, credito.monto_total - totalPagado), cuotas_pagadas: cuotasPagadas, estado: totalPagado >= credito.monto_total ? 'cancelado' : 'activo' }).eq('id', credito.id)
     if (errCredito) alert('La cuota se marcó como pagada, pero no se pudo actualizar el saldo del crédito: ' + errCredito.message)
-    setFormPagoCredito({ fecha: new Date().toISOString().split('T')[0], monto: '', es_paralelo: false })
+    setFormPagoCredito({ fecha: hoyLocal(), monto: '', es_paralelo: false })
     setGuardandoPagoCredito(false)
     await cargar()
   }
@@ -395,7 +396,7 @@ export default function Activos({ usuario }) {
                   style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                   Guardar venta
                 </button>
-                <button onClick={() => { setVendiendoActivo(null); setFormVentaActivo({ comprador: '', monto: '', fecha: new Date().toISOString().split('T')[0], observaciones: '', activoNombreManual: '' }) }}
+                <button onClick={() => { setVendiendoActivo(null); setFormVentaActivo({ comprador: '', monto: '', fecha: hoyLocal(), observaciones: '', activoNombreManual: '' }) }}
                   style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
                   Cancelar
                 </button>
@@ -780,7 +781,7 @@ export default function Activos({ usuario }) {
                                 </td>
                                 <td style={{ padding: '7px 10px' }}>
                                   {p.estado !== 'pagado' && c.estado === 'activo' && (
-                                    <button onClick={() => { setCreditoSelId(creditoSelId === p.id ? null : p.id); setFormPagoCredito({ fecha: new Date().toISOString().split('T')[0], es_paralelo: false }) }}
+                                    <button onClick={() => { setCreditoSelId(creditoSelId === p.id ? null : p.id); setFormPagoCredito({ fecha: hoyLocal(), es_paralelo: false }) }}
                                       style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
                                       💳 Pagar
                                     </button>
@@ -885,7 +886,7 @@ export default function Activos({ usuario }) {
                 {!formRetiro.no_afecta_caja && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <input type="checkbox" id="paralelo_retiro" checked={formRetiro.es_paralelo} onChange={e => setFormRetiro({...formRetiro, es_paralelo: e.target.checked})} />
-                    <label htmlFor="paralelo_retiro" style={{ fontSize: 13, cursor: 'pointer' }}>Paralelo (caja paralela)</label>
+                    <label htmlFor="paralelo_retiro" style={{ fontSize: 13, cursor: 'pointer' }}>Caja 2</label>
                   </div>
                 )}
               </div>
@@ -1007,7 +1008,7 @@ export default function Activos({ usuario }) {
                                 ['Socio', r.socio],
                                 ['Fecha', new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR')],
                                 ['Concepto', r.concepto || '—'],
-                                ['Forma de pago', `${r.forma_pago}${r.caja_paralela_id ? ' (paralelo)' : ''}`],
+                                ['Forma de pago', `${r.forma_pago}${r.caja_paralela_id ? ' (Caja 2)' : ''}`],
                                 ['Observaciones', r.observaciones || null],
                               ],
                               montoLabel: 'MONTO RETIRADO',

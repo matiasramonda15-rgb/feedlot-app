@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Btn, Loader } from './UI'
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
 
@@ -237,7 +238,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   const [caps, setCaps] = useState([CAP_MIXER, CAP_MIXER, CAP_MIXER])
   const [editando, setEditando] = useState({})
   const [showFormIngreso, setShowFormIngreso] = useState(false)
-  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '', retirado: true })
+  const [formIngreso, setFormIngreso] = useState({ insumo: 'Rollo (heno)', fecha: hoyLocal(), cantidad: '', proveedor: '', remito: '', pct_ms: '', retirado: true })
   const [guardando, setGuardando] = useState(false)
   const [confirmado, setConfirmado] = useState(false)
   const [kgsHoy, setKgsHoy] = useState([[800, 2400], [840, 900], [1160, 1225]])
@@ -318,7 +319,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   }
 
   const fechaTermC = cfgCapState.find(c => c.clave === 'fecha_term_c')?.valor || null
-  const hoyStr = new Date().toISOString().split('T')[0]
+  const hoyStr = hoyLocal()
   const cEnTerminacion = fechaTermC && hoyStr >= fechaTermC
 
   const RANGOS_RECRIA = cEnTerminacion ? ['A','B'] : ['A','B','C']
@@ -457,7 +458,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     if (errCompra) { alert('El stock se actualizó, pero no se pudo guardar el registro de compra: ' + errCompra.message); setGuardando(false); return }
     await cargarDatos()
     setShowFormIngreso(false)
-    setFormIngreso({ insumo: 'Rollo (heno)', fecha: new Date().toISOString().split('T')[0], cantidad: '', proveedor: '', remito: '', pct_ms: '', retirado: true })
+    setFormIngreso({ insumo: 'Rollo (heno)', fecha: hoyLocal(), cantidad: '', proveedor: '', remito: '', pct_ms: '', retirado: true })
     setGuardando(false)
   }
 
@@ -570,7 +571,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
 
     async function agregarRolloHoyM() {
       setGuardandoRolloM(true)
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = hoyLocal()
       const corralesConKg = corralesParaRollo
         .filter(c => (kgsRolloExtraM[c.id] || 0) > 0)
         .map(c => ({ corralId: c.id, kg: parseInt(kgsRolloExtraM[c.id]) || 0, animales: c.animales || 0 }))
@@ -595,7 +596,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
 
     async function confirmarM() {
       setGuardandoM(true)
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = hoyLocal()
       const { data: yaConfirmadas } = await supabase.from('raciones_app').select('id').eq('fecha', hoy).limit(1)
       if (yaConfirmadas && yaConfirmadas.length > 0) {
         setGuardandoM(false)
@@ -754,7 +755,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                   <div style={{ fontSize: 15, fontWeight: 700, color: '#7A4500', marginBottom: 8 }}>⚠ Ya se confirmaron raciones hoy</div>
                   <div style={{ fontSize: 13, color: '#7A4500', marginBottom: 12 }}>¿Querés reemplazar las raciones de hoy con los valores actuales?</div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => ejecutarConfirmarM(new Date().toISOString().split('T')[0])}
+                    <button onClick={() => ejecutarConfirmarM(hoyLocal())}
                       style={{ flex: 1, background: CM.green, border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: '#0A1A0A', cursor: 'pointer' }}>
                       Sí, reemplazar
                     </button>

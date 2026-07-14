@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { registrarServicioTercero } from '../shared/serviciosLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
@@ -58,13 +59,13 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [descargasReg, setDescargasReg] = useState({})
   // Estado propio del modo celular
   const [tabM, setTabM] = useState('servicio')
-  const [formM, setFormM] = useState({ campania: '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
+  const [formM, setFormM] = useState({ campania: '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '' })
   const [guardandoM, setGuardandoM] = useState(false)
   const [okM, setOkM] = useState('')
   const [registroActivoM, setRegistroActivoM] = useState(null)
   const [showFormRegM, setShowFormRegM] = useState(false)
-  const [formRegM, setFormRegM] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
-  const [formDescM, setFormDescM] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+  const [formRegM, setFormRegM] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
+  const [formDescM, setFormDescM] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
   const [guardandoDescM, setGuardandoDescM] = useState(false)
   const [guardandoRegM, setGuardandoRegM] = useState(false)
   const [editandoDescIdM, setEditandoDescIdM] = useState(null)
@@ -78,7 +79,7 @@ export default function Servicios({ usuario, mobile, nav }) {
 
   // Form nuevo servicio
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
+  const [form, setForm] = useState({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
   const [guardando, setGuardando] = useState(false)
 
   // Mano de obra
@@ -88,7 +89,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [filtrosMO, setFiltrosMO] = useState({ campania: '', labor: '', cultivo: '', tipo: '', estado: '', empleado: '' })
   const [seleccionadasMO, setSeleccionadasMO] = useState([])
   const [showPagoMO, setShowPagoMO] = useState(false)
-  const [formPagoMO, setFormPagoMO] = useState({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', pagos: [{ ...PAGO_INIT }] })
+  const [formPagoMO, setFormPagoMO] = useState({ fecha: hoyLocal(), iva_pct: '10.5', pagos: [{ ...PAGO_INIT }] })
   const [guardandoPagoMO, setGuardandoPagoMO] = useState(false)
   const [pctPagoMO, setPctPagoMO] = useState({}) // { [servicio_id]: pct } editable en el banner
   const [formMO, setFormMO] = useState({ trabajador: '', rol: 'Maquinista', porcentaje: '' })
@@ -99,7 +100,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   // Pago
   const [seleccionadas, setSeleccionadas] = useState([])
   const [showPago, setShowPago] = useState(false)
-  const [formPago, setFormPago] = useState({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
+  const [formPago, setFormPago] = useState({ fecha: hoyLocal(), iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const reciboRef = useRef(null)
 
@@ -110,8 +111,8 @@ export default function Servicios({ usuario, mobile, nav }) {
   // Descargas mercadería
   const [registroActivo, setRegistroActivo] = useState(null)
   const [showFormReg, setShowFormReg] = useState(false)
-  const [formReg, setFormReg] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
-  const [formDescargaReg, setFormDescargaReg] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+  const [formReg, setFormReg] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
+  const [formDescargaReg, setFormDescargaReg] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
   const [guardandoReg, setGuardandoReg] = useState(false)
   const [guardandoDescargaReg, setGuardandoDescargaReg] = useState(false)
 
@@ -234,7 +235,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     }
 
     setShowForm(false)
-    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: new Date().toISOString().split('T')[0], hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
+    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
     setGuardando(false)
     await cargar()
   }
@@ -330,7 +331,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       }
       setSeleccionadas([])
       setShowPago(false)
-      setFormPago({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
+      setFormPago({ fecha: hoyLocal(), iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
       await cargar()
     } catch(e) {
       alert('Error inesperado: ' + e.message)
@@ -434,7 +435,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       setRegistroActivoM(data)
       setDescargasReg(prev => ({ ...prev, [data.id]: [] }))
       setShowFormRegM(false)
-      setFormRegM({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
+      setFormRegM({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
       setGuardandoRegM(false)
     }
 
@@ -449,7 +450,7 @@ export default function Servicios({ usuario, mobile, nav }) {
         registrado_por: usuario?.id,
       })
       if (error) { alert('Error al guardar la descarga: ' + error.message); setGuardandoDescM(false); return }
-      setFormDescM({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+      setFormDescM({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
       setGuardandoDescM(false)
       await cargarDescargasReg(regId)
       setOkM('descarga')
@@ -1730,7 +1731,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                           setSeleccionadasMO([])
                           setShowPagoMO(false)
                           setPctPagoMO({})
-                          setFormPagoMO({ fecha: new Date().toISOString().split('T')[0], iva_pct: '10.5', pagos: [{ ...PAGO_INIT }] })
+                          setFormPagoMO({ fecha: hoyLocal(), iva_pct: '10.5', pagos: [{ ...PAGO_INIT }] })
                           await cargar()
                         } catch(e) {
                           alert('Error: ' + e.message)
@@ -1899,7 +1900,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                     setDescargasReg(prev => ({ ...prev, [data.id]: [] }))
                   }
                   setShowFormReg(false)
-                  setFormReg({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: new Date().toISOString().split('T')[0] })
+                  setFormReg({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
                   setGuardandoReg(false)
                 }} disabled={guardandoReg}
                   style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -2037,7 +2038,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                         if (!formDescargaReg.kg) { alert('Ingresá los kg'); return }
                         setGuardandoDescargaReg(true)
                         await supabase.from('descargas_mercaderia').insert({ registro_id: reg.id, fecha: formDescargaReg.fecha, tipo: formDescargaReg.tipo, patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente || null) : null, kg: parseFloat(formDescargaReg.kg), observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null, registrado_por: usuario?.id })
-                        setFormDescargaReg({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: new Date().toISOString().split('T')[0] })
+                        setFormDescargaReg({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
                         setGuardandoDescargaReg(false)
                         await cargarDescargasReg(reg.id)
                       }} disabled={guardandoDescargaReg}

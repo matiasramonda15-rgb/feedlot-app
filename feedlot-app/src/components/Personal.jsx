@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
@@ -41,7 +42,7 @@ export default function Personal({ usuario }) {
 
   const [formEmp, setFormEmp] = useState({ nombre: '', rol: '', sueldo_base: '', tipo: 'fijo', aparece_en_servicios: true })
   const [formPago, setFormPago] = useState({
-    empleado_id: '', fecha: new Date().toISOString().split('T')[0],
+    empleado_id: '', fecha: hoyLocal(),
     monto: '', concepto: '', tipo: 'sueldo'
   })
   const [pagosForm, setPagosForm] = useState([{ ...PAGO_INIT_P }])
@@ -98,7 +99,7 @@ export default function Personal({ usuario }) {
       if (!monto) continue
       if (p.es_paralelo) {
         const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-        if (errCp) { alert('Error al registrar en caja paralela: ' + errCp.message); setGuardando(false); return }
+        if (errCp) { alert('Error al registrar en Caja 2: ' + errCp.message); setGuardando(false); return }
         caja_paralela_id = cp?.id
       } else {
         const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Personal', descripcion: desc, monto, forma_pago: p.subtipo_cheque || p.tipo }).select().single()
@@ -123,7 +124,7 @@ export default function Personal({ usuario }) {
     if (errPago) { alert('El pago se registró en caja, pero no se pudo guardar el detalle del pago: ' + errPago.message); setGuardando(false); return }
     await cargar()
     setShowFormPago(false)
-    setFormPago({ empleado_id: '', fecha: new Date().toISOString().split('T')[0], monto: '', concepto: '', tipo: 'sueldo' })
+    setFormPago({ empleado_id: '', fecha: hoyLocal(), monto: '', concepto: '', tipo: 'sueldo' })
     setPagosForm([{ ...PAGO_INIT_P }])
     setGuardando(false)
   }
