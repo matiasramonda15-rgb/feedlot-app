@@ -1857,8 +1857,10 @@ export default function Ventas({ usuario, mobile, nav }) {
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Gestión comercial</div>
           <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>Seguimiento de cobros, facturas, retenciones y cheques</div>
 
-          {/* Banner completar datos G. Comercial */}
-          {ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).filter(v => !editandoComercial || editandoComercial === (v.grupo_venta_id || v.id)).length > 0 && (
+          {/* Banner completar datos G. Comercial — se oculta mientras se está
+              editando algo puntual, porque ese mismo formulario ya se muestra
+              abajo en la tabla del historial (si no, aparecían los dos juntos). */}
+          {!editandoComercial && ventas.filter(v => (v.estado_comercial === 'pendiente_factura' || v.estado_comercial === 'precio_cargado' || v.estado_comercial === 'pendiente') && v.estado_comercial !== 'facturado').filter((v, i, arr) => !v.grupo_venta_id || arr.findIndex(x => x.grupo_venta_id === v.grupo_venta_id) === i).length > 0 && (
             <div key={gcVersion} style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
                 📋 Ventas pendientes de completar en G. Comercial
