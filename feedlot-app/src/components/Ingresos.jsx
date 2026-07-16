@@ -1366,9 +1366,11 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     // Si ya hay facturas cargadas en Gestión Comercial, el total real es la suma
     // de "Total esta factura" de cada una (ya incluye IVA + comisión/gastos de
     // feria) — no hay que recalcularlo desde el neto solo, porque eso deja afuera
-    // los gastos y da un número más chico que la realidad.
+    // los gastos y da un número más chico que la realidad. A esa suma hay que
+    // agregarle el monto en negro, que se carga aparte y no está incluido ahí
+    // (una compra puede tener una parte facturada y otra en negro al mismo tiempo).
     const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
-    if (totalFacturasReal > 0) return totalFacturasReal
+    if (totalFacturasReal > 0) return totalFacturasReal + (l.monto_negro || 0)
     // El IVA solo corresponde si realmente hay una factura cargada (monto_facturado).
     // Si la compra es informal (sin factura), no hay que "adivinar" un IVA a partir
     // del total — eso sumaba un IVA fantasma encima de compras 100% en negro.
@@ -1778,11 +1780,15 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     return true
   })
 
-  const ESTADOS = { pendiente: { bg: S.amberLight, color: S.amber, label: 'Pendiente' }, precio_cargado: { bg: S.accentLight, color: S.accent, label: 'Precio cargado' }, facturado: { bg: S.purpleLight, color: S.purple, label: 'Facturado' }, pagado: { bg: S.greenLight, color: S.green, label: 'Pagado' } }
+  const ESTADOS = { pendiente: { bg: S.amberLight, color: S.amber, label: 'Pendiente' }, precio_cargado: { bg: S.accentLight, color: S.accent, label: 'Precio cargado' }, sin_factura: { bg: S.bg, color: S.muted, label: 'Sin factura' }, facturado: { bg: S.purpleLight, color: S.purple, label: 'Facturado' }, pagado: { bg: S.greenLight, color: S.green, label: 'Pagado' } }
 
   function estadoDeLote(l, total, totalPagado) {
     if (l.estado_pago === 'pagado') return 'pagado'
     if (l.numero_factura || l.monto_facturado != null) return 'facturado'
+    // Si ya se marcó "Sin factura — todo a Caja 2" (queda con monto_negro
+    // cargado pero sin factura), ya está resuelto — no es que falte una
+    // factura que nunca va a llegar, es una compra 100% informal a propósito.
+    if (l.monto_negro > 0 && l.monto_facturado == null) return 'sin_factura'
     if (l.precio_compra || l.monto_total_con_iva) return 'precio_cargado'
     return 'pendiente'
   }
