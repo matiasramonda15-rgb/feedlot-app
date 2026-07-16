@@ -260,7 +260,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
+  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
   const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [selectedCampo, setSelectedCampo] = useState(null)
@@ -270,7 +270,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
     setGuardando(true)
-    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_qq_ha: parseFloat(form.arrendamiento_qq_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
+    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_tn_ha: parseFloat(form.arrendamiento_tn_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
     const { error } = editando
       ? await supabase.from('campos').update(campoData).eq('id', editando)
       : await supabase.from('campos').insert({ ...campoData, activo: true })
@@ -278,7 +278,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_qq_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
+    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
     setGuardando(false)
   }
 
@@ -302,7 +302,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Campos arrendados</div>
-        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_ha: '', ubicacion: '' }) }}
+        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' }) }}
           style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Nuevo campo
         </button>
@@ -314,7 +314,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
             <div><Label>Nombre del campo *</Label><input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} style={inputStyle} /></div>
             <div><Label>Superficie total (ha)</Label><input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} /></div>
             <div><Label>Propietario</Label><input type="text" value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Arrendamiento qq soja/ha/año</Label><input type="number" value={form.arrendamiento_qq_ha} onChange={e => setForm({...form, arrendamiento_qq_ha: e.target.value})} placeholder="ej. 9" style={inputStyle} /></div>
+            <div><Label>Arrendamiento tn soja/ha/año</Label><input type="number" value={form.arrendamiento_tn_ha} onChange={e => setForm({...form, arrendamiento_tn_ha: e.target.value})} placeholder="ej. 9" style={inputStyle} /></div>
             <div>
               <Label>Forma de pago arriendo</Label>
               <select value={form.forma_pago_arriendo} onChange={e => setForm({...form, forma_pago_arriendo: e.target.value})} style={inputStyle}>
@@ -348,7 +348,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
 
       {campos.map(c => {
         const planesDelCampo = planes.filter(p => p.campo_id === c.id && p.campana_id === campanaActiva?.id)
-        const arrendamientoAnual = c.arrendamiento_ha && c.superficie_ha ? c.arrendamiento_ha * c.superficie_ha : null
+        const arrendamientoAnual = c.arrendamiento_tn_ha && c.superficie_ha ? c.arrendamiento_tn_ha * c.superficie_ha : null
         return (
           <div key={c.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
             <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -367,14 +367,14 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                     🗺 Ver mapa
                   </a>
                 )}
-                {c.arrendamiento_qq_ha && (
+                {c.arrendamiento_tn_ha && (
                   <div style={{ textAlign: 'right', marginRight: 8 }}>
                     <div style={{ fontSize: 10, color: S.muted }}>Arrendamiento</div>
-                    <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>{c.arrendamiento_qq_ha} qq/ha · {arrendamientoAnual?.toLocaleString('es-AR')} qq/año</div>
+                    <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>{c.arrendamiento_tn_ha} tn/ha · {arrendamientoAnual?.toLocaleString('es-AR')} tn/año</div>
                     <div style={{ fontSize: 10, color: S.muted }}>{c.forma_pago_arriendo}</div>
                   </div>
                 )}
-                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_qq_ha: c.arrendamiento_qq_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', ubicacion: c.ubicacion || '', imagen_url: c.imagen_url || '' }); setShowForm(true); setSelectedCampo(null) }}
+                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_tn_ha: c.arrendamiento_tn_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', ubicacion: c.ubicacion || '', imagen_url: c.imagen_url || '' }); setShowForm(true); setSelectedCampo(null) }}
                   style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                   Editar
                 </button>
@@ -1760,7 +1760,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   async function guardar() {
@@ -1769,7 +1769,8 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
     const campo = campos.find(c => c.id === parseInt(form.campo_id))
     const lote = campo?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
     const supRef = lote?.superficie_ha || campo?.superficie_ha
-    const rendimiento = form.rendimiento_qq_ha || (form.kg_totales && supRef ? ((parseFloat(form.kg_totales) / 1000) / supRef * 100).toFixed(1) : null)
+    // 1 tonelada = 1000 kg, así que tn/ha = kg / 1000 / hectáreas.
+    const rendimiento = form.rendimiento_tn_ha || (form.kg_totales && supRef ? (parseFloat(form.kg_totales) / 1000 / supRef).toFixed(2) : null)
     const { error } = await supabase.from('cosechas').insert({
       campo_id: parseInt(form.campo_id),
       campana_id: parseInt(form.campana_id) || null,
@@ -1777,7 +1778,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       cultivo: form.cultivo,
       fecha: form.fecha,
       kg_totales: parseFloat(form.kg_totales),
-      rendimiento_qq_ha: parseFloat(rendimiento) || null,
+      rendimiento_tn_ha: parseFloat(rendimiento) || null,
       humedad_pct: parseFloat(form.humedad_pct) || null,
       destino: form.destino || null,
       acopio: form.destino === 'acopio' ? (form.acopio || null) : null,
@@ -1786,7 +1787,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
     if (error) { alert('Error al guardar la cosecha: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_qq_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -1851,9 +1852,15 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
               <input type="number" value={form.humedad_pct} onChange={e => setForm({...form, humedad_pct: e.target.value})} placeholder="ej. 13.5" style={inputStyle} />
             </div>
             <div>
-              <Label>Rendimiento qq/ha (auto si hay kg)</Label>
-              <input type="number" value={form.rendimiento_qq_ha} onChange={e => setForm({...form, rendimiento_qq_ha: e.target.value})}
-                placeholder={form.kg_totales && campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha ? ((parseFloat(form.kg_totales) / 1000) / campos.find(c => c.id === parseInt(form.campo_id))?.superficie_ha * 100).toFixed(1) : ''} style={inputStyle} />
+              <Label>Rendimiento tn/ha (auto si hay kg)</Label>
+              <input type="number" value={form.rendimiento_tn_ha} onChange={e => setForm({...form, rendimiento_tn_ha: e.target.value})}
+                placeholder={(() => {
+                  const campoSel = campos.find(c => c.id === parseInt(form.campo_id))
+                  const loteSel = campoSel?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
+                  const sup = loteSel?.superficie_ha || campoSel?.superficie_ha
+                  // 1 tonelada = 1000 kg, así que tn/ha = kg / 1000 / hectáreas.
+                  return (form.kg_totales && sup) ? (parseFloat(form.kg_totales) / 1000 / sup).toFixed(2) : ''
+                })()} style={inputStyle} />
             </div>
             <div style={{ gridColumn: form.destino === 'acopio' ? '1/2' : '1/-1' }}>
               <Label>Destino</Label>
@@ -1891,7 +1898,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Campo', 'Lote', 'Campaña', 'Cultivo', 'Kg totales', 'Tn', 'Rend. qq/ha', 'Humedad', 'Destino', 'Obs.', ''].map(h => (
+            {['Fecha', 'Campo', 'Lote', 'Campaña', 'Cultivo', 'Kg totales', 'Tn', 'Rend. tn/ha', 'Humedad', 'Destino', 'Obs.', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
@@ -1908,7 +1915,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                 <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>{c.cultivo}</span></td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{c.kg_totales ? c.kg_totales.toLocaleString('es-AR') : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.kg_totales ? (c.kg_totales / 1000).toLocaleString('es-AR') : '—'}</td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{c.rendimiento_qq_ha ? `${c.rendimiento_qq_ha} qq/ha` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{c.rendimiento_tn_ha ? `${c.rendimiento_tn_ha} tn/ha` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.humedad_pct ? `${c.humedad_pct}%` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontSize: 12 }}>
                   {c.destino === 'bolsa' && <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontWeight: 600 }}>🎒 Bolsa</span>}
@@ -2335,7 +2342,7 @@ function generarReciboArriendo(v, campo, pagos) {
   const centavos = Math.round((totalMonto - entero) * 100)
   const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
   const fechaVenc = v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
-  const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.qq_ha || ''} qq/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/qq` : ''}`
+  const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.tn_ha || ''} tn/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/tn` : ''}`
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
     if (p.es_paralelo) desc += ' (CAJA 2)'
@@ -2386,7 +2393,7 @@ function generarReciboArriendo(v, campo, pagos) {
 function TabArriendos({ campos, cargar, contactos, usuario }) {
   const [vencimientos, setVencimientos] = useState([])
   const [showForm, setShowForm] = useState(null)
-  const [formVenc, setFormVenc] = useState({ fecha_vencimiento: '', qq_ha: '', precio_pizarra: '', observaciones: '' })
+  const [formVenc, setFormVenc] = useState({ fecha_vencimiento: '', tn_ha: '', precio_pizarra: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pagoAbierto, setPagoAbierto] = useState(null) // id del vencimiento
@@ -2398,7 +2405,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
 
   async function cargarVencimientos() {
     const [{ data }, { data: ch }] = await Promise.all([
-      supabase.from('vencimientos_arriendo').select('*, campos(nombre, superficie_ha, arrendamiento_qq_ha)').order('fecha_vencimiento'),
+      supabase.from('vencimientos_arriendo').select('*, campos(nombre, superficie_ha, arrendamiento_tn_ha)').order('fecha_vencimiento'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
     ])
     setVencimientos(data || [])
@@ -2409,20 +2416,20 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
   async function guardarVencimiento(campo_id) {
     if (!formVenc.fecha_vencimiento) { alert('Ingresá la fecha de vencimiento'); return }
     setGuardando(true)
-    const qq = parseFloat(formVenc.qq_ha) || 0
+    const tn = parseFloat(formVenc.tn_ha) || 0
     const precio = parseFloat(formVenc.precio_pizarra) || 0
     const campo = campos.find(c => c.id === campo_id)
     const sup = campo?.superficie_ha || 0
-    const monto = qq && precio && sup ? Math.round(qq * precio * sup) : null
+    const monto = tn && precio && sup ? Math.round(tn * precio * sup) : null
     await supabase.from('vencimientos_arriendo').insert({
       campo_id, fecha_vencimiento: formVenc.fecha_vencimiento,
-      qq_ha: qq || null, precio_pizarra: precio || null,
+      tn_ha: tn || null, precio_pizarra: precio || null,
       monto_total: monto, estado: 'pendiente',
       observaciones: formVenc.observaciones || null,
     })
     await cargarVencimientos()
     setShowForm(null)
-    setFormVenc({ fecha_vencimiento: '', qq_ha: '', precio_pizarra: '', observaciones: '' })
+    setFormVenc({ fecha_vencimiento: '', tn_ha: '', precio_pizarra: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -2432,10 +2439,10 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     setGuardandoPago(true)
     const precio = parseFloat(formPago.precio_pizarra) || null
     const meses = formPago.meses || 1
-    const qqMes = (campo?.arrendamiento_qq_ha || 0) / 12
+    const tnMes = (campo?.arrendamiento_tn_ha || 0) / 12
     const sup = campo?.superficie_ha || null
-    const montoCalc = precio && qqMes && sup ? Math.round(precio * qqMes * meses * sup) : null
-    const qqPagado = qqMes * meses
+    const montoCalc = precio && tnMes && sup ? Math.round(precio * tnMes * meses * sup) : null
+    const tnPagado = tnMes * meses
 
     const desc = `Arriendo ${v.campos?.nombre || ''} — ${v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
@@ -2461,7 +2468,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     await supabase.from('vencimientos_arriendo').update({
       estado: 'pagado', pagado_en: formPago.fecha,
       precio_pizarra: precio || null,
-      qq_ha: qqPagado || null,
+      tn_ha: tnPagado || null,
       monto_total: montoCalc || totalPagos,
       caja_oficial_id, caja_paralela_id,
       pagos_detalle: formPago.pagos,
@@ -2484,7 +2491,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
   const en7dias = new Date(hoy.getTime() + 7 * 86400000)
 
   // Calcular próximos vencimientos automáticos por campo
-  const proximosAutomaticos = campos.filter(c => c.arrendamiento_qq_ha && c.dia_vencimiento_arriendo).map(c => {
+  const proximosAutomaticos = campos.filter(c => c.arrendamiento_tn_ha && c.dia_vencimiento_arriendo).map(c => {
     const dia = c.dia_vencimiento_arriendo
     const freq = c.forma_pago_arriendo || 'mensual'
     const proximas = []
@@ -2549,7 +2556,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
         </div>
       )}
 
-      {campos.filter(c => c.arrendamiento_qq_ha).map(campo => {
+      {campos.filter(c => c.arrendamiento_tn_ha).map(campo => {
         const vencsCampo = vencimientos.filter(v => v.campo_id === campo.id)
         return (
           <div key={campo.id} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
@@ -2557,7 +2564,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
               <div>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{campo.nombre}</div>
                 <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
-                  {campo.propietario} · {campo.superficie_ha} ha · {campo.arrendamiento_qq_ha} qq soja/ha/año
+                  {campo.propietario} · {campo.superficie_ha} ha · {campo.arrendamiento_tn_ha} tn soja/ha/año
                   {campo.dia_vencimiento_arriendo ? ` · vence día ${campo.dia_vencimiento_arriendo} · ${campo.forma_pago_arriendo}` : ` · ${campo.forma_pago_arriendo}`}
                 </div>
               </div>
@@ -2571,7 +2578,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
               <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div><Label>Fecha vencimiento *</Label><input type="date" value={formVenc.fecha_vencimiento} onChange={e => setFormVenc({...formVenc, fecha_vencimiento: e.target.value})} style={inputStyle} /></div>
-                  <div><Label>qq/ha</Label><input type="number" value={formVenc.qq_ha} onChange={e => setFormVenc({...formVenc, qq_ha: e.target.value})} style={inputStyle} placeholder={String(campo.arrendamiento_qq_ha || '')} /></div>
+                  <div><Label>tn/ha</Label><input type="number" value={formVenc.tn_ha} onChange={e => setFormVenc({...formVenc, tn_ha: e.target.value})} style={inputStyle} placeholder={String(campo.arrendamiento_tn_ha || '')} /></div>
                   <div><Label>Observaciones</Label><input type="text" value={formVenc.observaciones} onChange={e => setFormVenc({...formVenc, observaciones: e.target.value})} style={inputStyle} /></div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -2594,7 +2601,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                           {new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
                         </div>
                         <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
-                          {v.qq_ha} qq/ha · ${v.precio_pizarra?.toLocaleString('es-AR')}/qq
+                          {v.tn_ha} tn/ha · ${v.precio_pizarra?.toLocaleString('es-AR')}/tn
                           {v.monto_total ? ` · Total: $${v.monto_total.toLocaleString('es-AR')}` : ''}
                           {v.observaciones ? ` · ${v.observaciones}` : ''}
                         </div>
@@ -2620,7 +2627,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                     {isPagoAbierto && (
                       <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 8, padding: '1rem', marginTop: '1rem' }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: '1rem' }}>
-                          Pago arriendo — {campo.nombre} · {campo.arrendamiento_qq_ha} qq/ha/año · {campo.superficie_ha} ha
+                          Pago arriendo — {campo.nombre} · {campo.arrendamiento_tn_ha} tn/ha/año · {campo.superficie_ha} ha
                         </div>
                         {/* Meses + Precio pizarra */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -2630,9 +2637,9 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                               {[1,2,3,6,12].map(m => (
                                 <button key={m} onClick={() => {
                                   const pp = parseFloat(formPago.precio_pizarra) || 0
-                                  const qqMes = (campo.arrendamiento_qq_ha || 0) / 12
+                                  const tnMes = (campo.arrendamiento_tn_ha || 0) / 12
                                   const sup = campo.superficie_ha || 0
-                                  const monto = pp && qqMes && sup ? String(Math.round(pp * qqMes * m * sup)) : ''
+                                  const monto = pp && tnMes && sup ? String(Math.round(pp * tnMes * m * sup)) : ''
                                   setFormPago({...formPago, meses: m, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
                                 }}
                                   style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${formPago.meses === m ? S.accent : S.border}`, background: formPago.meses === m ? S.accentLight : S.surface, color: formPago.meses === m ? S.accent : S.muted }}>
@@ -2642,26 +2649,26 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                             </div>
                           </div>
                           <div>
-                            <Label>Precio pizarra Rosario $/qq</Label>
+                            <Label>Precio pizarra Rosario $/tn</Label>
                             <input type="number" value={formPago.precio_pizarra} onChange={e => {
                               const pp = e.target.value
                               const meses = formPago.meses || 1
-                              const qqMes = (campo.arrendamiento_qq_ha || 0) / 12
+                              const tnMes = (campo.arrendamiento_tn_ha || 0) / 12
                               const sup = campo.superficie_ha || 0
-                              const monto = pp && qqMes && sup ? String(Math.round(parseFloat(pp) * qqMes * meses * sup)) : ''
+                              const monto = pp && tnMes && sup ? String(Math.round(parseFloat(pp) * tnMes * meses * sup)) : ''
                               setFormPago({...formPago, precio_pizarra: pp, pagos: formPago.pagos.map((p, i) => i === 0 ? {...p, monto} : p)})
                             }} style={inputStyle} placeholder="ej. 380000" />
                           </div>
                           <div>
                             <Label>Monto calculado</Label>
                             <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700, background: S.surface, color: S.green }}>
-                              {formPago.precio_pizarra && formPago.meses && campo.arrendamiento_qq_ha && campo.superficie_ha
-                                ? `$${Math.round(parseFloat(formPago.precio_pizarra) * (campo.arrendamiento_qq_ha / 12) * formPago.meses * campo.superficie_ha).toLocaleString('es-AR')}`
+                              {formPago.precio_pizarra && formPago.meses && campo.arrendamiento_tn_ha && campo.superficie_ha
+                                ? `$${Math.round(parseFloat(formPago.precio_pizarra) * (campo.arrendamiento_tn_ha / 12) * formPago.meses * campo.superficie_ha).toLocaleString('es-AR')}`
                                 : '—'}
                             </div>
-                            {formPago.meses && campo.arrendamiento_qq_ha && (
+                            {formPago.meses && campo.arrendamiento_tn_ha && (
                               <div style={{ fontSize: 10, color: S.muted, marginTop: 3 }}>
-                                {(campo.arrendamiento_qq_ha / 12 * formPago.meses).toFixed(2)} qq/ha × {campo.superficie_ha} ha
+                                {(campo.arrendamiento_tn_ha / 12 * formPago.meses).toFixed(2)} tn/ha × {campo.superficie_ha} ha
                               </div>
                             )}
                           </div>
@@ -2694,8 +2701,8 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
           </div>
         )
       })}
-      {campos.filter(c => c.arrendamiento_qq_ha).length === 0 && (
-        <div style={{ fontSize: 13, color: S.hint, padding: '2rem', textAlign: 'center' }}>No hay campos con arrendamiento configurado. Cargá el qq/ha en la sección Campos.</div>
+      {campos.filter(c => c.arrendamiento_tn_ha).length === 0 && (
+        <div style={{ fontSize: 13, color: S.hint, padding: '2rem', textAlign: 'center' }}>No hay campos con arrendamiento configurado. Cargá el tn/ha en la sección Campos.</div>
       )}
     </div>
   )
@@ -3381,7 +3388,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     if (!ha) return null
     if (filtroLote && String(g.lote_id || '') !== String(filtroLote)) return null
 
-    const rtoQqHa = ha ? (g.kg / 100) / ha : 0
+    const rtoQqHa = ha ? (g.kg / 1000) / ha : 0
 
     // Órdenes de trabajo del lote (o de "todo el campo" sin lote, prorateadas por ha)
     const ordenesRel = ordenes.filter(o =>
@@ -3524,7 +3531,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
             {/* Indicadores */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: abierto ? '1.25rem' : 0 }}>
               {[
-                { label: 'Rendimiento', val: f.sinCosechaAun ? 'Sin cosechar' : `${numAR(f.rtoQqHa, 1)} qq/ha`, sub: f.sinCosechaAun ? '—' : `${numAR(f.kg / 1000, 1)} tn totales` },
+                { label: 'Rendimiento', val: f.sinCosechaAun ? 'Sin cosechar' : `${numAR(f.rtoQqHa, 1)} tn/ha`, sub: f.sinCosechaAun ? '—' : `${numAR(f.kg / 1000, 1)} tn totales` },
                 { label: 'Ingresos (proy.)', val: f.sinCosechaAun ? '—' : (f.precioTn ? `$${numAR(f.ingresos)}` : 'Sin precio ref.'), sub: f.sinCosechaAun ? 'todavía no hay cosecha' : (f.precioTn ? `$${numAR(f.precioTn)}/tn` : 'cargá una venta de este cultivo'), color: S.green },
                 { label: 'Costos directos', val: `$${numAR(f.costosDirectos)}`, sub: `Insumos $${numAR(f.costoInsumos)} · Labores $${numAR(f.costoLabores)} · Alquiler $${numAR(f.costoAlquiler)}${f.costoGastos ? ' · Gastos $' + numAR(f.costoGastos) : ''}`, color: S.red },
                 { label: 'Margen Bruto', val: f.mb === null ? '—' : `$${numAR(f.mb)}`, sub: f.mb === null ? 'a definir con la cosecha' : `$${numAR(f.mbHa)}/ha`, color: f.mb === null ? S.muted : (f.mb >= 0 ? S.green : S.red) },
