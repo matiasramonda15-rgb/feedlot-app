@@ -52,6 +52,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
   const [ingresosAgro, setIngresosAgro] = useState([])
   const [contactos, setContactos] = useState([])
   const [cotizacionDolar, setCotizacionDolar] = useState(1000)
+  const [stockInsumosAlim, setStockInsumosAlim] = useState([])
 
   // UI states
   const [showForm, setShowForm] = useState(false)
@@ -66,7 +67,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
     const [
       { data: c }, { data: ca }, { data: pl }, { data: or },
       { data: co }, { data: vg }, { data: ga }, { data: sa },
-      { data: ia }, { data: ct }, { data: cfg }
+      { data: ia }, { data: ct }, { data: cfg }, { data: stIns }
     ] = await Promise.all([
       supabase.from('campos').select('*, lotes_agricolas(*)').order('nombre'),
       supabase.from('campanas').select('*').order('año_inicio', { ascending: false }),
@@ -79,6 +80,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'agro').order('fecha', { ascending: false }).limit(200),
       supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
       supabase.from('configuracion').select('clave, valor').eq('clave', 'cotizacion_dolar_agro'),
+      supabase.from('stock_insumos').select('id, insumo, unidad, precio_referencia').order('insumo'),
     ])
     setCampos(c || [])
     setCampanas(ca || [])
@@ -91,6 +93,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
     setIngresosAgro(ia || [])
     setContactos(ct || [])
     setCotizacionDolar(parseFloat(cfg?.[0]?.valor) || 1000)
+    setStockInsumosAlim(stIns || [])
     // Si hay más de una campaña activa a la vez (algo normal, por ejemplo trigo
     // sin cosechar de la anterior + algo recién sembrado de la nueva), se usa
     // la más nueva como "la" campaña activa por defecto para cargar datos —
@@ -240,7 +243,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
-      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} />}
+      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} stockInsumosAlim={stockInsumosAlim} usuario={usuario} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} />}
@@ -1928,14 +1931,14 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
 }
 
 // ── TAB VENTAS DE GRANOS ──
-function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar }) {
+function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar, stockInsumosAlim, usuario }) {
   const [showForm, setShowForm] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
 
@@ -1944,12 +1947,16 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
 
   async function guardar() {
     if (!form.cultivo || !form.kg) { alert('Completá cultivo y kg'); return }
+    if (form.esVentaInternaFeedlot && !form.stock_insumo_id) { alert('Elegí a qué insumo del stock de Alimentación va este grano (ej. Maíz grano seco)'); return }
     setGuardando(true)
     const kg = parseFloat(form.kg)
     const precioTn = parseFloat(form.precio_tn) || 0
     const total = precioTn ? Math.round(kg * precioTn / 1000) : null
-    const montoFact = form.monto_facturado ? parseFloat(form.monto_facturado) : total
-    const montoNegro = total && montoFact ? Math.max(0, total - montoFact) : 0
+    // Venta interna a Feedlot: no hay factura ni negro, es un traspaso entre
+    // actividades de la misma empresa — el total entero se trata como "cobrado"
+    // sin generar ningún movimiento de caja real.
+    const montoFact = form.esVentaInternaFeedlot ? total : (form.monto_facturado ? parseFloat(form.monto_facturado) : total)
+    const montoNegro = form.esVentaInternaFeedlot ? 0 : (total && montoFact ? Math.max(0, total - montoFact) : 0)
     const data = {
       campo_id: parseInt(form.campo_id) || null,
       campana_id: parseInt(form.campana_id) || null,
@@ -1961,29 +1968,53 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       monto_facturado: montoFact,
       monto_negro: montoNegro,
       iva_pct: parseFloat(form.iva_pct) || 10.5,
-      comprador: form.comprador || null,
+      comprador: form.esVentaInternaFeedlot ? 'Feedlot (interno)' : (form.comprador || null),
       numero_contrato: form.numero_contrato || null,
       observaciones: form.observaciones || null,
       estado: 'confirmado',
     }
     if (editando) {
-      await supabase.from('ventas_granos').update(data).eq('id', editando)
+      const { error } = await supabase.from('ventas_granos').update(data).eq('id', editando)
+      if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     } else {
-      const { data: vg } = await supabase.from('ventas_granos').insert(data).select().single()
-      if (total && total > 0) {
+      const { data: vg, error: errVg } = await supabase.from('ventas_granos').insert(data).select().single()
+      if (errVg) { alert('Error al guardar la venta: ' + errVg.message); setGuardando(false); return }
+      if (form.esVentaInternaFeedlot) {
+        // No se mueve ninguna caja — es la misma empresa. Del lado de
+        // Alimentación, se refleja como una compra de insumo ya "pagada"
+        // (sin caja tampoco), y el grano se suma directo a su stock para
+        // poder usarlo en las dietas.
+        const stockItem = stockInsumosAlim.find(s => s.id === parseInt(form.stock_insumo_id))
+        const { error: errCompra } = await supabase.from('compras_insumos').insert({
+          insumo_id: parseInt(form.stock_insumo_id), insumo_tipo: 'alimentacion',
+          insumo_nombre: stockItem?.insumo || form.cultivo, unidad: 'kg',
+          cantidad: kg, precio_unitario: precioTn ? Math.round(precioTn / 1000 * 100) / 100 : null, total,
+          proveedor: 'Agricultura (interno)', fecha: form.fecha,
+          estado_pago: 'pagado', retirado: true, registrado_por: usuario?.id,
+          observaciones: `Traspaso interno — venta de granos #${vg?.id}`,
+        })
+        if (errCompra) {
+          alert('La venta se guardó, pero no se pudo reflejar en Alimentación: ' + errCompra.message)
+        } else {
+          const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: parseInt(form.stock_insumo_id), p_delta: kg })
+          if (errRpc) alert('La venta y la compra se guardaron, pero no se pudo sumar al stock de Alimentación: ' + errRpc.message)
+        }
+      } else if (total && total > 0) {
         const desc = `Venta ${form.cultivo} — ${form.comprador || 'sin comprador'} · ${kg?.toLocaleString('es-AR')} kg`
         if (montoFact && montoFact > 0) {
-          await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: montoFact, forma_pago: 'transferencia' })
+          const { error: e1 } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: montoFact, forma_pago: 'transferencia' })
+          if (e1) alert('La venta se guardó, pero no se pudo cargar en caja oficial: ' + e1.message)
         }
         if (montoNegro && montoNegro > 0) {
-          await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: montoNegro })
+          const { error: e2 } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: montoNegro })
+          if (e2) alert('La venta se guardó, pero no se pudo cargar en Caja 2: ' + e2.message)
         }
       }
     }
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
     setGuardando(false)
   }
 
@@ -2045,22 +2076,41 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                 {' '}· ({(parseFloat(form.kg) / 1000).toLocaleString('es-AR')} tn × ${parseFloat(form.precio_tn).toLocaleString('es-AR')}/tn)
               </div>
             )}
-            <div>
-              <Label>Neto facturado $</Label>
-              <input type="number" value={form.monto_facturado} onChange={e => setForm({...form, monto_facturado: e.target.value})} style={inputStyle} />
+            <div style={{ gridColumn: '1/-1' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.esVentaInternaFeedlot} onChange={e => setForm({...form, esVentaInternaFeedlot: e.target.checked, comprador: '', monto_facturado: ''})} />
+                <span style={{ fontSize: 13 }}>🐄 Es venta interna al Feedlot (para alimentación) — sin caja, va directo al stock</span>
+              </label>
             </div>
-            <div>
-              <Label>% IVA</Label>
-              <select value={form.iva_pct} onChange={e => setForm({...form, iva_pct: e.target.value})} style={inputStyle}>
-                <option value="0">Sin IVA</option>
-                <option value="10.5">10.5%</option>
-                <option value="21">21%</option>
-              </select>
-            </div>
-            <div>
-              <Label>Comprador / Acopio</Label>
-              <input type="text" value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle} />
-            </div>
+            {form.esVentaInternaFeedlot ? (
+              <div style={{ gridColumn: '1/-1' }}>
+                <Label>¿A qué insumo del stock de Alimentación va? *</Label>
+                <select value={form.stock_insumo_id} onChange={e => setForm({...form, stock_insumo_id: e.target.value})} style={inputStyle}>
+                  <option value="">— Seleccioná —</option>
+                  {stockInsumosAlim.map(s => <option key={s.id} value={s.id}>{s.insumo}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>El kg cargado arriba se suma directo a ese insumo del stock de Alimentación, listo para usar en las dietas.</div>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label>Neto facturado $</Label>
+                  <input type="number" value={form.monto_facturado} onChange={e => setForm({...form, monto_facturado: e.target.value})} style={inputStyle} />
+                </div>
+                <div>
+                  <Label>% IVA</Label>
+                  <select value={form.iva_pct} onChange={e => setForm({...form, iva_pct: e.target.value})} style={inputStyle}>
+                    <option value="0">Sin IVA</option>
+                    <option value="10.5">10.5%</option>
+                    <option value="21">21%</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Comprador / Acopio</Label>
+                  <input type="text" value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle} />
+                </div>
+              </>
+            )}
             <div>
               <Label>N° Contrato</Label>
               <input type="text" value={form.numero_contrato} onChange={e => setForm({...form, numero_contrato: e.target.value})} style={inputStyle} />
