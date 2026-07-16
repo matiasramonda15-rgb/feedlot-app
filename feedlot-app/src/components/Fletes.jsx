@@ -28,7 +28,7 @@ export default function Fletes({ usuario }) {
   const [contactos, setContactos] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filtroEstado, setFiltroEstado] = useState('pendiente')
+  const [filtroEstado, setFiltroEstado] = useState('')
   const [filtroTransportista, setFiltroTransportista] = useState('')
   const [editandoId, setEditandoId] = useState(null)
   const [formEdit, setFormEdit] = useState({})
@@ -154,8 +154,8 @@ export default function Fletes({ usuario }) {
           <option value="">Todos los transportistas</option>
           {transportistas.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        {(filtroEstado !== 'pendiente' || filtroTransportista) && (
-          <button onClick={() => { setFiltroEstado('pendiente'); setFiltroTransportista('') }}
+        {(filtroEstado || filtroTransportista) && (
+          <button onClick={() => { setFiltroEstado(''); setFiltroTransportista('') }}
             style={{ padding: '6px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
             ✕ Limpiar
           </button>
