@@ -1,5 +1,6 @@
 import { useState, useEffect, Suspense, lazy } from 'react'
 import { supabase } from '../supabase'
+import { fechaLocal } from '../shared/dateUtils'
 import Sidebar from './Sidebar'
 
 var Tablero      = lazy(() => import('./Tablero'))
@@ -41,7 +42,7 @@ function PantallaInicio({ usuario, setModulo }) {
     async function cargar() {
       const hoy = new Date()
       const en7 = new Date(); en7.setDate(en7.getDate() + 7)
-      const en7str = en7.toISOString().split('T')[0]
+      const en7str = fechaLocal(en7)
 
       const [
         { data: corrales },
@@ -58,8 +59,13 @@ function PantallaInicio({ usuario, setModulo }) {
         supabase.from('cheques').select('id, monto, fecha_vencimiento').eq('estado', 'en_cartera').lte('fecha_vencimiento', en7str),
         supabase.from('pagos_creditos').select('id, monto, fecha, creditos(descripcion, activos(nombre))').eq('estado', 'pendiente').lte('fecha', en7str),
         supabase.from('lotes').select('id, monto_total_con_iva, fecha_vencimiento_pago').eq('estado_pago', 'pendiente').not('fecha_vencimiento_pago', 'is', null).lte('fecha_vencimiento_pago', en7str),
-        supabase.from('caja_oficial').select('tipo, monto').gte('fecha', new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0]),
-        supabase.from('caja_paralela').select('tipo, monto').gte('fecha', new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0]),
+        // Sin filtro de fecha — tiene que ser el saldo real acumulado (todo el
+        // historial), igual que se calcula en la pantalla de Caja. Antes solo
+        // sumaba los movimientos de este mes, así que mostraba un número
+        // completamente distinto al saldo real (parecía el flujo del mes, no
+        // el saldo de caja).
+        supabase.from('caja_oficial').select('tipo, monto'),
+        supabase.from('caja_paralela').select('tipo, monto'),
         supabase.from('servicios_terceros').select('id, cliente, labor, hectareas').eq('estado_pago', 'pendiente'),
       ])
 
@@ -173,18 +179,18 @@ function PantallaInicio({ usuario, setModulo }) {
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '1rem' }}>
                   <div style={{ padding: '10px 12px', background: S.bg, borderRadius: 8 }}>
-                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Caja oficial</div>
+                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Caja 1</div>
                     <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: datos.saldoOficial >= 0 ? S.green : S.red }}>
                       {datos.saldoOficial >= 0 ? '+' : ''}${datos.saldoOficial.toLocaleString('es-AR')}
                     </div>
-                    <div style={{ fontSize: 10, color: S.muted }}>este mes</div>
+                    <div style={{ fontSize: 10, color: S.muted }}>saldo total</div>
                   </div>
                   <div style={{ padding: '10px 12px', background: S.bg, borderRadius: 8 }}>
-                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Caja paralela</div>
+                    <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Caja 2</div>
                     <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: datos.saldoParalelo >= 0 ? S.green : S.red }}>
                       {datos.saldoParalelo >= 0 ? '+' : ''}${datos.saldoParalelo.toLocaleString('es-AR')}
                     </div>
-                    <div style={{ fontSize: 10, color: S.muted }}>este mes</div>
+                    <div style={{ fontSize: 10, color: S.muted }}>saldo total</div>
                   </div>
                 </div>
 
