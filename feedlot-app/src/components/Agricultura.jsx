@@ -1971,7 +1971,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
+  const [form, setForm] = useState({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
 
@@ -1989,69 +1989,101 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
     const kg = parseFloat(form.tn) * 1000
     const precioTn = parseFloat(form.precio_tn) || 0
     const total = precioTn ? Math.round(kg * precioTn / 1000) : null
-    // Venta interna a Feedlot: no hay factura ni negro, es un traspaso entre
-    // actividades de la misma empresa — el total entero se trata como "cobrado"
-    // sin generar ningún movimiento de caja real.
-    const montoFact = form.esVentaInternaFeedlot ? total : (form.monto_facturado ? parseFloat(form.monto_facturado) : total)
-    const montoNegro = form.esVentaInternaFeedlot ? 0 : (total && montoFact ? Math.max(0, total - montoFact) : 0)
-    const data = {
-      campana_id: parseInt(form.campana_id) || null,
-      cultivo: form.cultivo,
-      fecha: form.fecha,
-      kg,
-      precio_tn: precioTn || null,
-      total,
-      monto_facturado: montoFact,
-      monto_negro: montoNegro,
-      iva_pct: parseFloat(form.iva_pct) || 10.5,
-      comprador: form.esVentaInternaFeedlot ? 'Feedlot (interno)' : (form.comprador || null),
-      numero_contrato: form.numero_contrato || null,
-      observaciones: form.observaciones || null,
-      estado: 'confirmado',
-    }
-    if (editando) {
-      const { error } = await supabase.from('ventas_granos').update(data).eq('id', editando)
-      if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
-    } else {
+    if (form.esVentaInternaFeedlot) {
+      // Venta interna a Feedlot: se sabe el monto al toque, no hace falta
+      // esperar contrato — queda confirmada de una.
+      const data = {
+        campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
+        precio_tn: precioTn || null, total, monto_facturado: total, monto_negro: 0,
+        comprador: 'Feedlot (interno)', numero_contrato: null, observaciones: form.observaciones || null,
+        estado: 'confirmado',
+      }
       const { data: vg, error: errVg } = await supabase.from('ventas_granos').insert(data).select().single()
       if (errVg) { alert('Error al guardar la venta: ' + errVg.message); setGuardando(false); return }
-      if (form.esVentaInternaFeedlot) {
-        // No se mueve ninguna caja — es la misma empresa. Del lado de
-        // Alimentación, se refleja como una compra de insumo ya "pagada"
-        // (sin caja tampoco), y el grano se suma directo a su stock para
-        // poder usarlo en las dietas.
-        const stockItem = stockInsumosAlim.find(s => s.id === parseInt(form.stock_insumo_id))
-        const { error: errCompra } = await supabase.from('compras_insumos').insert({
-          insumo_id: parseInt(form.stock_insumo_id), insumo_tipo: 'alimentacion',
-          insumo_nombre: stockItem?.insumo || form.cultivo, unidad: 'kg',
-          cantidad: kg, precio_unitario: precioTn ? Math.round(precioTn / 1000 * 100) / 100 : null, total,
-          proveedor: 'Agricultura (interno)', fecha: form.fecha,
-          estado_pago: 'pagado', retirado: true, registrado_por: usuario?.id,
-          observaciones: `Traspaso interno — venta de granos #${vg?.id}`,
-        })
-        if (errCompra) {
-          alert('La venta se guardó, pero no se pudo reflejar en Alimentación: ' + errCompra.message)
-        } else {
-          const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: parseInt(form.stock_insumo_id), p_delta: kg })
-          if (errRpc) alert('La venta y la compra se guardaron, pero no se pudo sumar al stock de Alimentación: ' + errRpc.message)
-        }
-      } else if (total && total > 0) {
-        const desc = `Venta ${form.cultivo} — ${form.comprador || 'sin comprador'} · ${kg?.toLocaleString('es-AR')} kg`
-        if (montoFact && montoFact > 0) {
-          const { error: e1 } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: montoFact, forma_pago: 'transferencia' })
-          if (e1) alert('La venta se guardó, pero no se pudo cargar en caja oficial: ' + e1.message)
-        }
-        if (montoNegro && montoNegro > 0) {
-          const { error: e2 } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: montoNegro })
-          if (e2) alert('La venta se guardó, pero no se pudo cargar en Caja 2: ' + e2.message)
-        }
+      // No se mueve ninguna caja — es la misma empresa. Del lado de
+      // Alimentación, se refleja como una compra de insumo ya "pagada"
+      // (sin caja tampoco), y el grano se suma directo a su stock para
+      // poder usarlo en las dietas.
+      const stockItem = stockInsumosAlim.find(s => s.id === parseInt(form.stock_insumo_id))
+      const { error: errCompra } = await supabase.from('compras_insumos').insert({
+        insumo_id: parseInt(form.stock_insumo_id), insumo_tipo: 'alimentacion',
+        insumo_nombre: stockItem?.insumo || form.cultivo, unidad: 'kg',
+        cantidad: kg, precio_unitario: precioTn ? Math.round(precioTn / 1000 * 100) / 100 : null, total,
+        proveedor: 'Agricultura (interno)', fecha: form.fecha,
+        estado_pago: 'pagado', retirado: true, registrado_por: usuario?.id,
+        observaciones: `Traspaso interno — venta de granos #${vg?.id}`,
+      })
+      if (errCompra) {
+        alert('La venta se guardó, pero no se pudo reflejar en Alimentación: ' + errCompra.message)
+      } else {
+        const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: parseInt(form.stock_insumo_id), p_delta: kg })
+        if (errRpc) alert('La venta y la compra se guardaron, pero no se pudo sumar al stock de Alimentación: ' + errRpc.message)
       }
+    } else if (form.esVentaEnNegro) {
+      // Venta en negro: no hay contrato ni factura de por medio, así que no
+      // hace falta esperar nada — se carga y se cobra en el momento, directo
+      // a Caja 2.
+      const totalNegro = parseFloat(form.total_negro) || total
+      if (!totalNegro) { alert('Ingresá el total cobrado'); setGuardando(false); return }
+      const { error: errVg } = await supabase.from('ventas_granos').insert({
+        campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
+        precio_tn: precioTn || null, total: totalNegro, monto_facturado: 0, monto_negro: totalNegro,
+        comprador: form.comprador || null, numero_contrato: null, observaciones: form.observaciones || null,
+        estado: 'confirmado',
+      })
+      if (errVg) { alert('Error al guardar la venta: ' + errVg.message); setGuardando(false); return }
+      const desc = `Venta ${form.cultivo} (en negro) — ${form.comprador || 'sin comprador'} · ${(kg / 1000).toLocaleString('es-AR')} tn`
+      const { error: eCaja } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: totalNegro })
+      if (eCaja) alert('La venta se guardó, pero no se pudo cargar en Caja 2: ' + eCaja.message)
+    } else if (editando) {
+      // Editar una venta ya confirmada (con su monto real) — se respeta lo
+      // que ya estaba cargado en esos campos, solo se actualizan los datos
+      // básicos de la operación.
+      const { error } = await supabase.from('ventas_granos').update({
+        campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
+        precio_tn: precioTn || null, comprador: form.comprador || null, observaciones: form.observaciones || null,
+      }).eq('id', editando)
+      if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
+    } else {
+      // Venta recién pactada — se calza el precio hoy, pero el contrato y el
+      // monto final a cobrar suelen tardar unos días. Queda "pactada", sin
+      // monto ni movimiento de caja todavía — eso se completa después con
+      // "Completar con contrato".
+      const { error } = await supabase.from('ventas_granos').insert({
+        campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
+        precio_tn: precioTn || null, total, comprador: form.comprador || null, observaciones: form.observaciones || null,
+        estado: 'pactada',
+      })
+      if (error) { alert('Error al guardar la venta: ' + error.message); setGuardando(false); return }
     }
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
+    setForm({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
     setGuardando(false)
+  }
+
+  // Paso 2: cuando llega el contrato, se completa el monto final a cobrar y
+  // el N° de contrato — recién ahí se registra el ingreso real en caja.
+  const [completandoId, setCompletandoId] = useState(null)
+  const [formCompletar, setFormCompletar] = useState({ total_facturado: '', numero_contrato: '' })
+
+  async function guardarCompletar(venta) {
+    const totalFacturado = parseFloat(formCompletar.total_facturado)
+    if (!totalFacturado) { alert('Ingresá el total facturado'); return }
+    setGuardando(true)
+    const { error } = await supabase.from('ventas_granos').update({
+      total: totalFacturado, monto_facturado: totalFacturado, monto_negro: 0,
+      numero_contrato: formCompletar.numero_contrato || null, estado: 'confirmado',
+    }).eq('id', venta.id)
+    if (error) { alert('Error al completar la venta: ' + error.message); setGuardando(false); return }
+    const desc = `Venta ${venta.cultivo} — ${venta.comprador || 'sin comprador'} · ${(venta.kg / 1000).toLocaleString('es-AR')} tn · Contrato ${formCompletar.numero_contrato || 's/n'}`
+    const { error: eCaja } = await supabase.from('caja_oficial').insert({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: totalFacturado, forma_pago: 'transferencia' })
+    if (eCaja) alert('La venta quedó completada, pero no se pudo cargar en caja oficial: ' + eCaja.message)
+    setCompletandoId(null)
+    setFormCompletar({ total_facturado: '', numero_contrato: '' })
+    setGuardando(false)
+    await cargar()
   }
 
   return (
@@ -2107,10 +2139,18 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
             )}
             <div style={{ gridColumn: '1/-1' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.esVentaInternaFeedlot} onChange={e => setForm({...form, esVentaInternaFeedlot: e.target.checked, comprador: '', monto_facturado: ''})} />
+                <input type="checkbox" checked={form.esVentaInternaFeedlot} onChange={e => setForm({...form, esVentaInternaFeedlot: e.target.checked, esVentaEnNegro: false, comprador: ''})} />
                 <span style={{ fontSize: 13 }}>🐄 Es venta interna al Feedlot (para alimentación) — sin caja, va directo al stock</span>
               </label>
             </div>
+            {!form.esVentaInternaFeedlot && (
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.esVentaEnNegro} onChange={e => setForm({...form, esVentaEnNegro: e.target.checked})} />
+                  <span style={{ fontSize: 13 }}>🔒 Es venta en negro (Caja 2) — sin contrato, se cobra y se carga en el momento</span>
+                </label>
+              </div>
+            )}
             {form.esVentaInternaFeedlot ? (
               <div style={{ gridColumn: '1/-1' }}>
                 <Label>¿A qué insumo del stock de Alimentación va? *</Label>
@@ -2123,18 +2163,6 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
             ) : (
               <>
                 <div>
-                  <Label>Neto facturado $</Label>
-                  <input type="number" value={form.monto_facturado} onChange={e => setForm({...form, monto_facturado: e.target.value})} style={inputStyle} />
-                </div>
-                <div>
-                  <Label>% IVA</Label>
-                  <select value={form.iva_pct} onChange={e => setForm({...form, iva_pct: e.target.value})} style={inputStyle}>
-                    <option value="0">Sin IVA</option>
-                    <option value="10.5">10.5%</option>
-                    <option value="21">21%</option>
-                  </select>
-                </div>
-                <div>
                   <Label>Comprador / Acopio</Label>
                   <select value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle}>
                     <option value="">— Seleccioná —</option>
@@ -2142,12 +2170,20 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                   </select>
                   <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
                 </div>
+                {form.esVentaEnNegro && (
+                  <div>
+                    <Label>Total cobrado $ (Caja 2)</Label>
+                    <input type="number" value={form.total_negro} onChange={e => setForm({...form, total_negro: e.target.value})}
+                      placeholder={form.tn && form.precio_tn ? String(Math.round(parseFloat(form.tn) * parseFloat(form.precio_tn))) : ''} style={inputStyle} />
+                  </div>
+                )}
+                {!editando && !form.esVentaEnNegro && (
+                  <div style={{ gridColumn: '1/-1', fontSize: 11, color: S.hint, background: S.bg, borderRadius: 6, padding: '8px 10px' }}>
+                    Esto queda como "pactada" — el monto final a cobrar (después de retenciones) y el N° de contrato se cargan después, con "Completar con contrato", cuando llegue.
+                  </div>
+                )}
               </>
             )}
-            <div>
-              <Label>N° Contrato</Label>
-              <input type="text" value={form.numero_contrato} onChange={e => setForm({...form, numero_contrato: e.target.value})} style={inputStyle} />
-            </div>
             <div>
               <Label>Observaciones</Label>
               <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} />
@@ -2155,7 +2191,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
-            <button onClick={() => { setShowForm(false); setEditando(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={() => { setShowForm(false); setEditando(null); setForm({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
           </div>
         </Card>
       )}
@@ -2163,7 +2199,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Cultivo', 'Tn', '$/tn', 'Total', 'Facturado', 'Caja 2', 'Comprador', ''].map(h => (
+            {['Fecha', 'Cultivo', 'Tn', '$/tn (pactado)', 'Total', 'Estado', 'Comprador', 'N° Contrato', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
@@ -2176,11 +2212,19 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{v.kg ? (v.kg / 1000).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{v.precio_tn ? `$${v.precio_tn.toLocaleString('es-AR')}` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.accent }}>{v.monto_facturado ? `$${v.monto_facturado.toLocaleString('es-AR')}` : '—'}</td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.purple }}>{v.monto_negro > 0 ? `$${v.monto_negro.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px' }}>
+                  {v.estado === 'pactada'
+                    ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pactada</span>
+                    : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Confirmada</span>}
+                </td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.comprador || '—'}</td>
+                <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.numero_contrato || '—'}</td>
                 <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
-                  <button onClick={() => { setEditando(v.id); setForm({ campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', tn: v.kg ? String(v.kg / 1000) : '', precio_tn: v.precio_tn || '', monto_facturado: v.monto_facturado || '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', comprador: v.comprador || '', numero_contrato: v.numero_contrato || '', observaciones: v.observaciones || '', esVentaInternaFeedlot: false, stock_insumo_id: '' }); setShowForm(true) }}
+                  {v.estado === 'pactada' && (
+                    <button onClick={() => { setCompletandoId(v.id); setFormCompletar({ total_facturado: v.total ? String(v.total) : '', numero_contrato: '' }) }}
+                      style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>📄 Completar con contrato</button>
+                  )}
+                  <button onClick={() => { setEditando(v.id); setForm({ campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', tn: v.kg ? String(v.kg / 1000) : '', precio_tn: v.precio_tn || '', comprador: v.comprador || '', observaciones: v.observaciones || '', esVentaInternaFeedlot: false, stock_insumo_id: '' }); setShowForm(true) }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('ventas_granos').delete().eq('id', v.id); cargar() }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
@@ -2190,6 +2234,28 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
           </tbody>
         </table>
       </div>
+
+      {completandoId && (() => {
+        const venta = ventas.find(v => v.id === completandoId)
+        if (!venta) return null
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+            <div style={{ background: '#fff', borderRadius: 10, padding: '1.5rem', width: '100%', maxWidth: 420 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Completar con contrato</div>
+              <div style={{ fontSize: 12, color: S.muted, marginBottom: 16 }}>{venta.cultivo} · {(venta.kg / 1000).toLocaleString('es-AR')} tn · {venta.comprador || 'sin comprador'}</div>
+              <Label>Total facturado $ (ya con retenciones descontadas)</Label>
+              <input type="number" value={formCompletar.total_facturado} onChange={e => setFormCompletar({...formCompletar, total_facturado: e.target.value})}
+                placeholder={venta.total ? String(venta.total) : ''} style={{...inputStyle, marginBottom: 12}} autoFocus />
+              <Label>N° Contrato</Label>
+              <input type="text" value={formCompletar.numero_contrato} onChange={e => setFormCompletar({...formCompletar, numero_contrato: e.target.value})} style={{...inputStyle, marginBottom: 16}} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => guardarCompletar(venta)} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Confirmar venta'}</button>
+                <button onClick={() => { setCompletandoId(null); setFormCompletar({ total_facturado: '', numero_contrato: '' }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -3374,7 +3440,10 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     // La venta de granos no se ata a un campo puntual — se promedia el precio
     // de todas las ventas de ese cultivo en la campaña filtrada, sin importar
     // de qué campo salió cada una (así se vende en la práctica: mezclado).
-    const pool = ventasGranos.filter(v => v.cultivo === cultivo && (!filtroCampana || v.campana_id === parseInt(filtroCampana)) && v.kg && v.total)
+    // Solo cuentan las ventas ya CONFIRMADAS (con contrato) — las "pactadas"
+    // todavía tienen un total provisorio sin descontar retenciones, y
+    // mezclarlas con las reales daría un promedio incorrecto.
+    const pool = ventasGranos.filter(v => v.cultivo === cultivo && v.estado !== 'pactada' && (!filtroCampana || v.campana_id === parseInt(filtroCampana)) && v.kg && v.total)
     const kgTot = pool.reduce((s, v) => s + (v.kg || 0), 0)
     const monTot = pool.reduce((s, v) => s + (v.total || 0), 0)
     return kgTot > 0 ? (monTot / (kgTot / 1000)) : null
