@@ -1760,24 +1760,27 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
+  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   async function guardar() {
-    if (!form.campo_id || !form.cultivo || !form.kg_totales) { alert('Completá campo, cultivo y kg totales'); return }
+    if (!form.campo_id || !form.cultivo || !form.tn_totales) { alert('Completá campo, cultivo y tn totales'); return }
     setGuardando(true)
     const campo = campos.find(c => c.id === parseInt(form.campo_id))
     const lote = campo?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
     const supRef = lote?.superficie_ha || campo?.superficie_ha
-    // 1 tonelada = 1000 kg, así que tn/ha = kg / 1000 / hectáreas.
-    const rendimiento = form.rendimiento_tn_ha || (form.kg_totales && supRef ? (parseFloat(form.kg_totales) / 1000 / supRef).toFixed(2) : null)
+    // La base sigue guardando en kg (la usa Contactos para "Mercadería
+    // entregada"), pero acá se carga y se ve todo en toneladas — se
+    // convierte solo, sin que haga falta tocar nada más.
+    const kgTotales = parseFloat(form.tn_totales) * 1000
+    const rendimiento = form.rendimiento_tn_ha || (kgTotales && supRef ? (kgTotales / 1000 / supRef).toFixed(2) : null)
     const { error } = await supabase.from('cosechas').insert({
       campo_id: parseInt(form.campo_id),
       campana_id: parseInt(form.campana_id) || null,
       lote_id: form.lote_id ? parseInt(form.lote_id) : null,
       cultivo: form.cultivo,
       fecha: form.fecha,
-      kg_totales: parseFloat(form.kg_totales),
+      kg_totales: kgTotales,
       rendimiento_tn_ha: parseFloat(rendimiento) || null,
       humedad_pct: parseFloat(form.humedad_pct) || null,
       destino: form.destino || null,
@@ -1787,7 +1790,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
     if (error) { alert('Error al guardar la cosecha: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), kg_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -1844,22 +1847,21 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
               <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} />
             </div>
             <div>
-              <Label>Kg totales *</Label>
-              <input type="number" value={form.kg_totales} onChange={e => setForm({...form, kg_totales: e.target.value})} style={inputStyle} />
+              <Label>Tn totales *</Label>
+              <input type="number" step="0.01" value={form.tn_totales} onChange={e => setForm({...form, tn_totales: e.target.value})} placeholder="ej. 46.99" style={inputStyle} />
             </div>
             <div>
               <Label>Humedad %</Label>
               <input type="number" value={form.humedad_pct} onChange={e => setForm({...form, humedad_pct: e.target.value})} placeholder="ej. 13.5" style={inputStyle} />
             </div>
             <div>
-              <Label>Rendimiento tn/ha (auto si hay kg)</Label>
+              <Label>Rendimiento tn/ha (auto si hay tn)</Label>
               <input type="number" value={form.rendimiento_tn_ha} onChange={e => setForm({...form, rendimiento_tn_ha: e.target.value})}
                 placeholder={(() => {
                   const campoSel = campos.find(c => c.id === parseInt(form.campo_id))
                   const loteSel = campoSel?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
                   const sup = loteSel?.superficie_ha || campoSel?.superficie_ha
-                  // 1 tonelada = 1000 kg, así que tn/ha = kg / 1000 / hectáreas.
-                  return (form.kg_totales && sup) ? (parseFloat(form.kg_totales) / 1000 / sup).toFixed(2) : ''
+                  return (form.tn_totales && sup) ? (parseFloat(form.tn_totales) / sup).toFixed(2) : ''
                 })()} style={inputStyle} />
             </div>
             <div style={{ gridColumn: form.destino === 'acopio' ? '1/2' : '1/-1' }}>
@@ -1898,7 +1900,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Campo', 'Lote', 'Campaña', 'Cultivo', 'Kg totales', 'Tn', 'Rend. tn/ha', 'Humedad', 'Destino', 'Obs.', ''].map(h => (
+            {['Fecha', 'Campo', 'Lote', 'Campaña', 'Cultivo', 'Tn', 'Rend. tn/ha', 'Humedad', 'Destino', 'Obs.', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
@@ -1913,8 +1915,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{c.lote_id ? `Lote ${loteC?.numero || c.lote_id}` : 'Todo el campo'}</td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{c.campanas?.nombre}</td>
                 <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>{c.cultivo}</span></td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{c.kg_totales ? c.kg_totales.toLocaleString('es-AR') : '—'}</td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.kg_totales ? (c.kg_totales / 1000).toLocaleString('es-AR') : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{c.kg_totales ? (c.kg_totales / 1000).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{c.rendimiento_tn_ha ? `${c.rendimiento_tn_ha} tn/ha` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{c.humedad_pct ? `${c.humedad_pct}%` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontSize: 12 }}>
