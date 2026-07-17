@@ -347,7 +347,19 @@ export default function Insumos({ usuario }) {
 
                 {/* Formas de pago */}
                 <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
-                <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} />
+                <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (financiera/banco)' }]} />
+                {formPagoGrupal.pagos.some(p => p.tipo === 'credito') && (
+                  <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
+                      El proveedor ya cobró (se lo pagó la financiera) — la deuda queda registrada en Créditos, y esta compra queda marcada como pagada.
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      <div><Label>Entidad (banco/financiera)</Label><input type="text" value={formPagoGrupal.credito_entidad || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Banco Macro" /></div>
+                      <div><Label>Cant. de cuotas</Label><input type="number" value={formPagoGrupal.credito_cuotas || '1'} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_cuotas: e.target.value})} style={inputStyle} /></div>
+                      <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formPagoGrupal.credito_vencimiento || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Resumen */}
                 <div style={{ background: Math.abs(totalSel2 - totalPagGrupal2) < 0.5 || totalSel2 === 0 ? S.accentLight : S.amberLight, border: `1px solid ${Math.abs(totalSel2 - totalPagGrupal2) < 0.5 || totalSel2 === 0 ? S.accent : S.amber}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, margin: '1rem 0' }}>
@@ -371,6 +383,7 @@ export default function Insumos({ usuario }) {
                       seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal,
                       pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha, descripcion: desc,
                       contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
+                      creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
                       actualizarPrecioReferencia: async (c, precioFinal) => {
                         if (!c.insumo_id) return
                         const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
@@ -382,7 +395,7 @@ export default function Insumos({ usuario }) {
                     setPreciosGrupal({})
                     setFacturasGrupal({})
                     setShowPagosPend(false)
-                    setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
+                    setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '', credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
                     setGuardandoPago(false)
                     await cargar()
                   }} disabled={guardandoPago}

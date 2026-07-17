@@ -3059,6 +3059,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             seleccionadas, pendientes, precios: preciosPend, facturas: null,
             pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
             descripcion: 'Pago compras insumos Agricultura', registradoPor: usuario?.id,
+            creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
             actualizarPrecioReferencia: async (i, precioFinal) => {
               if (!i.insumo_id) return
               await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
@@ -3067,7 +3068,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
           setSeleccionadas([])
           setShowPagosPend(false)
-          setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] })
+          setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }], credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
           setPreciosPend({})
           setGuardandoPago(false)
           await cargar()
@@ -3099,7 +3100,19 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   <input type="date" value={formPagoGrupal.fecha} onChange={e => setFormPagoGrupal({...formPagoGrupal, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
                 </div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
-                <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
+                <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }, { value: 'credito', label: '🏦 Crédito (financiera/banco)' }]} />
+                {formPagoGrupal.pagos.some(p => p.tipo === 'credito') && (
+                  <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
+                      El proveedor ya cobró (se lo pagó la financiera) — la deuda queda registrada en Créditos, y esta compra queda marcada como pagada.
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      <div><Label>Entidad (banco/financiera)</Label><input type="text" value={formPagoGrupal.credito_entidad || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Banco Macro" /></div>
+                      <div><Label>Cant. de cuotas</Label><input type="number" value={formPagoGrupal.credito_cuotas || '1'} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_cuotas: e.target.value})} style={inputStyle} /></div>
+                      <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formPagoGrupal.credito_vencimiento || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ background: Math.abs(totalSel-totalPagGrupal) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalSel-totalPagGrupal) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
                   Total: <strong>${totalSel.toLocaleString('es-AR')}</strong> · Pagos: <strong>${totalPagGrupal.toLocaleString('es-AR')}</strong>

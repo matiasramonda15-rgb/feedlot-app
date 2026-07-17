@@ -61,12 +61,14 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
 export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
+  creditoEntidad, creditoCuotas, creditoVencimiento,
 }) {
   let caja_oficial_id = null, caja_paralela_id = null
   for (const pago of pagos) {
     const monto = parseFloat(pago.monto) || 0
     if (!monto) continue
     if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
+    if (pago.tipo === 'credito') continue  // crédito: tampoco mueve caja — el proveedor ya cobró vía la financiera
     const formaPago = pago.subtipo_cheque || pago.tipo
     if (pago.es_paralelo) {
       const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion, monto }).select().single()
@@ -83,6 +85,26 @@ export async function pagarComprasPendientes(supabase, {
         for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
       }
     }
+  }
+
+  // Si parte del pago fue con crédito de una financiera/banco, el proveedor
+  // ya cobró — se registra la deuda en Créditos, vinculada a la primera
+  // compra pagada (si se pagaron varias juntas, queda igual la referencia).
+  const pagoCredito = pagos.find(p => p.tipo === 'credito' && parseFloat(p.monto) > 0)
+  if (pagoCredito) {
+    const montoCredito = parseFloat(pagoCredito.monto)
+    const cuotas = parseInt(creditoCuotas) || 1
+    const primeraCompra = pendientes.find(x => x.id === seleccionadas[0])
+    const { error: errCredito } = await supabase.from('creditos').insert({
+      compra_insumos_id: seleccionadas[0] || null,
+      entidad: creditoEntidad || null,
+      descripcion: `${primeraCompra?.insumo_nombre || descripcion}${seleccionadas.length > 1 ? ` (+${seleccionadas.length - 1} más)` : ''}`,
+      monto_total: montoCredito, cant_cuotas: cuotas, monto_cuota: Math.round(montoCredito / cuotas),
+      fecha_inicio: fecha, fecha_vencimiento: creditoVencimiento || null,
+      cuotas_pagadas: 0, saldo_pendiente: montoCredito, estado: 'activo',
+      registrado_por: registradoPor || null,
+    })
+    if (errCredito) return { error: errCredito }
   }
 
   for (const id of seleccionadas) {
