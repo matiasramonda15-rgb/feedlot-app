@@ -51,7 +51,7 @@ export default function Activos({ usuario }) {
   const [creditos, setCreditos] = useState([])
   const [pagosCreditos, setPagosCreditos] = useState({})
   const [showFormCredito, setShowFormCredito] = useState(false)
-  const [formCredito, setFormCredito] = useState({ activo_id: '', descripcion: '', entidad: '', observaciones: '' })
+  const [formCredito, setFormCredito] = useState({ activo_id: '', descripcion: '', entidad: '', observaciones: '', es_dolares: false })
   const [cuotasForm, setCuotasForm] = useState([{ fecha: '', monto: '' }])
   const [guardandoCredito, setGuardandoCredito] = useState(false)
   const [creditoSelId, setCreditoSelId] = useState(null)
@@ -183,14 +183,19 @@ export default function Activos({ usuario }) {
     const cuotasValidas = cuotasForm.filter(c => c.fecha && c.monto)
     if (cuotasValidas.length === 0) { alert('Agregá al menos una cuota con fecha y monto'); return }
     setGuardandoCredito(true)
-    const monto_total = cuotasValidas.reduce((a, c) => a + parseFloat(c.monto), 0)
+    const montoTotalCargado = cuotasValidas.reduce((a, c) => a + parseFloat(c.monto), 0)
     const { data: cred, error } = await supabase.from('creditos').insert({
       activo_id: formCredito.activo_id ? parseInt(formCredito.activo_id) : null,
       descripcion: formCredito.descripcion || null,
       entidad: formCredito.entidad || null,
-      monto_total,
+      es_dolares: formCredito.es_dolares,
+      // Si es en dólares, el monto en pesos todavía no se sabe — se define
+      // recién al pagar cada cuota, con la cotización de ese día. Mientras
+      // tanto, monto_total/saldo_pendiente en pesos quedan en 0.
+      monto_total: formCredito.es_dolares ? 0 : montoTotalCargado,
+      monto_total_usd: formCredito.es_dolares ? montoTotalCargado : null,
       cant_cuotas: cuotasValidas.length,
-      saldo_pendiente: monto_total,
+      saldo_pendiente: formCredito.es_dolares ? 0 : montoTotalCargado,
       observaciones: formCredito.observaciones || null,
       registrado_por: usuario?.id,
     }).select().single()
@@ -200,14 +205,15 @@ export default function Activos({ usuario }) {
       cuotasValidas.map((c, i) => ({
         credito_id: cred.id,
         fecha: c.fecha,
-        monto: parseFloat(c.monto),
+        monto: formCredito.es_dolares ? null : parseFloat(c.monto),
+        monto_usd: formCredito.es_dolares ? parseFloat(c.monto) : null,
         nro_cuota: i + 1,
         estado: 'pendiente',
       }))
     )
     if (errCuotas) { alert('El crédito se guardó, pero hubo un error al cargar las cuotas: ' + errCuotas.message); setGuardandoCredito(false); return }
     setShowFormCredito(false)
-    setFormCredito({ activo_id: '', descripcion: '', entidad: '', observaciones: '' })
+    setFormCredito({ activo_id: '', descripcion: '', entidad: '', observaciones: '', es_dolares: false })
     setCuotasForm([{ fecha: '', monto: '' }])
     setGuardandoCredito(false)
     await cargar()
@@ -215,8 +221,16 @@ export default function Activos({ usuario }) {
 
   async function pagarCuota(credito, cuota) {
     setGuardandoPagoCredito(true)
-    const monto = cuota.monto
-    const desc = `Cuota ${cuota.nro_cuota} — ${credito.activos?.nombre || credito.descripcion || ''}`
+    let monto = cuota.monto
+    // Si el crédito es en dólares, el monto en pesos recién se define ahora,
+    // con la cotización del día del pago — no antes.
+    if (credito.es_dolares) {
+      const cotiz = parseFloat(formPagoCredito.cotizacion)
+      if (!cotiz) { alert('Ingresá la cotización del dólar de hoy para calcular el monto en pesos'); setGuardandoPagoCredito(false); return }
+      monto = Math.round((cuota.monto_usd || 0) * cotiz)
+    }
+    if (!monto) { alert('No se pudo calcular el monto a pagar'); setGuardandoPagoCredito(false); return }
+    const desc = `Cuota ${cuota.nro_cuota} — ${credito.activos?.nombre || credito.descripcion || ''}${credito.es_dolares ? ` (US$${cuota.monto_usd} a $${formPagoCredito.cotizacion})` : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
     if (formPagoCredito.es_paralelo) {
       const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPagoCredito.fecha || cuota.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
@@ -227,14 +241,25 @@ export default function Activos({ usuario }) {
       if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardandoPagoCredito(false); return }
       caja_oficial_id = co?.id
     }
-    const { error: errCuota } = await supabase.from('pagos_creditos').update({ estado: 'pagado', fecha_pago: formPagoCredito.fecha || cuota.fecha, caja_oficial_id, caja_paralela_id }).eq('id', cuota.id)
+    const { error: errCuota } = await supabase.from('pagos_creditos').update({ estado: 'pagado', monto, fecha_pago: formPagoCredito.fecha || cuota.fecha, caja_oficial_id, caja_paralela_id }).eq('id', cuota.id)
     if (errCuota) { alert('El pago se registró en caja, pero no se pudo marcar la cuota como pagada: ' + errCuota.message); setGuardandoPagoCredito(false); return }
     const pagos = pagosCreditos[credito.id] || []
     const totalPagado = pagos.filter(p => p.estado === 'pagado').reduce((a, p) => a + (p.monto || 0), 0) + monto
     const cuotasPagadas = pagos.filter(p => p.estado === 'pagado').length + 1
-    const { error: errCredito } = await supabase.from('creditos').update({ saldo_pendiente: Math.max(0, credito.monto_total - totalPagado), cuotas_pagadas: cuotasPagadas, estado: totalPagado >= credito.monto_total ? 'cancelado' : 'activo' }).eq('id', credito.id)
+    // Si es en dólares, el "monto_total" en pesos se va armando a medida que
+    // se pagan las cuotas (recién ahí se sabe cuánto salió cada una) — no
+    // hay un total fijo de antemano como en un crédito en pesos.
+    const nuevoMontoTotal = credito.es_dolares ? (credito.monto_total || 0) + monto : credito.monto_total
+    const totalCuotas = credito.cant_cuotas || pagos.length || 1
+    const yaTerminado = credito.es_dolares ? cuotasPagadas >= totalCuotas : totalPagado >= credito.monto_total
+    const { error: errCredito } = await supabase.from('creditos').update({
+      monto_total: nuevoMontoTotal,
+      saldo_pendiente: credito.es_dolares ? 0 : Math.max(0, credito.monto_total - totalPagado),
+      cuotas_pagadas: cuotasPagadas,
+      estado: yaTerminado ? 'cancelado' : 'activo',
+    }).eq('id', credito.id)
     if (errCredito) alert('La cuota se marcó como pagada, pero no se pudo actualizar el saldo del crédito: ' + errCredito.message)
-    setFormPagoCredito({ fecha: hoyLocal(), monto: '', es_paralelo: false })
+    setFormPagoCredito({ fecha: hoyLocal(), monto: '', es_paralelo: false, cotizacion: '' })
     setGuardandoPagoCredito(false)
     await cargar()
   }
@@ -663,6 +688,12 @@ export default function Activos({ usuario }) {
                   <div><Label>Descripción</Label><input type="text" value={formCredito.descripcion} onChange={e => setFormCredito({...formCredito, descripcion: e.target.value})} style={inputStyle} placeholder="ej. Crédito tractor" /></div>
                   <div><Label>Entidad / Banco</Label><input type="text" value={formCredito.entidad} onChange={e => setFormCredito({...formCredito, entidad: e.target.value})} style={inputStyle} placeholder="ej. Banco Nación" /></div>
                   <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={formCredito.observaciones} onChange={e => setFormCredito({...formCredito, observaciones: e.target.value})} style={inputStyle} /></div>
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={formCredito.es_dolares} onChange={e => setFormCredito({...formCredito, es_dolares: e.target.checked})} />
+                      <span style={{ fontSize: 13 }}>💵 Es en dólares — las cuotas se pactan en USD, el monto en pesos se define recién al pagar cada una, con la cotización de ese día</span>
+                    </label>
+                  </div>
                 </div>
                 {/* Cuotas */}
                 <div style={{ marginBottom: '1rem' }}>
@@ -677,7 +708,7 @@ export default function Activos({ usuario }) {
                         <tr style={{ background: S.bg }}>
                           <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: S.muted, fontWeight: 600 }}>N°</th>
                           <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: S.muted, fontWeight: 600 }}>Fecha vencimiento</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, color: S.muted, fontWeight: 600 }}>Monto $</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, color: S.muted, fontWeight: 600 }}>Monto {formCredito.es_dolares ? 'US$' : '$'}</th>
                           <th style={{ width: 32 }}></th>
                         </tr>
                       </thead>
@@ -701,7 +732,7 @@ export default function Activos({ usuario }) {
                         <tr style={{ background: S.accentLight }}>
                           <td colSpan={2} style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12 }}>Total</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
-                            ${cuotasForm.filter(c => c.monto).reduce((a, c) => a + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
+                            {formCredito.es_dolares ? 'US$' : '$'}{cuotasForm.filter(c => c.monto).reduce((a, c) => a + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
                           </td>
                           <td></td>
                         </tr>
@@ -720,7 +751,9 @@ export default function Activos({ usuario }) {
             {creditos.map(c => {
               const pagos = pagosCreditos[c.id] || []
               const totalPagado = pagos.reduce((a, p) => a + (p.monto || 0), 0)
-              const pct = c.monto_total ? Math.round(totalPagado / c.monto_total * 100) : 0
+              const pct = c.es_dolares
+                ? (c.cant_cuotas ? Math.round((c.cuotas_pagadas || 0) / c.cant_cuotas * 100) : 0)
+                : (c.monto_total ? Math.round(totalPagado / c.monto_total * 100) : 0)
               const isOpen = creditoSelId === c.id
               return (
                 <Card key={c.id} style={{ opacity: c.estado === 'cancelado' ? 0.7 : 1 }}>
@@ -734,16 +767,22 @@ export default function Activos({ usuario }) {
                       </div>
                       {c.entidad && <div style={{ fontSize: 12, color: S.muted }}>{c.entidad}</div>}
                       <div style={{ display: 'flex', gap: 16, fontSize: 12, marginTop: 6, flexWrap: 'wrap' }}>
-                        <span>Total: <strong>${(c.monto_total || 0).toLocaleString('es-AR')}</strong></span>
+                        {c.es_dolares
+                          ? <span>Total: <strong>US$ {(c.monto_total_usd || 0).toLocaleString('es-AR')}</strong> <span style={{ color: S.muted }}>(se va a saber el pesos a medida que se paguen las cuotas)</span></span>
+                          : <span>Total: <strong>${(c.monto_total || 0).toLocaleString('es-AR')}</strong></span>}
                         {c.cant_cuotas && <span>{c.cuotas_pagadas || 0}/{c.cant_cuotas} cuotas</span>}
                         {c.monto_cuota && <span>Cuota: <strong>${(c.monto_cuota || 0).toLocaleString('es-AR')}</strong></span>}
-                        <span style={{ color: S.red }}>Saldo: <strong>${(c.saldo_pendiente || 0).toLocaleString('es-AR')}</strong></span>
+                        {!c.es_dolares && <span style={{ color: S.red }}>Saldo: <strong>${(c.saldo_pendiente || 0).toLocaleString('es-AR')}</strong></span>}
                       </div>
                       {/* Barra progreso */}
                       <div style={{ marginTop: 8, background: S.border, borderRadius: 4, height: 6, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? S.green : S.accent, borderRadius: 4, transition: 'width .3s' }} />
                       </div>
-                      <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>{pct}% pagado · ${totalPagado.toLocaleString('es-AR')} de ${(c.monto_total||0).toLocaleString('es-AR')}</div>
+                      <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>
+                        {c.es_dolares
+                          ? `${c.cuotas_pagadas || 0}/${c.cant_cuotas || pagos.length} cuotas pagadas · ya pagado en pesos: $${totalPagado.toLocaleString('es-AR')}`
+                          : `${pct}% pagado · $${totalPagado.toLocaleString('es-AR')} de $${(c.monto_total||0).toLocaleString('es-AR')}`}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginLeft: 12 }}>
 
@@ -773,7 +812,9 @@ export default function Activos({ usuario }) {
                                   {p.fecha ? new Date(p.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
                                   {vencido && <span style={{ fontSize: 10, color: S.red, marginLeft: 4 }}>⚠ Vencida</span>}
                                 </td>
-                                <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600 }}>${(p.monto||0).toLocaleString('es-AR')}</td>
+                                <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                  {c.es_dolares && p.estado !== 'pagado' ? `US$ ${(p.monto_usd||0).toLocaleString('es-AR')}` : `$${(p.monto||0).toLocaleString('es-AR')}`}
+                                </td>
                                 <td style={{ padding: '7px 10px' }}>
                                   <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: p.estado === 'pagado' ? S.greenLight : vencido ? S.redLight : S.amberLight, color: p.estado === 'pagado' ? S.green : vencido ? S.red : S.amber }}>
                                     {p.estado === 'pagado' ? '✓ Pagada' : vencido ? '⚠ Vencida' : '⏳ Pendiente'}
@@ -781,7 +822,7 @@ export default function Activos({ usuario }) {
                                 </td>
                                 <td style={{ padding: '7px 10px' }}>
                                   {p.estado !== 'pagado' && c.estado === 'activo' && (
-                                    <button onClick={() => { setCreditoSelId(creditoSelId === p.id ? null : p.id); setFormPagoCredito({ fecha: hoyLocal(), es_paralelo: false }) }}
+                                    <button onClick={() => { setCreditoSelId(creditoSelId === p.id ? null : p.id); setFormPagoCredito({ fecha: hoyLocal(), es_paralelo: false, cotizacion: '' }) }}
                                       style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
                                       💳 Pagar
                                     </button>
@@ -797,13 +838,27 @@ export default function Activos({ usuario }) {
                       {creditoSelId && pagos.find(p => p.id === creditoSelId) && (
                         <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 8, padding: '1rem', marginTop: 10 }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: S.green, marginBottom: 8 }}>
-                            Pagar cuota {pagos.find(p => p.id === creditoSelId)?.nro_cuota} — ${(pagos.find(p => p.id === creditoSelId)?.monto||0).toLocaleString('es-AR')}
+                            Pagar cuota {pagos.find(p => p.id === creditoSelId)?.nro_cuota}
+                            {c.es_dolares
+                              ? ` — US$ ${(pagos.find(p => p.id === creditoSelId)?.monto_usd || 0).toLocaleString('es-AR')}`
+                              : ` — $${(pagos.find(p => p.id === creditoSelId)?.monto || 0).toLocaleString('es-AR')}`}
                           </div>
-                          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                             <div><Label>Fecha pago</Label><input type="date" value={formPagoCredito.fecha} onChange={e => setFormPagoCredito({...formPagoCredito, fecha: e.target.value})} style={{ ...inp, width: 140 }} /></div>
+                            {c.es_dolares && (
+                              <div>
+                                <Label>Cotización del dólar hoy</Label>
+                                <input type="number" value={formPagoCredito.cotizacion || ''} onChange={e => setFormPagoCredito({...formPagoCredito, cotizacion: e.target.value})} style={{ ...inp, width: 120 }} placeholder="ej. 1200" />
+                              </div>
+                            )}
+                            {c.es_dolares && formPagoCredito.cotizacion && (
+                              <div style={{ fontSize: 12, color: S.green, fontWeight: 600, paddingBottom: 8 }}>
+                                = ${Math.round((pagos.find(p => p.id === creditoSelId)?.monto_usd || 0) * parseFloat(formPagoCredito.cotizacion)).toLocaleString('es-AR')}
+                              </div>
+                            )}
                             <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 2 }}>
                               <input type="checkbox" checked={formPagoCredito.es_paralelo} onChange={e => setFormPagoCredito({...formPagoCredito, es_paralelo: e.target.checked})} />
-                              Paralelo
+                              Caja 2
                             </label>
                             <button onClick={() => pagarCuota(c, pagos.find(p => p.id === creditoSelId))} disabled={guardandoPagoCredito}
                               style={{ padding: '7px 16px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
