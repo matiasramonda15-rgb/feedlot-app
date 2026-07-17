@@ -243,7 +243,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
-      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} stockInsumosAlim={stockInsumosAlim} usuario={usuario} />}
+      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} stockInsumosAlim={stockInsumosAlim} usuario={usuario} contactos={contactos} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} />}
@@ -265,6 +265,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
   const [guardando, setGuardando] = useState(false)
   const [selectedCampo, setSelectedCampo] = useState(null)
   const [showLoteForm, setShowLoteForm] = useState(false)
+  const [editandoLote, setEditandoLote] = useState(null)
   const [formLote, setFormLote] = useState({ numero: '', superficie_ha: '', imagen_url: '' })
 
   async function guardar() {
@@ -284,10 +285,14 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
 
   async function guardarLote() {
     if (!formLote.numero) { alert('Ingresá el número de lote'); return }
-    const { error } = await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null, imagen_url: formLote.imagen_url || null })
+    const datos = { numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null, imagen_url: formLote.imagen_url || null }
+    const { error } = editandoLote
+      ? await supabase.from('lotes_agricolas').update(datos).eq('id', editandoLote)
+      : await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, ...datos })
     if (error) { alert('Error al guardar el lote: ' + error.message); return }
     await cargar()
     setShowLoteForm(false)
+    setEditandoLote(null)
     setFormLote({ numero: '', superficie_ha: '', imagen_url: '' })
   }
 
@@ -402,13 +407,15 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
               <div style={{ padding: '1rem 1.25rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: S.muted }}>Lotes</div>
-                  <button onClick={() => setShowLoteForm(!showLoteForm)}
+                  <button onClick={() => { setShowLoteForm(!showLoteForm); setEditandoLote(null); setFormLote({ numero: '', superficie_ha: '', imagen_url: '' }) }}
                     style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                     + Agregar lote
                   </button>
                 </div>
                 {showLoteForm && (
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, marginBottom: 6 }}>{editandoLote ? '✏ Editando lote' : '+ Nuevo lote'}</div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
                     <div style={{ flex: 1 }}>
                       <Label>N° Lote</Label>
                       <input type="text" value={formLote.numero} onChange={e => setFormLote({...formLote, numero: e.target.value})} placeholder="ej. 1, 2A" style={{...inputStyle, fontSize: 12}} />
@@ -421,8 +428,9 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                       <Label>Link del mapa (URL)</Label>
                       <input type="url" value={formLote.imagen_url} onChange={e => setFormLote({...formLote, imagen_url: e.target.value})} placeholder="https://..." style={{...inputStyle, fontSize: 12}} />
                     </div>
-                    <button onClick={guardarLote} style={{ padding: '9px 14px', fontSize: 12, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
-                    <button onClick={() => setShowLoteForm(false)} style={{ padding: '9px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                    <button onClick={guardarLote} style={{ padding: '9px 14px', fontSize: 12, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{editandoLote ? 'Guardar cambios' : 'Guardar'}</button>
+                    <button onClick={() => { setShowLoteForm(false); setEditandoLote(null); setFormLote({ numero: '', superficie_ha: '', imagen_url: '' }) }} style={{ padding: '9px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                    </div>
                   </div>
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
@@ -437,6 +445,8 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
                           <a href={l.imagen_url} target="_blank" rel="noopener noreferrer"
                             style={{ fontSize: 11, color: '#1A3D6B', textDecoration: 'none' }}>🗺</a>
                         )}
+                        <button onClick={() => { setEditandoLote(l.id); setFormLote({ numero: l.numero || '', superficie_ha: l.superficie_ha || '', imagen_url: l.imagen_url || '' }); setShowLoteForm(true) }}
+                          style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 12 }}>✏</button>
                         <button onClick={() => eliminarLote(l.id)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 12 }}>✕</button>
                       </div>
                     </div>
@@ -1755,6 +1765,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
 function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar, contactos }) {
   const [showForm, setShowForm] = useState(false)
+  const [editandoCosecha, setEditandoCosecha] = useState(null)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
@@ -1774,7 +1785,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
     // convierte solo, sin que haga falta tocar nada más.
     const kgTotales = parseFloat(form.tn_totales) * 1000
     const rendimiento = form.rendimiento_tn_ha || (kgTotales && supRef ? (kgTotales / 1000 / supRef).toFixed(2) : null)
-    const { error } = await supabase.from('cosechas').insert({
+    const datos = {
       campo_id: parseInt(form.campo_id),
       campana_id: parseInt(form.campana_id) || null,
       lote_id: form.lote_id ? parseInt(form.lote_id) : null,
@@ -1786,10 +1797,14 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       destino: form.destino || null,
       acopio: form.destino === 'acopio' ? (form.acopio || null) : null,
       observaciones: form.observaciones || null,
-    })
+    }
+    const { error } = editandoCosecha
+      ? await supabase.from('cosechas').update(datos).eq('id', editandoCosecha)
+      : await supabase.from('cosechas').insert(datos)
     if (error) { alert('Error al guardar la cosecha: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false)
+    setEditandoCosecha(null)
     setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
     setGuardando(false)
   }
@@ -1803,14 +1818,14 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
           <div style={{ fontSize: 14, fontWeight: 600 }}>Cosechas</div>
           {kgTotal > 0 && <div style={{ fontSize: 12, color: S.green, marginTop: 2 }}>Campaña activa: {(kgTotal / 1000).toLocaleString('es-AR')} tn cosechadas</div>}
         </div>
-        <button onClick={() => setShowForm(!showForm)}
+        <button onClick={() => { setShowForm(!showForm); setEditandoCosecha(null); setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' }) }}
           style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Registrar cosecha
         </button>
       </div>
 
       {showForm && (
-        <Card titulo="Registrar cosecha">
+        <Card titulo={editandoCosecha ? 'Editar cosecha' : 'Registrar cosecha'}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <Label>Campo *</Label>
@@ -1892,7 +1907,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
-            <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={() => { setShowForm(false); setEditandoCosecha(null); setForm({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
           </div>
         </Card>
       )}
@@ -1924,7 +1939,17 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                   {!c.destino && '—'}
                 </td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{c.observaciones || '—'}</td>
-                <td style={{ padding: '8px 12px' }}>
+                <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
+                  <button onClick={() => {
+                    setEditandoCosecha(c.id)
+                    setForm({
+                      campo_id: c.campo_id ? String(c.campo_id) : '', campana_id: c.campana_id ? String(c.campana_id) : '',
+                      lote_id: c.lote_id ? String(c.lote_id) : '', cultivo: c.cultivo || '', fecha: c.fecha || hoyLocal(),
+                      tn_totales: c.kg_totales ? String(c.kg_totales / 1000) : '', rendimiento_tn_ha: c.rendimiento_tn_ha ? String(c.rendimiento_tn_ha) : '',
+                      humedad_pct: c.humedad_pct ? String(c.humedad_pct) : '', destino: c.destino || '', acopio: c.acopio || '', observaciones: c.observaciones || '',
+                    })
+                    setShowForm(true)
+                  }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('cosechas').delete().eq('id', c.id); cargar() }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                 </td>
@@ -1939,14 +1964,14 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
 }
 
 // ── TAB VENTAS DE GRANOS ──
-function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar, stockInsumosAlim, usuario }) {
+function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar, stockInsumosAlim, usuario, contactos }) {
   const [showForm, setShowForm] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
+  const [form, setForm] = useState({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
 
@@ -1954,10 +1979,14 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
   const totalIngresos = ventas.reduce((s, v) => s + (v.total || 0), 0)
 
   async function guardar() {
-    if (!form.cultivo || !form.kg) { alert('Completá cultivo y kg'); return }
+    if (!form.cultivo || !form.tn) { alert('Completá cultivo y toneladas'); return }
     if (form.esVentaInternaFeedlot && !form.stock_insumo_id) { alert('Elegí a qué insumo del stock de Alimentación va este grano (ej. Maíz grano seco)'); return }
     setGuardando(true)
-    const kg = parseFloat(form.kg)
+    // La venta de granos no se ata a un campo/lote puntual — cuando se manda
+    // al acopio, se suele mezclar soja/maíz de varios campos y se vende todo
+    // junto. El precio de venta se usa como promedio general del cultivo
+    // (ver precioReferencia), no por campo específico.
+    const kg = parseFloat(form.tn) * 1000
     const precioTn = parseFloat(form.precio_tn) || 0
     const total = precioTn ? Math.round(kg * precioTn / 1000) : null
     // Venta interna a Feedlot: no hay factura ni negro, es un traspaso entre
@@ -1966,7 +1995,6 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
     const montoFact = form.esVentaInternaFeedlot ? total : (form.monto_facturado ? parseFloat(form.monto_facturado) : total)
     const montoNegro = form.esVentaInternaFeedlot ? 0 : (total && montoFact ? Math.max(0, total - montoFact) : 0)
     const data = {
-      campo_id: parseInt(form.campo_id) || null,
       campana_id: parseInt(form.campana_id) || null,
       cultivo: form.cultivo,
       fecha: form.fecha,
@@ -2022,7 +2050,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), kg: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
+    setForm({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', monto_facturado: '', monto_negro: '', iva_pct: '10.5', comprador: '', numero_contrato: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '' })
     setGuardando(false)
   }
 
@@ -2046,13 +2074,6 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
         <Card titulo={editando ? 'Editar venta' : 'Nueva venta de granos'}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
             <div>
-              <Label>Campo</Label>
-              <select value={form.campo_id} onChange={e => setForm({...form, campo_id: e.target.value})} style={inputStyle}>
-                <option value="">— Seleccioná —</option>
-                {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
-            </div>
-            <div>
               <Label>Cultivo *</Label>
               <select value={form.cultivo} onChange={e => setForm({...form, cultivo: e.target.value})} style={inputStyle}>
                 <option value="">— Seleccioná —</option>
@@ -2071,17 +2092,17 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
               <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} />
             </div>
             <div>
-              <Label>Kg vendidos *</Label>
-              <input type="number" value={form.kg} onChange={e => setForm({...form, kg: e.target.value})} style={inputStyle} />
+              <Label>Tn vendidas *</Label>
+              <input type="number" step="0.01" value={form.tn} onChange={e => setForm({...form, tn: e.target.value})} placeholder="ej. 40.5" style={inputStyle} />
             </div>
             <div>
               <Label>Precio $/tn</Label>
               <input type="number" value={form.precio_tn} onChange={e => setForm({...form, precio_tn: e.target.value})} style={inputStyle} />
             </div>
-            {form.precio_tn && form.kg && (
+            {form.precio_tn && form.tn && (
               <div style={{ gridColumn: '1/-1', background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: S.green }}>
-                Total operación: <strong>${Math.round(parseFloat(form.kg) * parseFloat(form.precio_tn) / 1000).toLocaleString('es-AR')}</strong>
-                {' '}· ({(parseFloat(form.kg) / 1000).toLocaleString('es-AR')} tn × ${parseFloat(form.precio_tn).toLocaleString('es-AR')}/tn)
+                Total operación: <strong>${Math.round(parseFloat(form.tn) * parseFloat(form.precio_tn)).toLocaleString('es-AR')}</strong>
+                {' '}· ({parseFloat(form.tn).toLocaleString('es-AR')} tn × ${parseFloat(form.precio_tn).toLocaleString('es-AR')}/tn)
               </div>
             )}
             <div style={{ gridColumn: '1/-1' }}>
@@ -2115,7 +2136,11 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                 </div>
                 <div>
                   <Label>Comprador / Acopio</Label>
-                  <input type="text" value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle} />
+                  <select value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle}>
+                    <option value="">— Seleccioná —</option>
+                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                  </select>
+                  <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
                 </div>
               </>
             )}
@@ -2138,26 +2163,24 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Campo', 'Cultivo', 'Kg', 'Tn', '$/tn', 'Total', 'Facturado', 'Caja 2', 'Comprador', ''].map(h => (
+            {['Fecha', 'Cultivo', 'Tn', '$/tn', 'Total', 'Facturado', 'Caja 2', 'Comprador', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
-            {ventas.length === 0 && <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ventas registradas.</td></tr>}
+            {ventas.length === 0 && <tr><td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ventas registradas.</td></tr>}
             {ventas.map(v => (
               <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>{v.fecha ? new Date(v.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12 }}>{campos.find(c => c.id === v.campo_id)?.nombre || '—'}</td>
                 <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>{v.cultivo}</span></td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{v.kg ? v.kg.toLocaleString('es-AR') : '—'}</td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{v.kg ? (v.kg / 1000).toLocaleString('es-AR') : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{v.kg ? (v.kg / 1000).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{v.precio_tn ? `$${v.precio_tn.toLocaleString('es-AR')}` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.accent }}>{v.monto_facturado ? `$${v.monto_facturado.toLocaleString('es-AR')}` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.purple }}>{v.monto_negro > 0 ? `$${v.monto_negro.toLocaleString('es-AR')}` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.comprador || '—'}</td>
                 <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
-                  <button onClick={() => { setEditando(v.id); setForm({ campo_id: v.campo_id || '', campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', kg: v.kg || '', precio_tn: v.precio_tn || '', monto_facturado: v.monto_facturado || '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', comprador: v.comprador || '', numero_contrato: v.numero_contrato || '', observaciones: v.observaciones || '' }); setShowForm(true) }}
+                  <button onClick={() => { setEditando(v.id); setForm({ campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', tn: v.kg ? String(v.kg / 1000) : '', precio_tn: v.precio_tn || '', monto_facturado: v.monto_facturado || '', monto_negro: v.monto_negro || '', iva_pct: v.iva_pct || '10.5', comprador: v.comprador || '', numero_contrato: v.numero_contrato || '', observaciones: v.observaciones || '', esVentaInternaFeedlot: false, stock_insumo_id: '' }); setShowForm(true) }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('ventas_granos').delete().eq('id', v.id); cargar() }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
@@ -3347,10 +3370,11 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
   const numAR = (n, dec = 0) => (n || n === 0) ? n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : '—'
 
   // Precio de referencia $/tn: promedio de lo efectivamente vendido (de ese campo si hay, sino de todos los campos con ese cultivo/campaña)
-  function precioReferencia(cultivo, campoId) {
-    const base = ventasGranos.filter(v => v.cultivo === cultivo && (!filtroCampana || v.campana_id === parseInt(filtroCampana)) && v.kg && v.total)
-    const deCampo = base.filter(v => v.campo_id === campoId)
-    const pool = deCampo.length > 0 ? deCampo : base
+  function precioReferencia(cultivo) {
+    // La venta de granos no se ata a un campo puntual — se promedia el precio
+    // de todas las ventas de ese cultivo en la campaña filtrada, sin importar
+    // de qué campo salió cada una (así se vende en la práctica: mezclado).
+    const pool = ventasGranos.filter(v => v.cultivo === cultivo && (!filtroCampana || v.campana_id === parseInt(filtroCampana)) && v.kg && v.total)
     const kgTot = pool.reduce((s, v) => s + (v.kg || 0), 0)
     const monTot = pool.reduce((s, v) => s + (v.total || 0), 0)
     return kgTot > 0 ? (monTot / (kgTot / 1000)) : null
@@ -3448,7 +3472,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
 
     const costosDirectos = costoInsumos + costoLabores + costoAlquiler + costoGastos
     const sinCosechaAun = g.kg === 0
-    const precioTn = precioReferencia(g.cultivo, g.campo_id)
+    const precioTn = precioReferencia(g.cultivo)
     const ingresos = (!sinCosechaAun && precioTn) ? (g.kg / 1000) * precioTn : 0
 
     const mb = sinCosechaAun ? null : ingresos - costosDirectos
