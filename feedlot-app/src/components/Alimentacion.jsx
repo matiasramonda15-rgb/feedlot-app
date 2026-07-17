@@ -623,7 +623,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
           ))}
         </div>
         <div style={{ display: 'flex', background: CM.surface, borderBottom: `1px solid ${CM.border}`, flexShrink: 0 }}>
-          {[['piletas','Piletas y mixer'],['stock','Stock']].map(([t, l]) => (
+          {[['piletas','Piletas y mixer'],['stock','Stock'], ...(usuario?.email === 'matias_eu@hotmail.com' ? [['historial','Historial']] : [])].map(([t, l]) => (
             <button key={t} onClick={() => setTabM(t)}
               style={{ flex: 1, padding: '10px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: CM.sans, background: tabM === t ? CM.green : 'transparent', color: tabM === t ? '#0A1A0A' : CM.muted, borderBottom: tabM === t ? `2px solid ${CM.green}` : '2px solid transparent' }}>
               {l}
@@ -853,6 +853,44 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                     </div>
                   ))
                 })()}
+              </>
+            )
+          })()}
+          {tabM === 'historial' && (() => {
+            const hace3dias = new Date(); hace3dias.setDate(hace3dias.getDate() - 2)
+            const hace3diasStr = `${hace3dias.getFullYear()}-${String(hace3dias.getMonth() + 1).padStart(2, '0')}-${String(hace3dias.getDate()).padStart(2, '0')}`
+            const porDia = {}
+            historial.filter(h => (h.fecha || (h.creado_en || '').split('T')[0]) >= hace3diasStr).forEach(h => {
+              const fecha = h.fecha || (h.creado_en || '').split('T')[0]
+              const numero = h.corrales?.numero || h.corral_id
+              if (!porDia[fecha]) porDia[fecha] = {}
+              if (!porDia[fecha][numero]) porDia[fecha][numero] = { kg: 0, dietas: new Set() }
+              porDia[fecha][numero].kg += h.kg_total || 0
+              if (h.tipo_dieta) porDia[fecha][numero].dietas.add(h.tipo_dieta)
+            })
+            const dias = Object.keys(porDia).sort().reverse().map(fecha => ({
+              fecha,
+              corrales: Object.entries(porDia[fecha]).map(([numero, d]) => ({ numero, kg: d.kg, dieta: [...d.dietas].join(' + ') })).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)),
+            }))
+            return (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.07em', margin: '.25rem 0 .65rem' }}>Últimos 3 días</div>
+                {dias.length === 0 && <div style={{ textAlign: 'center', padding: '2rem 1rem', color: CM.muted, fontSize: 13 }}>Sin cargas registradas en estos días.</div>}
+                {dias.map(dia => (
+                  <div key={dia.fecha} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '.85rem', marginBottom: '.65rem' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                      {new Date(dia.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'short' })}
+                      <span style={{ color: CM.muted, fontWeight: 400, marginLeft: 6, fontSize: 11 }}>· {dia.corrales.length} corral{dia.corrales.length !== 1 ? 'es' : ''} · {dia.corrales.reduce((s, c) => s + c.kg, 0).toLocaleString('es-AR')} kg</span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {dia.corrales.map(c => (
+                        <div key={c.numero} style={{ fontSize: 11, background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '4px 8px' }}>
+                          <strong>C-{c.numero}</strong> <span style={{ color: CM.muted }}>{c.dieta || ''} · {c.kg.toLocaleString('es-AR')} kg</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </>
             )
           })()}

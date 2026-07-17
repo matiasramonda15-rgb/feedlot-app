@@ -46,7 +46,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }, { data: revisionesHoy }, { data: remitosSinPrecio }, { data: insumosSinRetirar }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
       supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento', 'fecha_term_c']),
-      supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en, tipo_dieta, corrales(numero)').order('creado_en', { ascending: false }).limit(500),
       supabase.from('revisiones').select('id, creado_en').eq('tipo', 'bisemanal').order('creado_en', { ascending: false }).limit(1),
       supabase.from('compras_insumos').select('id, insumo_nombre, fecha, proveedor').is('total', null).neq('insumo_tipo', 'agro').order('fecha'),
       supabase.from('compras_insumos').select('id, insumo_nombre, fecha, proveedor, cantidad, unidad').eq('retirado', false).eq('estado_pago', 'pagado').neq('insumo_tipo', 'agro').order('fecha'),
