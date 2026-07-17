@@ -40,7 +40,7 @@ export default function Personal({ usuario }) {
   const [showFormPago, setShowFormPago] = useState(false)
   const [guardando, setGuardando] = useState(false)
 
-  const [formEmp, setFormEmp] = useState({ nombre: '', rol: '', sueldo_base: '', tipo: 'fijo', aparece_en_servicios: true })
+  const [formEmp, setFormEmp] = useState({ nombre: '', rol: '', sueldo_base: '', tipo: 'fijo', aparece_en_servicios: true, actividad: 'General' })
   const [formPago, setFormPago] = useState({
     empleado_id: '', fecha: hoyLocal(),
     monto: '', concepto: '', tipo: 'sueldo'
@@ -69,20 +69,21 @@ export default function Personal({ usuario }) {
       sueldo_base: editandoEmp.sueldo_base ? parseFloat(editandoEmp.sueldo_base) : null,
       tipo: editandoEmp.tipo || 'fijo',
       aparece_en_servicios: editandoEmp.aparece_en_servicios !== false,
+      actividad: editandoEmp.actividad || 'General',
     }).eq('id', editandoEmp.id)
     if (error) { alert('Error al guardar los cambios: ' + error.message); return }
     setEditandoEmp(null)
-    await cargarDatos()
+    await cargar()
   }
 
   async function guardarEmpleado() {
     if (!formEmp.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    const { error } = await supabase.from('empleados').insert({ nombre: formEmp.nombre, rol: formEmp.rol || null, sueldo_base: formEmp.sueldo_base ? parseFloat(formEmp.sueldo_base) : null, tipo: formEmp.tipo || 'fijo', aparece_en_servicios: formEmp.aparece_en_servicios !== false, activo: true })
+    const { error } = await supabase.from('empleados').insert({ nombre: formEmp.nombre, rol: formEmp.rol || null, sueldo_base: formEmp.sueldo_base ? parseFloat(formEmp.sueldo_base) : null, tipo: formEmp.tipo || 'fijo', aparece_en_servicios: formEmp.aparece_en_servicios !== false, actividad: formEmp.actividad || 'General', activo: true })
     if (error) { alert('Error al guardar el empleado: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormEmp(false)
-    setFormEmp({ nombre: '', rol: '', sueldo_base: '' })
+    setFormEmp({ nombre: '', rol: '', sueldo_base: '', tipo: 'fijo', aparece_en_servicios: true, actividad: 'General' })
     setGuardando(false)
   }
 
@@ -197,6 +198,15 @@ export default function Personal({ usuario }) {
                     <option value="temporal">Temporal</option>
                   </select>
                 </div>
+                <div>
+                  <Label>Actividad (para repartir el costo en Reportes)</Label>
+                  <select value={formEmp.actividad} onChange={e => setFormEmp({...formEmp, actividad: e.target.value})} style={inputStyle}>
+                    <option value="Feedlot">Feedlot (100%)</option>
+                    <option value="Agricultura">Agricultura (100%)</option>
+                    <option value="Servicios">Servicios (100%)</option>
+                    <option value="General">General (se reparte 1/3 y 1/3 y 1/3)</option>
+                  </select>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input type="checkbox" checked={formEmp.aparece_en_servicios} onChange={e => setFormEmp({...formEmp, aparece_en_servicios: e.target.checked})} id="aparece_svc" />
                   <label htmlFor="aparece_svc" style={{ fontSize: 13, cursor: 'pointer' }}>Aparece en Servicios</label>
@@ -230,6 +240,7 @@ export default function Personal({ usuario }) {
                           <span style={{ fontSize: 13, fontWeight: 600 }}>{e.nombre}</span>
                           {e.tipo === 'temporal' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: S.amberLight, color: S.amber }}>Temporal</span>}
                           {e.aparece_en_servicios && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: S.accentLight, color: S.accent }}>Servicios</span>}
+                          <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: S.purpleLight, color: S.purple }}>{e.actividad || 'sin actividad'}</span>
                         </div>
                         <div style={{ fontSize: 11, color: S.muted }}>{e.rol || '—'}</div>
                         <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
@@ -237,7 +248,7 @@ export default function Personal({ usuario }) {
                           <span style={{ color: S.green }}>${totalEmp.toLocaleString('es-AR')} {anio}</span>
                         </div>
                       </div>
-                      <button onClick={ev => { ev.stopPropagation(); setEditandoEmp({ id: e.id, nombre: e.nombre, rol: e.rol || '', sueldo_base: e.sueldo_base ? String(e.sueldo_base) : '', tipo: e.tipo || 'fijo', aparece_en_servicios: e.aparece_en_servicios !== false }) }}
+                      <button onClick={ev => { ev.stopPropagation(); setEditandoEmp({ id: e.id, nombre: e.nombre, rol: e.rol || '', sueldo_base: e.sueldo_base ? String(e.sueldo_base) : '', tipo: e.tipo || 'fijo', aparece_en_servicios: e.aparece_en_servicios !== false, actividad: e.actividad || 'General' }) }}
                         style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer', marginLeft: 8, flexShrink: 0 }}>
                         ✏ Editar
                       </button>
@@ -256,6 +267,15 @@ export default function Personal({ usuario }) {
                         <select value={editandoEmp.tipo} onChange={ev => setEditandoEmp({...editandoEmp, tipo: ev.target.value})} style={inputStyle}>
                           <option value="fijo">Fijo</option>
                           <option value="temporal">Temporal</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label>Actividad (para repartir el costo en Reportes)</Label>
+                        <select value={editandoEmp.actividad} onChange={ev => setEditandoEmp({...editandoEmp, actividad: ev.target.value})} style={inputStyle}>
+                          <option value="Feedlot">Feedlot (100%)</option>
+                          <option value="Agricultura">Agricultura (100%)</option>
+                          <option value="Servicios">Servicios (100%)</option>
+                          <option value="General">General (se reparte 1/3 y 1/3 y 1/3)</option>
                         </select>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
