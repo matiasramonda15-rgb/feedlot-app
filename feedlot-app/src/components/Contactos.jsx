@@ -112,6 +112,7 @@ export default function Contactos({ usuario }) {
       cbu: formContacto.cbu || null,
       banco: formContacto.banco || null,
       observaciones: formContacto.observaciones || null,
+      actividades: (formContacto.actividades && formContacto.actividades.length > 0) ? formContacto.actividades : null,
     }
     if (formContacto.id) {
       // Si se está renombrando (no solo editando otro dato), hay que
@@ -865,6 +866,24 @@ export default function Contactos({ usuario }) {
                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface }}>
                 {TIPOS.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
               </select>
+            </div>
+            <div style={{ gridColumn: '1/-1' }}>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 5 }}>Asociado a (para que aparezca solo en las listas relevantes — si no marcás nada, aparece en todas)</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['Feedlot', 'Agricultura', 'Servicios'].map(act => {
+                  const activo = (formContacto.actividades || []).includes(act)
+                  return (
+                    <label key={act} onClick={() => {
+                      const actuales = formContacto.actividades || []
+                      const nuevas = activo ? actuales.filter(a => a !== act) : [...actuales, act]
+                      setFormContacto({...formContacto, actividades: nuevas})
+                    }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${activo ? S.accent : S.border}`, borderRadius: 6, background: activo ? S.accentLight : S.surface, color: activo ? S.accent : S.muted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={activo} readOnly style={{ margin: 0 }} />
+                      {act}
+                    </label>
+                  )
+                })}
+              </div>
             </div>
             <div style={{ gridColumn: '1/-1' }}>
               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>

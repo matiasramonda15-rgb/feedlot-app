@@ -532,7 +532,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <label style={lblM}>Cliente *</label>
                   <select value={formM.cliente} onChange={e => setFormM({...formM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Seleccioná —</option>
-                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                   <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
                 </>
@@ -659,7 +659,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                           <label style={lblM}>Cliente</label>
                           <select value={editSvcM.cliente} onChange={e => setEditSvcM({...editSvcM, cliente: e.target.value})} style={inpM}>
                             <option value="">— Sin especificar —</option>
-                            {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                            {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                           </select>
                           <label style={lblM}>Servicio</label>
                           <select value={editSvcM.labor} onChange={e => setEditSvcM({...editSvcM, labor: e.target.value})} style={inpM}>
@@ -733,7 +733,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <label style={lblM}>Cliente/Propietario</label>
                   <select value={formRegM.cliente} onChange={e => setFormRegM({...formRegM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Sin especificar —</option>
-                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                   <label style={lblM}>N° Lote</label>
                   <input type="text" value={formRegM.nro_lote} onChange={e => setFormRegM({...formRegM, nro_lote: e.target.value})} style={inpM} placeholder="ej. Lote 3" />
@@ -990,7 +990,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                     <Lbl>Cliente *</Lbl>
                     <select value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} style={inp}>
                       <option value="">— Seleccioná —</option>
-                      {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                      {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                     </select>
                     <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                   </div>
@@ -1943,7 +1943,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <Lbl>Cliente/Propietario</Lbl>
                   <select value={formReg.cliente} onChange={e => setFormReg({ ...formReg, cliente: e.target.value })} style={inp}>
                     <option value="">— Sin especificar —</option>
-                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                 </div>
                 <div><Lbl>N° Lote</Lbl><input type="text" value={formReg.nro_lote} onChange={e => setFormReg({ ...formReg, nro_lote: e.target.value })} placeholder="ej. Lote 3" style={inp} /></div>
