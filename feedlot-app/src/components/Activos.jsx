@@ -67,14 +67,21 @@ export default function Activos({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: a }, { data: r }, { data: ct }] = await Promise.all([
+    const [{ data: a }, { data: r }, { data: ct }, { data: cred }, { data: pc }] = await Promise.all([
       supabase.from('activos').select('*').order('fecha_compra', { ascending: false }),
       supabase.from('retiros_socios').select('*').order('fecha', { ascending: false }),
       supabase.from('contactos').select('id, nombre').order('nombre'),
+      supabase.from('creditos').select('*, activos(nombre)').order('created_at', { ascending: false }),
+      supabase.from('pagos_creditos').select('*').order('nro_cuota'),
     ])
     setActivos(a || [])
     setRetiros(r || [])
     setContactos(ct || [])
+    setCreditos(cred || [])
+    // Agrupar las cuotas por crédito, para poder mostrarlas dentro de cada tarjeta
+    const porCredito = {}
+    ;(pc || []).forEach(p => { if (!porCredito[p.credito_id]) porCredito[p.credito_id] = []; porCredito[p.credito_id].push(p) })
+    setPagosCreditos(porCredito)
     setLoading(false)
   }
 
