@@ -20,6 +20,7 @@ export default function Contactos({ usuario }) {
   const [ventas, setVentas] = useState([])
   const [lotes, setLotes] = useState([])
   const [comprasInsumos, setComprasInsumos] = useState([])
+  const [gastosGenerales, setGastosGenerales] = useState([])
   const [cosechas, setCosechas] = useState([])
   const [ventasGranos, setVentasGranos] = useState([])
   const [ventasActivos, setVentasActivos] = useState([])
@@ -51,6 +52,7 @@ export default function Contactos({ usuario }) {
       { data: va },
       { data: cos },
       { data: vgr },
+      { data: gg },
     ] = await Promise.all([
       supabase.from('contactos').select('*').order('nombre'),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -64,6 +66,7 @@ export default function Contactos({ usuario }) {
       supabase.from('ventas_activos').select('*').order('creado_en', { ascending: false }),
       supabase.from('cosechas').select('*'),
       supabase.from('ventas_granos').select('id, cosecha_id, kg'),
+      supabase.from('gastos_generales').select('*').order('fecha', { ascending: false }),
     ])
 
     setContactos(c || [])
@@ -73,6 +76,7 @@ export default function Contactos({ usuario }) {
     setVentasActivos(va || [])
     setCosechas(cos || [])
     setVentasGranos(vgr || [])
+    setGastosGenerales(gg || [])
 
     const pvMap = {}
     ;(pv || []).forEach(p => {
@@ -298,7 +302,7 @@ export default function Contactos({ usuario }) {
   }
 
   function calcularSaldo(nombre) {
-    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [] }
     // Agrupar ventas multi-corral para no contar de más
     const gruposVistos = new Set()
     const ventasAgrupadas = data.ventas.filter(v => {
@@ -340,8 +344,12 @@ export default function Contactos({ usuario }) {
     // comparten la misma tabla.
     const totalComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.total || 0), 0)
     const pagadoComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
-    const totalCompras = totalComprasHacienda + totalComprasInsumos
-    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos
+    // Gastos generales (silobolsa, flete, taller, etc.) — mismo criterio: le
+    // debemos al proveedor hasta que se paguen.
+    const totalGastosGenerales = (data.gastosGenerales || []).reduce((s, g) => s + (g.monto || 0), 0)
+    const pagadoGastosGenerales = (data.gastosGenerales || []).reduce((s, g) => s + (g.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
+    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales
+    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoGastosGenerales
     const pendienteCompras = totalCompras - pagadoCompras
     return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
   }
@@ -353,13 +361,13 @@ export default function Contactos({ usuario }) {
   ventas.forEach(v => {
     const nombre = v.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [] }
     transaccionesPorNombre[nombre].ventas.push(v)
   })
   lotes.forEach(l => {
     const nombre = l.procedencia
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [] }
     transaccionesPorNombre[nombre].lotes.push(l)
   })
   // Compras de insumos (rollo, maíz, remedios, etc.) — funcionan igual que una
@@ -367,15 +375,23 @@ export default function Contactos({ usuario }) {
   comprasInsumos.forEach(ci => {
     const nombre = ci.proveedor
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [] }
     transaccionesPorNombre[nombre].comprasInsumos.push(ci)
+  })
+  // Gastos generales (ej. un silobolsa, un flete, un service de taller) —
+  // funcionan igual que una compra: nosotros le debemos al proveedor.
+  gastosGenerales.forEach(g => {
+    const nombre = g.proveedor
+    if (!nombre) return
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [] }
+    transaccionesPorNombre[nombre].gastosGenerales.push(g)
   })
   // Ventas de activos (maquinaria, equipos) — funcionan igual que una venta de
   // hacienda: el comprador nos debe.
   ventasActivos.forEach(va => {
     const nombre = va.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [] }
     transaccionesPorNombre[nombre].ventasActivos.push(va)
   })
 
@@ -392,11 +408,14 @@ export default function Contactos({ usuario }) {
   // Vista ficha de contacto
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
-    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
+    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, gastosGenerales: gastosGeneralesCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
     // Remitos sin precio todavía — se muestran en su propia pestaña, sin sumar al saldo
     const remitosSinPrecio = (comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha }))
     // Insumos ya cargados/pagados pero todavía no retirados físicamente
     const insumosPendRetiro = (comprasInsumosCto || []).filter(ci => ci.retirado === false).map(ci => ({ id: ci.id, tabla: 'compras_insumos', insumoId: ci.insumo_id, tipo: ci.insumo_tipo, desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha, total: ci.total }))
+    // Gastos generales pendientes de pago (ej. un silobolsa retirado, esperando
+    // la factura para saber el monto y pagarlo/compensarlo)
+    const gastosPendientes = (gastosGeneralesCto || []).filter(g => g.estado_pago === 'pendiente').map(g => ({ desc: g.descripcion || g.categoria || 'Gasto', fecha: g.fecha, monto: g.monto, actividad: g.actividad }))
     // Mercadería entregada a este contacto (acopio) desde una cosecha, y
     // todavía sin vender — sale de comparar lo cosechado contra lo ya vendido
     // de esa misma cosecha.
@@ -484,7 +503,7 @@ export default function Contactos({ usuario }) {
           {[
             { key: 'oficial', label: 'Cuenta corriente' },
             ...(puedeVerParalelo ? [{ key: 'paralela', label: 'Caja 2' }] : []),
-            { key: 'pendientes', label: `Remitos pendientes${remitosSinPrecio.length > 0 ? ` (${remitosSinPrecio.length})` : ''}` },
+            { key: 'pendientes', label: `Remitos pendientes${(remitosSinPrecio.length + gastosPendientes.length) > 0 ? ` (${remitosSinPrecio.length + gastosPendientes.length})` : ''}` },
             { key: 'retiro', label: `Pendiente de retiro${insumosPendRetiro.length > 0 ? ` (${insumosPendRetiro.length})` : ''}` },
             { key: 'mercaderia', label: `Mercadería entregada${mercaderiaEntregada.length > 0 ? ` (${mercaderiaEntregada.length})` : ''}` },
           ].map(t => (
@@ -502,17 +521,23 @@ export default function Contactos({ usuario }) {
         {/* Pestaña: remitos pendientes de precio */}
         {tabFicha === 'pendientes' && (
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-            {remitosSinPrecio.length === 0 ? (
+            {remitosSinPrecio.length === 0 && gastosPendientes.length === 0 ? (
               <div style={{ fontSize: 13, color: S.hint, textAlign: 'center', padding: '1.5rem' }}>No hay remitos pendientes de precio con este contacto.</div>
             ) : (
               <>
                 <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
-                  Todavía no tienen precio cargado — no suman al saldo hasta que se completen en Insumos.
+                  Todavía no tienen precio cargado o no están pagados — no suman al saldo hasta que se completen.
                 </div>
                 {remitosSinPrecio.map((r, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 6, marginBottom: 6, fontSize: 13, color: S.amber }}>
+                  <div key={'ci' + i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 6, marginBottom: 6, fontSize: 13, color: S.amber }}>
                     <span><strong>{r.desc}</strong> · {r.cant?.toLocaleString('es-AR')}{r.unidad ? ' ' + r.unidad : ''}</span>
                     <span>{r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+                  </div>
+                ))}
+                {gastosPendientes.map((g, i) => (
+                  <div key={'gg' + i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 6, marginBottom: 6, fontSize: 13, color: S.amber }}>
+                    <span><strong>{g.desc}</strong> · {g.actividad || 'Gasto general'} · {g.monto != null ? `$${g.monto.toLocaleString('es-AR')}` : 'monto a definir'}</span>
+                    <span>{g.fecha ? new Date(g.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
                   </div>
                 ))}
               </>
@@ -705,6 +730,27 @@ export default function Contactos({ usuario }) {
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `${ci.id}-${pi}`,
                 descripcion: `Pago ${ci.insumo_nombre || 'insumo'} · ${p.forma_pago || ''}`,
                 credito: p.monto, debito: 0, esPago: true,
+              })
+            })
+          })
+
+          // Gastos generales (silobolsa, flete, taller, etc.) — le debemos al proveedor.
+          ;(gastosGeneralesCto || []).forEach(g => {
+            const esParaleloGg = g.es_paralelo || false
+            if (esParalela && !esParaleloGg) return
+            if (!esParalela && esParaleloGg) return
+            if (g.monto > 0) {
+              movimientos.push({
+                fecha: g.fecha, fechaVto: null, tipo: esParaleloGg ? 'PAR' : 'GASTO', nro: g.id,
+                descripcion: `${g.descripcion || g.categoria || 'Gasto'} · ${g.actividad || ''}`,
+                credito: 0, debito: g.monto, factura: g.comprobante,
+              })
+            }
+            ;(g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
+              movimientos.push({
+                fecha: g.fecha, fechaVto: null, tipo: 'PAGO', nro: `gg${g.id}-${pi}`,
+                descripcion: `Pago ${g.descripcion || g.categoria || 'gasto'} · ${p.tipo || ''}`,
+                credito: parseFloat(p.monto) || 0, debito: 0, esPago: true,
               })
             })
           })
