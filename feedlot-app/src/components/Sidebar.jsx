@@ -50,6 +50,7 @@ const MENU = [
     section: 'COMERCIAL',
     items: [
       { id: 'comercial',    label: 'Caja y cheques',      roles: ['dueno', 'secretaria'] },
+      { id: 'cuentas_pagar', label: 'Cuentas a pagar',    roles: ['dueno', 'secretaria'] },
       { id: 'contactos',    label: 'Contactos',           roles: ['dueno', 'secretaria'] },
     ]
   },
