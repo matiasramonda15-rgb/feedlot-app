@@ -105,7 +105,7 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
 export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
-  creditoEntidad, creditoCuotas, creditoVencimiento, creditoEsDolares, cotizacionDolarCredito, monedas, cotizacionDolar, modos,
+  creditoEntidad, creditoCuotas, creditoVencimiento, creditoEsDolares, cotizacionDolarCredito, creditoMontoUsd, monedas, cotizacionDolar, modos,
 }) {
   let caja_oficial_id = null, caja_paralela_id = null
   for (const pago of pagos) {
@@ -142,7 +142,7 @@ export async function pagarComprasPendientes(supabase, {
     // Si el crédito es en dólares, se guarda el equivalente en USD (usando
     // la cotización de referencia del momento) — el monto en pesos de cada
     // cuota recién se define el día que se pague, no ahora.
-    const montoUsd = creditoEsDolares && cotizacionDolarCredito ? Math.round((montoCredito / cotizacionDolarCredito) * 100) / 100 : null
+    const montoUsd = creditoEsDolares ? (creditoMontoUsd ? parseFloat(creditoMontoUsd) : (cotizacionDolarCredito ? Math.round((montoCredito / cotizacionDolarCredito) * 100) / 100 : null)) : null
     const { data: cred, error: errCredito } = await supabase.from('creditos').insert({
       compra_insumos_id: seleccionadas[0] || null,
       entidad: creditoEntidad || null,
