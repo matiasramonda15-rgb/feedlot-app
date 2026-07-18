@@ -2854,6 +2854,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [chequesCartera, setChequesCartera] = useState([])
   const [preciosPend, setPreciosPend] = useState({})
   const [monedasPend, setMonedasPend] = useState({})
+  const [modosPend, setModosPend] = useState({})
   const [formCompra, setFormCompra] = useState({
     agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
     fecha: hoyLocal(), proveedor: '',
@@ -2991,16 +2992,39 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (pagarAhora && pagoCredito) {
       const montoCredito = parseFloat(pagoCredito.monto)
       const cuotas = parseInt(formCompra.credito_cuotas) || 1
-      const { error: errCredito } = await supabase.from('creditos').insert({
+      const esDolares = !!formCompra.credito_es_dolares
+      const montoUsd = esDolares && cotizacionDolar ? Math.round((montoCredito / cotizacionDolar) * 100) / 100 : null
+      const { data: cred, error: errCredito } = await supabase.from('creditos').insert({
         compra_insumos_id: compraInsertada?.id,
         entidad: formCompra.credito_entidad || null,
         descripcion: `${formCompra.insumo_nombre} — ${formCompra.proveedor || ''}`,
-        monto_total: montoCredito, cant_cuotas: cuotas, monto_cuota: Math.round(montoCredito / cuotas),
+        es_dolares: esDolares,
+        monto_total: esDolares ? 0 : montoCredito, monto_total_usd: montoUsd,
+        cant_cuotas: cuotas, monto_cuota: esDolares ? null : Math.round(montoCredito / cuotas),
         fecha_inicio: formCompra.fecha, fecha_vencimiento: formCompra.credito_vencimiento || null,
-        cuotas_pagadas: 0, saldo_pendiente: montoCredito, estado: 'activo',
+        cuotas_pagadas: 0, saldo_pendiente: esDolares ? 0 : montoCredito, estado: 'activo',
         registrado_por: usuario?.id,
-      })
-      if (errCredito) alert('La compra se guardó, pero no se pudo registrar el crédito: ' + errCredito.message + ' — cargalo a mano en Créditos.')
+      }).select().single()
+      if (errCredito) {
+        alert('La compra se guardó, pero no se pudo registrar el crédito: ' + errCredito.message + ' — cargalo a mano en Créditos.')
+      } else {
+        const cuotasAInsertar = []
+        for (let i = 0; i < cuotas; i++) {
+          let fechaCuota = formCompra.credito_vencimiento || formCompra.fecha
+          if (i > 0 && formCompra.credito_vencimiento) {
+            const d = new Date(formCompra.credito_vencimiento + 'T12:00:00')
+            d.setMonth(d.getMonth() + i)
+            fechaCuota = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          }
+          cuotasAInsertar.push({
+            credito_id: cred.id, fecha: fechaCuota, nro_cuota: i + 1, estado: 'pendiente',
+            monto: esDolares ? null : Math.round(montoCredito / cuotas),
+            monto_usd: esDolares && montoUsd ? Math.round((montoUsd / cuotas) * 100) / 100 : null,
+          })
+        }
+        const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
+        if (errCuotas) alert('El crédito se guardó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
+      }
     }
 
     // Actualizar stock: la cantidad se suma solo si ya se retiró físicamente.
@@ -3020,7 +3044,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     }
 
     setShowFormCompra(false)
-    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
+    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '', credito_es_dolares: false })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
@@ -3041,10 +3065,12 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         if (pendientes.length === 0) return null
         const montoItem = i => {
           if (i.total) return i.total
-          if (!preciosPend[i.id] || !i.cantidad) return 0
-          const precio = parseFloat(preciosPend[i.id])
-          const precioEnPesos = monedasPend[i.id] === 'USD' ? precio * cotizacionDolar : precio
-          return Math.round(i.cantidad * precioEnPesos)
+          if (!preciosPend[i.id]) return 0
+          const valor = parseFloat(preciosPend[i.id])
+          const valorEnPesos = monedasPend[i.id] === 'USD' ? valor * cotizacionDolar : valor
+          if (modosPend[i.id] === 'total') return Math.round(valorEnPesos)
+          if (!i.cantidad) return 0
+          return Math.round(i.cantidad * valorEnPesos)
         }
         const totalSel = seleccionadas.reduce((s, id) => { const i = pendientes.find(x => x.id === id); return s + (i ? montoItem(i) : 0) }, 0)
         const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
@@ -3064,10 +3090,11 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           }).filter(Boolean)
           const { error } = await pagarComprasPendientes(supabase, {
             seleccionadas, pendientes, precios: preciosPend, facturas: null,
-            monedas: monedasPend, cotizacionDolar,
+            monedas: monedasPend, cotizacionDolar, modos: modosPend,
             pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
             descripcion: 'Pago compras insumos Agricultura', registradoPor: usuario?.id,
             creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
+            creditoEsDolares: formPagoGrupal.credito_es_dolares, cotizacionDolarCredito: cotizacionDolar,
             actualizarPrecioReferencia: async (i, precioFinal) => {
               if (!i.insumo_id) return
               await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
@@ -3076,7 +3103,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
           setSeleccionadas([])
           setShowPagosPend(false)
-          setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }], credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
+          setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }], credito_entidad: '', credito_cuotas: '', credito_vencimiento: '', credito_es_dolares: false })
           setPreciosPend({})
           setGuardandoPago(false)
           await cargar()
@@ -3096,7 +3123,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               </button>
             </div>
             <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
-              precios={preciosPend} setPrecios={setPreciosPend} S={S} cotizacionDolar={cotizacionDolar} monedas={monedasPend} setMonedas={setMonedasPend} />
+              precios={preciosPend} setPrecios={setPreciosPend} S={S} cotizacionDolar={cotizacionDolar} monedas={monedasPend} setMonedas={setMonedasPend} modos={modosPend} setModos={setModosPend} />
             {showPagosPend && seleccionadas.length > 0 && (
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>
@@ -3119,6 +3146,10 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                       <div><Label>Cant. de cuotas</Label><input type="number" value={formPagoGrupal.credito_cuotas || '1'} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_cuotas: e.target.value})} style={inputStyle} /></div>
                       <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formPagoGrupal.credito_vencimiento || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
                     </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={formPagoGrupal.credito_es_dolares || false} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_es_dolares: e.target.checked})} />
+                      <span style={{ fontSize: 12, color: '#3D1A6B' }}>💵 El crédito es en dólares — el monto de pesos que puse arriba se convierte a US$ con la cotización de hoy (${cotizacionDolar?.toLocaleString('es-AR')}), y las cuotas quedan en dólares hasta que se paguen</span>
+                    </label>
                   </div>
                 )}
 
@@ -3288,6 +3319,10 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   <div><Label>Cant. de cuotas</Label><input type="number" value={formCompra.credito_cuotas || '1'} onChange={e => setFormCompra({...formCompra, credito_cuotas: e.target.value})} style={inputStyle} /></div>
                   <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formCompra.credito_vencimiento || ''} onChange={e => setFormCompra({...formCompra, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
                 </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={formCompra.credito_es_dolares || false} onChange={e => setFormCompra({...formCompra, credito_es_dolares: e.target.checked})} />
+                  <span style={{ fontSize: 12, color: '#3D1A6B' }}>💵 El crédito es en dólares — el monto de pesos que puse arriba se convierte a US$ con la cotización de hoy (${cotizacionDolar?.toLocaleString('es-AR')}), y las cuotas quedan en dólares hasta que se paguen</span>
+                </label>
               </div>
             )}
 

@@ -102,6 +102,7 @@ export default function Insumos({ usuario }) {
   const [formPagoInline, setFormPagoInline] = useState({ fecha: hoyLocal(), tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
   const [preciosGrupal, setPreciosGrupal] = useState({})
+  const [modosGrupal, setModosGrupal] = useState({})
   const [facturasGrupal, setFacturasGrupal] = useState({})
   const [showPagosPend, setShowPagosPend] = useState(false)
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
@@ -309,7 +310,7 @@ export default function Insumos({ usuario }) {
                   )}
                 </div>
                 <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
-                  precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} />
+                  precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} modos={modosGrupal} setModos={setModosGrupal} />
               </div>
             )
           })()}
@@ -320,7 +321,15 @@ export default function Insumos({ usuario }) {
 
           {/* Formulario pago grupal */}
           {showPagosPend && seleccionadas.length > 0 && (() => {
-            const totalSel2 = seleccionadas.reduce((s, id) => { const c = compras.find(x => x.id === id); return s + (c?.total || 0) }, 0)
+            const montoItem = c => {
+              if (c.total) return c.total
+              if (!preciosGrupal[c.id]) return 0
+              const valor = parseFloat(preciosGrupal[c.id])
+              if (modosGrupal[c.id] === 'total') return Math.round(valor)
+              if (!c.cantidad) return 0
+              return Math.round(c.cantidad * valor)
+            }
+            const totalSel2 = seleccionadas.reduce((s, id) => { const c = compras.find(x => x.id === id); return s + (c ? montoItem(c) : 0) }, 0)
             const totalPagGrupal2 = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const inp = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
             return (
@@ -380,7 +389,7 @@ export default function Insumos({ usuario }) {
                     const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
                     const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`
                     const { error } = await pagarComprasPendientes(supabase, {
-                      seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal,
+                      seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal, modos: modosGrupal,
                       pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha, descripcion: desc,
                       contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
                       creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
@@ -393,6 +402,7 @@ export default function Insumos({ usuario }) {
                     if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
                     setSeleccionadas([])
                     setPreciosGrupal({})
+                    setModosGrupal({})
                     setFacturasGrupal({})
                     setShowPagosPend(false)
                     setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '', credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
