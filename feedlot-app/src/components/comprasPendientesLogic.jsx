@@ -4,12 +4,18 @@ import { ListaPagos } from './PagoFormulario'
 // N° factura (si falta) por cada una. Usado tanto en Insumos (Alimentación
 // y Sanidad) como en Agricultura (agroquímicos), que comparten la misma
 // tabla de compras por atrás.
-export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSeleccionadas, precios, setPrecios, facturas, setFacturas, S }) {
+// cotizacionDolar (opcional): si se pasa, aparece un botón para cargar el
+// precio en USD en vez de pesos (útil en Agricultura, donde casi todo se
+// cotiza en dólares) — monedas/setMonedas guarda qué moneda eligió cada fila.
+export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSeleccionadas, precios, setPrecios, facturas, setFacturas, S, cotizacionDolar, monedas, setMonedas }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {pendientes.map(c => {
         const sel = seleccionadas.includes(c.id)
-        const montoCalc = precios[c.id] && c.cantidad ? Math.round(parseFloat(precios[c.id]) * c.cantidad) : null
+        const esUsd = cotizacionDolar && monedas?.[c.id] === 'USD'
+        const precioIngresado = parseFloat(precios[c.id]) || 0
+        const precioEnPesos = esUsd ? precioIngresado * cotizacionDolar : precioIngresado
+        const montoCalc = precios[c.id] && c.cantidad ? Math.round(precioEnPesos * c.cantidad) : null
         return (
           <div key={c.id} style={{ border: `1px solid ${sel ? '#EF9F27' : S.border}`, borderRadius: 6, background: sel ? '#FFF8EC' : S.surface }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}>
@@ -29,10 +35,20 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
             </label>
             {sel && !(c.total || c.precio_unitario) && (
               <div onClick={e => e.preventDefault()} style={{ padding: '0 12px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 11, color: S.amber, whiteSpace: 'nowrap' }}>$/{c.unidad || 'u'}:</div>
+                <div style={{ fontSize: 11, color: S.amber, whiteSpace: 'nowrap' }}>{esUsd ? 'US$' : '$'}/{c.unidad || 'u'}:</div>
                 <input type="number" value={precios[c.id] || ''} onChange={e => setPrecios({...precios, [c.id]: e.target.value})}
                   placeholder="ej. 850" style={{ padding: '5px 8px', border: `1px solid ${S.amber}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', width: 110 }} />
-                {montoCalc != null && <span style={{ fontSize: 12, color: S.green, fontWeight: 600 }}>= ${montoCalc.toLocaleString('es-AR')}</span>}
+                {cotizacionDolar > 0 && setMonedas && (
+                  <div style={{ display: 'flex', border: `1px solid ${S.border}`, borderRadius: 5, overflow: 'hidden' }}>
+                    {['ARS', 'USD'].map(m => (
+                      <button key={m} onClick={() => setMonedas({...monedas, [c.id]: m})}
+                        style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: (monedas?.[c.id] || 'ARS') === m ? S.accent : 'transparent', color: (monedas?.[c.id] || 'ARS') === m ? '#fff' : S.muted }}>
+                        {m === 'ARS' ? '$' : 'US$'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {montoCalc != null && <span style={{ fontSize: 12, color: S.green, fontWeight: 600 }}>= ${montoCalc.toLocaleString('es-AR')}{esUsd ? ` (a $${cotizacionDolar.toLocaleString('es-AR')})` : ''}</span>}
                 {setFacturas && !c.numero_factura && (
                   <>
                     <div style={{ fontSize: 11, color: S.muted, whiteSpace: 'nowrap', marginLeft: 8 }}>N° Factura:</div>
@@ -61,7 +77,7 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
 export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
-  creditoEntidad, creditoCuotas, creditoVencimiento,
+  creditoEntidad, creditoCuotas, creditoVencimiento, monedas, cotizacionDolar,
 }) {
   let caja_oficial_id = null, caja_paralela_id = null
   for (const pago of pagos) {
@@ -117,11 +133,16 @@ export async function pagarComprasPendientes(supabase, {
       es_paralelo: pagos.some(p => p.es_paralelo),
     }
     if (contactoId) upd.contacto_id = parseInt(contactoId)
-    // Si la compra se cargó sin precio, se define recién ahora al pagar
+    // Si la compra se cargó sin precio, se define recién ahora al pagar —
+    // si se cargó en dólares, se convierte a pesos con la cotización del día
+    // antes de guardar (el stock y la caja siempre quedan en pesos).
     if (!(c.total || c.precio_unitario) && precios[id]) {
-      const precioFinal = parseFloat(precios[id])
+      const precioIngresado = parseFloat(precios[id])
+      const esUsd = monedas?.[id] === 'USD' && cotizacionDolar
+      const precioFinal = esUsd ? Math.round(precioIngresado * cotizacionDolar * 100) / 100 : precioIngresado
       upd.precio_unitario = precioFinal
       upd.total = Math.round((c.cantidad || 0) * precioFinal)
+      if (esUsd) { upd.precio_unitario_usd = precioIngresado; upd.cotizacion_dolar = cotizacionDolar }
       if (facturas?.[id]) upd.numero_factura = facturas[id]
       if (actualizarPrecioReferencia) await actualizarPrecioReferencia(c, precioFinal)
     }

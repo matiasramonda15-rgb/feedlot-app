@@ -2853,6 +2853,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
   const [preciosPend, setPreciosPend] = useState({})
+  const [monedasPend, setMonedasPend] = useState({})
   const [formCompra, setFormCompra] = useState({
     agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
     fecha: hoyLocal(), proveedor: '',
@@ -3038,7 +3039,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       {(() => {
         const pendientes = ingresos.filter(i => i.estado_pago === 'pendiente')
         if (pendientes.length === 0) return null
-        const montoItem = i => i.total || (preciosPend[i.id] && i.cantidad ? Math.round(i.cantidad * parseFloat(preciosPend[i.id])) : 0)
+        const montoItem = i => {
+          if (i.total) return i.total
+          if (!preciosPend[i.id] || !i.cantidad) return 0
+          const precio = parseFloat(preciosPend[i.id])
+          const precioEnPesos = monedasPend[i.id] === 'USD' ? precio * cotizacionDolar : precio
+          return Math.round(i.cantidad * precioEnPesos)
+        }
         const totalSel = seleccionadas.reduce((s, id) => { const i = pendientes.find(x => x.id === id); return s + (i ? montoItem(i) : 0) }, 0)
         const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
         const faltaPrecio = seleccionadas.some(id => { const i = pendientes.find(x => x.id === id); return i && !i.precio_unitario && !preciosPend[id] })
@@ -3057,6 +3064,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           }).filter(Boolean)
           const { error } = await pagarComprasPendientes(supabase, {
             seleccionadas, pendientes, precios: preciosPend, facturas: null,
+            monedas: monedasPend, cotizacionDolar,
             pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
             descripcion: 'Pago compras insumos Agricultura', registradoPor: usuario?.id,
             creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
@@ -3088,7 +3096,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               </button>
             </div>
             <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
-              precios={preciosPend} setPrecios={setPreciosPend} S={S} />
+              precios={preciosPend} setPrecios={setPreciosPend} S={S} cotizacionDolar={cotizacionDolar} monedas={monedasPend} setMonedas={setMonedasPend} />
             {showPagosPend && seleccionadas.length > 0 && (
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>
