@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { hoyLocal } from '../shared/dateUtils'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -40,7 +41,7 @@ const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtip
 
 const FORM_INIT = {
   actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', activo_id: '',
-  fecha: new Date().toISOString().split('T')[0],
+  fecha: hoyLocal(),
   proveedor: '', comprobante: '',
   // Datos proveedor para recibo
   domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
@@ -101,7 +102,7 @@ function generarRecibo(gasto, pagos) {
                p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' :
                p.subtipo_cheque === 'propio' ? `E-CHEQ PROPIO` :
                `E-CHEQ TERCERO`
-    if (p.es_paralelo) descBase += ' (PARALELO)'
+    if (p.es_paralelo) descBase += ' (CAJA 2)'
 
     // Cheques de tercero: una fila por cada cheque
     if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_detalle?.length > 0) {
@@ -261,6 +262,8 @@ export default function Gastos({ usuario }) {
   const [filtroActividad, setFiltroActividad] = useState('')
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
   const [form, setForm] = useState(FORM_INIT)
+  const [pagarAhora, setPagarAhora] = useState(true)
+  const [editandoId, setEditandoId] = useState(null)
 
   useEffect(() => { cargar() }, [])
 
@@ -308,7 +311,7 @@ export default function Gastos({ usuario }) {
 
   async function guardar() {
     if (!form.categoria || !form.monto) { alert('Completá categoría y monto'); return }
-    if (Math.abs(diferencia) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${montoTotal.toLocaleString('es-AR')})`); return }
+    if (pagarAhora && Math.abs(diferencia) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${montoTotal.toLocaleString('es-AR')})`); return }
     setGuardando(true)
 
     let caja_oficial_id = null
@@ -318,9 +321,10 @@ export default function Gastos({ usuario }) {
     const chequeEmitidoIds = []
     const pagosConIds = []
 
-    for (const pago of form.pagos) {
+    if (pagarAhora) for (const pago of form.pagos) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
+      if (pago.tipo === 'canje') { pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null }); continue }
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
       let desc = `${form.actividad} — ${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' (' + form.proveedor + ')' : ''}`
       if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
@@ -371,7 +375,7 @@ export default function Gastos({ usuario }) {
       pagosConIds.push({ ...pago, _caja_id: pagoCajaId, _es_paralelo: pago.es_paralelo, _cheque_emitido_id: chequeEmitidoId })
     }
 
-    await supabase.from('gastos_generales').insert({
+    const datosGasto = {
       actividad: form.actividad,
       activo_id: form.activo_id ? parseInt(form.activo_id) : null,
       categoria: form.categoria,
@@ -392,19 +396,27 @@ export default function Gastos({ usuario }) {
           }).filter(Boolean) }
         : p
       ),
-      forma_pago: form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
-      es_paralelo: form.pagos.some(p => p.es_paralelo),
+      forma_pago: pagarAhora ? form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
+      es_paralelo: pagarAhora ? form.pagos.some(p => p.es_paralelo) : false,
+      estado_pago: pagarAhora ? 'pagado' : 'pendiente',
       caja_oficial_id,
       caja_paralela_id,
       caja_oficial_ids: cajaOficialIds.length > 0 ? cajaOficialIds : null,
       caja_paralela_ids: cajaParalelaIds.length > 0 ? cajaParalelaIds : null,
       cheque_emitido_ids: chequeEmitidoIds.length > 0 ? chequeEmitidoIds : null,
       registrado_por: usuario?.id,
-    })
+    }
+    if (editandoId) {
+      await supabase.from('gastos_generales').update(datosGasto).eq('id', editandoId)
+    } else {
+      await supabase.from('gastos_generales').insert(datosGasto)
+    }
 
     await cargar()
     setShowForm(false)
     setForm(FORM_INIT)
+    setPagarAhora(true)
+    setEditandoId(null)
     setGuardando(false)
   }
 
@@ -490,7 +502,7 @@ export default function Gastos({ usuario }) {
             {Object.keys(CATEGORIAS_GASTO).map(a => <option key={a}>{a}</option>)}
           </select>
         </div>
-        <button onClick={() => setShowForm(!showForm)}
+        <button onClick={() => { setShowForm(!showForm); setEditandoId(null); setForm(FORM_INIT); setPagarAhora(true) }}
           style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Registrar gasto
         </button>
@@ -513,7 +525,7 @@ export default function Gastos({ usuario }) {
       {/* Formulario */}
       {showForm && (
         <Card>
-          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Nuevo gasto</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>{editandoId ? 'Completar pago' : 'Nuevo gasto'}</div>
 
           {/* Datos del gasto */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -618,6 +630,17 @@ export default function Gastos({ usuario }) {
 
           {/* Formas de pago */}
           <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
+              <input type="checkbox" checked={pagarAhora} onChange={e => setPagarAhora(e.target.checked)} />
+              <span style={{ fontSize: 13 }}>Ya sé cómo se va a pagar — si no, queda pendiente para completarlo después (ej. se retiró pero se paga o compensa más adelante)</span>
+            </label>
+            {!pagarAhora && (
+              <div style={{ background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 6, padding: '10px 12px', fontSize: 12, color: S.amber, marginBottom: 12 }}>
+                Este gasto va a quedar marcado como "Pendiente" — cuando sepas cómo se paga (transferencia, canje, compensación con otra venta, etc.), volvés a esta pantalla y lo completás desde el historial.
+              </div>
+            )}
+            {pagarAhora && (
+            <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
               <button onClick={agregarPago}
@@ -637,6 +660,7 @@ export default function Gastos({ usuario }) {
                       <option value="efectivo">Efectivo</option>
                       <option value="e-cheq">E-cheq</option>
                       <option value="cuenta_corriente">Cuenta corriente</option>
+                      <option value="canje">🔄 Canje / Compensación (no mueve caja)</option>
                     </select>
                   </div>
                   <div>
@@ -646,7 +670,7 @@ export default function Gastos({ usuario }) {
                   <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={pago.es_paralelo} onChange={e => setPago(idx, 'es_paralelo', e.target.checked)} />
-                      Paralelo
+                      Caja 2
                     </label>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
@@ -720,10 +744,12 @@ export default function Gastos({ usuario }) {
                 )}
               </div>
             )}
+            </>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={() => { setShowForm(false); setEditandoId(null); setForm(FORM_INIT); setPagarAhora(true) }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
             <button onClick={guardar} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
               {guardando ? 'Guardando...' : '💾 Guardar'}
             </button>
@@ -762,10 +788,23 @@ export default function Gastos({ usuario }) {
                     <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber }}>{g.categoria}</span></td>
                     <td style={{ padding: '9px 12px', color: S.muted }}>{g.descripcion || '—'}</td>
                     <td style={{ padding: '9px 12px', color: S.muted }}>{g.proveedor || '—'}</td>
-                    <td style={{ padding: '9px 12px', fontSize: 11 }}>{g.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Paralelo</span> : g.forma_pago || '—'}</td>
-                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${g.monto?.toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '9px 12px', fontSize: 11 }}>{g.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Caja 2</span> : (g.estado_pago === 'pendiente' ? '—' : g.forma_pago || '—')}</td>
+                    <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>
+                      ${g.monto?.toLocaleString('es-AR')}
+                      {g.estado_pago === 'pendiente' && <div style={{ fontSize: 10, color: S.amber, fontWeight: 600 }}>⏳ Pendiente</div>}
+                    </td>
                     <td style={{ padding: '9px 12px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
+                        {g.estado_pago === 'pendiente' && (
+                          <button onClick={() => {
+                            setEditandoId(g.id)
+                            setForm({ actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: String(g.monto || ''), activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', pagos: [{ ...PAGO_INIT, monto: String(g.monto || '') }] })
+                            setPagarAhora(true)
+                            setShowForm(true)
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
+                            💳 Completar pago
+                          </button>
+                        )}
                         <button onClick={() => generarRecibo(g, g.pagos_detalle || [])}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                           🖨️ Recibo
