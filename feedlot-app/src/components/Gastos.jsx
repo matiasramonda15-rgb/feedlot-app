@@ -310,7 +310,8 @@ export default function Gastos({ usuario }) {
   const diferencia = montoTotal - totalPagos
 
   async function guardar() {
-    if (!form.categoria || !form.monto) { alert('Completá categoría y monto'); return }
+    if (!form.categoria) { alert('Completá la categoría'); return }
+    if (pagarAhora && !form.monto) { alert('Completá el monto'); return }
     if (pagarAhora && Math.abs(diferencia) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${montoTotal.toLocaleString('es-AR')})`); return }
     setGuardando(true)
 
@@ -380,7 +381,7 @@ export default function Gastos({ usuario }) {
       activo_id: form.activo_id ? parseInt(form.activo_id) : null,
       categoria: form.categoria,
       descripcion: form.descripcion || null,
-      monto: montoTotal,
+      monto: form.monto ? montoTotal : null,
       fecha: form.fecha,
       proveedor: form.proveedor || null,
       comprobante: form.comprobante || null,
@@ -790,7 +791,7 @@ export default function Gastos({ usuario }) {
                     <td style={{ padding: '9px 12px', color: S.muted }}>{g.proveedor || '—'}</td>
                     <td style={{ padding: '9px 12px', fontSize: 11 }}>{g.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Caja 2</span> : (g.estado_pago === 'pendiente' ? '—' : g.forma_pago || '—')}</td>
                     <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>
-                      ${g.monto?.toLocaleString('es-AR')}
+                      {g.monto != null ? `$${g.monto.toLocaleString('es-AR')}` : <span style={{ color: S.hint, fontWeight: 400, fontStyle: 'italic' }}>monto a definir</span>}
                       {g.estado_pago === 'pendiente' && <div style={{ fontSize: 10, color: S.amber, fontWeight: 600 }}>⏳ Pendiente</div>}
                     </td>
                     <td style={{ padding: '9px 12px' }}>
