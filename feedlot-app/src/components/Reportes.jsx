@@ -280,6 +280,15 @@ export default function Reportes({ usuario }) {
     asegurarMes(key)
     rentabilidadPorMes[key].costoGastos += g.monto || 0
   })
+  // Los gastos marcados como "General" (ej. un proveedor que no es de una
+  // actividad puntual) se reparten en tres partes iguales, igual que los
+  // sueldos del personal "General".
+  gastosGenerales.filter(g => g.actividad === 'General').forEach(g => {
+    const key = mesKey(g.fecha)
+    if (!key) return
+    asegurarMes(key)
+    rentabilidadPorMes[key].costoGastos += (g.monto || 0) / 3
+  })
   const rentabilidadMensual = Object.entries(rentabilidadPorMes).sort((a, b) => b[0].localeCompare(a[0])).map(([mes, d]) => {
     const costoTotal = d.costoHacienda + d.costoAlim + d.costoSanidad + d.costoManoObra + d.costoGastos
     const resultado = d.ingreso - costoTotal
@@ -340,6 +349,12 @@ export default function Reportes({ usuario }) {
     asegurarMesAgro(key)
     rentabilidadPorMesAgro[key].costoGastos += g.monto || 0
   })
+  gastosGenerales.filter(g => g.actividad === 'General').forEach(g => {
+    const key = mesKey(g.fecha)
+    if (!key) return
+    asegurarMesAgro(key)
+    rentabilidadPorMesAgro[key].costoGastos += (g.monto || 0) / 3
+  })
   pagosEmpleados.forEach(pe => {
     const key = mesKey(pe.fecha || pe.creado_en)
     if (!key) return
@@ -382,6 +397,12 @@ export default function Reportes({ usuario }) {
     if (!key) return
     asegurarMesServ(key)
     rentabilidadPorMesServ[key].costoGastos += g.monto || 0
+  })
+  gastosGenerales.filter(g => g.actividad === 'General').forEach(g => {
+    const key = mesKey(g.fecha)
+    if (!key) return
+    asegurarMesServ(key)
+    rentabilidadPorMesServ[key].costoGastos += (g.monto || 0) / 3
   })
   pagosEmpleados.forEach(pe => {
     const key = mesKey(pe.fecha || pe.creado_en)

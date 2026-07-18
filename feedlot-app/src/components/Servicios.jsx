@@ -273,6 +273,12 @@ export default function Servicios({ usuario, mobile, nav }) {
 
   async function registrarPago() {
     if (seleccionadas.length === 0) { alert('Seleccioná al menos un servicio'); return }
+    // Si no se cargó ningún monto en "Formas de pago" (por ejemplo, si solo
+    // se completó el precio/ha pensando que con eso alcanzaba), no hay que
+    // dejar pasar el cobro — quedaría marcado como cobrado sin que entre
+    // nada a ninguna caja.
+    const hayAlgunPago = formPago.pagos.some(p => parseFloat(p.monto) > 0)
+    if (!hayAlgunPago) { alert('No cargaste ningún monto en "Formas de pago" — completá al menos uno antes de confirmar, o el cobro va a quedar marcado sin que se registre nada en caja.'); return }
     setGuardandoPago(true)
     try {
       const ivaPct = parseFloat(formPago.iva_pct) || 0

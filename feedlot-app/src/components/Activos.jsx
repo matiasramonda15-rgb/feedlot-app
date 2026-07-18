@@ -302,6 +302,18 @@ export default function Activos({ usuario }) {
 
   async function eliminar(tabla, id) {
     if (!confirm('¿Eliminar este registro?')) return
+    // Un crédito con cuotas ya cargadas no se puede borrar directo — la base
+    // lo bloquea porque las cuotas (pagos_creditos) todavía lo referencian.
+    // Hay que borrar esas cuotas primero.
+    if (tabla === 'creditos') {
+      const cuotas = pagosCreditos[id] || []
+      const pagadas = cuotas.filter(c => c.estado === 'pagado')
+      if (pagadas.length > 0) {
+        if (!confirm(`Este crédito ya tiene ${pagadas.length} cuota${pagadas.length !== 1 ? 's' : ''} pagada${pagadas.length !== 1 ? 's' : ''} — el movimiento de caja de esos pagos NO se va a borrar, solo el registro del crédito y las cuotas. ¿Confirmás igual?`)) return
+      }
+      const { error: errCuotas } = await supabase.from('pagos_creditos').delete().eq('credito_id', id)
+      if (errCuotas) { alert('Error al borrar las cuotas del crédito: ' + errCuotas.message); return }
+    }
     const { error } = await supabase.from(tabla).delete().eq('id', id)
     if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()

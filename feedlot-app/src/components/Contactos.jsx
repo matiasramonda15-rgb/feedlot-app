@@ -870,7 +870,7 @@ export default function Contactos({ usuario }) {
             <div style={{ gridColumn: '1/-1' }}>
               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 5 }}>Asociado a (para que aparezca solo en las listas relevantes — si no marcás nada, aparece en todas)</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                {['Feedlot', 'Agricultura', 'Servicios'].map(act => {
+                {['Feedlot', 'Agricultura', 'Servicios', 'General'].map(act => {
                   const activo = (formContacto.actividades || []).includes(act)
                   return (
                     <label key={act} onClick={() => {
