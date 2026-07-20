@@ -85,7 +85,7 @@ export default function Corrales({ usuario, mobile, nav }) {
   }
 
   async function cambiarRol(corralId, nuevoRol, sub = null) {
-    const { error } = await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null }).eq('id', corralId)
+    const { error } = await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null, actualizado: new Date().toISOString() }).eq('id', corralId)
     if (error) { alert('Error: ' + error.message); return }
     await cargarCorrales()
     setSeleccionado(prev => prev ? {...prev, rol: nuevoRol, sub} : prev)
@@ -154,7 +154,7 @@ export default function Corrales({ usuario, mobile, nav }) {
   }
 
   async function cambiarRolMobile(corralId, nuevoRol, sub = null) {
-    await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null }).eq('id', corralId)
+    await supabase.from('corrales').update({ rol: nuevoRol, sub: sub || null, actualizado: new Date().toISOString() }).eq('id', corralId)
     await cargarCorrales()
     setVistaM('lista')
     setSeleccionado(null)

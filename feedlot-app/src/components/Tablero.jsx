@@ -88,7 +88,7 @@ export default function Tablero({ usuario }) {
     ] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('alertas').select('*').eq('resuelta', false).order('fecha_vence'),
-      supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(20),
+      supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(500),
       supabase.from('ventas').select('cantidad, kg_vivo_total, kg_neto, total, precio_kg, comprador, creado_en, corral_id').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }).limit(10),
       supabase.from('movimientos').select('*, corrales_origen:corral_origen_id(numero), corrales_destino:corral_destino_id(numero)').order('fecha', { ascending: false }).limit(8),
@@ -103,6 +103,10 @@ export default function Tablero({ usuario }) {
 
     // Calcular GDP por corral desde pesadas
     const gdpPorCorral = {}
+    // Última pesada de cada corral, aunque sea una sola — sirve como punto de
+    // partida más confiable que el rango de clasificación cuando todavía no
+    // hay 2 pesadas para calcular un GDP propio del corral.
+    const ultimaPesadaPorCorral = {}
     if (pesadas) {
       const porCorral = {}
       pesadas.forEach(p => {
@@ -112,10 +116,12 @@ export default function Tablero({ usuario }) {
         porCorral[num].push(p)
       })
       Object.entries(porCorral).forEach(([num, ps]) => {
+        const sorted = ps.sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en))
+        const ultima = sorted[sorted.length - 1]
+        const pesoUltima = calcPesoProm(ultima.pesada_animales)
+        if (pesoUltima) ultimaPesadaPorCorral[num] = { peso: pesoUltima, fecha: ultima.creado_en }
         if (ps.length >= 2) {
-          const sorted = ps.sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en))
           const primera = sorted[0]
-          const ultima = sorted[sorted.length - 1]
           const diasDiff = Math.max(1, (new Date(ultima.creado_en) - new Date(primera.creado_en)) / (1000 * 60 * 60 * 24))
           // Peso promedio de pesada_animales
           const pesoPromPrimera = calcPesoProm(primera.pesada_animales)
@@ -178,13 +184,13 @@ export default function Tablero({ usuario }) {
       ? diasConDatosConsumo.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatosConsumo.length
       : null
 
-    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotesVenc: lotesVenc || [], indicadores, consumoDiarioIndependiente })
+    setDatos({ corrales: corralesOrdenados, alertas: alertas || [], gdpPorCorral, ultimaPesadaPorCorral, ventas: ventas || [], movRecientes: movRecientes.slice(0, 6), proximaPesada: proximaPesadaCalc, stockBajo, lotesVenc: lotesVenc || [], indicadores, consumoDiarioIndependiente })
     setLoading(false)
   }
 
   if (loading) return <Loader />
 
-  const { corrales, alertas, gdpPorCorral, ventas, movRecientes, proximaPesada, stockBajo, lotesVenc = [], indicadores, consumoDiarioIndependiente } = datos
+  const { corrales, alertas, gdpPorCorral, ultimaPesadaPorCorral = {}, ventas, movRecientes, proximaPesada, stockBajo, lotesVenc = [], indicadores, consumoDiarioIndependiente } = datos
 
   const corralesActivos = corrales.filter(c => c.rol !== 'libre')
   const totalAnimales = corralesActivos.reduce((s, c) => s + (c.animales || 0), 0)
@@ -373,10 +379,18 @@ export default function Tablero({ usuario }) {
                 {corralesActivos.filter(c => c.rol !== 'libre').map(c => {
                   let g = gdpPorCorral[c.numero]
                   let esEstimado = false
-                  // Si no hay pesadas propias de este corral, pero está clasificado
-                  // en un rango conocido, se estima el peso a partir de ese rango +
-                  // el GDP promedio de 6 meses × los días desde la clasificación.
-                  if (!g && c.rol === 'clasificado' && c.sub && RANGOS_PESO[c.sub] && gdpGlobal && c.actualizado) {
+                  const ultimaPesada = ultimaPesadaPorCorral[c.numero]
+                  if (!g && ultimaPesada && gdpGlobal) {
+                    // Hay una sola pesada de este corral (no 2, así que no se
+                    // puede calcular un GDP propio) — se usa esa pesada real
+                    // + el GDP promedio de 6 meses × los días desde entonces.
+                    // Es más confiable que partir del rango de clasificación.
+                    const dias = Math.max(0, (new Date() - new Date(ultimaPesada.fecha)) / (1000 * 60 * 60 * 24))
+                    g = { pesoActual: ultimaPesada.peso + gdpGlobal * dias, gdp: gdpGlobal }
+                    esEstimado = true
+                  } else if (!g && c.rol === 'clasificado' && c.sub && RANGOS_PESO[c.sub] && gdpGlobal && c.actualizado) {
+                    // Sin ninguna pesada del corral — como último recurso, se
+                    // parte del punto medio del rango de clasificación.
                     const dias = Math.max(0, (new Date() - new Date(c.actualizado)) / (1000 * 60 * 60 * 24))
                     g = { pesoActual: RANGOS_PESO[c.sub] + gdpGlobal * dias, gdp: gdpGlobal }
                     esEstimado = true
