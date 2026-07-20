@@ -212,8 +212,14 @@ export default function Tablero({ usuario }) {
 
   // Ventas este mes
   const hoy = new Date()
-  const ventasTotal = ventas.reduce((s, v) => s + (v.total || 0), 0)
-  const ventasAnimales = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
+  // "Vendidos este mes" tiene que ser solo el mes en curso — antes traía el
+  // histórico completo de ventas, sin filtrar por fecha. Se filtra acá (no en
+  // la consulta) para no afectar "Movimientos recientes", que sí necesita
+  // ver la última venta aunque haya sido a fin del mes pasado.
+  const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  const ventasEsteMes = ventas.filter(v => v.creado_en && new Date(v.creado_en) >= inicioMes)
+  const ventasTotal = ventasEsteMes.reduce((s, v) => s + (v.total || 0), 0)
+  const ventasAnimales = ventasEsteMes.reduce((s, v) => s + (v.cantidad || 0), 0)
 
   // Próxima pesada
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
@@ -335,8 +341,8 @@ export default function Tablero({ usuario }) {
         </div>
       )}
 
-      {/* CORRALES + GDP */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+      {/* CORRALES */}
+      <div style={{ marginBottom: '1rem' }}>
 
         {/* TABLA CORRALES */}
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
@@ -385,49 +391,6 @@ export default function Tablero({ usuario }) {
                 )}
               </tbody>
             </table>
-          </div>
-        </div>
-
-        {/* GDP Y CONVERSIÓN POR CORRAL */}
-        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>GDP y conversión por corral</div>
-            <span style={{ fontSize: 11, color: S.muted }}>materia seca estimada</span>
-          </div>
-
-          {corralesConGDP.length === 0 ? (
-            <div style={{ padding: '2rem 0', textAlign: 'center', color: S.hint, fontSize: 13 }}>
-              Sin pesadas registradas aún.<br />
-              <span style={{ fontSize: 11 }}>El GDP se calcula automáticamente con las pesadas.</span>
-            </div>
-          ) : (
-            <>
-              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '.5rem' }}>
-                Ganancia diaria de peso (kg/día)
-              </div>
-              {corralesConGDP.map(c => {
-                const g = gdpPorCorral[c.numero]
-                const maxGDP = Math.max(...corralesConGDP.map(x => gdpPorCorral[x.numero].gdp), 1.5)
-                const pct = Math.round(g.gdp / maxGDP * 100)
-                const color = g.gdp >= 1.1 ? S.green : g.gdp >= 0.9 ? S.amber : S.red
-                return (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <div style={{ fontSize: 11, color: S.muted, minWidth: 70, textAlign: 'right' }}>C-{c.numero}</div>
-                    <div style={{ flex: 1, height: 6, background: S.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${S.border}` }}>
-                      <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: color }} />
-                    </div>
-                    <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 600, color, minWidth: 50 }}>{g.gdp.toFixed(2)}</div>
-                  </div>
-                )
-              })}
-            </>
-          )}
-
-          <div style={{ height: 1, background: S.border, margin: '.75rem 0' }} />
-          <div style={{ fontSize: 11, color: S.muted, lineHeight: 1.6 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 4, background: S.green, borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }} />GDP ≥1,1 kg/d ·{' '}
-            <span style={{ display: 'inline-block', width: 10, height: 4, background: S.amber, borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }} />0,9–1,1 ·{' '}
-            <span style={{ display: 'inline-block', width: 10, height: 4, background: S.red, borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }} />&lt;0,9 kg/d
           </div>
         </div>
       </div>
