@@ -102,19 +102,22 @@ export async function confirmarPesadaClasificacion(supabase, {
   if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
 
   // 5. Subir 2 rangos a los corrales clasificados existentes (no toca A/B, esos se manejan aparte)
+  // Se actualiza también `actualizado` a la fecha de esta pesada — así el
+  // Tablero puede estimar el peso de cada corral usando los días reales
+  // desde la última clasificación, sin necesitar corregirlo a mano.
   for (const c of corralesClasificados) {
     const letraActual = (c.sub || 'A').length === 1 ? c.sub : c.sub?.charAt(0) || 'A'
-    await supabase.from('corrales').update({ sub: subirRango(letraActual, 2) }).eq('id', c.id)
+    await supabase.from('corrales').update({ sub: subirRango(letraActual, 2), actualizado: `${fecha}T12:00:00-03:00` }).eq('id', c.id)
   }
 
   // 6. Asignar (primera vez) o SUMAR (continuación de un día anterior) los corrales de A y B
   if (cantA > 0) {
-    if (esContinuacionA) await supabase.from('corrales').update({ animales: (corral1Actual.animales || 0) + cantA }).eq('id', corralLibre1Id)
-    else await supabase.from('corrales').update({ rol: 'clasificado', sub: 'A', animales: cantA }).eq('id', corralLibre1Id)
+    if (esContinuacionA) await supabase.from('corrales').update({ animales: (corral1Actual.animales || 0) + cantA, actualizado: `${fecha}T12:00:00-03:00` }).eq('id', corralLibre1Id)
+    else await supabase.from('corrales').update({ rol: 'clasificado', sub: 'A', animales: cantA, actualizado: `${fecha}T12:00:00-03:00` }).eq('id', corralLibre1Id)
   }
   if (cantB > 0) {
-    if (esContinuacionB) await supabase.from('corrales').update({ animales: (corral2Actual.animales || 0) + cantB }).eq('id', corralLibre2Id)
-    else await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB }).eq('id', corralLibre2Id)
+    if (esContinuacionB) await supabase.from('corrales').update({ animales: (corral2Actual.animales || 0) + cantB, actualizado: `${fecha}T12:00:00-03:00` }).eq('id', corralLibre2Id)
+    else await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB, actualizado: `${fecha}T12:00:00-03:00` }).eq('id', corralLibre2Id)
   }
 
   // 7. Sumar animales C-G a los corrales que YA existían (usando el snapshot previo)
