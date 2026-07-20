@@ -175,6 +175,56 @@ export default function Servicios({ usuario, mobile, nav }) {
     setLoading(false)
   }
 
+  // Carga jsPDF una sola vez (desde un CDN, no hace falta instalar nada) —
+  // se usa para el botón "Descargar PDF" del registro de mercadería, así
+  // se puede compartir el archivo por WhatsApp sin pasar por el diálogo
+  // de imprimir del navegador (que en Edge no siempre deja guardar como PDF).
+  async function cargarJsPDF() {
+    if (window.jspdf) return window.jspdf.jsPDF
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+      script.onload = resolve
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+    return window.jspdf.jsPDF
+  }
+
+  async function descargarPDFMercaderia(reg, desc, kgCamion, kgBolsa, kgOtro, kgTotal) {
+    const JsPDF = await cargarJsPDF()
+    const doc = new JsPDF()
+    doc.setFontSize(16); doc.text('Registro de Mercadería', 14, 18)
+    doc.setFontSize(10); doc.setTextColor(107, 103, 96)
+    doc.text(`Campo: ${reg.campo}  ·  Cliente: ${reg.cliente || '—'}  ·  Lote: ${reg.nro_lote || '—'}  ·  Cultivo: ${reg.cultivo || '—'}`, 14, 26)
+    let y = 38
+    doc.setFontSize(9); doc.setTextColor(26, 25, 22)
+    doc.setFillColor(247, 245, 240)
+    doc.rect(14, y - 5, 182, 8, 'F')
+    doc.text('Fecha', 16, y); doc.text('Tipo', 55, y); doc.text('Patente / Detalle', 95, y); doc.text('Kg', 188, y, { align: 'right' })
+    y += 8
+    desc.forEach(d => {
+      const fechaStr = d.fecha ? new Date(d.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+      const tipoStr = d.tipo === 'camion' ? 'Camión' : d.tipo === 'bolsa' ? 'Bolsa' : 'Otro'
+      doc.text(fechaStr, 16, y); doc.text(tipoStr, 55, y); doc.text(String(d.patente || d.observaciones || '—'), 95, y)
+      doc.text(`${(d.kg || 0).toLocaleString('es-AR')} kg`, 188, y, { align: 'right' })
+      y += 7
+      if (y > 270) { doc.addPage(); y = 20 }
+    })
+    y += 4
+    doc.setDrawColor(226, 221, 214); doc.line(14, y, 196, y)
+    y += 10
+    doc.setFontSize(11); doc.setFont(undefined, 'bold')
+    doc.text('Resumen', 14, y); y += 8
+    doc.setFont(undefined, 'normal'); doc.setFontSize(10)
+    if (kgCamion > 0) { doc.text(`Camión: ${kgCamion.toLocaleString('es-AR')} kg`, 14, y); y += 7 }
+    if (kgBolsa > 0) { doc.text(`Bolsa: ${kgBolsa.toLocaleString('es-AR')} kg`, 14, y); y += 7 }
+    if (kgOtro > 0) { doc.text(`Otro: ${kgOtro.toLocaleString('es-AR')} kg`, 14, y); y += 7 }
+    doc.setFont(undefined, 'bold')
+    doc.text(`Total: ${kgTotal.toLocaleString('es-AR')} kg`, 14, y + 3)
+    doc.save(`Mercaderia_${reg.campo.replace(/\s+/g, '_')}.pdf`)
+  }
+
   async function cargarDescargasReg(regId) {
     const { data } = await supabase.from('descargas_mercaderia').select('*').eq('registro_id', regId).order('creado_en')
     setDescargasReg(prev => ({ ...prev, [regId]: data || [] }))
@@ -2011,6 +2061,12 @@ export default function Servicios({ usuario, mobile, nav }) {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 12 }}>
+                    {isActivo && kgTotal > 0 && (
+                      <button onClick={() => descargarPDFMercaderia(reg, desc, kgCamion, kgBolsa, kgOtro, kgTotal)}
+                        style={{ padding: '6px 12px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
+                        ⬇ Descargar PDF
+                      </button>
+                    )}
                     {isActivo && kgTotal > 0 && (
                       <button onClick={() => {
                         const win = window.open('', '_blank')
