@@ -69,7 +69,7 @@ export default function Reportes({ usuario }) {
       supabase.from('compras_insumos').select('total, insumo_tipo, fecha, creado_en').eq('insumo_tipo', 'sanitario'),
       supabase.from('pagos_empleados').select('*, empleados(nombre, actividad)'),
       supabase.from('compras_insumos').select('total, fecha, creado_en').eq('insumo_tipo', 'agro'),
-      supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, tipo_servicio').eq('tipo_servicio', 'tercero'),
+      supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, tipo_servicio, orden_trabajo_id').or('tipo_servicio.eq.tercero,orden_trabajo_id.not.is.null'),
       supabase.from('mano_obra_servicios').select('monto_calculado, creado_en'),
       supabase.from('ventas_granos').select('total, fecha, creado_en'),
       supabase.from('activos').select('id, valor_compra, vida_util_anios, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa, estado, fecha_compra'),
@@ -377,14 +377,22 @@ export default function Reportes({ usuario }) {
   rentabilidadAnualAgro.resultado -= amortizacionPorActividad.agricultura
   const indiceAnualAgro = rentabilidadAnualAgro.costoTotal > 0 ? (rentabilidadAnualAgro.resultado / rentabilidadAnualAgro.costoTotal * 100) : null
 
-  // ── Rentabilidad Servicios (ingreso = servicios a terceros; costo = mano de obra de esos servicios + gastos generales + personal) ──
+  // ── Rentabilidad Servicios (ingreso = servicios a terceros + trabajo interno
+  // para otras actividades, ej. Agricultura usando la maquinaria de Servicios;
+  // costo = mano de obra de esos servicios + gastos generales + personal) ──
   const rentabilidadPorMesServ = {}
-  const asegurarMesServ = key => { if (!rentabilidadPorMesServ[key]) rentabilidadPorMesServ[key] = { ingreso: 0, costoManoObraServ: 0, costoManoObra: 0, costoGastos: 0 } }
+  const asegurarMesServ = key => { if (!rentabilidadPorMesServ[key]) rentabilidadPorMesServ[key] = { ingreso: 0, ingresoTerceros: 0, ingresoInterno: 0, costoManoObraServ: 0, costoManoObra: 0, costoGastos: 0 } }
   serviciosTerceros.forEach(st => {
     const key = mesKey(st.fecha || st.creado_en)
     if (!key) return
     asegurarMesServ(key)
-    rentabilidadPorMesServ[key].ingreso += (st.total || 0) + (st.monto_negro || 0)
+    const monto = (st.total || 0) + (st.monto_negro || 0)
+    rentabilidadPorMesServ[key].ingreso += monto
+    // Se distingue el ingreso "real" (con cliente externo) del interno (otra
+    // actividad usando la maquinaria/personal de Servicios, sin caja de por
+    // medio) — así queda claro en el desglose de dónde sale cada parte.
+    if (st.orden_trabajo_id) rentabilidadPorMesServ[key].ingresoInterno += monto
+    else rentabilidadPorMesServ[key].ingresoTerceros += monto
   })
   manoObraServicios.forEach(mo => {
     const key = mesKey(mo.creado_en)
@@ -419,8 +427,9 @@ export default function Reportes({ usuario }) {
   })
   const mesesDelAnioServ = rentabilidadMensualServ.filter(mm => mm.mes.startsWith(anioActualStr))
   const rentabilidadAnualServ = mesesDelAnioServ.reduce((acc, mm) => ({
-    ingreso: acc.ingreso + mm.ingreso, costoTotal: acc.costoTotal + mm.costoTotal, resultado: acc.resultado + mm.resultado,
-  }), { ingreso: 0, costoTotal: 0, resultado: 0 })
+    ingreso: acc.ingreso + mm.ingreso, ingresoTerceros: acc.ingresoTerceros + (mm.ingresoTerceros || 0), ingresoInterno: acc.ingresoInterno + (mm.ingresoInterno || 0),
+    costoTotal: acc.costoTotal + mm.costoTotal, resultado: acc.resultado + mm.resultado,
+  }), { ingreso: 0, ingresoTerceros: 0, ingresoInterno: 0, costoTotal: 0, resultado: 0 })
   rentabilidadAnualServ.costoAmortizacion = amortizacionPorActividad.servicios
   rentabilidadAnualServ.costoTotal += amortizacionPorActividad.servicios
   rentabilidadAnualServ.resultado -= amortizacionPorActividad.servicios
@@ -1272,7 +1281,8 @@ function SeccionRentabilidadActividad({ S, titulo, anio, anual, indiceAnual, men
       <SectionHeader title={`Rentabilidad — ${titulo}`} sub={`Índice de rentabilidad ${anio}`} />
       <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
-          <Stat label={`Ingreso ${anio}`} val={anual.ingreso > 0 ? `$${(anual.ingreso / 1000000).toFixed(1)}M` : '—'} color={S.green} />
+          <Stat label={`Ingreso ${anio}`} val={anual.ingreso > 0 ? `$${(anual.ingreso / 1000000).toFixed(1)}M` : '—'}
+            sub={anual.ingresoInterno > 0 ? `de eso, $${(anual.ingresoInterno / 1000000).toFixed(1)}M es trabajo interno (sin caja)` : undefined} color={S.green} />
           <Stat label={`Inversión total ${anio}`} val={anual.costoTotal > 0 ? `$${(anual.costoTotal / 1000000).toFixed(1)}M` : '—'} sub={subInversion} />
           <Stat label="Resultado" val={anual.costoTotal > 0 || anual.ingreso > 0 ? `$${(anual.resultado / 1000000).toFixed(1)}M` : '—'} color={anual.resultado >= 0 ? S.green : S.red} />
           <Stat label="Índice de rentabilidad anual" val={indiceAnual !== null ? `${indiceAnual.toFixed(1)}%` : '—'} sub="resultado / inversión total del año en curso" color={indiceAnual !== null ? (indiceAnual >= 0 ? S.green : S.red) : S.hint} />

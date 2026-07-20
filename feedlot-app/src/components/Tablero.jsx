@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
 
+// Peso de referencia (punto medio) de cada rango de clasificación — se usa
+// para estimar el peso actual de un corral que todavía no tiene pesadas
+// propias: peso del rango + GDP promedio (6 meses) × días desde que se
+// clasificó ahí. Es una ESTIMACIÓN, no un peso medido — se marca distinto
+// en la tabla (con "~" y en gris) para que quede claro que no es un dato real.
+const RANGOS_PESO = {
+  A: 215, B: 245.5, C: 275.5, D: 305.5, E: 335.5, F: 365.5, G: 395.5, H: 425.5,
+}
+
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
   text: '#1A1916', muted: '#6B6760', hint: '#9E9A94',
@@ -350,6 +359,7 @@ export default function Tablero({ usuario }) {
             <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Estado de corrales</div>
             <span style={{ fontSize: 11, color: S.muted }}>hacé clic para ver detalle</span>
           </div>
+          <div style={{ fontSize: 11, color: S.hint, marginBottom: 8 }}>~ = peso/GDP estimado a partir del rango de clasificación (no hay pesada propia todavía)</div>
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -361,8 +371,17 @@ export default function Tablero({ usuario }) {
               </thead>
               <tbody>
                 {corralesActivos.filter(c => c.rol !== 'libre').map(c => {
-                  const g = gdpPorCorral[c.numero]
-                  const gdpColor = g ? (g.gdp >= 1.1 ? S.green : g.gdp >= 0.9 ? S.amber : S.red) : S.hint
+                  let g = gdpPorCorral[c.numero]
+                  let esEstimado = false
+                  // Si no hay pesadas propias de este corral, pero está clasificado
+                  // en un rango conocido, se estima el peso a partir de ese rango +
+                  // el GDP promedio de 6 meses × los días desde la clasificación.
+                  if (!g && c.rol === 'clasificado' && c.sub && RANGOS_PESO[c.sub] && gdpGlobal && c.actualizado) {
+                    const dias = Math.max(0, (new Date() - new Date(c.actualizado)) / (1000 * 60 * 60 * 24))
+                    g = { pesoActual: RANGOS_PESO[c.sub] + gdpGlobal * dias, gdp: gdpGlobal }
+                    esEstimado = true
+                  }
+                  const gdpColor = g ? (esEstimado ? S.hint : (g.gdp >= 1.1 ? S.green : g.gdp >= 0.9 ? S.amber : S.red)) : S.hint
                   const diasVenta = g ? Math.max(0, Math.ceil((400 - g.pesoActual) / g.gdp)) : null
                   let estadoBadge, estadoTipo
                   if (diasVenta !== null) {
@@ -380,8 +399,8 @@ export default function Tablero({ usuario }) {
                       <td style={{ padding: '9px 10px', fontWeight: 600, fontFamily: 'monospace' }}>{c.numero}</td>
                       <td style={{ padding: '9px 10px' }}><Badge type={ROL_BADGE[c.rol] || 'neutral'} style={{ fontSize: 10 }}>{rolLabel(c)}</Badge></td>
                       <td style={{ padding: '9px 10px', fontFamily: 'monospace' }}>{c.animales || 0}</td>
-                      <td style={{ padding: '9px 10px', fontFamily: 'monospace', color: S.muted }}>{g ? Math.round(g.pesoActual) + ' kg' : '—'}</td>
-                      <td style={{ padding: '9px 10px', fontFamily: 'monospace', fontWeight: 600, color: gdpColor }}>{g ? g.gdp.toFixed(2) : '—'}</td>
+                      <td style={{ padding: '9px 10px', fontFamily: 'monospace', color: esEstimado ? S.hint : S.muted, fontStyle: esEstimado ? 'italic' : 'normal' }}>{g ? `${esEstimado ? '~' : ''}${Math.round(g.pesoActual)} kg` : '—'}</td>
+                      <td style={{ padding: '9px 10px', fontFamily: 'monospace', fontWeight: esEstimado ? 400 : 600, fontStyle: esEstimado ? 'italic' : 'normal', color: gdpColor }}>{g ? `${esEstimado ? '~' : ''}${g.gdp.toFixed(2)}` : '—'}</td>
                       <td style={{ padding: '9px 10px' }}><Badge type={estadoTipo}>{estadoBadge}</Badge></td>
                     </tr>
                   )

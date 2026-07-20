@@ -229,7 +229,7 @@ export default function Corrales({ usuario, mobile, nav }) {
                     <button key={r} onClick={() => {
                       if (r === 'clasificado') {
                         const rango = prompt('Ingresá el rango (A, B, C, D, E, F o G):')
-                        if (!rango || !['A','B','C','D','E','F','G'].includes(rango.toUpperCase())) { alert('Rango inválido'); return }
+                        if (!rango || !['A','B','C','D','E','F','G','H'].includes(rango.toUpperCase())) { alert('Rango inválido'); return }
                         cambiarRolMobile(sel.id, 'clasificado', rango.toUpperCase())
                       } else {
                         cambiarRolMobile(sel.id, r)
@@ -278,7 +278,7 @@ export default function Corrales({ usuario, mobile, nav }) {
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: CM.blue, textTransform: 'uppercase', marginBottom: 6 }}>Rango</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                      {['A','B','C','D','E','F','G'].map(r => (
+                      {['A','B','C','D','E','F','G','H'].map(r => (
                         <button key={r} onClick={() => setSubDestinoM(r)}
                           style={{ padding: '8px', background: subDestinoM === r ? CM.green : 'transparent', border: `1px solid ${subDestinoM === r ? CM.green : CM.border}`, borderRadius: 8, fontSize: 13, fontWeight: 700, color: subDestinoM === r ? '#0A1A0A' : CM.muted, cursor: 'pointer', fontFamily: CM.mono }}>
                           {r}
