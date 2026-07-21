@@ -133,6 +133,11 @@ export default function Comercial({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
   const [filtroMes, setFiltroMes] = useState('')
+  // Por defecto solo se ven los movimientos de los últimos 30 días — el
+  // resto queda "archivado" y se puede desplegar con su propio filtro por
+  // año/mes para buscar algo más viejo, sin que la lista de todos los días
+  // quede siempre larguísima.
+  const [verArchivo, setVerArchivo] = useState(false)
   const [filtroCheque, setFiltroCheque] = useState('todos')
   const [filtroChequePar, setFiltroChequePar] = useState('todos')
   const [showFormOf, setShowFormOf] = useState(false)
@@ -294,10 +299,12 @@ export default function Comercial({ usuario }) {
 
   if (loading) return <Loader />
 
+  const hace30dias = new Date(); hace30dias.setDate(hace30dias.getDate() - 30)
   const filtrar = arr => arr.filter(x => {
     const fecha = x.fecha || x.creado_en?.split('T')[0]
     if (!fecha) return true
     const d = new Date(fecha + 'T12:00:00')
+    if (!verArchivo) return d >= hace30dias
     return d.getFullYear() === parseInt(filtroAnio) && (!filtroMes || d.getMonth() + 1 === parseInt(filtroMes))
   })
 
@@ -333,14 +340,22 @@ export default function Comercial({ usuario }) {
   ]
 
   const FiltrosPeriodo = () => (
-    <div style={{ display: 'flex', gap: 8 }}>
-      <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} style={{ padding: '7px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
-        {anios.map(a => <option key={a} value={a}>{a}</option>)}
-      </select>
-      <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={{ padding: '7px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
-        <option value="">Todos los meses</option>
-        {MESES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-      </select>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <button onClick={() => setVerArchivo(!verArchivo)}
+        style={{ padding: '7px 12px', border: `1px solid ${verArchivo ? S.accent : S.border}`, borderRadius: 6, fontSize: 12, fontWeight: 600, background: verArchivo ? S.accentLight : S.surface, color: verArchivo ? S.accent : S.muted, cursor: 'pointer' }}>
+        {verArchivo ? '📁 Viendo archivo — volver a últimos 30 días' : '📁 Ver archivo (movimientos más viejos)'}
+      </button>
+      {verArchivo && (
+        <>
+          <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} style={{ padding: '7px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+            {anios.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} style={{ padding: '7px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+            <option value="">Todos los meses</option>
+            {MESES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+        </>
+      )}
     </div>
   )
 
