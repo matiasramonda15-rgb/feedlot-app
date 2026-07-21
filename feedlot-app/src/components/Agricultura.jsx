@@ -2082,13 +2082,47 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       numero_contrato: formCompletar.numero_contrato || null, estado: 'confirmado',
     }).eq('id', venta.id)
     if (error) { alert('Error al completar la venta: ' + error.message); setGuardando(false); return }
-    const desc = `Venta ${venta.cultivo} — ${venta.comprador || 'sin comprador'} · ${(venta.kg / 1000).toLocaleString('es-AR')} tn · Contrato ${formCompletar.numero_contrato || 's/n'}`
-    const { error: eCaja } = await supabase.from('caja_oficial').insert({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto: totalFacturado, forma_pago: 'transferencia' })
-    if (eCaja) alert('La venta quedó completada, pero no se pudo cargar en caja oficial: ' + eCaja.message)
+    // El cobro ya no se registra acá de una sola vez — queda "confirmado,
+    // pendiente de cobro" y se cobra (total o en partes) desde el botón
+    // "💰 Registrar cobro", igual que el resto de los módulos.
+    await cargar()
     setCompletandoId(null)
     setFormCompletar({ total_facturado: '', numero_contrato: '' })
     setGuardando(false)
+  }
+
+  // Cobro de una venta de granos ya confirmada — puede ser total o en
+  // partes, igual que un pago en cualquier otro módulo. Cada forma de pago
+  // genera su propio movimiento de caja (Caja 1 o Caja 2 según corresponda).
+  const [cobrandoId, setCobrandoId] = useState(null)
+  const [formCobro, setFormCobro] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] })
+
+  async function guardarCobro(venta) {
+    setGuardando(true)
+    const pagosDetalle = [...(venta.pagos_detalle || [])]
+    for (const pago of formCobro.pagos) {
+      const monto = parseFloat(pago.monto) || 0
+      if (!monto) continue
+      if (pago.tipo === 'canje') { pagosDetalle.push({ ...pago, monto }); continue }
+      const desc = `Cobro venta ${venta.cultivo} — ${venta.comprador || 'sin comprador'} · ${(venta.kg / 1000).toLocaleString('es-AR')} tn`
+      if (pago.es_paralelo) {
+        const { error } = await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha, tipo: 'ingreso', descripcion: desc, monto })
+        if (error) { alert('Error al registrar el cobro en Caja 2: ' + error.message); setGuardando(false); return }
+      } else {
+        const { error } = await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto, forma_pago: pago.subtipo_cheque || pago.tipo })
+        if (error) { alert('Error al registrar el cobro: ' + error.message); setGuardando(false); return }
+        if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+          for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+        }
+      }
+      pagosDetalle.push({ ...pago, monto })
+    }
+    const { error } = await supabase.from('ventas_granos').update({ pagos_detalle: pagosDetalle }).eq('id', venta.id)
+    if (error) { alert('El cobro se registró en caja, pero no se pudo guardar el detalle: ' + error.message); setGuardando(false); return }
     await cargar()
+    setCobrandoId(null)
+    setFormCobro({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] })
+    setGuardando(false)
   }
 
   return (
@@ -2204,19 +2238,29 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Cultivo', 'Tn', '$/tn (pactado)', 'Total', 'Estado', 'Comprador', 'N° Contrato', ''].map(h => (
+            {['Fecha', 'Cultivo', 'Tn', '$/tn (pactado)', 'Total', 'Cobrado', 'Estado', 'Comprador', 'N° Contrato', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
-            {ventas.length === 0 && <tr><td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ventas registradas.</td></tr>}
-            {ventas.map(v => (
+            {ventas.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ventas registradas.</td></tr>}
+            {ventas.map(v => {
+              const cobrado = (v.pagos_detalle || []).filter(p => p.tipo !== 'canje').reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+              const pendiente = (v.total || 0) - cobrado
+              return (
               <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>{v.fecha ? new Date(v.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
                 <td style={{ padding: '8px 12px' }}><span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>{v.cultivo}</span></td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{v.kg ? (v.kg / 1000).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{v.precio_tn ? `$${v.precio_tn.toLocaleString('es-AR')}` : '—'}</td>
                 <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>{v.total ? `$${v.total.toLocaleString('es-AR')}` : '—'}</td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12 }}>
+                  {v.estado === 'confirmado' && v.total > 0 ? (
+                    pendiente <= 0.5
+                      ? <span style={{ color: S.green, fontWeight: 600 }}>✓ Cobrado</span>
+                      : <span style={{ color: S.amber }}>${cobrado.toLocaleString('es-AR')} / ${v.total.toLocaleString('es-AR')}</span>
+                  ) : '—'}
+                </td>
                 <td style={{ padding: '8px 12px' }}>
                   {v.estado === 'pactada'
                     ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pactada</span>
@@ -2224,10 +2268,14 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                 </td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.comprador || '—'}</td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.numero_contrato || '—'}</td>
-                <td style={{ padding: '8px 12px', display: 'flex', gap: 4 }}>
+                <td style={{ padding: '8px 12px', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   {v.estado === 'pactada' && (
                     <button onClick={() => { setCompletandoId(v.id); setFormCompletar({ total_facturado: v.total ? String(v.total) : '', numero_contrato: '' }) }}
                       style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>📄 Completar con contrato</button>
+                  )}
+                  {v.estado === 'confirmado' && v.total > 0 && pendiente > 0.5 && (
+                    <button onClick={() => { setCobrandoId(v.id); setFormCobro({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO, monto: String(pendiente) }] }) }}
+                      style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>💰 Registrar cobro</button>
                   )}
                   <button onClick={() => { setEditando(v.id); setForm({ campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', tn: v.kg ? String(v.kg / 1000) : '', precio_tn: v.precio_tn || '', comprador: v.comprador || '', observaciones: v.observaciones || '', esVentaInternaFeedlot: false, stock_insumo_id: '' }); setShowForm(true) }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
@@ -2235,7 +2283,8 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -2256,6 +2305,33 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => guardarCompletar(venta)} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Confirmar venta'}</button>
                 <button onClick={() => { setCompletandoId(null); setFormCompletar({ total_facturado: '', numero_contrato: '' }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {cobrandoId && (() => {
+        const venta = ventas.find(v => v.id === cobrandoId)
+        if (!venta) return null
+        const cobrado = (venta.pagos_detalle || []).filter(p => p.tipo !== 'canje').reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+        const pendiente = (venta.total || 0) - cobrado
+        const totalCargado = formCobro.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+            <div style={{ background: '#fff', borderRadius: 10, padding: '1.5rem', width: '100%', maxWidth: 480 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Registrar cobro</div>
+              <div style={{ fontSize: 12, color: S.muted, marginBottom: 4 }}>{venta.cultivo} · {(venta.kg / 1000).toLocaleString('es-AR')} tn · {venta.comprador || 'sin comprador'}</div>
+              <div style={{ fontSize: 12, color: S.amber, marginBottom: 16 }}>Pendiente de cobro: ${pendiente.toLocaleString('es-AR')} de ${(venta.total || 0).toLocaleString('es-AR')}</div>
+              <div><Label>Fecha</Label><input type="date" value={formCobro.fecha} onChange={e => setFormCobro({...formCobro, fecha: e.target.value})} style={{...inputStyle, marginBottom: 12}} /></div>
+              <Label>Formas de cobro</Label>
+              <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} mostrarCanje={false} />
+              {totalCargado > 0 && Math.abs(totalCargado - pendiente) > 0.5 && (
+                <div style={{ fontSize: 12, color: S.amber, marginTop: 8 }}>El total cargado (${totalCargado.toLocaleString('es-AR')}) no coincide con lo pendiente — se puede cobrar parcial, no hace falta que sea exacto.</div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button onClick={() => guardarCobro(venta)} disabled={guardando || totalCargado <= 0} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Registrar cobro'}</button>
+                <button onClick={() => { setCobrandoId(null); setFormCobro({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
               </div>
             </div>
           </div>
