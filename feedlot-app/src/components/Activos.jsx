@@ -150,6 +150,17 @@ export default function Activos({ usuario }) {
         const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto, forma_pago: formRetiro.forma_pago }).select().single()
         if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardando(false); return }
         caja_oficial_id = co?.id
+        // Si el retiro se pagó con un cheque nuestro, se guarda en la cartera
+        // para poder hacerle seguimiento (antes esto no se guardaba en ningún
+        // lado, aunque el formulario ya ofrecía "cheque" como forma de pago).
+        if (formRetiro.forma_pago === 'cheque' && formRetiro.cheque_vencimiento) {
+          const { error: errCheq } = await supabase.from('cheques').insert({
+            tipo: 'emitido', numero: formRetiro.cheque_numero || null, banco: formRetiro.cheque_banco || null,
+            monto, fecha_cobro: formRetiro.fecha, fecha_vencimiento: formRetiro.cheque_vencimiento,
+            beneficiario: formRetiro.socio || null, estado: 'en_cartera', caja_oficial_id,
+          })
+          if (errCheq) alert('El retiro se guardó, pero no se pudo cargar el cheque en cartera: ' + errCheq.message)
+        }
       }
     }
     const { error } = await supabase.from('retiros_socios').insert({ ...formRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
@@ -159,7 +170,7 @@ export default function Activos({ usuario }) {
     if (formRetiro.no_afecta_caja) {
       generarReciboRetiro({ ...formRetiro, monto, fecha: formRetiro.fecha })
     }
-    setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
+    setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '', cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
     setGuardando(false)
   }
 
@@ -956,6 +967,13 @@ export default function Activos({ usuario }) {
                 <div><Label>Observaciones</Label><input type="text" value={formRetiro.observaciones} onChange={e => setFormRetiro({...formRetiro, observaciones: e.target.value})} style={inputStyle} /></div>
                 {formRetiro.forma_pago === 'canje' && (
                   <div><Label>A cambio de</Label><input type="text" value={formRetiro.canje_detalle || ''} onChange={e => setFormRetiro({...formRetiro, canje_detalle: e.target.value})} style={inputStyle} placeholder="ej. mercadería entregada el 3/7" /></div>
+                )}
+                {formRetiro.forma_pago === 'cheque' && (
+                  <>
+                    <div><Label>N° Cheque</Label><input type="text" value={formRetiro.cheque_numero || ''} onChange={e => setFormRetiro({...formRetiro, cheque_numero: e.target.value})} style={inputStyle} /></div>
+                    <div><Label>Banco</Label><input type="text" value={formRetiro.cheque_banco || ''} onChange={e => setFormRetiro({...formRetiro, cheque_banco: e.target.value})} style={inputStyle} /></div>
+                    <div><Label>Vencimiento</Label><input type="date" value={formRetiro.cheque_vencimiento || ''} onChange={e => setFormRetiro({...formRetiro, cheque_vencimiento: e.target.value})} style={inputStyle} /></div>
+                  </>
                 )}
                 {!formRetiro.no_afecta_caja && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
