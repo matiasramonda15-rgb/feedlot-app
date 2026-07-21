@@ -223,9 +223,15 @@ export default function Contactos({ usuario }) {
       })
     })
     ;(data.lotes || []).forEach(l => {
+      const totalFacturasRealL = (l.facturas_feria || []).reduce((ss, f) => ss + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
       const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
       const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
-      const montoFact = l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc : total
+      // Si no hay factura pero sí hay monto_negro cargado, ya está cubierto
+      // del lado de Caja 2 — no inventar una deuda en Caja 1 con precio × kg.
+      const montoFact = totalFacturasRealL > 0 ? totalFacturasRealL
+        : l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc
+        : l.monto_negro != null ? 0
+        : total
       const montoParalelo = l.monto_negro || 0
       const fecha = l.created_at?.split('T')[0]
       if (esParalela) { if (montoParalelo > 0) movs.push({ fecha, tipo: 'Compra hacienda (Caja 2)', credito: 0, debito: montoParalelo }) }
@@ -822,7 +828,14 @@ export default function Contactos({ usuario }) {
             const totalFacturasRealL = (l.facturas_feria || []).reduce((ss, f) => ss + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
             const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
             const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
-            const montoFact = totalFacturasRealL > 0 ? totalFacturasRealL : (l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc : total)
+            // Si no hay factura pero sí hay monto_negro cargado (aunque sea $0),
+            // significa que ya se decidió cómo se reparte la compra — no hay
+            // que inventar una deuda en Caja 1 con precio × kg, esa parte ya
+            // está cubierta del lado de Caja 2 (montoParalelo, más abajo).
+            const montoFact = totalFacturasRealL > 0 ? totalFacturasRealL
+              : l.monto_facturado != null ? l.monto_facturado + ivaMontoCalc
+              : l.monto_negro != null ? 0
+              : total
             const montoParalelo = l.monto_negro || 0
             const venc = vencimientosCompra[l.id] || []
 
