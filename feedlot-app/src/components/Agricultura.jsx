@@ -1284,9 +1284,14 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               ))}
             </div>
             {!form.es_propia && (
-              <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})}
-                placeholder="Nombre del contratista"
-                style={{ width: '100%', marginTop: 8, background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+              <>
+                <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})}
+                  style={{ width: '100%', marginTop: 8, background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }}>
+                  <option value="">— Seleccioná el contratista —</option>
+                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: CM.muted, marginTop: 4 }}>¿No aparece? Cargalo primero en Contactos, desde la compu.</div>
+              </>
             )}
           </div>
 
@@ -2353,7 +2358,13 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
             <div><Label>Concepto *</Label><input type="text" value={form.concepto} onChange={e => setForm({...form, concepto: e.target.value})} placeholder="ej. Seguro, Análisis de suelo, etc." style={inputStyle} /></div>
             <div><Label>Monto $ *</Label><input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} /></div>
             <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Proveedor</Label><input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} /></div>
+            <div>
+              <Label>Proveedor</Label>
+              <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle}>
+                <option value="">— Sin proveedor —</option>
+                {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+              </select>
+            </div>
           </div>
           {!editando && (
             <div style={{ marginBottom: '1rem' }}>
@@ -3296,7 +3307,14 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               </select>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              <div><Label>Nombre</Label><input type="text" value={formCompra.proveedor} onChange={e => setFormCompra({...formCompra, proveedor: e.target.value})} style={inputStyle} /></div>
+              <div>
+                <Label>Proveedor</Label>
+                <select value={formCompra.proveedor} onChange={e => setFormCompra({...formCompra, proveedor: e.target.value})} style={inputStyle}>
+                  <option value="">— Seleccioná —</option>
+                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
+              </div>
               <div><Label>Localidad</Label><input type="text" value={formCompra.localidad} onChange={e => setFormCompra({...formCompra, localidad: e.target.value})} style={inputStyle} /></div>
               <div><Label>CUIT</Label><input type="text" value={formCompra.cuit} onChange={e => setFormCompra({...formCompra, cuit: e.target.value})} style={inputStyle} /></div>
               <div><Label>Condición IVA</Label><input type="text" value={formCompra.iva} onChange={e => setFormCompra({...formCompra, iva: e.target.value})} style={inputStyle} /></div>

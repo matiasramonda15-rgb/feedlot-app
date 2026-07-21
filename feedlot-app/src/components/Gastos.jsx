@@ -610,17 +610,17 @@ export default function Gastos({ usuario }) {
           <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: '1rem' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Datos del proveedor (para el recibo)</div>
             <div style={{ marginBottom: 10 }}>
-              <Label>Seleccionar de contactos</Label>
-              <select onChange={e => {
-                const ct = contactos.find(c => String(c.id) === e.target.value)
-                if (ct) setForm({...form, proveedor: ct.nombre, domicilio: ct.banco || '', localidad: ct.localidad || '', cuit: ct.cuit || '', iva: ct.iva || '', cbu: ct.cbu || ''})
-              }} style={inputStyle} defaultValue="">
+              <Label>Proveedor</Label>
+              <select value={form.proveedor} onChange={e => {
+                const ct = contactos.find(c => c.nombre === e.target.value)
+                setForm({...form, proveedor: e.target.value, domicilio: ct?.banco || '', localidad: ct?.localidad || '', cuit: ct?.cuit || '', iva: ct?.iva || '', cbu: ct?.cbu || ''})
+              }} style={inputStyle}>
                 <option value="">— Seleccionar contacto —</option>
-                {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
               </select>
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              <div><Label>Nombre / Razón social</Label><input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} /></div>
               <div><Label>Domicilio</Label><input type="text" value={form.domicilio} onChange={e => setForm({...form, domicilio: e.target.value})} style={inputStyle} /></div>
               <div><Label>Localidad</Label><input type="text" value={form.localidad} onChange={e => setForm({...form, localidad: e.target.value})} style={inputStyle} /></div>
               <div><Label>CUIT / DNI</Label><input type="text" value={form.cuit} onChange={e => setForm({...form, cuit: e.target.value})} style={inputStyle} /></div>

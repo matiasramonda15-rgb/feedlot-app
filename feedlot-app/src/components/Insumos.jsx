@@ -507,7 +507,7 @@ export default function Insumos({ usuario }) {
                                   iva: ct?.iva || formPagoInline.iva,
                                 })
                               }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
-                                <option value="">— Sin contacto / ingresar manual —</option>
+                                <option value="">— Sin contacto —</option>
                                 {contactos.map(ct => <option key={ct.id} value={ct.id}>{ct.nombre}{ct.localidad ? ` (${ct.localidad})` : ''}</option>)}
                               </select>
                             </div>
@@ -546,10 +546,9 @@ export default function Insumos({ usuario }) {
                           </div>
                           <div>
                             <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Proveedor</div>
-                            <input type="text" value={formPagoInline.proveedor}
-                              onChange={e => setFormPagoInline({...formPagoInline, proveedor: e.target.value})}
-                              placeholder="ej. Cerealera Ramonda"
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
+                            <div style={{ padding: '9px 12px', fontSize: 13, color: formPagoInline.proveedor ? S.text : S.hint }}>
+                              {formPagoInline.proveedor || 'Elegí un contacto arriba'}
+                            </div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>CUIT</div>
@@ -682,7 +681,11 @@ export default function Insumos({ usuario }) {
               </div>
               <div>
                 <Lbl>Proveedor</Lbl>
-                <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp} />
+                <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
+                  <option value="">— Seleccioná —</option>
+                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               </div>
               <div>
                 <Lbl>N° Remito</Lbl>
@@ -741,7 +744,11 @@ export default function Insumos({ usuario }) {
               </div>
               <div>
                 <Lbl>Proveedor</Lbl>
-                <input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp} />
+                <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
+                  <option value="">— Seleccioná —</option>
+                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               </div>
               <div>
                 <Lbl>N° Remito</Lbl>
@@ -1037,8 +1044,11 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngres
                                   </div>
                                   <div>
                                     <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Proveedor</div>
-                                    <input type="text" value={formIng.proveedor} onChange={e => setFormIng({ ...formIng, proveedor: e.target.value })}
-                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }} />
+                                    <select value={formIng.proveedor} onChange={e => setFormIng({ ...formIng, proveedor: e.target.value })}
+                                      style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }}>
+                                      <option value="">— Sin proveedor —</option>
+                                      {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                                    </select>
                                   </div>
                                   <button onClick={async () => {
                                     const nuevaCant = parseFloat(formIng.cantidad_kg) || ing.cantidad_kg
