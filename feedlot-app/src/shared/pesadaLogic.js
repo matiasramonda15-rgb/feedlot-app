@@ -20,6 +20,28 @@ export function bajarRango(letra, n = 2) {
   return ORDEN_RANGOS[Math.max(idx - n, 0)]
 }
 
+// Reparte una cantidad entre varios corrales, proporcional a cuántos
+// animales tiene cada uno ya (así, si hay dos corrales "D" con distinta
+// cantidad, el que tiene más recibe más de los animales nuevos). Si ningún
+// corral tiene animales todavía, se reparte en partes iguales. El resto por
+// redondeo se lo lleva el corral con más animales, para que sume exacto.
+function repartirProporcional(cantidad, corrales) {
+  if (corrales.length === 0) return []
+  if (corrales.length === 1) return [{ corral: corrales[0], parte: cantidad }]
+  const totalActual = corrales.reduce((s, c) => s + (c.animales || 0), 0)
+  const partes = corrales.map(corral => ({
+    corral,
+    parte: totalActual > 0 ? Math.floor(cantidad * (corral.animales || 0) / totalActual) : Math.floor(cantidad / corrales.length),
+  }))
+  const asignado = partes.reduce((s, p) => s + p.parte, 0)
+  const resto = cantidad - asignado
+  if (resto > 0) {
+    const mayor = partes.reduce((a, b) => (b.corral.animales || 0) > (a.corral.animales || 0) ? b : a)
+    mayor.parte += resto
+  }
+  return partes
+}
+
 export function getRango(kg, RANGOS) {
   for (const r of RANGOS) if (kg >= r.min && kg <= r.max) return r
   return null
@@ -72,11 +94,14 @@ export async function confirmarPesadaClasificacion(supabase, {
   })
   if (animalesInsert.length > 0) await supabase.from('pesada_animales').insert(animalesInsert)
 
-  // 3. Snapshot ANTES de modificar nada — mapa rangoActual → corral completo
+  // 3. Snapshot ANTES de modificar nada — mapa rangoActual → LISTA de corrales
+  // (puede haber más de un corral con la misma letra al mismo tiempo, por
+  // ejemplo dos corrales "D" — antes esto se perdía y todo iba a parar a
+  // uno solo, dejando al otro sin sumar sus animales nuevos)
   const mapaRangoCorral = {}
   corralesClasificados.forEach(c => {
     const letra = c.sub && c.sub.length === 1 ? c.sub : c.sub?.charAt(0)
-    if (letra) mapaRangoCorral[letra] = { ...c, sub: letra }
+    if (letra) { if (!mapaRangoCorral[letra]) mapaRangoCorral[letra] = []; mapaRangoCorral[letra].push({ ...c, sub: letra }) }
   })
 
   // 4. Registrar movimientos (para poder revertir después si hace falta)
@@ -96,8 +121,10 @@ export async function confirmarPesadaClasificacion(supabase, {
   Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
     const cant = conteoRangos[letraNueva]?.cantidad || 0
     if (!cant) return
-    const corralDest = mapaRangoCorral[letraAnterior]
-    if (corralDest) movimientos.push({ pesada_id: pesada.id, corral_id: corralDest.id, tipo: 'suma_existente', animales: cant, rango_antes: letraAnterior, rango_despues: letraNueva })
+    const corralesDest = mapaRangoCorral[letraAnterior] || []
+    repartirProporcional(cant, corralesDest).forEach(({ corral, parte }) => {
+      if (parte > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corral.id, tipo: 'suma_existente', animales: parte, rango_antes: letraAnterior, rango_despues: letraNueva })
+    })
   })
   if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
 
@@ -120,14 +147,19 @@ export async function confirmarPesadaClasificacion(supabase, {
     else await supabase.from('corrales').update({ rol: 'clasificado', sub: 'B', animales: cantB, actualizado: `${fecha}T12:00:00-03:00` }).eq('id', corralLibre2Id)
   }
 
-  // 7. Sumar animales C-G a los corrales que YA existían (usando el snapshot previo)
+  // 7. Sumar animales C-G a los corrales que YA existían (usando el snapshot
+  // previo) — si más de un corral compartía la misma letra, se reparte
+  // proporcional entre todos, no se pisa uno con otro.
   for (const [letraNueva, letraAnterior] of Object.entries(mapeoDestino)) {
     const cant = conteoRangos[letraNueva]?.cantidad || 0
     if (!cant) continue
-    const corralDest = mapaRangoCorral[letraAnterior]
-    if (!corralDest) continue
-    const { data: corralFresh } = await supabase.from('corrales').select('animales').eq('id', corralDest.id).single()
-    await supabase.from('corrales').update({ animales: (corralFresh?.animales || 0) + cant }).eq('id', corralDest.id)
+    const corralesDest = mapaRangoCorral[letraAnterior] || []
+    if (corralesDest.length === 0) continue
+    for (const { corral, parte } of repartirProporcional(cant, corralesDest)) {
+      if (parte <= 0) continue
+      const { data: corralFresh } = await supabase.from('corrales').select('animales').eq('id', corral.id).single()
+      await supabase.from('corrales').update({ animales: (corralFresh?.animales || 0) + parte }).eq('id', corral.id)
+    }
   }
 
   // 8. Descontar del corral de acumulación
