@@ -222,6 +222,15 @@ export default function Contactos({ usuario }) {
         movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
       })
     })
+    // Gastos generales (silobolsa, flete, taller, etc.) — le debemos al proveedor.
+    ;(data.gastosGenerales || []).forEach(g => {
+      const esParaleloGg = g.es_paralelo || false
+      if (esParalela !== esParaleloGg) return
+      if (g.monto > 0) movs.push({ fecha: g.fecha, tipo: g.descripcion || g.categoria || 'Gasto', credito: 0, debito: g.monto })
+      ;(g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
+        movs.push({ fecha: g.fecha, tipo: 'Pago', credito: parseFloat(p.monto) || 0, debito: 0 })
+      })
+    })
     if (!esParalela) {
       ;(data.ventasActivos || []).forEach(va => {
         if (va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'}`, credito: va.monto, debito: 0 })
