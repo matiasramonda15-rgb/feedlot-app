@@ -21,6 +21,7 @@ var Activos      = lazy(() => import('./Activos'))
 var Insumos      = lazy(() => import('./Insumos'))
 var Fletes       = lazy(() => import('./Fletes'))
 var CuentasPagar = lazy(() => import('./CuentasPagar'))
+var Presupuesto  = lazy(() => import('./Presupuesto'))
 
 const MODULOS = {
   tablero: Tablero, corrales: Corrales, ingresos: Ingresos, pesada: Pesada,
@@ -28,6 +29,7 @@ const MODULOS = {
   agricultura: Agricultura, servicios: Servicios, personal: Personal, gastos: Gastos,
   comercial: Comercial, contactos: Contactos, activos: Activos, socios: Activos, insumos: Insumos, fletes: Fletes,
   cuentas_pagar: CuentasPagar,
+  presupuesto: Presupuesto,
 }
 
 function LoadingModulo() {

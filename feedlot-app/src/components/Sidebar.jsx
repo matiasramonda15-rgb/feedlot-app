@@ -58,6 +58,7 @@ const MENU = [
     section: 'REPORTES',
     items: [
       { id: 'reportes',     label: 'Reportes',            roles: ['dueno'] },
+      { id: 'presupuesto',  label: 'Presupuesto',         roles: ['dueno'] },
     ]
   },
 ]
