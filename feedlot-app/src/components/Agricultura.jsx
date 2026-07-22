@@ -2325,7 +2325,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
               <div style={{ fontSize: 12, color: S.amber, marginBottom: 16 }}>Pendiente de cobro: ${pendiente.toLocaleString('es-AR')} de ${(venta.total || 0).toLocaleString('es-AR')}</div>
               <div><Label>Fecha</Label><input type="date" value={formCobro.fecha} onChange={e => setFormCobro({...formCobro, fecha: e.target.value})} style={{...inputStyle, marginBottom: 12}} /></div>
               <Label>Formas de cobro</Label>
-              <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} mostrarCanje={false} />
+              <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} />
               {totalCargado > 0 && Math.abs(totalCargado - pendiente) > 0.5 && (
                 <div style={{ fontSize: 12, color: S.amber, marginTop: 8 }}>El total cargado (${totalCargado.toLocaleString('es-AR')}) no coincide con lo pendiente — se puede cobrar parcial, no hace falta que sea exacto.</div>
               )}
