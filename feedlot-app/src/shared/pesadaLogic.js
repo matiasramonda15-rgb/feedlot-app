@@ -63,6 +63,14 @@ export async function confirmarPesadaClasificacion(supabase, {
   if (corralLibre1Id === corralLibre2Id) return { error: { message: 'Los corrales para A y B deben ser diferentes' } }
   if (totalClasif === 0) return { error: { message: 'No hay animales pesados' } }
 
+  // Guardia de seguridad: el total de animales de TODO el feedlot no tiene
+  // que cambiar por una pesada (es solo una reclasificación interna — entran
+  // y salen animales únicamente por Ingresos/Ventas, nunca por acá). Se
+  // captura el total ahora, y al final se vuelve a sumar para comparar — si
+  // no coincide exacto, se avisa en vez de dejarlo pasar en silencio.
+  const { data: corralesAntesTodos } = await supabase.from('corrales').select('animales')
+  const totalAntesTodos = (corralesAntesTodos || []).reduce((s, c) => s + (c.animales || 0), 0)
+
   // Detectar si los corrales elegidos para A/B ya venían en curso de un día
   // anterior de la MISMA pesada (rango A o B ya asignado ahí) — en ese caso hay
   // que SUMAR los animales nuevos, no pisar el número, y no volver a correr las
@@ -180,7 +188,17 @@ export async function confirmarPesadaClasificacion(supabase, {
     await supabase.from('configuracion').upsert({ clave: 'fecha_term_c', valor: fechaTermC.toISOString().split('T')[0] }, { onConflict: 'clave' })
   }
 
-  return { error: null, pesada, totalClasif }
+  // Guardia de seguridad: comparar el total de animales de todo el feedlot
+  // antes y después — en una pesada (reclasificación interna) tiene que dar
+  // exactamente igual. Si no coincide, se avisa para revisar antes de que
+  // el error quede escondido hasta el próximo conteo físico.
+  const { data: corralesDespuesTodos } = await supabase.from('corrales').select('animales')
+  const totalDespuesTodos = (corralesDespuesTodos || []).reduce((s, c) => s + (c.animales || 0), 0)
+  const warning = totalDespuesTodos !== totalAntesTodos
+    ? `⚠️ El total de animales del feedlot cambió de ${totalAntesTodos} a ${totalDespuesTodos} (diferencia de ${totalDespuesTodos - totalAntesTodos}) — una pesada no debería sumar ni restar animales del total, solo reclasificarlos. Revisá los corrales antes de seguir.`
+    : null
+
+  return { error: null, pesada, totalClasif, warning }
 }
 
 // Revierte una pesada de clasificación: deshace los movimientos de corrales

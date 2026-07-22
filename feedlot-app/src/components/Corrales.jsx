@@ -411,7 +411,7 @@ export default function Corrales({ usuario, mobile, nav }) {
             ? <div style={{ fontSize: 13, color: '#9E9A94', textAlign: 'center', padding: '2rem 0' }}>Toca un corral para ver el detalle y las acciones disponibles.</div>
             : (
               <>
-                {vistaPanel === 'detalle' && <PanelDetalle corral={sel} corrales={corrales} onCambiarRol={cambiarRol} onMover={() => setVistaPanel('mover')} usuario={usuario} esDueno={esDueno} />}
+                {vistaPanel === 'detalle' && <PanelDetalle corral={sel} corrales={corrales} onCambiarRol={cambiarRol} onMover={() => setVistaPanel('mover')} usuario={usuario} esDueno={esDueno} onAjustado={cargarCorrales} />}
                 {vistaPanel === 'mover' && (
                   <PanelMover
                     corral={sel}
@@ -556,7 +556,7 @@ function CorralBox({ c, label, sel, onClick }) {
   )
 }
 
-function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDueno }) {
+function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDueno, onAjustado }) {
   const rc = ROL_COLOR[corral.rol] || ROL_COLOR.libre
   const pct = corral.capacidad > 0 ? Math.round((corral.animales||0) / corral.capacidad * 100) : 0
   const [cambiandoRol, setCambiandoRol] = useState(false)
@@ -564,26 +564,30 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
   const [subNuevo, setSubNuevo] = useState('')
   const [ajustando, setAjustando] = useState(false)
   const [ajusteValor, setAjusteValor] = useState('')
+  const [ajusteMotivo, setAjusteMotivo] = useState('')
   const [guardandoAjuste, setGuardandoAjuste] = useState(false)
 
   async function guardarAjuste() {
     const nuevo = parseInt(ajusteValor)
     if (isNaN(nuevo) || nuevo < 0) { alert('Ingresá un número válido'); return }
+    const anterior = corral.animales || 0
+    if (nuevo !== anterior && !ajusteMotivo.trim()) { alert('Contá brevemente el motivo del ajuste (ej. "conteo físico del 22/7"), para poder distinguirlo después de un error del sistema'); return }
     setGuardandoAjuste(true)
     const { error } = await supabase.from('corrales').update({ animales: nuevo }).eq('id', corral.id)
     if (error) { alert('Error al guardar el ajuste: ' + error.message); setGuardandoAjuste(false); return }
     await supabase.from('movimientos').insert({
       corral_origen_id: corral.id,
       corral_destino_id: corral.id,
-      cantidad: nuevo - (corral.animales || 0),
+      cantidad: nuevo - anterior,
       tipo: 'ajuste_manual',
-      motivo: `Ajuste manual: ${corral.animales || 0} → ${nuevo}`,
+      motivo: `Ajuste manual: ${anterior} → ${nuevo}${ajusteMotivo.trim() ? ' — ' + ajusteMotivo.trim() : ''}`,
       registrado_por: usuario?.id,
     })
     setAjustando(false)
     setAjusteValor('')
+    setAjusteMotivo('')
     setGuardandoAjuste(false)
-    window.location.reload()
+    await onAjustado?.()
   }
 
   return (
@@ -622,7 +626,7 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
               </button>
             : <div style={{ background: '#FDF0E0', border: '1px solid #EF9F27', borderRadius: 8, padding: '10px 12px' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#7A4500', marginBottom: 8 }}>Ajuste manual — actual: {corral.animales || 0} animales</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                   <input type="number" value={ajusteValor} onChange={e => setAjusteValor(e.target.value)} min="0"
                     style={{ flex: 1, padding: '7px 10px', border: '1px solid #EF9F27', borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700 }} />
                   <button onClick={guardarAjuste} disabled={guardandoAjuste}
@@ -634,6 +638,8 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
                     ✕
                   </button>
                 </div>
+                <input type="text" value={ajusteMotivo} onChange={e => setAjusteMotivo(e.target.value)} placeholder="Motivo (ej. conteo físico del 22/7)"
+                  style={{ width: '100%', padding: '6px 10px', border: '1px solid #EF9F27', borderRadius: 6, fontSize: 12, boxSizing: 'border-box' }} />
               </div>
           }
         </div>

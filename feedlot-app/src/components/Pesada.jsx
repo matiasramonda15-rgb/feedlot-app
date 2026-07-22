@@ -147,7 +147,7 @@ export default function Pesada({ usuario, mobile, nav }) {
       if (arr.length > 0) conteoRangosParaGuardar[rango] = { cantidad: arr.length, pesoPromedio: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) }
     })
 
-    const { error } = await confirmarPesadaClasificacion(supabase, {
+    const { error, warning } = await confirmarPesadaClasificacion(supabase, {
       fecha: fechaPesada,
       corralAcum,
       corralesClasificados,
@@ -159,6 +159,7 @@ export default function Pesada({ usuario, mobile, nav }) {
       usuario,
     })
     if (error) { alert('Error al guardar la pesada: ' + error.message); setGuardando(false); return }
+    if (warning) alert(warning)
 
     setPesadaConfirmada({
       clasificables: clasificables.length,
@@ -227,12 +228,13 @@ export default function Pesada({ usuario, mobile, nav }) {
         const cant = parseInt(formM[letra]) || 0
         if (cant > 0) conteoRangosParaGuardar[letra] = { cantidad: cant }
       })
-      const { error } = await confirmarPesadaClasificacion(supabase, {
+      const { error, warning } = await confirmarPesadaClasificacion(supabase, {
         fecha: fechaPesada, corralAcum, corralesClasificados,
         conteoRangos: conteoRangosParaGuardar, menoresCantidad: menoresM,
         corralLibre1Id: parseInt(corralLibre1), corralLibre2Id: parseInt(corralLibre2), usuario,
       })
       if (error) { alert('Error al guardar: ' + error.message); setGuardandoM(false); return }
+      if (warning) alert(warning)
       await cargar()
       alert(`Pesada confirmada. ${totalPesadosM} animales procesados.`)
       nav && nav('home')
