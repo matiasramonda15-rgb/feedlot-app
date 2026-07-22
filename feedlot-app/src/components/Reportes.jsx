@@ -47,6 +47,7 @@ export default function Reportes({ usuario }) {
   const [manoObraServicios, setManoObraServicios] = useState([])
   const [ventasGranos, setVentasGranos] = useState([])
   const [activos, setActivos] = useState([])
+  const [pagosCreditos, setPagosCreditos] = useState([])
   const [actividadVista, setActividadVista] = useState('feedlot')
   const [lotes, setLotes] = useState([])
   const [ventas, setVentas] = useState([])
@@ -56,7 +57,7 @@ export default function Reportes({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: cs }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: cs }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(2000),
@@ -73,6 +74,7 @@ export default function Reportes({ usuario }) {
       supabase.from('mano_obra_servicios').select('monto_calculado, creado_en'),
       supabase.from('ventas_granos').select('total, fecha, creado_en'),
       supabase.from('activos').select('id, valor_compra, vida_util_anios, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa, estado, fecha_compra'),
+      supabase.from('pagos_creditos').select('monto, fecha_pago, estado, creditos(activo_id, compras_insumos(insumo_tipo))').eq('estado', 'pagado'),
     ])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
@@ -90,6 +92,7 @@ export default function Reportes({ usuario }) {
     setManoObraServicios(mos || [])
     setVentasGranos(vg || [])
     setActivos(ac || [])
+    setPagosCreditos(pcr || [])
     setLoading(false)
   }
 
@@ -319,6 +322,28 @@ export default function Reportes({ usuario }) {
     amortizacionPorActividad.servicios += amortEsteAnio * ((a.pct_servicios || 0) / 100)
   })
 
+  // ── Cuotas de crédito pagadas, repartidas por actividad ──
+  // Si el crédito está vinculado a un activo (ej. la sembradora), se reparte
+  // con el mismo % de uso que ya tiene cargado ese activo — igual criterio
+  // que la amortización. Si en cambio viene de una compra de insumos (ej. el
+  // Roundup con el Banco Macro), se manda entera a la actividad de ese
+  // insumo (Alimentación/Sanidad → Feedlot, Agro → Agricultura). Si no hay
+  // ninguna de las dos referencias, se asume Feedlot por defecto.
+  const costoCreditosPorActividad = { feedlot: 0, agricultura: 0, servicios: 0 }
+  pagosCreditos.filter(p => p.fecha_pago && p.fecha_pago.startsWith(anioActualStr)).forEach(p => {
+    const monto = p.monto || 0
+    const activo = p.creditos?.activo_id ? activos.find(a => a.id === p.creditos.activo_id) : null
+    if (activo) {
+      costoCreditosPorActividad.feedlot += monto * ((activo.pct_feedlot || 0) / 100)
+      costoCreditosPorActividad.agricultura += monto * (((activo.pct_agricultura || 0) + (activo.pct_alfalfa || 0)) / 100)
+      costoCreditosPorActividad.servicios += monto * ((activo.pct_servicios || 0) / 100)
+    } else {
+      const tipoInsumo = p.creditos?.compras_insumos?.insumo_tipo
+      if (tipoInsumo === 'agro') costoCreditosPorActividad.agricultura += monto
+      else costoCreditosPorActividad.feedlot += monto  // alimentacion, sanitario, o sin clasificar
+    }
+  })
+
   const mesesDelAnio = rentabilidadMensual.filter(m => m.mes.startsWith(anioActualStr))
   const rentabilidadAnual = mesesDelAnio.reduce((acc, m) => ({
     ingreso: acc.ingreso + m.ingreso, costoTotal: acc.costoTotal + m.costoTotal, resultado: acc.resultado + m.resultado,
@@ -326,6 +351,9 @@ export default function Reportes({ usuario }) {
   rentabilidadAnual.costoAmortizacion = amortizacionPorActividad.feedlot
   rentabilidadAnual.costoTotal += amortizacionPorActividad.feedlot
   rentabilidadAnual.resultado -= amortizacionPorActividad.feedlot
+  rentabilidadAnual.costoCreditos = costoCreditosPorActividad.feedlot
+  rentabilidadAnual.costoTotal += costoCreditosPorActividad.feedlot
+  rentabilidadAnual.resultado -= costoCreditosPorActividad.feedlot
   const indiceAnual = rentabilidadAnual.costoTotal > 0 ? (rentabilidadAnual.resultado / rentabilidadAnual.costoTotal * 100) : null
 
   // ── Rentabilidad Agricultura (ingreso = ventas de granos; costo = agroquímicos + gastos generales + mano de obra) ──
@@ -375,6 +403,9 @@ export default function Reportes({ usuario }) {
   rentabilidadAnualAgro.costoAmortizacion = amortizacionPorActividad.agricultura
   rentabilidadAnualAgro.costoTotal += amortizacionPorActividad.agricultura
   rentabilidadAnualAgro.resultado -= amortizacionPorActividad.agricultura
+  rentabilidadAnualAgro.costoCreditos = costoCreditosPorActividad.agricultura
+  rentabilidadAnualAgro.costoTotal += costoCreditosPorActividad.agricultura
+  rentabilidadAnualAgro.resultado -= costoCreditosPorActividad.agricultura
   const indiceAnualAgro = rentabilidadAnualAgro.costoTotal > 0 ? (rentabilidadAnualAgro.resultado / rentabilidadAnualAgro.costoTotal * 100) : null
 
   // ── Rentabilidad Servicios (ingreso = servicios a terceros + trabajo interno
@@ -433,6 +464,9 @@ export default function Reportes({ usuario }) {
   rentabilidadAnualServ.costoAmortizacion = amortizacionPorActividad.servicios
   rentabilidadAnualServ.costoTotal += amortizacionPorActividad.servicios
   rentabilidadAnualServ.resultado -= amortizacionPorActividad.servicios
+  rentabilidadAnualServ.costoCreditos = costoCreditosPorActividad.servicios
+  rentabilidadAnualServ.costoTotal += costoCreditosPorActividad.servicios
+  rentabilidadAnualServ.resultado -= costoCreditosPorActividad.servicios
   const indiceAnualServ = rentabilidadAnualServ.costoTotal > 0 ? (rentabilidadAnualServ.resultado / rentabilidadAnualServ.costoTotal * 100) : null
 
   // ── Comparativa entre actividades ──
@@ -893,14 +927,14 @@ export default function Reportes({ usuario }) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
               <Stat label={`Ingreso ${anioActualStr}`} val={rentabilidadAnual.ingreso > 0 ? `$${(rentabilidadAnual.ingreso / 1000000).toFixed(1)}M` : '—'} color={S.green} />
-              <Stat label={`Inversión total ${anioActualStr}`} val={rentabilidadAnual.costoTotal > 0 ? `$${(rentabilidadAnual.costoTotal / 1000000).toFixed(1)}M` : '—'} sub="hacienda + alimentación + sanidad + mano de obra + gastos + amortización de maquinaria" />
+              <Stat label={`Inversión total ${anioActualStr}`} val={rentabilidadAnual.costoTotal > 0 ? `$${(rentabilidadAnual.costoTotal / 1000000).toFixed(1)}M` : '—'} sub="hacienda + alimentación + sanidad + mano de obra + gastos + amortización + créditos" />
               <Stat label="Resultado" val={rentabilidadAnual.costoTotal > 0 ? `$${(rentabilidadAnual.resultado / 1000000).toFixed(1)}M` : '—'} color={rentabilidadAnual.resultado >= 0 ? S.green : S.red} />
               <Stat label="Índice de rentabilidad anual" val={indiceAnual !== null ? `${indiceAnual.toFixed(1)}%` : '—'} sub="resultado / inversión total del año en curso" color={indiceAnual !== null ? (indiceAnual >= 0 ? S.green : S.red) : S.hint} />
             </div>
             <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
               Compara, mes a mes, todo lo que entró (ventas) contra todo lo que salió (compra de hacienda, alimentación, sanidad, mano de obra y gastos generales del feedlot).
               La mano de obra cuenta entero para el personal asignado a Feedlot, y un tercio para el personal "General" (se reparte entre Feedlot, Agricultura y Servicios).
-              La amortización de maquinaria (${(rentabilidadAnual.costoAmortizacion / 1000000).toFixed(1)}M este año) se suma solo al total anual de arriba, no a la tabla mes a mes de abajo.
+              La amortización de maquinaria (${(rentabilidadAnual.costoAmortizacion / 1000000).toFixed(1)}M este año) y las cuotas de crédito pagadas (${(rentabilidadAnual.costoCreditos / 1000000).toFixed(1)}M este año, repartidas según el % de uso del activo vinculado a cada crédito) se suman solo al total anual de arriba, no a la tabla mes a mes de abajo.
             </div>
             {rentabilidadMensual.length === 0 ? (
               <div style={{ padding: '1.5rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin datos suficientes todavía.</div>

@@ -37,14 +37,13 @@ async function cargarDatosActividad(actividad, fechaDesde) {
   const MANO_DE_OBRA = 'Mano de obra'
 
   if (actividad === 'Feedlot') {
-    const [{ data: ventas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }, { data: cuotasCred }] = await Promise.all([
+    const [{ data: ventas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }] = await Promise.all([
       supabase.from('ventas').select('total, creado_en, comprador').gte('creado_en', fechaDesde),
       supabase.from('lotes').select('monto_facturado, iva_monto, monto_negro, fecha_ingreso, procedencia').gte('fecha_ingreso', fechaDesde),
       supabase.from('compras_insumos').select('total, fecha, proveedor, insumo_tipo').gte('fecha', fechaDesde).in('insumo_tipo', ['alimentacion', 'sanitario']),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
       supabase.from('gastos_generales').select('monto, fecha, categoria, actividad').gte('fecha', fechaDesde).in('actividad', ['Feedlot', 'General']),
       supabase.from('fletes').select('monto, fecha, transportista, estado_pago').gte('fecha', fechaDesde).eq('estado_pago', 'pagado'),
-      supabase.from('pagos_creditos').select('monto, fecha, fecha_pago, estado, creditos(entidad, compra_insumos_id)').eq('estado', 'pagado').gte('fecha', fechaDesde),
     ])
     ;(ventas || []).forEach(v => suma(ingresos, `Venta hacienda — ${v.comprador || 'sin comprador'}`, v.creado_en?.split('T')[0], v.total))
     ;(lotes || []).forEach(l => suma(egresos, `Compra hacienda — ${l.procedencia || 'sin procedencia'}`, l.fecha_ingreso, (l.monto_facturado || 0) + (l.iva_monto || 0) + (l.monto_negro || 0)))
@@ -58,9 +57,6 @@ async function cargarDatosActividad(actividad, fechaDesde) {
     // Fletes: no tienen actividad propia — por ahora se asumen todos de
     // Feedlot (transporte de hacienda), que es el caso más común.
     ;(fletes || []).forEach(f => suma(egresos, `Fletes — ${f.transportista || 'sin transportista'}`, f.fecha, f.monto))
-    // Cuotas de créditos: no tienen actividad propia — se asumen todas de
-    // Feedlot por defecto, igual que fletes (ver aclaración en el mensaje).
-    ;(cuotasCred || []).forEach(c => suma(egresos, `Cuotas de crédito — ${c.creditos?.entidad || 'sin entidad'}`, c.fecha_pago || c.fecha, c.monto))
   } else if (actividad === 'Agricultura') {
     const [{ data: ventasG }, { data: compras }, { data: ordenes }, { data: gastosAgro }, { data: pagosEmp }, { data: gastosGen }] = await Promise.all([
       supabase.from('ventas_granos').select('total, monto_negro, fecha, comprador, estado').gte('fecha', fechaDesde).neq('estado', 'pactada'),
@@ -122,6 +118,42 @@ async function cargarDatosGenerales(fechaDesde) {
   return { ingresos: {}, egresos }
 }
 
+// Cuotas de crédito (pagadas o pendientes con fecha ya conocida), repartidas
+// por actividad: si el crédito está vinculado a un activo (ej. la
+// sembradora), se usa el mismo % de uso que ya tiene cargado ese activo —
+// igual criterio que la amortización en Reportes. Si viene de una compra de
+// insumos, va entera a la actividad de ese insumo (Agro → Agricultura, el
+// resto → Feedlot). Si no hay ninguna referencia, se asume Feedlot.
+async function cargarCreditosPorActividad(fechaDesde) {
+  const [{ data: cuotas }, { data: activos }] = await Promise.all([
+    supabase.from('pagos_creditos').select('monto, fecha, fecha_pago, creditos(entidad, activo_id, compras_insumos(insumo_tipo))').gte('fecha', fechaDesde),
+    supabase.from('activos').select('id, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa'),
+  ])
+  const resultado = { Feedlot: {}, Agricultura: {}, Servicios: {} }
+  const suma = (act, categoria, fecha, monto) => {
+    if (!fecha || !monto) return
+    const d = new Date(fecha + 'T12:00:00')
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}`
+    if (!resultado[act][categoria]) resultado[act][categoria] = {}
+    resultado[act][categoria][key] = (resultado[act][categoria][key] || 0) + monto
+  }
+  ;(cuotas || []).forEach(c => {
+    if (!c.monto) return
+    const fecha = c.fecha_pago || c.fecha
+    const nombre = `Cuotas de crédito — ${c.creditos?.entidad || 'sin entidad'}`
+    const activo = c.creditos?.activo_id ? activos?.find(a => a.id === c.creditos.activo_id) : null
+    if (activo) {
+      if (activo.pct_feedlot > 0) suma('Feedlot', nombre, fecha, c.monto * (activo.pct_feedlot / 100))
+      if ((activo.pct_agricultura || 0) + (activo.pct_alfalfa || 0) > 0) suma('Agricultura', nombre, fecha, c.monto * (((activo.pct_agricultura || 0) + (activo.pct_alfalfa || 0)) / 100))
+      if (activo.pct_servicios > 0) suma('Servicios', nombre, fecha, c.monto * (activo.pct_servicios / 100))
+    } else {
+      const tipoInsumo = c.creditos?.compras_insumos?.insumo_tipo
+      suma(tipoInsumo === 'agro' ? 'Agricultura' : 'Feedlot', nombre, fecha, c.monto)
+    }
+  })
+  return resultado
+}
+
 export default function Presupuesto({ usuario }) {
   const [vista, setVista] = useState('Feedlot')  // 'Feedlot' | 'Agricultura' | 'Servicios' | 'Resumen'
   const [loading, setLoading] = useState(true)
@@ -154,6 +186,19 @@ export default function Presupuesto({ usuario }) {
     for (const act of ACTIVIDADES) resultados[act] = await cargarDatosActividad(act, fechaDesde)
     resultados['Generales'] = await cargarDatosGenerales(fechaDesde)
 
+    // Mezclar las cuotas de crédito (ya repartidas por actividad) en los
+    // egresos de cada una — separado de cargarDatosActividad porque necesita
+    // mirar los % de uso de Activos, algo transversal a las tres.
+    const creditosPorActividad = await cargarCreditosPorActividad(fechaDesde)
+    for (const act of ACTIVIDADES) {
+      Object.entries(creditosPorActividad[act] || {}).forEach(([cat, meses]) => {
+        if (!resultados[act].egresos[cat]) resultados[act].egresos[cat] = {}
+        Object.entries(meses).forEach(([mkey, monto]) => {
+          resultados[act].egresos[cat][mkey] = (resultados[act].egresos[cat][mkey] || 0) + monto
+        })
+      })
+    }
+
     const { data: proy } = await supabase.from('presupuesto_lineas').select('*').gte('anio', anioDesde)
     const proyMap = {}
     ;(proy || []).forEach(p => { proyMap[`${p.actividad}|${p.tipo}|${p.categoria}|${p.anio}|${p.mes}`] = p })
@@ -178,11 +223,13 @@ export default function Presupuesto({ usuario }) {
   function celda(actividad, tipo, categoria, m) {
     const clave = `${actividad}|${tipo}|${categoria}|${m.anio}|${m.mes}`
     if (proyecciones[clave]) return { valor: proyecciones[clave].monto, estado: 'corregido' }
-    if (!m.esFuturo) {
-      const filas = datosPorActividad[actividad]?.[tipo === 'ingreso' ? 'ingresos' : 'egresos']?.[categoria] || {}
-      const v = filas[m.key] || 0
-      return { valor: v, estado: v ? 'real' : 'vacio' }
-    }
+    const filas = datosPorActividad[actividad]?.[tipo === 'ingreso' ? 'ingresos' : 'egresos']?.[categoria] || {}
+    const v = filas[m.key] || 0
+    if (!m.esFuturo) return { valor: v, estado: v ? 'real' : 'vacio' }
+    // En meses futuros, si ya hay un dato real conocido para ese mes puntual
+    // (ej. una cuota de crédito ya programada, con fecha y monto fijos), se
+    // usa ese — es más confiable que un promedio estimado.
+    if (v) return { valor: v, estado: 'real' }
     const prom = promedioCategoria(actividad, tipo, categoria)
     return prom ? { valor: prom, estado: 'estimado' } : { valor: 0, estado: 'vacio' }
   }

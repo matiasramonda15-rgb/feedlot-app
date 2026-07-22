@@ -246,6 +246,11 @@ export default function Activos({ usuario }) {
       const cotiz = parseFloat(formPagoCredito.cotizacion)
       if (!cotiz) { alert('Ingresá la cotización del dólar de hoy para calcular el monto en pesos'); setGuardandoPagoCredito(false); return }
       monto = Math.round((cuota.monto_usd || 0) * cotiz)
+    } else if (formPagoCredito.montoReal) {
+      // Para créditos en pesos con cuota variable (ej. tarjeta con interés
+      // que cambia mes a mes), se puede cargar el monto real del resumen en
+      // vez de quedarse con la estimación que se cargó al crear el crédito.
+      monto = parseFloat(formPagoCredito.montoReal)
     }
     if (!monto) { alert('No se pudo calcular el monto a pagar'); setGuardandoPagoCredito(false); return }
     const desc = `Cuota ${cuota.nro_cuota} — ${credito.activos?.nombre || credito.descripcion || ''}${credito.es_dolares ? ` (US$${cuota.monto_usd} a $${formPagoCredito.cotizacion})` : ''}`
@@ -852,7 +857,7 @@ export default function Activos({ usuario }) {
                                 </td>
                                 <td style={{ padding: '7px 10px' }}>
                                   {p.estado !== 'pagado' && c.estado === 'activo' && (
-                                    <button onClick={() => { setCreditoSelId(creditoSelId === p.id ? null : p.id); setFormPagoCredito({ fecha: hoyLocal(), es_paralelo: false, cotizacion: '' }) }}
+                                    <button onClick={() => { const cuotaSel = pagos.find(pp => pp.id === p.id); setCreditoSelId(creditoSelId === p.id ? null : p.id); setFormPagoCredito({ fecha: hoyLocal(), es_paralelo: false, cotizacion: '', montoReal: cuotaSel?.monto ? String(cuotaSel.monto) : '' }) }}
                                       style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
                                       💳 Pagar
                                     </button>
@@ -875,6 +880,13 @@ export default function Activos({ usuario }) {
                           </div>
                           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                             <div><Label>Fecha pago</Label><input type="date" value={formPagoCredito.fecha} onChange={e => setFormPagoCredito({...formPagoCredito, fecha: e.target.value})} style={{ ...inp, width: 140 }} /></div>
+                            {!c.es_dolares && (
+                              <div>
+                                <Label>Monto real de esta cuota</Label>
+                                <input type="number" value={formPagoCredito.montoReal || ''} onChange={e => setFormPagoCredito({...formPagoCredito, montoReal: e.target.value})} style={{ ...inp, width: 140 }} placeholder="ej. 32500" />
+                                <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>Por si la cuota varía con intereses (ej. tarjeta) — se precarga con la estimación</div>
+                              </div>
+                            )}
                             {c.es_dolares && (
                               <div>
                                 <Label>Cotización del dólar hoy</Label>

@@ -326,6 +326,32 @@ export default function Gastos({ usuario }) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
       if (pago.tipo === 'canje') { pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null }); continue }
+      if (pago.tipo === 'credito') {
+        const cuotas = parseInt(form.credito_cuotas) || 1
+        const { data: cred, error: errCred } = await supabase.from('creditos').insert({
+          activo_id: form.activo_id ? parseInt(form.activo_id) : null,
+          entidad: form.credito_entidad || null,
+          descripcion: `${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' — ' + form.proveedor : ''}`,
+          monto_total: monto, cant_cuotas: cuotas, monto_cuota: Math.round(monto / cuotas),
+          fecha_inicio: form.fecha, fecha_vencimiento: form.credito_vencimiento || null,
+          cuotas_pagadas: 0, saldo_pendiente: monto, estado: 'activo', registrado_por: usuario?.id,
+        }).select().single()
+        if (errCred) { alert('Error al crear el crédito: ' + errCred.message); setGuardando(false); return }
+        const cuotasAInsertar = []
+        for (let i = 0; i < cuotas; i++) {
+          let fechaCuota = form.credito_vencimiento || form.fecha
+          if (i > 0 && form.credito_vencimiento) {
+            const d = new Date(form.credito_vencimiento + 'T12:00:00')
+            d.setMonth(d.getMonth() + i)
+            fechaCuota = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          }
+          cuotasAInsertar.push({ credito_id: cred.id, fecha: fechaCuota, nro_cuota: i + 1, estado: 'pendiente', monto: Math.round(monto / cuotas) })
+        }
+        const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
+        if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
+        pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null })
+        continue
+      }
       const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
       let desc = `${form.actividad} — ${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' (' + form.proveedor + ')' : ''}`
       if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
@@ -662,7 +688,20 @@ export default function Gastos({ usuario }) {
                       <option value="e-cheq">E-cheq</option>
                       <option value="cuenta_corriente">Cuenta corriente</option>
                       <option value="canje">🔄 Canje / Compensación (no mueve caja)</option>
+                      <option value="credito">🏦 Crédito (tarjeta/financiera)</option>
                     </select>
+                    {form.pagos.some(p => p.tipo === 'credito') && (
+                      <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 10 }}>
+                        <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
+                          El proveedor ya cobró (se lo pagó la tarjeta/financiera) — la deuda queda en Créditos{form.activo_id ? ', vinculada al activo elegido arriba (se va a repartir con su mismo % de uso)' : ''}.
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                          <div><Label>Entidad</Label><input type="text" value={form.credito_entidad || ''} onChange={e => setForm({...form, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Tarjeta Agronación" /></div>
+                          <div><Label>Cant. de cuotas</Label><input type="number" value={form.credito_cuotas || '1'} onChange={e => setForm({...form, credito_cuotas: e.target.value})} style={inputStyle} /></div>
+                          <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={form.credito_vencimiento || ''} onChange={e => setForm({...form, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Label>Monto $</Label>

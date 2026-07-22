@@ -76,6 +76,30 @@ export default function Fletes({ usuario }) {
     for (const pago of pagos) {
       const monto = parseFloat(pago.monto)
       if (pago.tipo === 'canje') continue  // canje: no mueve caja, se compensa solo en Contactos
+      if (pago.tipo === 'credito') {
+        const cuotas = parseInt(formPago.credito_cuotas) || 1
+        const { data: cred, error: errCred } = await supabase.from('creditos').insert({
+          entidad: formPago.credito_entidad || null,
+          descripcion: `Flete ${flete.transportista || ''} · ${flete.lotes?.codigo || ''}`,
+          monto_total: monto, cant_cuotas: cuotas, monto_cuota: Math.round(monto / cuotas),
+          fecha_inicio: formPago.fecha, fecha_vencimiento: formPago.credito_vencimiento || null,
+          cuotas_pagadas: 0, saldo_pendiente: monto, estado: 'activo', registrado_por: usuario?.id,
+        }).select().single()
+        if (errCred) { alert('Error al crear el crédito: ' + errCred.message); setGuardando(false); return }
+        const cuotasAInsertar = []
+        for (let i = 0; i < cuotas; i++) {
+          let fechaCuota = formPago.credito_vencimiento || formPago.fecha
+          if (i > 0 && formPago.credito_vencimiento) {
+            const d = new Date(formPago.credito_vencimiento + 'T12:00:00')
+            d.setMonth(d.getMonth() + i)
+            fechaCuota = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          }
+          cuotasAInsertar.push({ credito_id: cred.id, fecha: fechaCuota, nro_cuota: i + 1, estado: 'pendiente', monto: Math.round(monto / cuotas) })
+        }
+        const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
+        if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
+        continue
+      }
       const fp = pago.subtipo_cheque || pago.tipo
       if (pago.es_paralelo) {
         const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
@@ -216,7 +240,13 @@ export default function Fletes({ usuario }) {
                   <tr key={`edit-${f.id}`} style={{ background: S.accentLight }}>
                     <td colSpan={10} style={{ padding: '1rem' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
-                        <div><Label>Transportista</Label><input value={formEdit.transportista} onChange={e => setFormEdit({...formEdit, transportista: e.target.value})} style={inp()} /></div>
+                        <div>
+                          <Label>Transportista</Label>
+                          <select value={formEdit.transportista} onChange={e => setFormEdit({...formEdit, transportista: e.target.value})} style={inp()}>
+                            <option value="">— Seleccioná —</option>
+                            {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                          </select>
+                        </div>
                         <div><Label>Fecha</Label><input type="date" value={formEdit.fecha} onChange={e => setFormEdit({...formEdit, fecha: e.target.value})} style={inp()} /></div>
                         <div><Label>Cantidad</Label><input type="number" value={formEdit.cantidad} onChange={e => setFormEdit({...formEdit, cantidad: e.target.value})} style={inp()} /></div>
                         <div><Label>Kg bruto</Label><input type="number" value={formEdit.kg_bruto} onChange={e => setFormEdit({...formEdit, kg_bruto: e.target.value})} style={inp()} /></div>
@@ -252,7 +282,19 @@ export default function Fletes({ usuario }) {
                         </div>
                       </div>
                       <Label>Formas de pago</Label>
-                      <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo />
+                      <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (tarjeta/financiera)' }]} />
+                      {formPago.pagos.some(p => p.tipo === 'credito') && (
+                        <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 8 }}>
+                          <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
+                            El transportista ya cobró (se lo pagó la tarjeta/financiera) — la deuda queda registrada en Créditos.
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                            <div><Label>Entidad</Label><input type="text" value={formPago.credito_entidad || ''} onChange={e => setFormPago({...formPago, credito_entidad: e.target.value})} style={inp()} placeholder="ej. Tarjeta Agronación" /></div>
+                            <div><Label>Cant. de cuotas</Label><input type="number" value={formPago.credito_cuotas || '1'} onChange={e => setFormPago({...formPago, credito_cuotas: e.target.value})} style={inp()} /></div>
+                            <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formPago.credito_vencimiento || ''} onChange={e => setFormPago({...formPago, credito_vencimiento: e.target.value})} style={inp()} /></div>
+                          </div>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button onClick={() => guardarPago(f)} disabled={guardando} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                           {guardando ? 'Guardando...' : '✓ Confirmar pago'}

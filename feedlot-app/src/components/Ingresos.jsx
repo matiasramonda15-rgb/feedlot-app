@@ -1701,8 +1701,33 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
 
       let pagoCajaId = null
       // Canje: no sale plata de ninguna caja — se compensa solo en Contactos
-      // contra la otra operación (la que se recibió a cambio).
-      if (pago.tipo !== 'canje') {
+      // contra la otra operación (la que se recibió a cambio). Crédito:
+      // tampoco mueve caja — el proveedor ya cobró vía la tarjeta/financiera,
+      // la deuda pasa a estar registrada en Créditos, no en caja.
+      if (pago.tipo === 'credito') {
+        const cuotas = parseInt(formPago.credito_cuotas) || 1
+        const { data: cred, error: errCred } = await supabase.from('creditos').insert({
+          lote_id: lote.id, entidad: formPago.credito_entidad || null,
+          descripcion: `Compra hacienda — ${lote.procedencia || ''}`,
+          monto_total: monto, cant_cuotas: cuotas, monto_cuota: Math.round(monto / cuotas),
+          fecha_inicio: formPago.fecha, fecha_vencimiento: formPago.credito_vencimiento || null,
+          cuotas_pagadas: 0, saldo_pendiente: monto, estado: 'activo',
+          registrado_por: usuario?.id,
+        }).select().single()
+        if (errCred) { alert('El pago se registró, pero no se pudo crear el crédito: ' + errCred.message); setGuardando(false); return }
+        const cuotasAInsertar = []
+        for (let i = 0; i < cuotas; i++) {
+          let fechaCuota = formPago.credito_vencimiento || formPago.fecha
+          if (i > 0 && formPago.credito_vencimiento) {
+            const d = new Date(formPago.credito_vencimiento + 'T12:00:00')
+            d.setMonth(d.getMonth() + i)
+            fechaCuota = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          }
+          cuotasAInsertar.push({ credito_id: cred.id, fecha: fechaCuota, nro_cuota: i + 1, estado: 'pendiente', monto: Math.round(monto / cuotas) })
+        }
+        const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
+        if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
+      } else if (pago.tipo !== 'canje') {
         if (pago.es_paralelo) {
           const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
           if (errCp) { alert('El pago se registró, pero no se pudo cargar en Caja 2: ' + errCp.message); setGuardando(false); return }
@@ -1742,7 +1767,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     }
 
     setRegistrandoPago(null)
-    setFormPago({ fecha: hoyLocal(), vencimientos_sel: [], pagos: [{...PAGO_INIT}] })
+    setFormPago({ fecha: hoyLocal(), vencimientos_sel: [], pagos: [{...PAGO_INIT}], credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
     setGuardando(false)
     await cargarDatos()
     await cargarPagos()
@@ -2058,7 +2083,22 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                             </div>
                           )
                         })()}
-                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo />
+                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (tarjeta/financiera)' }]} />
+                        {formPago.pagos.some(p => p.tipo === 'credito') && (
+                          <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 8, marginBottom: 10 }}>
+                            <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
+                              El proveedor ya cobró (se lo pagó la tarjeta/financiera) — la deuda queda registrada en Créditos, vinculada a esta compra.
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                              <div><Label>Entidad (ej. Tarjeta Agronación)</Label><input type="text" value={formPago.credito_entidad || ''} onChange={e => setFormPago({...formPago, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Tarjeta Agronación" /></div>
+                              <div><Label>Cant. de cuotas</Label><input type="number" value={formPago.credito_cuotas || '1'} onChange={e => setFormPago({...formPago, credito_cuotas: e.target.value})} style={inputStyle} /></div>
+                              <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formPago.credito_vencimiento || ''} onChange={e => setFormPago({...formPago, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                            </div>
+                            <div style={{ fontSize: 11, color: '#3D1A6B', marginTop: 6 }}>
+                              Si todavía no sabés el monto exacto de cada cuota (varía con intereses, ej. tarjeta), cargá una estimación — se puede corregir cuota por cuota, desde Activos y socios → Créditos, cuando llegue el resumen real.
+                            </div>
+                          </div>
+                        )}
                         {saldo > 0 && (() => {
                           const tp = formPago.pagos.reduce((s,p) => s+(parseFloat(p.monto)||0), 0)
                           return (
