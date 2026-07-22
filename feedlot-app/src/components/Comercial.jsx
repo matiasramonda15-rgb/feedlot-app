@@ -310,10 +310,14 @@ export default function Comercial({ usuario }) {
 
   const coF = filtrar(cajaOficial)
   const cpF = filtrar(cajaParalela)
-  const coIng = coF.filter(x => x.tipo === 'ingreso').reduce((s, x) => s + (x.monto || 0), 0)
-  const coEg = coF.filter(x => x.tipo === 'egreso').reduce((s, x) => s + (x.monto || 0), 0)
-  const cpIng = cpF.filter(x => x.tipo === 'ingreso').reduce((s, x) => s + (x.monto || 0), 0)
-  const cpEg = cpF.filter(x => x.tipo === 'egreso').reduce((s, x) => s + (x.monto || 0), 0)
+  // El saldo real de cada caja tiene que ser SIEMPRE con el histórico
+  // completo, sin importar el filtro de 30 días / archivo que se esté
+  // usando para la tabla de movimientos — si no, "Saldo Caja 1" mostraría
+  // solo el neto de los últimos 30 días, no la plata real que hay.
+  const coIng = cajaOficial.filter(x => x.tipo === 'ingreso').reduce((s, x) => s + (x.monto || 0), 0)
+  const coEg = cajaOficial.filter(x => x.tipo === 'egreso').reduce((s, x) => s + (x.monto || 0), 0)
+  const cpIng = cajaParalela.filter(x => x.tipo === 'ingreso').reduce((s, x) => s + (x.monto || 0), 0)
+  const cpEg = cajaParalela.filter(x => x.tipo === 'egreso').reduce((s, x) => s + (x.monto || 0), 0)
 
   const anios = [...new Set([...cajaOficial, ...cajaParalela].map(x => new Date(x.fecha + 'T12:00:00').getFullYear()))].sort((a, b) => b - a)
   if (!anios.includes(new Date().getFullYear())) anios.unshift(new Date().getFullYear())
