@@ -37,12 +37,14 @@ async function cargarDatosActividad(actividad, fechaDesde) {
   const MANO_DE_OBRA = 'Mano de obra'
 
   if (actividad === 'Feedlot') {
-    const [{ data: ventas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }] = await Promise.all([
+    const [{ data: ventas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }, { data: cuotasCred }] = await Promise.all([
       supabase.from('ventas').select('total, creado_en, comprador').gte('creado_en', fechaDesde),
       supabase.from('lotes').select('monto_facturado, iva_monto, monto_negro, fecha_ingreso, procedencia').gte('fecha_ingreso', fechaDesde),
       supabase.from('compras_insumos').select('total, fecha, proveedor, insumo_tipo').gte('fecha', fechaDesde).in('insumo_tipo', ['alimentacion', 'sanitario']),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
       supabase.from('gastos_generales').select('monto, fecha, categoria, actividad').gte('fecha', fechaDesde).in('actividad', ['Feedlot', 'General']),
+      supabase.from('fletes').select('monto, fecha, transportista, estado_pago').gte('fecha', fechaDesde).eq('estado_pago', 'pagado'),
+      supabase.from('pagos_creditos').select('monto, fecha, fecha_pago, estado, creditos(entidad, compra_insumos_id)').eq('estado', 'pagado').gte('fecha', fechaDesde),
     ])
     ;(ventas || []).forEach(v => suma(ingresos, `Venta hacienda — ${v.comprador || 'sin comprador'}`, v.creado_en?.split('T')[0], v.total))
     ;(lotes || []).forEach(l => suma(egresos, `Compra hacienda — ${l.procedencia || 'sin procedencia'}`, l.fecha_ingreso, (l.monto_facturado || 0) + (l.iva_monto || 0) + (l.monto_negro || 0)))
@@ -53,6 +55,12 @@ async function cargarDatosActividad(actividad, fechaDesde) {
       suma(egresos, MANO_DE_OBRA, p.fecha || p.creado_en?.split('T')[0], act === 'General' ? (p.monto || 0) / 3 : (p.monto || 0))
     })
     ;(gastos || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, g.actividad === 'General' ? (g.monto || 0) / 3 : (g.monto || 0)))
+    // Fletes: no tienen actividad propia — por ahora se asumen todos de
+    // Feedlot (transporte de hacienda), que es el caso más común.
+    ;(fletes || []).forEach(f => suma(egresos, `Fletes — ${f.transportista || 'sin transportista'}`, f.fecha, f.monto))
+    // Cuotas de créditos: no tienen actividad propia — se asumen todas de
+    // Feedlot por defecto, igual que fletes (ver aclaración en el mensaje).
+    ;(cuotasCred || []).forEach(c => suma(egresos, `Cuotas de crédito — ${c.creditos?.entidad || 'sin entidad'}`, c.fecha_pago || c.fecha, c.monto))
   } else if (actividad === 'Agricultura') {
     const [{ data: ventasG }, { data: compras }, { data: ordenes }, { data: gastosAgro }, { data: pagosEmp }, { data: gastosGen }] = await Promise.all([
       supabase.from('ventas_granos').select('total, monto_negro, fecha, comprador, estado').gte('fecha', fechaDesde).neq('estado', 'pactada'),
@@ -94,6 +102,26 @@ async function cargarDatosActividad(actividad, fechaDesde) {
   return { ingresos, egresos }
 }
 
+// Movimientos que no pertenecen a ninguna actividad puntual — retiros de
+// socios e inversiones en activos. Se muestran aparte, solo en "Resumen".
+async function cargarDatosGenerales(fechaDesde) {
+  const egresos = {}
+  const suma = (categoria, fecha, monto) => {
+    if (!fecha || !monto) return
+    const d = new Date(fecha + 'T12:00:00')
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}`
+    if (!egresos[categoria]) egresos[categoria] = {}
+    egresos[categoria][key] = (egresos[categoria][key] || 0) + monto
+  }
+  const [{ data: retiros }, { data: activosComprados }] = await Promise.all([
+    supabase.from('retiros_socios').select('monto, fecha, socio').gte('fecha', fechaDesde),
+    supabase.from('activos').select('valor_compra, fecha_compra, nombre').gte('fecha_compra', fechaDesde),
+  ])
+  ;(retiros || []).forEach(r => suma(`Retiro socios — ${r.socio || 'sin socio'}`, r.fecha, r.monto))
+  ;(activosComprados || []).forEach(a => suma(`Inversión — ${a.nombre || 'activo'}`, a.fecha_compra, a.valor_compra))
+  return { ingresos: {}, egresos }
+}
+
 export default function Presupuesto({ usuario }) {
   const [vista, setVista] = useState('Feedlot')  // 'Feedlot' | 'Agricultura' | 'Servicios' | 'Resumen'
   const [loading, setLoading] = useState(true)
@@ -124,6 +152,7 @@ export default function Presupuesto({ usuario }) {
 
     const resultados = {}
     for (const act of ACTIVIDADES) resultados[act] = await cargarDatosActividad(act, fechaDesde)
+    resultados['Generales'] = await cargarDatosGenerales(fechaDesde)
 
     const { data: proy } = await supabase.from('presupuesto_lineas').select('*').gte('anio', anioDesde)
     const proyMap = {}
@@ -296,10 +325,15 @@ export default function Presupuesto({ usuario }) {
                   })}
                 </tr>
               ))}
+              <tr><td colSpan={meses.length + 1} style={{ padding: '8px 12px', fontSize: 10, fontWeight: 700, color: S.purple, textTransform: 'uppercase', letterSpacing: '.05em', background: S.purpleLight, position: 'sticky', left: 0 }}>Retiros de socios e inversiones (no son de ninguna actividad puntual)</td></tr>
+              {Object.entries(agruparCategorias(Object.keys(datosPorActividad['Generales']?.egresos || {}))).map(([grupo, cats]) => (
+                <Seccion key={grupo} actividad="Generales" tipo="egreso" grupo={grupo} categorias={cats} color={S.purple} />
+              ))}
+              {Object.keys(datosPorActividad['Generales']?.egresos || {}).length === 0 && <tr><td colSpan={meses.length + 1} style={{ padding: '10px 12px', fontSize: 12, color: S.hint }}>Sin retiros ni inversiones en este período.</td></tr>}
               <tr style={{ borderTop: `2px solid ${S.border}`, background: S.bg }}>
                 <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, position: 'sticky', left: 0, background: S.bg }}>Balance total del mes</td>
                 {meses.map(m => {
-                  const bal = ACTIVIDADES.reduce((s, act) => s + balanceActividadMes(act, m), 0)
+                  const bal = ACTIVIDADES.reduce((s, act) => s + balanceActividadMes(act, m), 0) + balanceActividadMes('Generales', m)
                   return <td key={m.key} style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: bal >= 0 ? S.green : S.red, background: m.esActual ? '#FFFBEA' : S.bg }}>{fmt(bal)}</td>
                 })}
               </tr>
@@ -307,7 +341,7 @@ export default function Presupuesto({ usuario }) {
                 <tr style={{ background: S.accentLight }}>
                   <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, color: S.accent, position: 'sticky', left: 0, background: S.accentLight }}>Acumulado total</td>
                   {meses.map(m => {
-                    ac += ACTIVIDADES.reduce((s, act) => s + balanceActividadMes(act, m), 0)
+                    ac += ACTIVIDADES.reduce((s, act) => s + balanceActividadMes(act, m), 0) + balanceActividadMes('Generales', m)
                     return <td key={m.key} style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: ac >= 0 ? S.accent : S.red }}>{fmt(ac)}</td>
                   })}
                 </tr>
