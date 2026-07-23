@@ -1098,7 +1098,11 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                           onBlur={async e => {
                             const val = parseFloat(e.target.value) || 0
                             const { error } = await supabase.from('stock_insumos').update({ pct_ms: val }).eq('id', s.id)
-                            if (error) alert('Error al guardar el % de materia seca: ' + error.message)
+                            if (error) { alert('Error al guardar el % de materia seca: ' + error.message); return }
+                            // Sin esto, la pantalla de Fórmulas de mixer seguía usando el
+                            // valor viejo hasta recargar la página — stockDB es el estado
+                            // que usan todas las demás pestañas, no solo esta tabla.
+                            setStockDB(prev => prev.map(x => x.id === s.id ? { ...x, pct_ms: val } : x))
                           }}
                           style={{ width: 65, padding: '4px 6px', border: `1px solid ${S.accent}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: S.surface }} />
                         <span style={{ fontSize: 11, color: S.muted, marginLeft: 2 }}>%</span>
