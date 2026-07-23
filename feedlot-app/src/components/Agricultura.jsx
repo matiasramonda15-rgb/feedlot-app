@@ -2074,12 +2074,21 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
   const [formCompletar, setFormCompletar] = useState({ total_facturado: '', numero_contrato: '' })
 
   async function guardarCompletar(venta) {
-    const totalFacturado = parseFloat(formCompletar.total_facturado)
-    if (!totalFacturado) { alert('Ingresá el total facturado'); return }
+    const montoLiquidacion = parseFloat(formCompletar.total_facturado)
+    if (!montoLiquidacion) { alert('Ingresá el monto de esta liquidación'); return }
     setGuardando(true)
+    // Si la venta ya estaba confirmada (viene de una liquidación anterior),
+    // esto es una liquidación MÁS que se suma — no reemplaza lo que ya
+    // había. El total se acumula, y el N° de contrato se va agregando a la
+    // lista (separado por coma), para que quede el rastro de cada una.
+    const esLiquidacionAdicional = venta.estado === 'confirmado'
+    const totalFinal = esLiquidacionAdicional ? (venta.total || 0) + montoLiquidacion : montoLiquidacion
+    const contratoFinal = esLiquidacionAdicional
+      ? [venta.numero_contrato, formCompletar.numero_contrato].filter(Boolean).join(' + ')
+      : (formCompletar.numero_contrato || null)
     const { error } = await supabase.from('ventas_granos').update({
-      total: totalFacturado, monto_facturado: totalFacturado, monto_negro: 0,
-      numero_contrato: formCompletar.numero_contrato || null, estado: 'confirmado',
+      total: totalFinal, monto_facturado: totalFinal, monto_negro: 0,
+      numero_contrato: contratoFinal, estado: 'confirmado',
     }).eq('id', venta.id)
     if (error) { alert('Error al completar la venta: ' + error.message); setGuardando(false); return }
     // El cobro ya no se registra acá de una sola vez — queda "confirmado,
@@ -2273,6 +2282,10 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                     <button onClick={() => { setCompletandoId(v.id); setFormCompletar({ total_facturado: v.total ? String(v.total) : '', numero_contrato: '' }) }}
                       style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>📄 Completar con contrato</button>
                   )}
+                  {v.estado === 'confirmado' && (
+                    <button onClick={() => { setCompletandoId(v.id); setFormCompletar({ total_facturado: '', numero_contrato: '' }) }}
+                      style={{ padding: '3px 8px', fontSize: 11, background: S.purpleLight, border: `1px solid ${S.purple}`, color: S.purple, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>📄 Agregar otra liquidación</button>
+                  )}
                   {v.estado === 'confirmado' && v.total > 0 && pendiente > 0.5 && (
                     <button onClick={() => { setCobrandoId(v.id); setFormCobro({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO, monto: String(pendiente) }] }) }}
                       style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>💰 Registrar cobro</button>
@@ -2295,15 +2308,20 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
             <div style={{ background: '#fff', borderRadius: 10, padding: '1.5rem', width: '100%', maxWidth: 420 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Completar con contrato</div>
-              <div style={{ fontSize: 12, color: S.muted, marginBottom: 16 }}>{venta.cultivo} · {(venta.kg / 1000).toLocaleString('es-AR')} tn · {venta.comprador || 'sin comprador'}</div>
-              <Label>Total facturado $ (ya con retenciones descontadas)</Label>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{venta.estado === 'confirmado' ? 'Agregar otra liquidación' : 'Completar con contrato'}</div>
+              <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>{venta.cultivo} · {(venta.kg / 1000).toLocaleString('es-AR')} tn · {venta.comprador || 'sin comprador'}</div>
+              {venta.estado === 'confirmado' && (
+                <div style={{ background: S.purpleLight, border: `1px solid ${S.purple}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, color: S.purple, marginBottom: 12 }}>
+                  Ya tiene ${(venta.total || 0).toLocaleString('es-AR')} confirmado{venta.numero_contrato ? ` (contrato ${venta.numero_contrato})` : ''} — lo que cargues acá se <b>suma</b> a eso, no lo reemplaza.
+                </div>
+              )}
+              <Label>{venta.estado === 'confirmado' ? 'Monto de esta liquidación $ (ya con retenciones descontadas)' : 'Total facturado $ (ya con retenciones descontadas)'}</Label>
               <input type="number" value={formCompletar.total_facturado} onChange={e => setFormCompletar({...formCompletar, total_facturado: e.target.value})}
-                placeholder={venta.total ? String(venta.total) : ''} style={{...inputStyle, marginBottom: 12}} autoFocus />
-              <Label>N° Contrato</Label>
+                placeholder={venta.estado !== 'confirmado' && venta.total ? String(venta.total) : ''} style={{...inputStyle, marginBottom: 12}} autoFocus />
+              <Label>N° Contrato {venta.estado === 'confirmado' ? 'de esta liquidación' : ''}</Label>
               <input type="text" value={formCompletar.numero_contrato} onChange={e => setFormCompletar({...formCompletar, numero_contrato: e.target.value})} style={{...inputStyle, marginBottom: 16}} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => guardarCompletar(venta)} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Confirmar venta'}</button>
+                <button onClick={() => guardarCompletar(venta)} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : (venta.estado === 'confirmado' ? 'Sumar liquidación' : 'Confirmar venta')}</button>
                 <button onClick={() => { setCompletandoId(null); setFormCompletar({ total_facturado: '', numero_contrato: '' }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
               </div>
             </div>
