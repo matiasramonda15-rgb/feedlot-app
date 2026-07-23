@@ -311,12 +311,13 @@ export default function Sanidad({ usuario, mobile, nav }) {
       }
       for (const enf of (st.enfermos || [])) {
         if (!enf.desc) continue
+        const cant = enf.cantidad || 1
         const productosValidos = (enf.productos || []).filter(p => p.prod)
         if (productosValidos.length === 0) {
           // Novedad sin ningún producto aplicado — igual queda registrada
           const { error } = await supabase.from('eventos_sanitarios').insert({
             tipo: 'revision', corral_id: corrales[i].id,
-            producto: null, cantidad_animales: 1,
+            producto: null, cantidad_animales: cant,
             observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
             registrado_por: usuario?.id,
           })
@@ -324,34 +325,41 @@ export default function Sanidad({ usuario, mobile, nav }) {
         } else {
           // Un evento POR CADA producto realmente aplicado — así el historial
           // muestra el nombre real de cada vacuna/producto, no un genérico "Varios".
+          // El ml cargado es la dosis POR ANIMAL, se multiplica por la cantidad.
           for (const p of productosValidos) {
-            const mlNum = parseFloat(p.ml) || 0
-            if (p.prod_id && mlNum > 0) {
-              const { error: errStock } = await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
+            const mlPorAnimal = parseFloat(p.ml) || 0
+            const mlTotal = mlPorAnimal * cant
+            if (p.prod_id && mlTotal > 0) {
+              const { error: errStock } = await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlTotal })
               if (errStock) { alert('Error al descontar stock de ' + p.prod + ': ' + errStock.message); return }
             }
             const { error } = await supabase.from('eventos_sanitarios').insert({
               tipo: 'revision', corral_id: corrales[i].id,
-              producto: p.prod, cantidad_ml: mlNum || null, cantidad_animales: 1,
-              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+              producto: p.prod, cantidad_ml: mlTotal || null, cantidad_animales: cant,
+              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
               registrado_por: usuario?.id,
             })
             if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); return }
           }
         }
-        // Registrar en animales_enfermeria (seguimiento del animal en sí, con todos los productos juntos)
+        // Registrar en animales_enfermeria — un registro POR ANIMAL, aunque
+        // se hayan cargado juntos, para poder dar de alta a cada uno por
+        // separado más adelante.
         const corrEnf = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
-        const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
-          corral_origen_id: corrales[i].id,
-          corral_id: corrEnf?.id || null,
-          descripcion: enf.desc,
-          diagnostico: enf.diag,
-          tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
-          cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
-          estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
-          registrado_por: usuario?.id,
-        })
-        if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); return }
+        const mlPorAnimalTotal = productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null
+        for (let a = 0; a < cant; a++) {
+          const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
+            corral_origen_id: corrales[i].id,
+            corral_id: corrEnf?.id || null,
+            descripcion: enf.desc,
+            diagnostico: enf.diag,
+            tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+            cantidad_ml: mlPorAnimalTotal,
+            estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
+            registrado_por: usuario?.id,
+          })
+          if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); return }
+        }
       }
     }
     await cargarDatos()
@@ -362,13 +370,13 @@ export default function Sanidad({ usuario, mobile, nav }) {
     const n = [...revState]; n[i] = { ok: true, enfermos: [] }; setRevState(n)
   }
   function setRevNov(i) {
-    const n = [...revState]; n[i] = { ok: false, enfermos: [{ desc: '', diag: 'Conjuntivitis', productos: [{ prod: '', prod_id: null, ml: '' }], mover_enfermeria: false }] }; setRevState(n)
+    const n = [...revState]; n[i] = { ok: false, enfermos: [{ desc: '', diag: 'Conjuntivitis', cantidad: 1, productos: [{ prod: '', prod_id: null, ml: '' }], mover_enfermeria: false }] }; setRevState(n)
   }
   function resetRev(i) {
     const n = [...revState]; n[i] = { ok: null, enfermos: [] }; setRevState(n)
   }
   function addEnfermo(i) {
-    const n = [...revState]; n[i].enfermos.push({ desc: '', diag: 'Conjuntivitis', productos: [{ prod: '', prod_id: null, ml: '' }], mover_enfermeria: false }); setRevState(n)
+    const n = [...revState]; n[i].enfermos.push({ desc: '', diag: 'Conjuntivitis', cantidad: 1, productos: [{ prod: '', prod_id: null, ml: '' }], mover_enfermeria: false }); setRevState(n)
   }
   function delEnfermo(i, ei) {
     const n = [...revState]
@@ -425,33 +433,43 @@ export default function Sanidad({ usuario, mobile, nav }) {
         }
         for (const enf of (st.enfermos || [])) {
           if (!enf.desc) continue
+          const cant = enf.cantidad || 1
           const productosValidos = (enf.productos || []).filter(p => p.prod)
           if (productosValidos.length === 0) {
             const { error } = await supabase.from('eventos_sanitarios').insert({
               tipo: 'revision', corral_id: st.id, producto: null,
               observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-              cantidad_animales: 1, registrado_por: usuario?.id,
+              cantidad_animales: cant, registrado_por: usuario?.id,
             })
             if (error) { alert('Error al guardar la novedad: ' + error.message); setGuardandoM(false); return }
           } else {
             for (const p of productosValidos) {
-              const mlNum = parseFloat(p.ml) || 0
-              if (p.prod_id && mlNum > 0) await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
+              // El ml cargado es la dosis POR ANIMAL — se multiplica por la
+              // cantidad para saber cuánto descontar del stock en total.
+              const mlPorAnimal = parseFloat(p.ml) || 0
+              const mlTotal = mlPorAnimal * cant
+              if (p.prod_id && mlTotal > 0) await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlTotal })
               const { error } = await supabase.from('eventos_sanitarios').insert({
                 tipo: 'revision', corral_id: st.id, producto: p.prod,
-                observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-                cantidad_animales: 1, cantidad_ml: mlNum || null, registrado_por: usuario?.id,
+                observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
+                cantidad_animales: cant, cantidad_ml: mlTotal || null, registrado_por: usuario?.id,
               })
               if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); setGuardandoM(false); return }
             }
           }
-          const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
-            corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
-            tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
-            cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
-            estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
-          })
-          if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); setGuardandoM(false); return }
+          // Un registro de enfermería POR ANIMAL, aunque se hayan cargado
+          // juntos — así cada uno se puede dar de alta por separado más
+          // adelante, aunque hayan arrancado el tratamiento el mismo día.
+          const mlPorAnimalTotal = productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null
+          for (let a = 0; a < cant; a++) {
+            const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
+              corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
+              tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+              cantidad_ml: mlPorAnimalTotal,
+              estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
+            })
+            if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); setGuardandoM(false); return }
+          }
         }
       }
       await cargarDatos()
@@ -800,7 +818,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                         <>
                           <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: true, enfermos: []}; setRevStateM(n) }}
                             style={{ padding: '7px 10px', background: '#1A3D26', border: `1px solid ${CM.green}`, borderRadius: 7, color: CM.green, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>Sin novedades ✓</button>
-                          <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',productos:[{prod:'',prod_id:null,ml:''}],mover_enfermeria:false}]}; setRevStateM(n) }}
+                          <button onClick={() => { const n = [...revStateM]; n[i] = {...n[i], ok: false, enfermos: [{desc:'',diag:'Conjuntivitis',cantidad:1,productos:[{prod:'',prod_id:null,ml:''}],mover_enfermeria:false}]}; setRevStateM(n) }}
                             style={{ padding: '7px 10px', background: '#3D2A00', border: `1px solid ${CM.amber}`, borderRadius: 7, color: CM.amber, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: CM.sans }}>Hay novedad</button>
                         </>
                       )}
@@ -815,7 +833,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                       {c.enfermos.map((enf, ei) => (
                         <div key={ei} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '.75rem', marginBottom: '.5rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: CM.amber }}>Animal {ei + 1}</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: CM.amber }}>Animal(es) {ei + 1}</span>
                             <button onClick={() => {
                               const n = [...revStateM]; n[i].enfermos.splice(ei, 1)
                               if (!n[i].enfermos.length) n[i].ok = null
@@ -829,6 +847,12 @@ export default function Sanidad({ usuario, mobile, nav }) {
                             style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans, marginBottom: 6 }}>
                             {['Conjuntivitis','Pietin','Neumonia','Timpanismo','Diarrea','Artritis','Otro'].map(d => <option key={d}>{d}</option>)}
                           </select>
+                          <div style={{ marginBottom: 6 }}>
+                            <div style={{ fontSize: 11, color: CM.muted, marginBottom: 3 }}>¿Cuántos animales tienen este mismo síntoma y reciben el mismo tratamiento?</div>
+                            <input type="number" min="1" value={enf.cantidad || 1}
+                              onChange={e => { const n = [...revStateM]; n[i].enfermos[ei].cantidad = parseInt(e.target.value) || 1; setRevStateM(n) }}
+                              style={{ width: 90, background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontWeight: 700, color: CM.amber, fontFamily: CM.sans, textAlign: 'center' }} />
+                          </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {(enf.productos || []).map((p, pi) => (
                               <div key={pi} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -864,7 +888,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                           </div>
                         </div>
                       ))}
-                      <button onClick={() => { const n = [...revStateM]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',productos:[{prod:'',prod_id:null,ml:''}],mover_enfermeria:false}); setRevStateM(n) }}
+                      <button onClick={() => { const n = [...revStateM]; n[i].enfermos.push({desc:'',diag:'Conjuntivitis',cantidad:1,productos:[{prod:'',prod_id:null,ml:''}],mover_enfermeria:false}); setRevStateM(n) }}
                         style={{ width: '100%', padding: '8px', background: 'transparent', border: `1px solid ${CM.border}`, borderRadius: 8, color: CM.muted, fontSize: 12, cursor: 'pointer', fontFamily: CM.sans, marginTop: 4 }}>
                         + Agregar otro animal
                       </button>
@@ -1530,7 +1554,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                   <div style={{ padding: '1rem', borderTop: `1px solid ${S.border}`, background: '#fffef8' }}>
                     {st.enfermos.map((e, ei) => (
                       <div key={ei} style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: '.75rem', marginBottom: '.65rem', background: S.surface }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 60px 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 70px 60px 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                           <input type="text" value={e.desc} placeholder="ej. novillo negro, oreja cortada"
                             onChange={ev => updEnfermo(i, ei, 'desc', ev.target.value)}
                             style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }} />
@@ -1538,6 +1562,9 @@ export default function Sanidad({ usuario, mobile, nav }) {
                             style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif", color: S.text, background: S.surface }}>
                             {DIAGNOSTICOS.map(d => <option key={d}>{d}</option>)}
                           </select>
+                          <input type="number" min="1" value={e.cantidad || 1} title="Cantidad de animales con este mismo síntoma"
+                            onChange={ev => updEnfermo(i, ei, 'cantidad', parseInt(ev.target.value) || 1)}
+                            style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 13, fontWeight: 700, color: S.amber, textAlign: 'center', background: S.surface }} />
                           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: S.red, whiteSpace: 'nowrap', cursor: 'pointer' }}>
                             <input type="checkbox" checked={e.mover_enfermeria || false} onChange={ev => updEnfermo(i, ei, 'mover_enfermeria', ev.target.checked)} />
                             Enf.
