@@ -2105,6 +2105,28 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
   // genera su propio movimiento de caja (Caja 1 o Caja 2 según corresponda).
   const [cobrandoId, setCobrandoId] = useState(null)
   const [formCobro, setFormCobro] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] })
+  const [deudasContacto, setDeudasContacto] = useState([])
+
+  // Trae lo que le debemos a un contacto puntual (compras sin pagar, gastos,
+  // órdenes de trabajo, fletes), para poder elegirlo directo al armar un
+  // canje — así el canje queda calzado con la deuda real, no solo un texto
+  // suelto describiéndola.
+  async function cargarDeudasContacto(nombre) {
+    if (!nombre) { setDeudasContacto([]); return }
+    const [{ data: ci }, { data: gg }, { data: ot }, { data: fl }] = await Promise.all([
+      supabase.from('compras_insumos').select('id, insumo_nombre, total, cantidad, unidad').eq('proveedor', nombre).eq('estado_pago', 'pendiente'),
+      supabase.from('gastos_generales').select('id, descripcion, categoria, monto').eq('proveedor', nombre).eq('estado_pago', 'pendiente'),
+      supabase.from('ordenes_trabajo').select('id, tipo, descripcion, costo_total').eq('proveedor', nombre).eq('estado_pago', 'pendiente'),
+      supabase.from('fletes').select('id, monto').eq('transportista', nombre).eq('estado_pago', 'pendiente'),
+    ])
+    const deudas = [
+      ...(ci || []).filter(c => c.total > 0).map(c => ({ id: `ci-${c.id}`, label: `${c.insumo_nombre || 'Insumo'} · ${c.cantidad || ''}${c.unidad ? ' ' + c.unidad : ''}`, monto: c.total })),
+      ...(gg || []).filter(g => g.monto > 0).map(g => ({ id: `gg-${g.id}`, label: g.descripcion || g.categoria || 'Gasto', monto: g.monto })),
+      ...(ot || []).filter(o => o.costo_total > 0).map(o => ({ id: `ot-${o.id}`, label: `${o.tipo || 'Orden'}${o.descripcion ? ' · ' + o.descripcion : ''}`, monto: o.costo_total })),
+      ...(fl || []).filter(f => f.monto > 0).map(f => ({ id: `fl-${f.id}`, label: 'Flete', monto: f.monto })),
+    ]
+    setDeudasContacto(deudas)
+  }
 
   async function guardarCobro(venta) {
     setGuardando(true)
@@ -2112,7 +2134,31 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
     for (const pago of formCobro.pagos) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
-      if (pago.tipo === 'canje') { pagosDetalle.push({ ...pago, monto }); continue }
+      if (pago.tipo === 'canje') {
+        pagosDetalle.push({ ...pago, monto })
+        // Si el canje se vinculó a una deuda puntual (ej. una compra de
+        // insumos pendiente), esa deuda también se marca como pagada con
+        // canje del otro lado — así queda calzado de verdad, no solo
+        // descripto en un texto.
+        if (pago.canje_deuda_id) {
+          const [tabla, idStr] = pago.canje_deuda_id.split('-')
+          const id = parseInt(idStr)
+          const nuevoPago = { tipo: 'canje', monto, canje_detalle: `Compensado con venta ${venta.cultivo} — ${venta.comprador || ''}` }
+          if (tabla === 'ci') {
+            const { data } = await supabase.from('compras_insumos').select('pagos_detalle').eq('id', id).single()
+            await supabase.from('compras_insumos').update({ estado_pago: 'pagado', pagos_detalle: [...(data?.pagos_detalle || []), nuevoPago] }).eq('id', id)
+          } else if (tabla === 'gg') {
+            const { data } = await supabase.from('gastos_generales').select('pagos_detalle').eq('id', id).single()
+            await supabase.from('gastos_generales').update({ estado_pago: 'pagado', pagos_detalle: [...(data?.pagos_detalle || []), nuevoPago] }).eq('id', id)
+          } else if (tabla === 'ot') {
+            const { data } = await supabase.from('ordenes_trabajo').select('pagos_detalle').eq('id', id).single()
+            await supabase.from('ordenes_trabajo').update({ estado_pago: 'pagado', pagos_detalle: [...(data?.pagos_detalle || []), nuevoPago] }).eq('id', id)
+          } else if (tabla === 'fl') {
+            await supabase.from('fletes').update({ estado_pago: 'pagado' }).eq('id', id)
+          }
+        }
+        continue
+      }
       const desc = `Cobro venta ${venta.cultivo} — ${venta.comprador || 'sin comprador'} · ${(venta.kg / 1000).toLocaleString('es-AR')} tn`
       if (pago.es_paralelo) {
         const { error } = await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha, tipo: 'ingreso', descripcion: desc, monto })
@@ -2287,7 +2333,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                       style={{ padding: '3px 8px', fontSize: 11, background: S.purpleLight, border: `1px solid ${S.purple}`, color: S.purple, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>📄 Agregar otra liquidación</button>
                   )}
                   {v.estado === 'confirmado' && v.total > 0 && pendiente > 0.5 && (
-                    <button onClick={() => { setCobrandoId(v.id); setFormCobro({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO, monto: String(pendiente) }] }) }}
+                    <button onClick={() => { setCobrandoId(v.id); setFormCobro({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO, monto: String(pendiente) }] }); cargarDeudasContacto(v.comprador) }}
                       style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>💰 Registrar cobro</button>
                   )}
                   <button onClick={() => { setEditando(v.id); setForm({ campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', tn: v.kg ? String(v.kg / 1000) : '', precio_tn: v.precio_tn || '', comprador: v.comprador || '', observaciones: v.observaciones || '', esVentaInternaFeedlot: false, stock_insumo_id: '' }); setShowForm(true) }}
@@ -2343,7 +2389,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
               <div style={{ fontSize: 12, color: S.amber, marginBottom: 16 }}>Pendiente de cobro: ${pendiente.toLocaleString('es-AR')} de ${(venta.total || 0).toLocaleString('es-AR')}</div>
               <div><Label>Fecha</Label><input type="date" value={formCobro.fecha} onChange={e => setFormCobro({...formCobro, fecha: e.target.value})} style={{...inputStyle, marginBottom: 12}} /></div>
               <Label>Formas de cobro</Label>
-              <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} />
+              <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} deudasPendientes={deudasContacto} />
               {totalCargado > 0 && Math.abs(totalCargado - pendiente) > 0.5 && (
                 <div style={{ fontSize: 12, color: S.amber, marginTop: 8 }}>El total cargado (${totalCargado.toLocaleString('es-AR')}) no coincide con lo pendiente — se puede cobrar parcial, no hace falta que sea exacto.</div>
               )}

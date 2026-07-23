@@ -445,7 +445,7 @@ export default function Contactos({ usuario }) {
     // parciales (pagos_detalle), así que se toman como pendientes hasta que
     // se marquen "confirmado" con su monto real cargado.
     const totalVentasGranos = (data.ventasGranos || []).reduce((s, vg) => s + (vg.estado !== 'pactada' ? ((vg.total || 0) + (vg.monto_negro || 0)) : 0), 0)
-    const cobradoVentasGranos = (data.ventasGranos || []).reduce((s, vg) => s + (vg.pagos_detalle || []).filter(p => p.tipo !== 'canje').reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
+    const cobradoVentasGranos = (data.ventasGranos || []).reduce((s, vg) => s + (vg.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     const totalVentas = totalVentasHacienda + totalVentasActivos + totalServicios + totalVentasGranos
     const cobradoVentas = cobradoVentasHacienda + cobradoVentasActivos + cobradoServicios + cobradoVentasGranos
     const pendienteVentas = totalVentas - cobradoVentas
@@ -597,17 +597,26 @@ export default function Contactos({ usuario }) {
     // Gastos generales pendientes de pago (ej. un silobolsa retirado, esperando
     // la factura para saber el monto y pagarlo/compensarlo)
     const gastosPendientes = (gastosGeneralesCto || []).filter(g => g.estado_pago === 'pendiente').map(g => ({ desc: g.descripcion || g.categoria || 'Gasto', fecha: g.fecha, monto: g.monto, actividad: g.actividad }))
-    // Mercadería entregada a este contacto (acopio) desde una cosecha, y
-    // todavía sin vender — sale de comparar lo cosechado contra lo ya vendido
-    // de esa misma cosecha.
-    const mercaderiaEntregada = cosechas
-      .filter(co => co.acopio === nombre)
-      .map(co => {
-        const kgVendido = ventasGranos.filter(vg => vg.cosecha_id === co.id).reduce((s, vg) => s + (vg.kg || 0), 0)
-        const kgPendiente = (co.kg_totales || 0) - kgVendido
-        return { id: co.id, cultivo: co.cultivo, kgTotales: co.kg_totales, kgVendido, kgPendiente, fecha: co.fecha }
+    // Mercadería entregada a este contacto (acopio) y todavía sin vender —
+    // se compara por CULTIVO, no por cosecha puntual: una vez que el grano
+    // llega al acopio se mezcla con el de otras cosechas/campos y se vende
+    // junto, así que no tiene sentido atar una venta a una cosecha exacta.
+    const cosechadoPorCultivo = {}
+    cosechas.filter(co => co.acopio === nombre).forEach(co => {
+      if (!cosechadoPorCultivo[co.cultivo]) cosechadoPorCultivo[co.cultivo] = 0
+      cosechadoPorCultivo[co.cultivo] += co.kg_totales || 0
+    })
+    const vendidoPorCultivo = {}
+    ventasGranos.filter(vg => vg.comprador === nombre && vg.estado !== 'pactada').forEach(vg => {
+      if (!vendidoPorCultivo[vg.cultivo]) vendidoPorCultivo[vg.cultivo] = 0
+      vendidoPorCultivo[vg.cultivo] += vg.kg || 0
+    })
+    const mercaderiaEntregada = Object.entries(cosechadoPorCultivo)
+      .map(([cultivo, kgTotales]) => {
+        const kgVendido = vendidoPorCultivo[cultivo] || 0
+        return { id: cultivo, cultivo, kgTotales, kgVendido, kgPendiente: kgTotales - kgVendido }
       })
-      .filter(m => m.kgPendiente > 0)
+      .filter(m => m.kgPendiente > 0.5)
     const contactoData = contactos.find(c => c.nombre === nombre)
 
     return (

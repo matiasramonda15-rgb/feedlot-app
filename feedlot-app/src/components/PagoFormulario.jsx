@@ -18,7 +18,7 @@ const inpDefault = { width: '100%', border: '1px solid #E2DDD6', borderRadius: 6
 // cheque / e-cheq / canje, marcás si es paralelo, y si es cheque (físico o
 // electrónico) se abre el desglose propio/tercero con sus datos — incluida
 // la selección de cheques ya en cartera para depositar/endosar.
-export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [] }) {
+export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [] }) {
   const inp = inputStyle || inpDefault
   const set = (campo, valor) => onChange({ ...pago, [campo]: valor })
   const setChequePropio = (campo, valor) => onChange({ ...pago, cheque_propio: { ...(pago.cheque_propio || {}), [campo]: valor } })
@@ -58,6 +58,22 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
 
       {pago.tipo === 'canje' && (
         <div style={{ marginTop: 8 }}>
+          {deudasPendientes.length > 0 && (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>
+                Compensar contra (lo que se le debe a este contacto)
+              </div>
+              <select value={pago.canje_deuda_id || ''} onChange={e => {
+                const deuda = deudasPendientes.find(d => String(d.id) === e.target.value)
+                onChange({ ...pago, canje_deuda_id: e.target.value || null, canje_detalle: deuda ? deuda.label : pago.canje_detalle, monto: deuda ? String(deuda.monto) : pago.monto })
+              }} style={{ ...inp, marginBottom: 6 }}>
+                <option value="">— Elegir de lo pendiente, o escribir abajo —</option>
+                {deudasPendientes.map(d => (
+                  <option key={d.id} value={d.id}>{d.label} · ${d.monto.toLocaleString('es-AR')}</option>
+                ))}
+              </select>
+            </>
+          )}
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>A cambio de</div>
           <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
             onChange={e => set('canje_detalle', e.target.value)} style={inp} />
@@ -132,12 +148,12 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
 
 // Lista completa de pagos: varias FilaPago + botón de agregar + resumen del
 // total cargado contra el monto objetivo (si se pasa).
-export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [] }) {
+export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [] }) {
   const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
   return (
     <div>
       {pagos.map((pago, idx) => (
-        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra}
+        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra} deudasPendientes={deudasPendientes}
           onChange={p => onChangePagos(pagos.map((pp, i) => i === idx ? p : pp))}
           onRemove={pagos.length > 1 ? () => onChangePagos(pagos.filter((_, i) => i !== idx)) : null}
         />
