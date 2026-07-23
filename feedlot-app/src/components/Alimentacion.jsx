@@ -986,7 +986,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: S.bg }}>
-                        {['', 'Ingrediente', 'Kg / 100', '% aprox', 'Acumulado', 'Precio ref.'].map((h, i) => (
+                        {['', 'Ingrediente', 'Kg / 100', '% aprox', 'Kg MS', '% MS', 'Acumulado', 'Precio ref.'].map((h, i) => (
                           <th key={h} style={{ padding: '8px 12px', textAlign: i <= 1 ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}` }}>{h}</th>
                         ))}
                       </tr>
@@ -1030,6 +1030,12 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                                 </div>
                               </div>
                             </td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green, fontWeight: 600 }}>
+                              {stockItem?.pct_ms ? (ing.kg * stockItem.pct_ms / 100).toFixed(2) : <span style={{ color: S.hint }}>—</span>}
+                            </td>
+                            <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: S.green }}>
+                              {stockItem?.pct_ms && kgMSDieta > 0 ? `${(ing.kg * stockItem.pct_ms / 100 / kgMSDieta * 100).toFixed(1)}%` : <span style={{ color: S.hint }}>—</span>}
+                            </td>
                             <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{acum.toFixed(1)}</td>
                             <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>
                               {stockItem?.precio_referencia
@@ -1044,7 +1050,9 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                         <td style={{ padding: '9px 12px', fontWeight: 700 }}>Total</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>{total.toFixed(1)}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>100%</td>
-                        <td /><td /><td />
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{kgMSDieta.toFixed(2)}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>100%</td>
+                        <td /><td />
                       </tr>
                     </tbody>
                   </table>
