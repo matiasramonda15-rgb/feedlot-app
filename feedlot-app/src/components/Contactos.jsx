@@ -26,6 +26,7 @@ export default function Contactos({ usuario }) {
   const [fletes, setFletes] = useState([])
   const [creditos, setCreditos] = useState([])
   const [retirosSocios, setRetirosSocios] = useState([])
+  const [vencimientosArriendo, setVencimientosArriendo] = useState([])
   const [cosechas, setCosechas] = useState([])
   const [ventasGranos, setVentasGranos] = useState([])
   const [ventasActivos, setVentasActivos] = useState([])
@@ -64,6 +65,7 @@ export default function Contactos({ usuario }) {
       { data: cr },
       { data: pcr },
       { data: rs },
+      { data: vencArr },
     ] = await Promise.all([
       supabase.from('contactos').select('*').order('nombre'),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -84,6 +86,7 @@ export default function Contactos({ usuario }) {
       supabase.from('creditos').select('*').order('fecha_inicio', { ascending: false }),
       supabase.from('pagos_creditos').select('*').order('fecha'),
       supabase.from('retiros_socios').select('*').not('tercero', 'is', null).order('fecha', { ascending: false }),
+      supabase.from('vencimientos_arriendo').select('*, campos(nombre, propietario)').order('fecha_vencimiento', { ascending: false }),
     ])
 
     setContactos(c || [])
@@ -103,6 +106,7 @@ export default function Contactos({ usuario }) {
     ;(pcr || []).forEach(p => { if (!cuotasPorCredito[p.credito_id]) cuotasPorCredito[p.credito_id] = []; cuotasPorCredito[p.credito_id].push(p) })
     setCreditos((cr || []).map(c => ({ ...c, cuotas: cuotasPorCredito[c.id] || [] })))
     setRetirosSocios(rs || [])
+    setVencimientosArriendo(vencArr || [])
 
     const pvMap = {}
     ;(pv || []).forEach(p => {
@@ -172,6 +176,7 @@ export default function Contactos({ usuario }) {
           supabase.from('cheques').update({ librador: nombreNuevo }).eq('librador', nombreViejo),
           supabase.from('creditos').update({ entidad: nombreNuevo }).eq('entidad', nombreViejo),
           supabase.from('fletes').update({ transportista: nombreNuevo }).eq('transportista', nombreViejo),
+          supabase.from('campos').update({ propietario: nombreNuevo }).eq('propietario', nombreViejo),
           supabase.from('retiros_socios').update({ tercero: nombreNuevo }).eq('tercero', nombreViejo),
         ]
         const resultados = await Promise.all(actualizaciones)
@@ -310,6 +315,18 @@ export default function Contactos({ usuario }) {
       movs.push({ fecha: r.fecha, tipo: `Retiro socio ${r.socio || ''}${r.concepto ? ' · ' + r.concepto : ''}`, credito: 0, debito: r.monto })
       movs.push({ fecha: r.fecha, tipo: 'Pago', credito: r.monto, debito: 0 })
     })
+    // Arriendos de campos — le debemos al propietario.
+    ;(data.arriendos || []).forEach(v => {
+      const monto = parseFloat(v.monto_total)
+      if (!monto) return
+      if (esParalela) { if (v.caja_paralela_id) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''} (Caja 2)`, credito: 0, debito: monto }) }
+      else movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
+      ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
+        const esPagoParalelo = p.es_paralelo || false
+        if (esParalela !== esPagoParalelo) return
+        movs.push({ fecha: v.pagado_en || v.fecha_vencimiento, tipo: 'Pago', credito: parseFloat(p.monto) || 0, debito: 0 })
+      })
+    })
     // Créditos (bancos/financieras) — cada cuota pagada es un pago; las
     // pendientes en pesos se muestran como obligación (las en dólares no,
     // porque el monto en pesos recién se sabe al pagarlas).
@@ -412,7 +429,7 @@ export default function Contactos({ usuario }) {
   }
 
   function calcularSaldo(nombre) {
-    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     // Agrupar ventas multi-corral para no contar de más
     const gruposVistos = new Set()
     const ventasAgrupadas = data.ventas.filter(v => {
@@ -483,8 +500,11 @@ export default function Contactos({ usuario }) {
     // todavía la deuda total en dólares que falta pagar.
     const totalCreditos = (data.creditos || []).reduce((s, c) => s + (parseFloat(c.monto_total) || 0), 0)
     const pagadoCreditos = (data.creditos || []).reduce((s, c) => s + (parseFloat(c.monto_total) || 0) - (parseFloat(c.saldo_pendiente) || 0), 0)
-    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales + totalOrdenes + totalFletes + totalCreditos
-    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoGastosGenerales + pagadoOrdenes + pagadoFletes + pagadoCreditos
+    // Arriendos de campos — le debemos al propietario hasta que se paguen.
+    const totalArriendos = (data.arriendos || []).reduce((s, v) => s + (parseFloat(v.monto_total) || 0), 0)
+    const pagadoArriendos = (data.arriendos || []).reduce((s, v) => s + (v.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
+    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales + totalOrdenes + totalFletes + totalCreditos + totalArriendos
+    const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoGastosGenerales + pagadoOrdenes + pagadoFletes + pagadoCreditos + pagadoArriendos
     const pendienteCompras = totalCompras - pagadoCompras
     return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
   }
@@ -496,13 +516,13 @@ export default function Contactos({ usuario }) {
   ventas.forEach(v => {
     const nombre = v.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].ventas.push(v)
   })
   lotes.forEach(l => {
     const nombre = l.procedencia
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].lotes.push(l)
   })
   // Compras de insumos (rollo, maíz, remedios, etc.) — funcionan igual que una
@@ -510,7 +530,7 @@ export default function Contactos({ usuario }) {
   comprasInsumos.forEach(ci => {
     const nombre = ci.proveedor
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].comprasInsumos.push(ci)
   })
   // Gastos generales (ej. un silobolsa, un flete, un service de taller) —
@@ -518,7 +538,7 @@ export default function Contactos({ usuario }) {
   gastosGenerales.forEach(g => {
     const nombre = g.proveedor
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].gastosGenerales.push(g)
   })
   // Servicios a terceros (trabajos de Servicios facturados a un cliente real)
@@ -526,7 +546,7 @@ export default function Contactos({ usuario }) {
   serviciosTerceros.forEach(st => {
     const nombre = st.cliente
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].serviciosTerceros.push(st)
   })
   // Órdenes de trabajo de Agricultura con contratista (siembra, pulverización,
@@ -534,28 +554,28 @@ export default function Contactos({ usuario }) {
   ordenesTrabajo.forEach(ot => {
     const nombre = ot.proveedor
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].ordenesTrabajo.push(ot)
   })
   // Ventas de granos (soja, maíz, trigo) — el comprador/acopio nos debe.
   ventasGranos.forEach(vg => {
     const nombre = vg.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].ventasGranos.push(vg)
   })
   // Fletes — le debemos al transportista.
   fletes.forEach(f => {
     const nombre = f.transportista
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].fletes.push(f)
   })
   // Créditos (bancos/financieras) — le debemos a la entidad.
   creditos.forEach(c => {
     const nombre = c.entidad
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].creditos.push(c)
   })
   // Retiros de socios pagados directo a un tercero (ej. un retiro que se usó
@@ -566,15 +586,22 @@ export default function Contactos({ usuario }) {
   retirosSocios.forEach(r => {
     const nombre = r.tercero
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].retirosSocios.push(r)
+  })
+  // Arriendos de campos — le debemos al propietario del campo.
+  vencimientosArriendo.forEach(v => {
+    const nombre = v.campos?.propietario
+    if (!nombre) return
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
+    transaccionesPorNombre[nombre].arriendos.push(v)
   })
   // Ventas de activos (maquinaria, equipos) — funcionan igual que una venta de
   // hacienda: el comprador nos debe.
   ventasActivos.forEach(va => {
     const nombre = va.comprador
     if (!nombre) return
-    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [] }
+    if (!transaccionesPorNombre[nombre]) transaccionesPorNombre[nombre] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
     transaccionesPorNombre[nombre].ventasActivos.push(va)
   })
 
@@ -591,7 +618,7 @@ export default function Contactos({ usuario }) {
   // Vista ficha de contacto
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
-    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, gastosGenerales: gastosGeneralesCto, serviciosTerceros: serviciosTercerosCto, ordenesTrabajo: ordenesTrabajoCto, ventasGranos: ventasGranosCto, fletes: fletesCto, creditos: creditosCto, retirosSocios: retirosSociosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
+    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, gastosGenerales: gastosGeneralesCto, serviciosTerceros: serviciosTercerosCto, ordenesTrabajo: ordenesTrabajoCto, ventasGranos: ventasGranosCto, fletes: fletesCto, creditos: creditosCto, retirosSocios: retirosSociosCto, arriendos: arriendosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
     // Remitos sin precio todavía — se muestran en su propia pestaña, sin sumar al saldo
     const remitosSinPrecio = (comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha }))
     // Insumos ya cargados/pagados pero todavía no retirados físicamente
@@ -1023,6 +1050,23 @@ export default function Contactos({ usuario }) {
             if (esParalela !== !!r.es_paralelo) return
             movimientos.push({ fecha: r.fecha, fechaVto: null, tipo: r.es_paralelo ? 'PAR' : 'RETIRO', nro: r.id, descripcion: `Retiro socio ${r.socio || ''}${r.concepto ? ' · ' + r.concepto : ''}`, credito: 0, debito: r.monto })
             movimientos.push({ fecha: r.fecha, fechaVto: null, tipo: 'PAGO', nro: `r${r.id}`, descripcion: 'Pago', credito: r.monto, debito: 0, esPago: true })
+          })
+
+          // Arriendos de campos — le debemos al propietario.
+          ;(arriendosCto || []).forEach(v => {
+            const monto = parseFloat(v.monto_total)
+            if (!monto) return
+            const esParaleloV = !!v.caja_paralela_id
+            if (!esParalela) {
+              movimientos.push({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
+            } else if (esParaleloV) {
+              movimientos.push({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (Caja 2)`, credito: 0, debito: monto })
+            }
+            ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
+              const esPagoParalelo = p.es_paralelo || false
+              if (esParalela !== esPagoParalelo) return
+              movimientos.push({ fecha: v.pagado_en || v.fecha_vencimiento, fechaVto: null, tipo: 'PAGO', nro: `va${v.id}-${pi}`, descripcion: `Pago arriendo · ${p.tipo || ''}`, credito: parseFloat(p.monto) || 0, debito: 0, esPago: true })
+            })
           })
 
           // Créditos (bancos/financieras) — cada cuota pagada es un pago; las
