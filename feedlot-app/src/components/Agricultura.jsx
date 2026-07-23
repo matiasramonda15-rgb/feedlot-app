@@ -1251,6 +1251,16 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 <option value="">— Todo el campo —</option>
                 {lotesDelCampo.map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
               </select>
+              {loteSeleccionado?.imagen_url && (
+                <img src={loteSeleccionado.imagen_url} alt={`Mapa lote ${loteSeleccionado.numero}`}
+                  style={{ width: '100%', borderRadius: 8, marginTop: 8, border: `1px solid ${CM.border}` }} />
+              )}
+              {campo?.imagen_url && (
+                <a href={campo.imagen_url} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'inline-block', marginTop: 6, fontSize: 11, color: CM.blue }}>
+                  🖨 Ver/imprimir mapa completo del campo (en blanco)
+                </a>
+              )}
             </div>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
@@ -1453,6 +1463,16 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     <option value="">— Todo el campo —</option>
                     {(campo?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
                   </select>
+                  {loteSeleccionado?.imagen_url && (
+                    <img src={loteSeleccionado.imagen_url} alt={`Mapa lote ${loteSeleccionado.numero}`}
+                      style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 8, marginTop: 8, border: `1px solid ${S.border}` }} />
+                  )}
+                  {campo?.imagen_url && (
+                    <a href={campo.imagen_url} target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'inline-block', marginTop: 6, fontSize: 11, color: S.accent }}>
+                      🖨 Ver/imprimir mapa completo del campo (en blanco, para marcar a mano si es solo una parte del lote)
+                    </a>
+                  )}
                 </div>
                 <div>
                   <Label>Hectáreas a trabajar</Label>
@@ -2678,6 +2698,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     const totalPagos = formPago.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     if (!totalPagos) { alert('Ingresá el monto del pago'); return }
     setGuardandoPago(true)
+    const campo = campos.find(c => c.id === v.campo_id)
     const precio = parseFloat(formPago.precio_pizarra) || null
     const meses = formPago.meses || 1
     const tnMes = (campo?.arrendamiento_tn_ha || 0) / 12
