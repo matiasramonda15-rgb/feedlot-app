@@ -62,7 +62,7 @@ export function generarReciboDobleHTML(params) {
     .monto{font-size:18px;font-weight:700;font-family:monospace}
     .notapie{font-size:10px;color:#6B6760;text-align:center;margin-bottom:10px}
     .firma{display:flex;gap:40px;margin-top:14px}
-    .firma-line{flex:1;border-top:1px solid #ccc;padding-top:6px;font-size:10px;color:#9E9A94}
+    .firma-line{flex:1;margin-top:50px;border-top:1px solid #999;padding-top:6px;font-size:10px;color:#9E9A94}
     .no-print{text-align:center;margin-top:12px} @media print{.no-print{display:none}}
   </style></head><body>
     <div class="hoja">${copia1}${copia2}</div>
