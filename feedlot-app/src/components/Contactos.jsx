@@ -424,63 +424,65 @@ export default function Contactos({ usuario }) {
     const totalVentasHacienda = ventasAgrupadas.reduce((s, v) => {
       const grupo = v.grupo_venta_id ? data.ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
       const tieneFacturado = grupo.some(vv => vv.monto_facturado !== null && vv.monto_facturado !== undefined)
-      if (!tieneFacturado) return s + grupo.reduce((ss, vv) => ss + (vv.total || 0), 0)
-      const sumFact = grupo.reduce((ss, vv) => ss + (vv.monto_facturado || 0), 0)
-      const sumIva = grupo.reduce((ss, vv) => ss + (vv.iva_monto || 0), 0)
-      const sumCom = grupo.reduce((ss, vv) => ss + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
-      const sumRet = grupo.reduce((ss, vv) => ss + (vv.retencion_monto || 0), 0)
-      const sumNegro = grupo.reduce((ss, vv) => ss + (vv.monto_negro || 0), 0)
+      if (!tieneFacturado) return s + grupo.reduce((ss, vv) => ss + (parseFloat(vv.total) || 0), 0)
+      const sumFact = grupo.reduce((ss, vv) => ss + (parseFloat(vv.monto_facturado) || 0), 0)
+      const sumIva = grupo.reduce((ss, vv) => ss + (parseFloat(vv.iva_monto) || 0), 0)
+      const sumCom = grupo.reduce((ss, vv) => ss + ((!vv.comision_es_paralela && vv.comision_monto) ? (parseFloat(vv.comision_monto) || 0) : 0), 0)
+      const sumRet = grupo.reduce((ss, vv) => ss + (parseFloat(vv.retencion_monto) || 0), 0)
+      const sumNegro = grupo.reduce((ss, vv) => ss + (parseFloat(vv.monto_negro) || 0), 0)
       // El total de la venta = neto a cobrar (facturado + iva - comisión - retención) + paralelo
       return s + (sumFact + sumIva - sumCom - sumRet) + sumNegro
     }, 0)
-    const cobradoVentasHacienda = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const cobradoVentasHacienda = data.ventas.reduce((s, v) => s + (pagosVenta[v.id] || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     // Ventas de activos (maquinaria, equipos) — el comprador nos debe, igual que una venta de hacienda
-    const totalVentasActivos = (data.ventasActivos || []).reduce((s, va) => s + (va.monto || 0), 0)
-    const cobradoVentasActivos = (data.ventasActivos || []).reduce((s, va) => s + (va.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const totalVentasActivos = (data.ventasActivos || []).reduce((s, va) => s + (parseFloat(va.monto) || 0), 0)
+    const cobradoVentasActivos = (data.ventasActivos || []).reduce((s, va) => s + (va.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     // Servicios a terceros (trabajos facturados a un cliente) — el cliente
     // nos debe hasta que se cobre, mismo criterio que una venta de hacienda.
-    const totalServicios = (data.serviciosTerceros || []).reduce((s, st) => s + (st.total || 0) + (st.monto_negro || 0), 0)
+    const totalServicios = (data.serviciosTerceros || []).reduce((s, st) => s + (parseFloat(st.total) || 0) + (parseFloat(st.monto_negro) || 0), 0)
     const cobradoServicios = (data.serviciosTerceros || []).reduce((s, st) => s + (st.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     // Ventas de granos (soja, maíz, trigo) — no tienen desglose de pagos
     // parciales (pagos_detalle), así que se toman como pendientes hasta que
     // se marquen "confirmado" con su monto real cargado.
-    const totalVentasGranos = (data.ventasGranos || []).reduce((s, vg) => s + (vg.estado !== 'pactada' ? ((vg.total || 0) + (vg.monto_negro || 0)) : 0), 0)
+    const totalVentasGranos = (data.ventasGranos || []).reduce((s, vg) => s + (vg.estado !== 'pactada' ? ((parseFloat(vg.total) || 0) + (parseFloat(vg.monto_negro) || 0)) : 0), 0)
     const cobradoVentasGranos = (data.ventasGranos || []).reduce((s, vg) => s + (vg.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     const totalVentas = totalVentasHacienda + totalVentasActivos + totalServicios + totalVentasGranos
     const cobradoVentas = cobradoVentasHacienda + cobradoVentasActivos + cobradoServicios + cobradoVentasGranos
     const pendienteVentas = totalVentas - cobradoVentas
     const totalComprasHacienda = data.lotes.reduce((s, l) => {
-      const totalFacturasReal = (l.facturas_feria || []).reduce((ss, f) => ss + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
+      const totalFacturasReal = (l.facturas_feria || []).reduce((ss, f) => ss + (parseFloat(f.total_factura_manual) || parseFloat(f.total_factura) || 0), 0)
       if (totalFacturasReal > 0) return s + totalFacturasReal
-      const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
-      const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
-      const totalLote = totalGC || l.monto_total_con_iva || (l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0)
+      const montoFacturadoNum = parseFloat(l.monto_facturado)
+      const montoNegroNum = parseFloat(l.monto_negro) || 0
+      const ivaMontoCalc = !isNaN(montoFacturadoNum) ? Math.round(montoFacturadoNum * (parseFloat(l.iva_pct) || 10.5) / 100) : (parseFloat(l.iva_monto) || 0)
+      const totalGC = (!isNaN(montoFacturadoNum) || l.monto_negro != null) ? (montoFacturadoNum || 0) + ivaMontoCalc + montoNegroNum : null
+      const totalLote = totalGC || parseFloat(l.monto_total_con_iva) || (l.precio_compra && l.kg_bascula ? Math.round(parseFloat(l.kg_bascula) * (1 - (parseFloat(l.desbaste_pct) || 0) / 100) * parseFloat(l.precio_compra)) : 0)
       return s + (totalLote || 0)
     }, 0)
-    const pagadoComprasHacienda = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const pagadoComprasHacienda = data.lotes.reduce((s, l) => s + (pagosCompra[l.id] || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     // Compras de insumos (rollo, maíz, remedios, agroquímicos, etc.) — nosotros
     // le debemos al proveedor. Incluye Alimentación, Sanidad y Agricultura, que
     // comparten la misma tabla.
-    const totalComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.total || 0), 0)
-    const pagadoComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.pagos_detalle || []).reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const totalComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (parseFloat(ci.total) || 0), 0)
+    const pagadoComprasInsumos = (data.comprasInsumos || []).reduce((s, ci) => s + (ci.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     // Gastos generales (silobolsa, flete, taller, etc.) — mismo criterio: le
     // debemos al proveedor hasta que se paguen.
-    const totalGastosGenerales = (data.gastosGenerales || []).reduce((s, g) => s + (g.monto || 0), 0)
+    const totalGastosGenerales = (data.gastosGenerales || []).reduce((s, g) => s + (parseFloat(g.monto) || 0), 0)
     const pagadoGastosGenerales = (data.gastosGenerales || []).reduce((s, g) => s + (g.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     // Órdenes de trabajo con contratista (siembra, pulverización, etc.) — le
     // debemos al proveedor, mismo criterio que un gasto general.
-    const totalOrdenes = (data.ordenesTrabajo || []).reduce((s, ot) => s + (ot.costo_total || 0), 0)
+    const totalOrdenes = (data.ordenesTrabajo || []).reduce((s, ot) => s + (parseFloat(ot.costo_total) || 0), 0)
     const pagadoOrdenes = (data.ordenesTrabajo || []).reduce((s, ot) => s + (ot.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
     // Fletes — le debemos al transportista. No tienen desglose de pagos
     // parciales: se pagan de una sola vez, así que "pagado" es todo o nada.
-    const totalFletes = (data.fletes || []).reduce((s, f) => s + (f.monto || 0), 0)
-    const pagadoFletes = (data.fletes || []).reduce((s, f) => s + (f.estado_pago === 'pagado' ? (f.monto || 0) : 0), 0)
+    const totalFletes = (data.fletes || []).reduce((s, f) => s + (parseFloat(f.monto) || 0), 0)
+    const pagadoFletes = (data.fletes || []).reduce((s, f) => s + (f.estado_pago === 'pagado' ? (parseFloat(f.monto) || 0) : 0), 0)
     // Créditos (bancos/financieras) — usa el saldo pendiente ya calculado en
     // Activos. Para créditos en dólares, el saldo en pesos recién se sabe
     // cuota por cuota (a medida que se pagan), así que puede no reflejar
     // todavía la deuda total en dólares que falta pagar.
-    const totalCreditos = (data.creditos || []).reduce((s, c) => s + (c.monto_total || 0), 0)
-    const pagadoCreditos = (data.creditos || []).reduce((s, c) => s + (c.monto_total || 0) - (c.saldo_pendiente || 0), 0)
+    const totalCreditos = (data.creditos || []).reduce((s, c) => s + (parseFloat(c.monto_total) || 0), 0)
+    const pagadoCreditos = (data.creditos || []).reduce((s, c) => s + (parseFloat(c.monto_total) || 0) - (parseFloat(c.saldo_pendiente) || 0), 0)
     const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales + totalOrdenes + totalFletes + totalCreditos
     const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoGastosGenerales + pagadoOrdenes + pagadoFletes + pagadoCreditos
     const pendienteCompras = totalCompras - pagadoCompras
