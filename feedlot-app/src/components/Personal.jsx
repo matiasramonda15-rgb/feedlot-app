@@ -107,7 +107,7 @@ export default function Personal({ usuario }) {
         if (errCo) { alert('Error al registrar en caja oficial: ' + errCo.message); setGuardando(false); return }
         caja_oficial_id = co?.id
         if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
-          const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, beneficiario: emp?.nombre || null, estado: 'en_cartera', caja_oficial_id, es_electronico: p.tipo === 'e-cheq' })
+          const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, beneficiario: emp?.nombre || null, estado: 'entregado', caja_oficial_id, es_electronico: p.tipo === 'e-cheq' })
           if (errCheq) { alert('Error al registrar el cheque: ' + errCheq.message); setGuardando(false); return }
         } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
           for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))

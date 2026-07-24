@@ -110,7 +110,7 @@ export default function Fletes({ usuario }) {
         if (eo) { alert('Error al registrar en caja oficial: ' + eo.message); setGuardando(false); return }
         if (!caja_oficial_id) caja_oficial_id = co?.id
         if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-          const { error: ech } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: ct?.nombre || flete.transportista, estado: 'en_cartera', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: usuario?.id })
+          const { error: ech } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: ct?.nombre || flete.transportista, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: usuario?.id })
           if (ech) { alert('Error al registrar el cheque: ' + ech.message); setGuardando(false); return }
         } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
           for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))

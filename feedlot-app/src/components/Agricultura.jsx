@@ -1151,7 +1151,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         if (!caja_oficial_id) caja_oficial_id = co?.id || null
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { error: eCheqAgro1 } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+        const { error: eCheqAgro1 } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
         if (eCheqAgro1) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqAgro1.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
@@ -2499,7 +2499,7 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
           if (eo) { alert('Error al registrar en caja oficial: ' + eo.message); setGuardando(false); return }
           if (!caja_oficial_id) caja_oficial_id = co?.id
           if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-            const { error: ec } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: form.proveedor || null, estado: 'en_cartera', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq' })
+            const { error: ec } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: form.proveedor || null, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq' })
             if (ec) { alert('Error al registrar el cheque: ' + ec.message); setGuardando(false); return }
           } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
             for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
@@ -2758,7 +2758,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
         if (!caja_oficial_id) caja_oficial_id = co?.id || null
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { error: eCheqArr } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: v.campos?.propietario || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+        const { error: eCheqArr } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: v.campos?.propietario || null, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
         if (eCheqArr) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqArr.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
@@ -3172,7 +3172,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         if (!caja_oficial_id) caja_oficial_id = co?.id || null
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { error: eCheqStock } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formCompra.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: formCompra.proveedor || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+        const { error: eCheqStock } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formCompra.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: formCompra.proveedor || null, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
         if (eCheqStock) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqStock.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))

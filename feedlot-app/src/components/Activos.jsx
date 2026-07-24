@@ -157,7 +157,7 @@ export default function Activos({ usuario }) {
           const { error: errCheq } = await supabase.from('cheques').insert({
             tipo: 'emitido', numero: formRetiro.cheque_numero || null, banco: formRetiro.cheque_banco || null,
             monto, fecha_cobro: formRetiro.fecha, fecha_vencimiento: formRetiro.cheque_vencimiento,
-            beneficiario: formRetiro.socio || null, estado: 'en_cartera', caja_oficial_id,
+            beneficiario: formRetiro.socio || null, estado: 'entregado', caja_oficial_id,
           })
           if (errCheq) {
             alert(`El cheque N° ${formRetiro.cheque_numero || '(sin número)'} no se pudo guardar en la cartera (${errCheq.message}). El retiro NO se terminó de guardar — revisá e intentá de nuevo.`)

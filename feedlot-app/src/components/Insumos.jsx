@@ -215,7 +215,7 @@ export default function Insumos({ usuario }) {
         if (!caja_oficial_id) caja_oficial_id = co?.id || null
       }
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: form.proveedor || null, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+        const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: form.proveedor || null, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
         if (errCheq) { alert('Error al registrar el cheque: ' + errCheq.message); setGuardando(false); return }
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_id) {
         const { error: errCheqT } = await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(pago.cheque_tercero_id))
@@ -664,7 +664,7 @@ export default function Insumos({ usuario }) {
                                   }
                                 }
                                 if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-                                  const { error: eCheqInline } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+                                  const { error: eCheqInline } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
                                   if (eCheqInline) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqInline.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
                                 }
                               }

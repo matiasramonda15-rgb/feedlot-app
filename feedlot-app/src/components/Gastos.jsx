@@ -388,7 +388,7 @@ export default function Gastos({ usuario }) {
           fecha_cobro: form.fecha,
           fecha_vencimiento: pago.cheque_propio.fecha_vencimiento,
           monto, beneficiario: form.proveedor || null,
-          estado: 'en_cartera', caja_oficial_id: pagoCajaId,
+          estado: 'entregado', caja_oficial_id: pagoCajaId,
           registrado_por: usuario?.id,
         }).select().single()
         // Antes esto no revisaba el error — si fallaba, la caja quedaba

@@ -123,7 +123,7 @@ export async function pagarComprasPendientes(supabase, {
       if (errCo) return { error: errCo }
       if (!caja_oficial_id) caja_oficial_id = co?.id || null
       if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-        const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: contactoNombre || null, estado: 'en_cartera', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: registradoPor || null })
+        const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: contactoNombre || null, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: registradoPor || null })
         if (errCheq) return { error: errCheq }
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
@@ -178,12 +178,35 @@ export async function pagarComprasPendientes(supabase, {
     if (errCuotas) return { error: errCuotas }
   }
 
+  // Primero se resuelven los totales finales de cada compra seleccionada
+  // (algunas pueden estar sin precio todavía, recién se define acá) — hace
+  // falta tener todos los totales ANTES de repartir el pago proporcional.
+  const totalesFinales = {}
   for (const id of seleccionadas) {
     const c = pendientes.find(x => x.id === id)
     if (!c) continue
+    if (c.total || c.precio_unitario) { totalesFinales[id] = c.total || Math.round((c.cantidad || 0) * c.precio_unitario); continue }
+    if (!precios[id]) { totalesFinales[id] = 0; continue }
+    const valorIngresado = parseFloat(precios[id])
+    const esUsd = monedas?.[id] === 'USD' && cotizacionDolar
+    const valorEnPesos = esUsd ? valorIngresado * cotizacionDolar : valorIngresado
+    const esModoTotal = modos?.[id] === 'total'
+    totalesFinales[id] = esModoTotal ? Math.round(valorEnPesos) : Math.round((c.cantidad || 0) * Math.round(valorEnPesos * 100) / 100)
+  }
+  const totalCombinado = Object.values(totalesFinales).reduce((s, t) => s + t, 0)
+
+  for (const id of seleccionadas) {
+    const c = pendientes.find(x => x.id === id)
+    if (!c) continue
+    // El pago se reparte proporcional al peso de esta compra dentro del
+    // total combinado — antes cada compra se quedaba con el monto COMPLETO
+    // del pago conjunto, como si cada una se hubiera pagado entera por
+    // separado (inflaba el "pagado" varias veces sobre lo mismo).
+    const proporcion = totalCombinado > 0 ? (totalesFinales[id] || 0) / totalCombinado : (1 / seleccionadas.length)
+    const pagosProporcionales = pagos.map(p => ({ ...p, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
     const upd = {
       estado_pago: 'pagado', caja_oficial_id, caja_paralela_id,
-      pagos_detalle: pagos,
+      pagos_detalle: pagosProporcionales,
       forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
       es_paralelo: pagos.some(p => p.es_paralelo),
     }
