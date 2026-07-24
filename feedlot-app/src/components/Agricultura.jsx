@@ -2279,6 +2279,19 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
                   {stockInsumosAlim.map(s => <option key={s.id} value={s.id}>{s.insumo}</option>)}
                 </select>
                 <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>El kg cargado arriba se suma directo a ese insumo del stock de Alimentación, listo para usar en las dietas.</div>
+                <div style={{ marginTop: 10, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px' }}>
+                  <Label>Precio de pizarra $/tn (opcional — calcula el precio de transferencia solo)</Label>
+                  <input type="number" value={form.precioPizarraInterno || ''} onChange={e => {
+                    const pizarra = e.target.value
+                    const precioCalc = pizarra ? String(Math.round(parseFloat(pizarra) * 0.9)) : ''
+                    setForm({...form, precioPizarraInterno: pizarra, precio_tn: precioCalc || form.precio_tn})
+                  }} placeholder="ej. 320000" style={inputStyle} />
+                  {form.precioPizarraInterno && (
+                    <div style={{ fontSize: 11, color: S.green, marginTop: 6 }}>
+                      Precio de transferencia (pizarra − 10%): <strong>${Math.round(parseFloat(form.precioPizarraInterno) * 0.9).toLocaleString('es-AR')}/tn</strong> — ya cargado abajo en "Precio $/tn", se puede corregir a mano si hace falta.
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <>
