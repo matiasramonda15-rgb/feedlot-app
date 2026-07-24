@@ -281,10 +281,15 @@ export default function Contactos({ usuario }) {
     // pago de cada caja a partir de lo que efectivamente se pagó ahí.
     ;(data.gastosGenerales || []).forEach(g => {
       const pagosValidos = (g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0)
-      const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
-      const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       const pagadoTotal = pagosValidos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       const pendienteTotal = (g.monto || 0) - pagadoTotal
+      // Si ya está completamente pagado (en cualquier combinación de cajas),
+      // no aporta nada al saldo pendiente — se saca del historial en vez de
+      // mostrar la obligación y el pago que la cancela, para no ensuciar la
+      // vista con movimientos ya resueltos.
+      if (pendienteTotal <= 0.5) return
+      const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
+      const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       // La parte todavía sin pagar se asigna a la caja "por defecto" del
       // gasto (es_paralelo) — ahí es donde se va a terminar de pagar.
       const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
@@ -379,9 +384,10 @@ export default function Contactos({ usuario }) {
         movs.push({ fecha, tipo: 'Cobro', credito: 0, debito: parseFloat(p.monto) || 0 })
       })
     })
-    movs.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
+    const movsVisibles = data.fechaCorte ? movs.filter(m => m.esApertura || (m.fecha && m.fecha >= data.fechaCorte)) : movs
+    movsVisibles.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
     let saldoAcum = 0
-    return movs.map(m => { saldoAcum += (m.credito || 0) - (m.debito || 0); return { ...m, saldoAcum } })
+    return movsVisibles.map(m => { saldoAcum += (m.credito || 0) - (m.debito || 0); return { ...m, saldoAcum } })
   }
 
   function generarResumenCuenta(nombre) {
@@ -1026,10 +1032,13 @@ export default function Contactos({ usuario }) {
           // sueltos, sin la obligación que los explicaba).
           ;(gastosGeneralesCto || []).forEach(g => {
             const pagosValidos = (g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0)
-            const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
-            const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const pagadoTotal = pagosValidos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const pendienteTotal = (g.monto || 0) - pagadoTotal
+            // Ya está completamente pagado — no aporta al saldo, se saca del
+            // historial para no mostrar movimientos ya resueltos.
+            if (pendienteTotal <= 0.5) return
+            const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
+            const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
             if (debitoEnEstaCaja > 0) {
               movimientos.push({
@@ -1201,11 +1210,17 @@ export default function Contactos({ usuario }) {
           })
 
           // Ordenar por fecha
-          movimientos.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
+          // Si hay fecha de corte cargada, los movimientos de antes quedan
+          // ocultos del historial (no solo fuera del cálculo) — para
+          // "arrancar de cero" de verdad en la vista, aunque los datos reales
+          // de abajo (caja, gastos, etc.) sigan intactos para quien necesite
+          // auditarlos directamente en esos otros módulos.
+          const movimientosVisibles = fechaCorte ? movimientos.filter(m => m.esApertura || (m.fecha && m.fecha >= fechaCorte)) : movimientos
+          movimientosVisibles.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
 
           // Calcular saldo acumulado
           let saldoAcum = 0
-          const movConSaldo = movimientos.map(m => {
+          const movConSaldo = movimientosVisibles.map(m => {
             saldoAcum += (Number(m.credito) || 0) - (Number(m.debito) || 0)
             return { ...m, saldoAcum }
           })
