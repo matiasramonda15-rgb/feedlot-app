@@ -260,7 +260,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
+  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' })
   const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [selectedCampo, setSelectedCampo] = useState(null)
@@ -271,7 +271,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
     setGuardando(true)
-    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_tn_ha: parseFloat(form.arrendamiento_tn_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
+    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_tn_ha: parseFloat(form.arrendamiento_tn_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, fecha_vencimiento_contrato: form.fecha_vencimiento_contrato || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
     const { error } = editando
       ? await supabase.from('campos').update(campoData).eq('id', editando)
       : await supabase.from('campos').insert({ ...campoData, activo: true })
@@ -279,7 +279,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' })
+    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' })
     setGuardando(false)
   }
 
@@ -307,7 +307,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Campos arrendados</div>
-        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', ubicacion: '', imagen_url: '' }) }}
+        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' }) }}
           style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Nuevo campo
         </button>
@@ -334,6 +334,11 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
                 <option value="semestral">Semestral</option>
                 <option value="anual">Anual</option>
               </select>
+            </div>
+            <div>
+              <Label>Vencimiento del contrato</Label>
+              <input type="date" value={form.fecha_vencimiento_contrato} onChange={e => setForm({...form, fecha_vencimiento_contrato: e.target.value})} style={inputStyle} />
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Cuándo vence o se renueva el contrato de arrendamiento (no el pago periódico).</div>
             </div>
             <div><Label>Ubicación</Label><input type="text" value={form.ubicacion} onChange={e => setForm({...form, ubicacion: e.target.value})} style={inputStyle} /></div>
             <div style={{ gridColumn: '1/-1' }}><Label>Link del mapa (URL de imagen)</Label><input type="url" value={form.imagen_url} onChange={e => setForm({...form, imagen_url: e.target.value})} style={inputStyle} placeholder="https://..." /></div>
@@ -383,9 +388,20 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
                     <div style={{ fontSize: 10, color: S.muted }}>Arrendamiento</div>
                     <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red }}>{c.arrendamiento_tn_ha} tn/ha · {arrendamientoAnual?.toLocaleString('es-AR')} tn/año</div>
                     <div style={{ fontSize: 10, color: S.muted }}>{c.forma_pago_arriendo}</div>
+                    {c.fecha_vencimiento_contrato && (() => {
+                      const vence = new Date(c.fecha_vencimiento_contrato + 'T12:00:00')
+                      const diasFaltan = Math.ceil((vence - new Date()) / 86400000)
+                      const proximo = diasFaltan >= 0 && diasFaltan <= 90
+                      const vencido = diasFaltan < 0
+                      return (
+                        <div style={{ fontSize: 10, fontWeight: 600, color: vencido ? S.red : proximo ? S.amber : S.muted, marginTop: 2 }}>
+                          Contrato vence: {vence.toLocaleDateString('es-AR')}{vencido ? ' (vencido)' : proximo ? ` (en ${diasFaltan}d)` : ''}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
-                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_tn_ha: c.arrendamiento_tn_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', ubicacion: c.ubicacion || '', imagen_url: c.imagen_url || '' }); setShowForm(true); setSelectedCampo(null) }}
+                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_tn_ha: c.arrendamiento_tn_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', fecha_vencimiento_contrato: c.fecha_vencimiento_contrato || '', ubicacion: c.ubicacion || '', imagen_url: c.imagen_url || '' }); setShowForm(true); setSelectedCampo(null) }}
                   style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                   Editar
                 </button>
