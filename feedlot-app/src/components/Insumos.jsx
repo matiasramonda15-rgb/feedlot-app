@@ -99,6 +99,8 @@ export default function Insumos({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [pagarInline, setPagarInline] = useState(null)
+  const [retirandoId, setRetirandoId] = useState(null)
+  const [cantidadRetiro, setCantidadRetiro] = useState('')
   const [formPagoInline, setFormPagoInline] = useState({ fecha: hoyLocal(), tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
   const [preciosGrupal, setPreciosGrupal] = useState({})
@@ -421,14 +423,14 @@ export default function Insumos({ usuario }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 800 }}>
               <thead>
                 <tr style={{ background: S.bg }}>
-                  {['Fecha', 'Tipo', 'Insumo', 'Cantidad', '$/unidad', 'Total', 'Proveedor', 'Factura', 'Pago', 'Estado', ''].map(h => (
+                  {['Fecha', 'Tipo', 'Insumo', 'Cantidad', '$/unidad', 'Total', 'Proveedor', 'Factura', 'Pago', 'Estado', 'Retiro', ''].map(h => (
                     <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {compras.length === 0 && (
-                  <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: S.hint }}>No hay compras registradas.</td></tr>
+                  <tr><td colSpan={11} style={{ padding: '3rem', textAlign: 'center', color: S.hint }}>No hay compras registradas.</td></tr>
                 )}
                 {compras.map(c => (
                   <React.Fragment key={c.id}>
@@ -455,6 +457,40 @@ export default function Insumos({ usuario }) {
                         ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Pagado</span>
                         : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
                     </td>
+                    <td style={{ padding: '9px 12px' }}>
+                      {c.retirado === false ? (
+                        retirandoId === c.id ? (
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <input type="number" value={cantidadRetiro} onChange={e => setCantidadRetiro(e.target.value)} autoFocus
+                              style={{ width: 80, padding: '3px 6px', fontSize: 11, border: '1px solid #9F8ED4', borderRadius: 5, fontFamily: 'monospace' }} />
+                            <button onClick={async () => {
+                              const cant = parseFloat(cantidadRetiro) || 0
+                              const yaRetirado = c.cantidad_retirada || 0
+                              const restante = (c.cantidad || 0) - yaRetirado
+                              if (cant <= 0) { alert('Ingresá una cantidad'); return }
+                              if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} por retirar`); return }
+                              const listaStock = c.insumo_tipo === 'alimentacion' ? stockAlim : stockSan
+                              const item = listaStock.find(s => s.id === c.insumo_id)
+                              const tablaStock = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
+                              const colStock = c.insumo_tipo === 'alimentacion' ? 'cantidad_kg' : 'cantidad_ml'
+                              if (item) await supabase.from(tablaStock).update({ [colStock]: (item[colStock] || 0) + cant, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                              const nuevaCantidadRetirada = yaRetirado + cant
+                              const completo = nuevaCantidadRetirada >= (c.cantidad || 0) - 0.01
+                              await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', c.id)
+                              setRetirandoId(null); setCantidadRetiro('')
+                              await cargar()
+                            }} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>✓</button>
+                            <button onClick={() => { setRetirandoId(null); setCantidadRetiro('') }}
+                              style={{ padding: '3px 6px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>✕</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setRetirandoId(c.id); setCantidadRetiro(String((c.cantidad || 0) - (c.cantidad_retirada || 0))) }}
+                            style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}
+                          </button>
+                        )
+                      ) : <span style={{ color: S.hint, fontSize: 11 }}>—</span>}
+                    </td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {c.estado_pago === 'pagado'
@@ -471,10 +507,16 @@ export default function Insumos({ usuario }) {
                           if (!confirm('¿Eliminar esta compra? Se eliminará también de la caja.')) return
                           if (c.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', c.caja_oficial_id)
                           if (c.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', c.caja_paralela_id)
-                          const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
-                          const cantCol = c.insumo_tipo === 'alimentacion' ? 'cantidad_kg' : 'cantidad_ml'
-                          const { data: item } = await supabase.from(tabla).select('*').eq('id', c.insumo_id).single()
-                          if (item) await supabase.from(tabla).update({ [cantCol]: Math.max(0, (item[cantCol] || 0) - (c.cantidad || 0)) }).eq('id', c.insumo_id)
+                          // Si esto vino de una venta interna todavía sin retirar (o retirada
+                          // solo en parte), no hay que restar la cantidad completa del stock —
+                          // solo lo que efectivamente se llegó a sumar con algún retiro.
+                          const cantidadASacar = c.retirado === false ? (c.cantidad_retirada || 0) : (c.cantidad || 0)
+                          if (cantidadASacar > 0) {
+                            const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
+                            const cantCol = c.insumo_tipo === 'alimentacion' ? 'cantidad_kg' : 'cantidad_ml'
+                            const { data: item } = await supabase.from(tabla).select('*').eq('id', c.insumo_id).single()
+                            if (item) await supabase.from(tabla).update({ [cantCol]: Math.max(0, (item[cantCol] || 0) - cantidadASacar) }).eq('id', c.insumo_id)
+                          }
                           await supabase.from('compras_insumos').delete().eq('id', c.id)
                           await cargar()
                         }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>

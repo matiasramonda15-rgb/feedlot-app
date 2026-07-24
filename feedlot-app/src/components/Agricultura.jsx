@@ -3013,6 +3013,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [editandoCotiz, setEditandoCotiz] = useState(false)
   const [nuevaCotiz, setNuevaCotiz] = useState(cotizacionDolar)
   const [filtroTipoStock, setFiltroTipoStock] = useState('')
+  const [retirandoId, setRetirandoId] = useState(null)
+  const [cantidadRetiro, setCantidadRetiro] = useState('')
 
   async function guardarCotizacion() {
     const valor = parseFloat(nuevaCotiz)
@@ -3674,20 +3676,47 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                       ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Pagado</span>
                       : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
                     {i.retirado === false && (
-                      <span style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 4, background: '#F0EAFB', color: '#3D1A6B', fontSize: 11, fontWeight: 600 }}>📦 No retirado</span>
+                      <span style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 4, background: '#F0EAFB', color: '#3D1A6B', fontSize: 11, fontWeight: 600 }}>
+                        📦 {(i.cantidad_retirada || 0) > 0 ? `${(i.cantidad_retirada || 0).toLocaleString('es-AR')} / ${(i.cantidad || 0).toLocaleString('es-AR')} retirado` : 'No retirado'}
+                      </span>
                     )}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {i.retirado === false && (
-                        <button onClick={async () => {
-                          const item = stock.find(s => s.id === i.insumo_id)
-                          if (item) await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + (i.cantidad || 0), actualizado_en: new Date().toISOString() }).eq('id', item.id)
-                          await supabase.from('compras_insumos').update({ retirado: true }).eq('id', i.id)
-                          await cargar()
-                        }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
-                          📦 Marcar retirado
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {i.retirado === false && retirandoId !== i.id && (
+                        <button onClick={() => { setRetirandoId(i.id); setCantidadRetiro(String((i.cantidad || 0) - (i.cantidad_retirada || 0))) }}
+                          style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
+                          📦 Registrar retiro
                         </button>
+                      )}
+                      {i.retirado === false && retirandoId === i.id && (
+                        <>
+                          <input type="number" value={cantidadRetiro} onChange={e => setCantidadRetiro(e.target.value)} autoFocus
+                            style={{ width: 90, padding: '3px 6px', fontSize: 11, border: '1px solid #9F8ED4', borderRadius: 5, fontFamily: 'monospace' }} />
+                          <button onClick={async () => {
+                            const cant = parseFloat(cantidadRetiro) || 0
+                            const yaRetirado = i.cantidad_retirada || 0
+                            const restante = (i.cantidad || 0) - yaRetirado
+                            if (cant <= 0) { alert('Ingresá una cantidad'); return }
+                            if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} por retirar de esta compra`); return }
+                            const item = stock.find(s => s.id === i.insumo_id)
+                            if (item) await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + cant, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                            const nuevaCantidadRetirada = yaRetirado + cant
+                            // Si con este retiro se completa toda la cantidad comprada, se
+                            // marca como retirado del todo; si no, sigue "en partes".
+                            const completo = nuevaCantidadRetirada >= (i.cantidad || 0) - 0.01
+                            await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', i.id)
+                            setRetirandoId(null)
+                            setCantidadRetiro('')
+                            await cargar()
+                          }} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
+                            ✓
+                          </button>
+                          <button onClick={() => { setRetirandoId(null); setCantidadRetiro('') }}
+                            style={{ padding: '3px 6px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+                            ✕
+                          </button>
+                        </>
                       )}
                       {i.pagos_detalle && i.estado_pago === 'pagado' && (
                         <button onClick={() => generarReciboAgro(i, i.pagos_detalle, stock)}
@@ -3697,10 +3726,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                         if (!confirm('¿Eliminar esta compra? Se eliminará de la caja.')) return
                         if (i.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
                         if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
-                        // Si nunca se retiró, nunca se sumó al stock — no hay nada que restar
-                        if (i.retirado !== false) {
+                        // Si nunca se retiró nada, no hay nada que restar del stock. Si se
+                        // retiró una parte, se resta solo esa parte (no la cantidad total
+                        // comprada, que puede no coincidir si el retiro fue parcial).
+                        const cantidadASacar = i.retirado === false ? (i.cantidad_retirada || 0) : (i.cantidad || 0)
+                        if (cantidadASacar > 0) {
                           const item = stock.find(s => s.id === i.insumo_id)
-                          if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - (i.cantidad || 0)), actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                          if (item) await supabase.from('stock_agro').update({ cantidad: Math.max(0, (item.cantidad || 0) - cantidadASacar), actualizado_en: new Date().toISOString() }).eq('id', item.id)
                         }
                         await supabase.from('compras_insumos').delete().eq('id', i.id)
                         await cargar()
