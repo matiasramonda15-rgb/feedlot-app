@@ -30,6 +30,10 @@ const TIPOS_CONTACTO = ['comprador_hacienda', 'vendedor_hacienda', 'comprador_gr
 const TIPO_LABEL = { comprador_hacienda: 'Comprador hacienda', vendedor_hacienda: 'Vendedor hacienda', comprador_grano: 'Comprador grano', servicio: 'Servicio', otro: 'Otro' }
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const ESTADOS_CHEQUE = { en_cartera: { bg: '#FDF0E0', color: '#7A4500' }, entregado: { bg: '#F0EAFB', color: '#3D1A6B' }, depositado: { bg: '#E8EFF8', color: '#1A3D6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' }, rechazado: { bg: '#FDF0F0', color: '#7A1A1A' }, anulado: { bg: '#F7F5F0', color: '#6B6760' } }
+// Un cheque deja de ser relevante para avisos de vencimiento solo cuando
+// llega a un estado FINAL — "entregado"/"depositado" todavía representan
+// plata que va a entrar o salir en esa fecha.
+const ESTADOS_FINALES_CHEQUE = ['cobrado', 'rechazado', 'anulado']
 
 function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFiltroEstado, cambiarEstadoCheque, eliminar }) {
     return (
@@ -84,7 +88,7 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
                 {items.map(c => {
                   const ec = ESTADOS_CHEQUE[c.estado] || ESTADOS_CHEQUE.en_cartera
                   const diasVence = Math.ceil((new Date(c.fecha_vencimiento + 'T12:00:00') - new Date()) / (1000 * 60 * 60 * 24))
-                  const urgente = diasVence <= 7 && c.estado === 'en_cartera'
+                  const urgente = diasVence <= 7 && !ESTADOS_FINALES_CHEQUE.includes(c.estado)
                   return (
                     <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, background: urgente ? '#FFF5F5' : 'transparent' }}>
                       <td style={{ padding: '9px 12px' }}>
@@ -347,8 +351,13 @@ export default function Comercial({ usuario }) {
   const chOficialEm = chOficial.filter(c => c.tipo === 'emitido')
   const chParaleloRec = chParalelo.filter(c => c.tipo === 'recibido')
   const chParaleloEm = chParalelo.filter(c => c.tipo === 'emitido')
-  const chVence7Of = chOficial.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
-  const chVence7Par = chParalelo.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
+  // Un cheque sigue siendo relevante para el aviso de vencimiento mientras
+  // no esté en un estado FINAL — un cheque "entregado" (emitido, ya se lo
+  // dimos a alguien) o "depositado" (recibido, en trámite en el banco)
+  // TODAVÍA representa plata que va a entrar o salir en esa fecha; solo deja
+  // de importar una vez cobrado, rechazado o anulado.
+  const chVence7Of = chOficial.filter(c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
+  const chVence7Par = chParalelo.filter(c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
   const hace35dias = new Date(); hace35dias.setDate(hace35dias.getDate() - 35)
   // Los cheques ya "entregados"/"depositados" — resueltos, sin nada para
   // hacer con ellos — dejan de mostrarse a los 35 días de vencidos, para que
