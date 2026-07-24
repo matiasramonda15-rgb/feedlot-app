@@ -48,7 +48,9 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque,
 
         {chVence7.length > 0 && (
           <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>⚠ {chVence7.length} cheque{chVence7.length !== 1 ? 's' : ''} vence{chVence7.length === 1 ? '' : 'n'} en los próximos 7 días</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>
+              ⚠ {chVence7.length} cheque{chVence7.length !== 1 ? 's' : ''} vence{chVence7.length === 1 ? '' : 'n'} en los próximos 7 días — total ${chVence7.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
+            </div>
             {chVence7.map(c => (
               <div key={c.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
                 {c.tipo === 'recibido' ? '📥' : '📤'} {c.tipo} #{c.numero || 'sin número'} · ${c.monto?.toLocaleString('es-AR')} · vence {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')} {c.banco ? `· ${c.banco}` : ''}
@@ -379,7 +381,7 @@ export default function Comercial({ usuario }) {
           { label: 'Saldo Caja 1', val: `$${((coIng - coEg) / 1000000).toFixed(1)}M`, sub: `+${(coIng/1000000).toFixed(1)}M / -${(coEg/1000000).toFixed(1)}M`, color: coIng - coEg >= 0 ? S.green : S.red },
           { label: 'Saldo Caja 2', val: `$${((cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `+${(cpIng/1000000).toFixed(1)}M / -${(cpEg/1000000).toFixed(1)}M`, color: cpIng - cpEg >= 0 ? S.green : S.red, purple: true },
           { label: 'Cheques en cartera', val: (chOficialRec.filter(c => c.estado === 'en_cartera').length + chParaleloRec.filter(c => c.estado === 'en_cartera').length), sub: `$${(chOficialRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0) + chParaleloRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0)).toLocaleString('es-AR')}`, color: S.amber },
-          { label: 'Vencen en 7 días', val: (chVence7Of.length + chVence7Par.length), sub: (chVence7Of.length + chVence7Par.length) > 0 ? '⚠ Revisar urgente' : '✓ Sin vencimientos', color: (chVence7Of.length + chVence7Par.length) > 0 ? S.red : S.green },
+          { label: 'Vencen en 7 días', val: (chVence7Of.length + chVence7Par.length), sub: (chVence7Of.length + chVence7Par.length) > 0 ? `⚠ $${(chVence7Of.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0) + chVence7Par.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)).toLocaleString('es-AR')}` : '✓ Sin vencimientos', color: (chVence7Of.length + chVence7Par.length) > 0 ? S.red : S.green },
         ].map((m, i) => (
           <div key={i} style={{ background: m.purple ? S.purpleLight : S.surface, border: `1px solid ${m.purple ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: m.purple ? S.purple : S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
