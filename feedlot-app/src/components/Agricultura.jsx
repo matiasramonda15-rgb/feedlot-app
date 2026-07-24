@@ -238,7 +238,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       </div>
 
       {/* ── CAMPOS ── */}
-      {tab === 'campos' && <TabCampos campos={campos} campanas={campanas} planes={planes} campanaActiva={campanaActiva} cargar={cargar} />}
+      {tab === 'campos' && <TabCampos campos={campos} campanas={campanas} planes={planes} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} />}
       {tab === 'arriendos' && <TabArriendos campos={campos} cargar={cargar} contactos={contactos} usuario={usuario} />}
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} />}
@@ -253,7 +253,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
 }
 
 // ── TAB CAMPOS ──
-function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
+function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos }) {
   const [showForm, setShowForm] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
@@ -318,7 +318,13 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div><Label>Nombre del campo *</Label><input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} style={inputStyle} /></div>
             <div><Label>Superficie total (ha)</Label><input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Propietario</Label><input type="text" value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Propietario</Label>
+              <select value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} style={inputStyle}>
+                <option value="">— Seleccioná —</option>
+                {(contactos || []).filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Agricultura')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+              </select>
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
+            </div>
             <div><Label>Arrendamiento tn soja/ha/año</Label><input type="number" value={form.arrendamiento_tn_ha} onChange={e => setForm({...form, arrendamiento_tn_ha: e.target.value})} placeholder="ej. 9" style={inputStyle} /></div>
             <div>
               <Label>Forma de pago arriendo</Label>

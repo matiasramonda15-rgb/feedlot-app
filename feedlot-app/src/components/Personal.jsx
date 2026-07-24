@@ -143,6 +143,43 @@ export default function Personal({ usuario }) {
     await cargar()
   }
 
+  // Resumen imprimible de todos los pagos de un empleado — pensado para
+  // entregarle una copia, o para tener un registro prolijo (no es una cuenta
+  // corriente como en Contactos, porque acá no hay "deuda": la empresa le
+  // paga a él, en un solo sentido).
+  function imprimirResumenEmpleado(emp, pagosEmp) {
+    const ordenados = [...pagosEmp].sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+    const total = ordenados.reduce((s, p) => s + (p.monto || 0), 0)
+    const filas = ordenados.map(p => `
+      <tr>
+        <td>${p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${p.tipo || '—'}</td>
+        <td>${p.concepto || '—'}</td>
+        <td style="text-align:right;font-family:monospace">$${(p.monto || 0).toLocaleString('es-AR')}</td>
+      </tr>`).join('')
+    const html = `<!DOCTYPE html><html><head><title>Resumen de pagos — ${emp.nombre}</title><style>
+      @page{size:A4;margin:14mm} body{font-family:'IBM Plex Sans',Arial,sans-serif;margin:0;font-size:12px;color:#1A1916}
+      h2{margin:0 0 4px;font-size:17px} p{color:#6B6760;font-size:11px;margin:0 0 16px}
+      table{width:100%;border-collapse:collapse;margin-bottom:16px}
+      th{text-align:left;background:#F7F5F0;padding:8px 10px;font-size:11px;color:#6B6760;text-transform:uppercase;border-bottom:2px solid #E2DDD6}
+      td{padding:7px 10px;border-bottom:1px solid #f0f0f0;font-size:12px}
+      tfoot td{font-weight:700;border-top:2px solid #1A1916;border-bottom:none;padding-top:10px}
+      .no-print{text-align:center;margin-top:16px} @media print{.no-print{display:none}}
+    </style></head><body>
+      <h2>Resumen de pagos — ${emp.nombre}</h2>
+      <p>${emp.rol ? emp.rol + ' · ' : ''}Emitido el ${new Date().toLocaleDateString('es-AR')} · ${ordenados.length} pago${ordenados.length !== 1 ? 's' : ''}</p>
+      <table>
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead>
+        <tbody>${filas || '<tr><td colspan="4" style="text-align:center;color:#9E9A94;padding:20px">Sin pagos registrados.</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="3">Total</td><td style="text-align:right;font-family:monospace">$${total.toLocaleString('es-AR')}</td></tr></tfoot>
+      </table>
+      <div class="no-print"><button onclick="window.print()" style="padding:8px 16px;background:#1A3D6B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">🖨 Imprimir</button></div>
+    </body></html>`
+    const w = window.open('', '_blank')
+    w.document.write(html)
+    w.document.close()
+  }
+
   if (loading) return <Loader />
 
   const empleadoSel = empleados.find(e => String(e.id) === String(empleadoSelId))
@@ -302,10 +339,16 @@ export default function Personal({ usuario }) {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {empleadoSel && (
-                <button onClick={() => toggleActivo(empleadoSel.id, empleadoSel.activo)}
-                  style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                  {empleadoSel.activo ? 'Dar de baja' : 'Reactivar'}
-                </button>
+                <>
+                  <button onClick={() => toggleActivo(empleadoSel.id, empleadoSel.activo)}
+                    style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                    {empleadoSel.activo ? 'Dar de baja' : 'Reactivar'}
+                  </button>
+                  <button onClick={() => imprimirResumenEmpleado(empleadoSel, pagosSel)}
+                    style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+                    🖨 Imprimir resumen
+                  </button>
+                </>
               )}
               <button onClick={() => { setFormPago({...formPago, empleado_id: empleadoSelId}); setShowFormPago(true) }}
                 style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -329,6 +372,29 @@ export default function Personal({ usuario }) {
               ))}
             </div>
           )}
+
+          {/* Desglose mensual del año en curso */}
+          {empleadoSel && (() => {
+            const MESES_L = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+            const porMes = MESES_L.map((m, i) => ({
+              mes: m,
+              monto: pagosSel.filter(p => { const d = new Date(p.fecha + 'T12:00:00'); return d.getFullYear() === anio && d.getMonth() === i }).reduce((s, p) => s + (p.monto || 0), 0),
+            }))
+            const maxMonto = Math.max(...porMes.map(m => m.monto), 1)
+            return (
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem 1rem', marginBottom: '1rem' }}>
+                <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Pagado por mes — {anio}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 70 }}>
+                  {porMes.map((m, i) => (
+                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }} title={`${m.mes}: $${m.monto.toLocaleString('es-AR')}`}>
+                      <div style={{ width: '100%', height: Math.max((m.monto / maxMonto) * 50, m.monto > 0 ? 3 : 0), background: m.monto > 0 ? S.accent : S.border, borderRadius: 2 }} />
+                      <div style={{ fontSize: 9, color: S.hint }}>{m.mes}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {showFormPago && (
             <Card>
