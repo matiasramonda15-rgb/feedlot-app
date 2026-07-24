@@ -332,6 +332,12 @@ export default function Comercial({ usuario }) {
   const chVence7Par = chParalelo.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
   const chFiltradosOf = filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm
   const chFiltradosPar = filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm
+  // El aviso de "vence en 7 días" que se ve DENTRO de la tabla respeta el
+  // filtro elegido (recibidos/emitidos) — el del tab de arriba y la tarjeta
+  // resumen siguen mostrando el total general, sin filtrar, para no perder
+  // de vista una urgencia solo porque se está mirando el otro filtro.
+  const chVence7OfFiltrado = chVence7Of.filter(c => chFiltradosOf.includes(c))
+  const chVence7ParFiltrado = chVence7Par.filter(c => chFiltradosPar.includes(c))
 
   const isChecque = ['cheque', 'e-cheq'].includes(formOf.forma_pago)
 
@@ -587,11 +593,11 @@ export default function Comercial({ usuario }) {
       )}
 
       {tab === 'cheques_oficial' && (
-        <TablaCheques items={chFiltradosOf} chVence7={chVence7Of} filtro={filtroCheque} setFiltro={setFiltroCheque} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+        <TablaCheques items={chFiltradosOf} chVence7={chVence7OfFiltrado} filtro={filtroCheque} setFiltro={setFiltroCheque} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
       {tab === 'cheques_paralelo' && (
-        <TablaCheques items={chFiltradosPar} chVence7={chVence7Par} filtro={filtroChequePar} setFiltro={setFiltroChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+        <TablaCheques items={chFiltradosPar} chVence7={chVence7ParFiltrado} filtro={filtroChequePar} setFiltro={setFiltroChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
 
