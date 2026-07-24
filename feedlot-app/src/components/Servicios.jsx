@@ -367,7 +367,16 @@ export default function Servicios({ usuario, mobile, nav }) {
               librador: s.cliente || null, estado: 'en_cartera', es_paralelo: p.es_paralelo || false,
               es_electronico: p.tipo === 'e-cheq', caja_oficial_id, caja_paralela_id,
             })
-            if (eCheq) alert('El cobro se registró, pero no se pudo guardar el cheque en cartera: ' + eCheq.message)
+            // Antes esto solo avisaba y seguía — el cobro quedaba confirmado
+            // igual, con la caja cargada pero el cheque perdido (pasó dos
+            // veces). Ahora se corta acá: mejor que quede sin confirmar y
+            // haya que reintentar, a que quede una plata en caja sin su
+            // cheque en la cartera.
+            if (eCheq) {
+              alert(`El cheque N° ${p.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheq.message}). El cobro NO se terminó de confirmar — revisá e intentá de nuevo.`)
+              setGuardandoPago(false)
+              return
+            }
           }
         }
         const updateData = {

@@ -1815,7 +1815,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
       }
 
       if (pago.subtipo_cheque === 'propio' && pago.cheque_propio.fecha_vencimiento) {
-        await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: pago.es_paralelo || false, es_electronico: pago.tipo === 'e-cheq', caja_oficial_id: pagoCajaId, pago_compra_id: pagoInsertado?.id })
+        const { error: eCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, monto, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, beneficiario: lote.procedencia || null, estado: 'en_cartera', es_paralelo: pago.es_paralelo || false, es_electronico: pago.tipo === 'e-cheq', caja_oficial_id: pagoCajaId, pago_compra_id: pagoInsertado?.id })
+        // Antes esto no revisaba ningún error — la caja quedaba cargada y el
+        // cheque se perdía sin ningún aviso (pasó con los pagos a Bertea).
+        if (eCheq) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheq.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); setGuardando(false); return }
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         for (const chId of pago.cheque_tercero_ids) {
           await supabase.from('cheques').update({ estado: 'entregado', beneficiario: lote.procedencia || null }).eq('id', parseInt(chId))

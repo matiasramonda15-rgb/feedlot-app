@@ -2206,11 +2206,25 @@ export default function Ventas({ usuario, mobile, nav }) {
                                       // Canje: no sale ni entra plata de ninguna caja — el pago ya queda
                                       // registrado arriba (pagos_ventas), y se compensa solo en Contactos
                                       // contra la otra operación (la que se recibió a cambio).
+                                      let cajaOficialId = null, cajaParalelaId = null
                                       if (!esCanje) {
-                                        if (esParalela) await supabase.from('caja_paralela').insert({ fecha: fp.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId })
-                                        else await supabase.from('caja_oficial').insert({ fecha: fp.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: fp.forma_pago, pago_venta_id: pagoId })
+                                        if (esParalela) {
+                                          const { data: cp, error: eCp } = await supabase.from('caja_paralela').insert({ fecha: fp.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId }).select().single()
+                                          if (eCp) { alert('Error al registrar en Caja 2: ' + eCp.message + ' — el pago no se terminó de confirmar, revisá e intentá de nuevo.'); return }
+                                          cajaParalelaId = cp?.id || null
+                                        } else {
+                                          const { data: co, error: eCo } = await supabase.from('caja_oficial').insert({ fecha: fp.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: fp.forma_pago, pago_venta_id: pagoId }).select().single()
+                                          if (eCo) { alert('Error al registrar en caja oficial: ' + eCo.message + ' — el pago no se terminó de confirmar, revisá e intentá de nuevo.'); return }
+                                          cajaOficialId = co?.id || null
+                                        }
                                       }
-                                      if (esCheque && fp.fecha_vencimiento_cheque) await supabase.from('cheques').insert({ tipo: 'recibido', numero: fp.numero_cheque || null, banco: fp.banco || null, monto, fecha_emision: fp.fecha, fecha_cobro: fp.fecha_cobro_cheque || null, fecha_vencimiento: fp.fecha_vencimiento_cheque, librador: (fp.subtipo_cheque === 'tercero' ? fp.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: fp.forma_pago === 'e-cheq', pago_venta_id: pagoId })
+                                      if (esCheque && fp.fecha_vencimiento_cheque) {
+                                        const { error: eCheq } = await supabase.from('cheques').insert({ tipo: 'recibido', numero: fp.numero_cheque || null, banco: fp.banco || null, monto, fecha_emision: fp.fecha, fecha_cobro: fp.fecha_cobro_cheque || null, fecha_vencimiento: fp.fecha_vencimiento_cheque, librador: (fp.subtipo_cheque === 'tercero' ? fp.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: fp.forma_pago === 'e-cheq', pago_venta_id: pagoId, caja_oficial_id: cajaOficialId, caja_paralela_id: cajaParalelaId })
+                                        // Antes esto no revisaba ningún error — si fallaba, la caja quedaba
+                                        // cargada pero el cheque se perdía sin ningún aviso. Ahora se corta
+                                        // el pago si no se puede guardar el cheque.
+                                        if (eCheq) { alert(`El cheque N° ${fp.numero_cheque || '(sin número)'} no se pudo guardar en la cartera (${eCheq.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
+                                      }
                                     }
                                     // Sumar los pagos de TODO el grupo (si la venta es de varios corrales
                                     // juntos) — antes solo miraba los pagos de un corral puntual, así que

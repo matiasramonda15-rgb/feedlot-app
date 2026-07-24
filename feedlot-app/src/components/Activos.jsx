@@ -159,7 +159,11 @@ export default function Activos({ usuario }) {
             monto, fecha_cobro: formRetiro.fecha, fecha_vencimiento: formRetiro.cheque_vencimiento,
             beneficiario: formRetiro.socio || null, estado: 'en_cartera', caja_oficial_id,
           })
-          if (errCheq) alert('El retiro se guardó, pero no se pudo cargar el cheque en cartera: ' + errCheq.message)
+          if (errCheq) {
+            alert(`El cheque N° ${formRetiro.cheque_numero || '(sin número)'} no se pudo guardar en la cartera (${errCheq.message}). El retiro NO se terminó de guardar — revisá e intentá de nuevo.`)
+            setGuardando(false)
+            return
+          }
         }
       }
     }

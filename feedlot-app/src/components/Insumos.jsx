@@ -622,7 +622,8 @@ export default function Insumos({ usuario }) {
                                   }
                                 }
                                 if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-                                  await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+                                  const { error: eCheqInline } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'en_cartera', caja_oficial_id, registrado_por: usuario?.id })
+                                  if (eCheqInline) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqInline.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
                                 }
                               }
                               const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : c.precio_unitario || (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)

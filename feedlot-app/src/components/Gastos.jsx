@@ -382,7 +382,7 @@ export default function Gastos({ usuario }) {
       // Cheques
       let chequeEmitidoId = null
       if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { data: chE } = await supabase.from('cheques').insert({
+        const { data: chE, error: eChE } = await supabase.from('cheques').insert({
           tipo: 'emitido', numero: pago.cheque_propio.numero || null,
           banco: pago.cheque_propio.banco || null,
           fecha_cobro: form.fecha,
@@ -391,6 +391,9 @@ export default function Gastos({ usuario }) {
           estado: 'en_cartera', caja_oficial_id: pagoCajaId,
           registrado_por: usuario?.id,
         }).select().single()
+        // Antes esto no revisaba el error — si fallaba, la caja quedaba
+        // cargada y el cheque se perdía sin ningún aviso.
+        if (eChE) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eChE.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
         chequeEmitidoId = chE?.id || null
         if (chequeEmitidoId) chequeEmitidoIds.push(chequeEmitidoId)
       } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
