@@ -31,15 +31,22 @@ const TIPO_LABEL = { comprador_hacienda: 'Comprador hacienda', vendedor_hacienda
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const ESTADOS_CHEQUE = { en_cartera: { bg: '#FDF0E0', color: '#7A4500' }, entregado: { bg: '#F0EAFB', color: '#3D1A6B' }, depositado: { bg: '#E8EFF8', color: '#1A3D6B' }, cobrado: { bg: '#E8F4EB', color: '#1E5C2E' }, rechazado: { bg: '#FDF0F0', color: '#7A1A1A' }, anulado: { bg: '#F7F5F0', color: '#6B6760' } }
 
-function TablaCheques({ items, chVence7, filtro, setFiltro, cambiarEstadoCheque, eliminar }) {
+function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFiltroEstado, cambiarEstadoCheque, eliminar }) {
     return (
       <div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {['todos', 'recibidos', 'emitidos'].map(f => (
               <button key={f} onClick={() => setFiltro(f)}
                 style={{ padding: '6px 14px', fontSize: 12, fontWeight: filtro === f ? 600 : 400, background: filtro === f ? S.accent : 'transparent', border: `1px solid ${filtro === f ? S.accent : S.border}`, color: filtro === f ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer' }}>
                 {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+            <div style={{ width: 1, background: S.border, margin: '0 4px' }} />
+            {[['en_cartera', '📥 En cartera'], ['entregado', '📤 Entregados'], ['depositado', '🏦 Depositados'], ['todos', 'Ver todos']].map(([f, l]) => (
+              <button key={f} onClick={() => setFiltroEstado(f)}
+                style={{ padding: '6px 12px', fontSize: 12, fontWeight: filtroEstado === f ? 600 : 400, background: filtroEstado === f ? S.purple : 'transparent', border: `1px solid ${filtroEstado === f ? S.purple : S.border}`, color: filtroEstado === f ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {l}
               </button>
             ))}
           </div>
@@ -142,6 +149,11 @@ export default function Comercial({ usuario }) {
   const [verArchivo, setVerArchivo] = useState(false)
   const [filtroCheque, setFiltroCheque] = useState('todos')
   const [filtroChequePar, setFiltroChequePar] = useState('todos')
+  // Por defecto solo se ven los cheques "en cartera" — los ya entregados o
+  // depositados quedan archivados, para no mezclarlos en la lista del día a
+  // día. Se puede desplegar "Ver todos" para buscar uno viejo.
+  const [filtroEstadoCheque, setFiltroEstadoCheque] = useState('en_cartera')
+  const [filtroEstadoChequePar, setFiltroEstadoChequePar] = useState('en_cartera')
   const [showFormOf, setShowFormOf] = useState(false)
   const [showFormPar, setShowFormPar] = useState(false)
   const [showFormContacto, setShowFormContacto] = useState(false)
@@ -332,8 +344,10 @@ export default function Comercial({ usuario }) {
   const chParaleloEm = chParalelo.filter(c => c.tipo === 'emitido')
   const chVence7Of = chOficial.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
   const chVence7Par = chParalelo.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
-  const chFiltradosOf = filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm
-  const chFiltradosPar = filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm
+  const chFiltradosOf = (filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm)
+    .filter(c => filtroEstadoCheque === 'todos' || c.estado === filtroEstadoCheque)
+  const chFiltradosPar = (filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm)
+    .filter(c => filtroEstadoChequePar === 'todos' || c.estado === filtroEstadoChequePar)
   // El aviso de "vence en 7 días" que se ve DENTRO de la tabla respeta el
   // filtro elegido (recibidos/emitidos) — el del tab de arriba y la tarjeta
   // resumen siguen mostrando el total general, sin filtrar, para no perder
@@ -595,11 +609,11 @@ export default function Comercial({ usuario }) {
       )}
 
       {tab === 'cheques_oficial' && (
-        <TablaCheques items={chFiltradosOf} chVence7={chVence7OfFiltrado} filtro={filtroCheque} setFiltro={setFiltroCheque} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+        <TablaCheques items={chFiltradosOf} chVence7={chVence7OfFiltrado} filtro={filtroCheque} setFiltro={setFiltroCheque} filtroEstado={filtroEstadoCheque} setFiltroEstado={setFiltroEstadoCheque} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
       {tab === 'cheques_paralelo' && (
-        <TablaCheques items={chFiltradosPar} chVence7={chVence7ParFiltrado} filtro={filtroChequePar} setFiltro={setFiltroChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+        <TablaCheques items={chFiltradosPar} chVence7={chVence7ParFiltrado} filtro={filtroChequePar} setFiltro={setFiltroChequePar} filtroEstado={filtroEstadoChequePar} setFiltroEstado={setFiltroEstadoChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
 
