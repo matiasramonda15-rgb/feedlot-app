@@ -52,6 +52,11 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
           </div>
           <div style={{ fontSize: 12, color: S.muted }}>{items.length} cheques</div>
         </div>
+        {(filtroEstado === 'entregado' || filtroEstado === 'depositado') && (
+          <div style={{ fontSize: 11, color: S.hint, marginTop: -8, marginBottom: 12 }}>
+            Se muestran los últimos 35 días desde el vencimiento — tocá "Ver todos" para buscar uno más viejo.
+          </div>
+        )}
 
         {chVence7.length > 0 && (
           <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
@@ -344,10 +349,25 @@ export default function Comercial({ usuario }) {
   const chParaleloEm = chParalelo.filter(c => c.tipo === 'emitido')
   const chVence7Of = chOficial.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
   const chVence7Par = chParalelo.filter(c => c.estado === 'en_cartera' && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
+  const hace35dias = new Date(); hace35dias.setDate(hace35dias.getDate() - 35)
+  // Los cheques ya "entregados"/"depositados" — resueltos, sin nada para
+  // hacer con ellos — dejan de mostrarse a los 35 días de vencidos, para que
+  // esa lista no se haga eterna. "En cartera" y "Ver todos" no tienen este
+  // límite, ya que ahí sí puede hacer falta ver algo viejo puntual.
+  const filtrarViejos = c => {
+    if (filtroEstadoCheque !== 'entregado' && filtroEstadoCheque !== 'depositado') return true
+    return !c.fecha_vencimiento || new Date(c.fecha_vencimiento + 'T12:00:00') >= hace35dias
+  }
+  const filtrarViejosPar = c => {
+    if (filtroEstadoChequePar !== 'entregado' && filtroEstadoChequePar !== 'depositado') return true
+    return !c.fecha_vencimiento || new Date(c.fecha_vencimiento + 'T12:00:00') >= hace35dias
+  }
   const chFiltradosOf = (filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm)
     .filter(c => filtroEstadoCheque === 'todos' || c.estado === filtroEstadoCheque)
+    .filter(filtrarViejos)
   const chFiltradosPar = (filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm)
     .filter(c => filtroEstadoChequePar === 'todos' || c.estado === filtroEstadoChequePar)
+    .filter(filtrarViejosPar)
   // El aviso de "vence en 7 días" que se ve DENTRO de la tabla respeta el
   // filtro elegido (recibidos/emitidos) — el del tab de arriba y la tarjeta
   // resumen siguen mostrando el total general, sin filtrar, para no perder
