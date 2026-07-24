@@ -351,7 +351,23 @@ export default function Presupuesto({ usuario }) {
         <span style={{ color: '#B8A088', fontWeight: 600, fontStyle: 'italic' }}>■ itálica</span> = estimado (promedio), todavía sin confirmar
       </div>
 
-      {vista === 'Resumen' ? (
+      {vista === 'Resumen' ? (() => {
+        const totalIngresoPeriodo = ACTIVIDADES.reduce((s, act) => s + meses.reduce((ss, m) => ss + totalActividadMes(act, 'ingreso', m), 0), 0)
+        const totalEgresoPeriodo = ACTIVIDADES.reduce((s, act) => s + meses.reduce((ss, m) => ss + totalActividadMes(act, 'egreso', m), 0), 0)
+          + meses.reduce((s, m) => s + totalActividadMes('Generales', 'egreso', m), 0)
+        return (<>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1rem' }}>
+          {[
+            { label: 'Total ingresos (período visible)', val: totalIngresoPeriodo, color: S.green },
+            { label: 'Total egresos (período visible)', val: totalEgresoPeriodo, color: S.red },
+            { label: 'Balance del período', val: totalIngresoPeriodo - totalEgresoPeriodo, color: (totalIngresoPeriodo - totalEgresoPeriodo) >= 0 ? S.green : S.red },
+          ].map((c, i) => (
+            <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '.85rem 1rem' }}>
+              <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{c.label}</div>
+              <div style={{ fontSize: 19, fontWeight: 700, fontFamily: 'monospace', color: c.color }}>${Math.round(c.val).toLocaleString('es-AR')}</div>
+            </div>
+          ))}
+        </div>
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto', maxHeight: '75vh' }}>
           <table style={{ borderCollapse: 'collapse', width: '100%' }}>
             <thead>
@@ -396,14 +412,31 @@ export default function Presupuesto({ usuario }) {
             </tbody>
           </table>
         </div>
-      ) : (() => {
+        </>)
+      })() : (() => {
         const datos = datosPorActividad[vista] || { ingresos: {}, egresos: {} }
         const categoriasIngreso = Object.keys(datos.ingresos).sort()
         const categoriasEgreso = Object.keys(datos.egresos).sort()
         const gruposIngreso = agruparCategorias(categoriasIngreso)
         const gruposEgreso = agruparCategorias(categoriasEgreso)
+        // Suma de todo el período visible en pantalla (los meses que se ven
+        // en las columnas), no solo un mes puntual.
+        const totalIngresoPeriodo = meses.reduce((s, m) => s + totalActividadMes(vista, 'ingreso', m), 0)
+        const totalEgresoPeriodo = meses.reduce((s, m) => s + totalActividadMes(vista, 'egreso', m), 0)
         let acumulado = 0
-        return (
+        return (<>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1rem' }}>
+            {[
+              { label: 'Total ingresos (período visible)', val: totalIngresoPeriodo, color: S.green },
+              { label: 'Total egresos (período visible)', val: totalEgresoPeriodo, color: S.red },
+              { label: 'Balance del período', val: totalIngresoPeriodo - totalEgresoPeriodo, color: (totalIngresoPeriodo - totalEgresoPeriodo) >= 0 ? S.green : S.red },
+            ].map((c, i) => (
+              <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '.85rem 1rem' }}>
+                <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{c.label}</div>
+                <div style={{ fontSize: 19, fontWeight: 700, fontFamily: 'monospace', color: c.color }}>${Math.round(c.val).toLocaleString('es-AR')}</div>
+              </div>
+            ))}
+          </div>
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto', maxHeight: '75vh' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%' }}>
               <thead>
@@ -440,7 +473,7 @@ export default function Presupuesto({ usuario }) {
               </tbody>
             </table>
           </div>
-        )
+        </>)
       })()}
     </div>
   )
