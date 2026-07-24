@@ -45,11 +45,22 @@ export async function moverAnimalesEntreCorrales(supabase, { corralOrigen, corra
   }
 
   // Actualizar destino — asignar rol si era libre
-  const { data: dest } = await supabase.from('corrales').select('animales').eq('id', corralDestinoId).single()
+  const { data: dest } = await supabase.from('corrales').select('animales, rol, actualizado').eq('id', corralDestinoId).single()
   const updateDestino = { animales: (dest?.animales || 0) + cantidad }
   if (destinoEsLibre) {
     updateDestino.rol = rolDestino
     updateDestino.sub = rolDestino === 'clasificado' ? subDestino : null
+  }
+  // Si el corral destino queda "clasificado" (ya lo era, o lo pasa a ser
+  // ahora) y el origen tiene una fecha de pesaje más reciente que la que
+  // tenía el destino, esa fecha "viaja" junto con los animales — así el
+  // destino queda con la fecha real del último pesaje, no con una vieja que
+  // le quedó de antes de recibir esta nueva tanda.
+  const rolFinalDestino = destinoEsLibre ? rolDestino : dest?.rol
+  if (rolFinalDestino === 'clasificado' && corralOrigen.actualizado) {
+    const fechaOrigen = new Date(corralOrigen.actualizado)
+    const fechaDestinoActual = dest?.actualizado ? new Date(dest.actualizado) : null
+    if (!fechaDestinoActual || fechaOrigen > fechaDestinoActual) updateDestino.actualizado = corralOrigen.actualizado
   }
   const { error: errDestino } = await supabase.from('corrales').update(updateDestino).eq('id', corralDestinoId)
   if (errDestino) return { error: errDestino }
