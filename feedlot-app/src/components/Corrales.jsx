@@ -105,7 +105,7 @@ export default function Corrales({ usuario, mobile, nav }) {
     setGuardando(true)
     const destinoId = parseInt(movForm.destino_id)
 
-    const { error, loteMovidoAviso, quedoLibre } = await moverAnimalesEntreCorrales(supabase, {
+    const { error, loteMovidoAviso, quedoLibre, warning } = await moverAnimalesEntreCorrales(supabase, {
       corralOrigen: sel, corralDestinoId: destinoId, cantidad,
       motivo: movForm.motivo, rolDestino: movForm.rolDestino, subDestino: movForm.subDestino,
       destinoEsLibre, usuario,
@@ -116,6 +116,7 @@ export default function Corrales({ usuario, mobile, nav }) {
     setMovForm({ destino_id: '', cantidad: '', motivo: '', rolDestino: '', subDestino: '' })
     setVistaPanel('detalle')
     setGuardando(false)
+    if (warning) alert(warning)
     alert(`${cantidad} animales movidos.${quedoLibre ? ' El corral origen quedó libre.' : ' Movimiento parcial: si corresponde a un lote distinto, revisá manualmente en Sanidad/Ingresos a qué corral está asociado.'}${loteMovidoAviso}`)
   }
 
@@ -171,7 +172,7 @@ export default function Corrales({ usuario, mobile, nav }) {
     setGuardando(true)
     const destinoId = parseInt(movForm.destino_id)
 
-    const { error, loteMovidoAviso, quedoLibre } = await moverAnimalesEntreCorrales(supabase, {
+    const { error, loteMovidoAviso, quedoLibre, warning } = await moverAnimalesEntreCorrales(supabase, {
       corralOrigen: sel, corralDestinoId: destinoId, cantidad,
       motivo: movForm.motivo, rolDestino: rolDestinoM, subDestino: subDestinoM, destinoEsLibre, usuario,
     })
@@ -183,6 +184,7 @@ export default function Corrales({ usuario, mobile, nav }) {
     setVistaM('lista')
     setSeleccionado(null)
     setGuardando(false)
+    if (warning) alert(warning)
     alert(`${cantidad} animales movidos.${quedoLibre ? ' El corral origen quedó libre.' : ''}${loteMovidoAviso || ''}`)
   }
 

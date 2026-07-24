@@ -12,11 +12,18 @@
 // animales del corral origen — actualiza también el/los lotes que apuntaban
 // a ese corral, para que sigan encontrándose bien en el resto del sistema.
 //
-// Devuelve { error, loteMovidoAviso, quedoLibre }
+// Devuelve { error, loteMovidoAviso, quedoLibre, warning }
 export async function moverAnimalesEntreCorrales(supabase, { corralOrigen, corralDestinoId, cantidad, motivo, rolDestino, subDestino, destinoEsLibre, usuario }) {
   if (cantidad > (corralOrigen?.animales || 0)) {
     return { error: { message: `No hay suficientes animales. Disponibles: ${corralOrigen?.animales}` } }
   }
+
+  // Guardia de seguridad: el total de animales de TODO el feedlot no tiene
+  // que cambiar por un movimiento entre corrales — es solo trasladar, entran
+  // y salen animales únicamente por Ingresos/Ventas. Se captura el total
+  // ahora, y al final se vuelve a sumar para comparar.
+  const { data: corralesAntesTodos } = await supabase.from('corrales').select('animales')
+  const totalAntesTodos = (corralesAntesTodos || []).reduce((s, c) => s + (c.animales || 0), 0)
 
   const { error: errMov } = await supabase.from('movimientos').insert({
     tipo: 'traslado', corral_origen_id: corralOrigen.id, corral_destino_id: corralDestinoId,
@@ -65,5 +72,12 @@ export async function moverAnimalesEntreCorrales(supabase, { corralOrigen, corra
   const { error: errDestino } = await supabase.from('corrales').update(updateDestino).eq('id', corralDestinoId)
   if (errDestino) return { error: errDestino }
 
-  return { error: null, loteMovidoAviso, quedoLibre: nuevosOrigen === 0 }
+  // Guardia de seguridad: comparar el total antes y después del movimiento.
+  const { data: corralesDespuesTodos } = await supabase.from('corrales').select('animales')
+  const totalDespuesTodos = (corralesDespuesTodos || []).reduce((s, c) => s + (c.animales || 0), 0)
+  const warning = totalDespuesTodos !== totalAntesTodos
+    ? `⚠️ El total de animales del feedlot cambió de ${totalAntesTodos} a ${totalDespuesTodos} (diferencia de ${totalDespuesTodos - totalAntesTodos}) — un movimiento entre corrales no debería sumar ni restar animales del total. Revisá los corrales antes de seguir.`
+    : null
+
+  return { error: null, loteMovidoAviso, quedoLibre: nuevosOrigen === 0, warning }
 }

@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
+import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
 // Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
@@ -95,10 +96,84 @@ export default function Ingresos({ usuario, mobile, nav }) {
 
   // Calculadora
   const [calc, setCalc] = useState({ precio_venta: '', kg_venta: '', desbaste_venta: '8', kg_compra: '', conversion_mf: '6.8', aumento_diario: '1.25', costo_dieta: '220', sanidad_animal: '9500', gastos_fijos_mes: '20000', flete_compra: '', flete_venta: '', comision_compra_pct: '', comision_venta_pct: '', margen_deseado: '15' })
+  const [calcPrecargado, setCalcPrecargado] = useState(false)
 
   const esDueno = usuario?.rol === 'dueno'
 
   useEffect(() => { cargarDatos() }, [])
+
+  // Al abrir la calculadora de precio máximo, se precargan los parámetros
+  // que ya se pueden sacar de los datos reales de los últimos 6 meses
+  // (mismo cálculo que usan Reportes y el Tablero) — el aumento de peso
+  // diario, la conversión, y el precio/peso promedio de venta reciente.
+  // Solo se hace una vez por visita a la pantalla, para no pisar si el
+  // usuario ya edito algo a mano.
+  useEffect(() => {
+    if (tab !== 'calculadora' || calcPrecargado) return
+    setCalcPrecargado(true)
+    ;(async () => {
+      const hace6Meses = new Date(); hace6Meses.setMonth(hace6Meses.getMonth() - 6)
+      const hace12Meses = new Date(); hace12Meses.setMonth(hace12Meses.getMonth() - 12)
+      const hace6MesesISO = hace6Meses.toISOString().split('T')[0]
+      const hace12MesesISO = hace12Meses.toISOString().split('T')[0]
+
+      const [{ data: lotesGdp }, { data: ventasGdp }, { data: raciones }, { data: stock }, { data: formulasMixer },
+             { data: comprasAlim }, { data: comprasSanit }, { data: gastosGen }, { data: lotesIngresados }] = await Promise.all([
+        supabase.from('lotes').select('cantidad, fecha_ingreso, kg_bascula'),
+        supabase.from('ventas').select('cantidad, kg_vivo_total, creado_en, total'),
+        supabase.from('raciones_app').select('kg_total, kg_rollo_extra, solo_rollo, mezclador, tipo_dieta, fecha'),
+        supabase.from('stock_insumos').select('insumo, pct_ms'),
+        supabase.from('formulas_mixer').select('dieta, etapa, ingrediente, kg'),
+        supabase.from('compras_insumos').select('total, fecha').eq('insumo_tipo', 'alimentacion').gte('fecha', hace6MesesISO),
+        supabase.from('compras_insumos').select('total, fecha').eq('insumo_tipo', 'sanitario').gte('fecha', hace12MesesISO),
+        supabase.from('gastos_generales').select('monto, fecha, actividad').gte('fecha', hace6MesesISO).in('actividad', ['Feedlot', 'General']),
+        supabase.from('lotes').select('cantidad').gte('fecha_ingreso', hace12MesesISO),
+      ])
+      const indicadores = calcularIndicadoresFeedlot({ corrales, lotes: lotesGdp, ventas: ventasGdp, raciones, stock, formulasMixer })
+      const prom6 = indicadores.prom6
+      const existenciaGlobal = indicadores.existenciaActualGlobal || 0
+
+      // Precio y peso promedio de venta de los últimos 6 meses, calculado
+      // directo de las ventas reales (no lo trae gdpLogic, que se enfoca en GDP/conversión).
+      const ventasRecientes = (ventasGdp || []).filter(v => new Date(v.creado_en) >= hace6Meses && v.cantidad > 0 && v.kg_vivo_total > 0)
+      const kgVendidoTotal = ventasRecientes.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
+      const montoVendidoTotal = ventasRecientes.reduce((s, v) => s + (v.total || 0), 0)
+      const cabVendidasTotal = ventasRecientes.reduce((s, v) => s + (v.cantidad || 0), 0)
+      const precioVentaProm = kgVendidoTotal > 0 ? montoVendidoTotal / kgVendidoTotal : null
+      const kgVentaProm = cabVendidasTotal > 0 ? kgVendidoTotal / cabVendidasTotal : null
+
+      // Costo real de la dieta $/kg — lo gastado en insumos de alimentación
+      // (últimos 6 meses) dividido los kg de comida que efectivamente se
+      // repartieron en el mixer en ese mismo período (de Alimentación).
+      const kgAlimentoRepartido = (raciones || []).filter(r => r.fecha && new Date(r.fecha) >= hace6Meses).reduce((s, r) => s + (r.kg_total || 0), 0)
+      const gastoAlim = (comprasAlim || []).reduce((s, c) => s + (parseFloat(c.total) || 0), 0)
+      const costoDietaReal = kgAlimentoRepartido > 0 ? gastoAlim / kgAlimentoRepartido : null
+
+      // Sanidad $/animal — lo gastado en insumos sanitarios en los últimos 12
+      // meses (un ciclo), dividido las cabezas que ingresaron en ese mismo
+      // período (aproxima cuánto sale sanidad por cada animal que pasa).
+      const gastoSanit = (comprasSanit || []).reduce((s, c) => s + (parseFloat(c.total) || 0), 0)
+      const cabIngresadas12m = (lotesIngresados || []).reduce((s, l) => s + (l.cantidad || 0), 0)
+      const sanidadAnimalReal = cabIngresadas12m > 0 ? gastoSanit / cabIngresadas12m : null
+
+      // Gastos fijos $/animal/mes — gastos generales del feedlot (Feedlot +
+      // un tercio del "General") en los últimos 6 meses, dividido la
+      // existencia promedio del feedlot en ese mismo período × 6 meses.
+      const gastoFijo = (gastosGen || []).reduce((s, g) => s + (g.actividad === 'General' ? (parseFloat(g.monto) || 0) / 3 : (parseFloat(g.monto) || 0)), 0)
+      const gastosFijosMesReal = existenciaGlobal > 0 ? gastoFijo / (existenciaGlobal * 6) : null
+
+      setCalc(prev => ({
+        ...prev,
+        aumento_diario: prom6?.gdp ? prom6.gdp.toFixed(2) : prev.aumento_diario,
+        conversion_mf: prom6?.conversion ? prom6.conversion.toFixed(2) : prev.conversion_mf,
+        precio_venta: precioVentaProm ? Math.round(precioVentaProm).toString() : prev.precio_venta,
+        kg_venta: kgVentaProm ? Math.round(kgVentaProm).toString() : prev.kg_venta,
+        costo_dieta: costoDietaReal ? Math.round(costoDietaReal).toString() : prev.costo_dieta,
+        sanidad_animal: sanidadAnimalReal ? Math.round(sanidadAnimalReal).toString() : prev.sanidad_animal,
+        gastos_fijos_mes: gastosFijosMesReal ? Math.round(gastosFijosMesReal).toString() : prev.gastos_fijos_mes,
+      }))
+    })()
+  }, [tab, calcPrecargado, corrales])
 
   async function cargarDatos() {
     setLoading(true)
@@ -985,7 +1060,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
       {tab === 'calculadora' && (
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Calculadora de precio máximo de compra</div>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>Ingresá los parámetros estimados y el sistema calcula el precio máximo a pagar por kg en la compra</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>Ingresá los parámetros estimados y el sistema calcula el precio máximo a pagar por kg en la compra. El peso/precio de venta, la conversión, el aumento de peso diario, el costo de la dieta, sanidad y gastos fijos ya vienen precargados con el promedio real de tu feedlot (últimos 6-12 meses) — corregilos si te parece que van a cambiar.</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
