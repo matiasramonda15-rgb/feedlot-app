@@ -147,6 +147,8 @@ export default function Contactos({ usuario }) {
       banco: formContacto.banco || null,
       observaciones: formContacto.observaciones || null,
       actividades: (formContacto.actividades && formContacto.actividades.length > 0) ? formContacto.actividades : null,
+      saldo_apertura: formContacto.saldo_apertura !== '' && formContacto.saldo_apertura != null ? parseFloat(formContacto.saldo_apertura) : null,
+      fecha_corte_saldo: formContacto.fecha_corte_saldo || null,
     }
     if (formContacto.id) {
       // Si se está renombrando (no solo editando otro dato), hay que
@@ -210,6 +212,15 @@ export default function Contactos({ usuario }) {
     const data = calcularSaldo(nombre)
     const movs = []
     const vistos = new Set()
+    if (data.fechaCorte && data.saldoApertura && !esParalela) {
+      movs.push({
+        fecha: data.fechaCorte,
+        tipo: `Saldo de apertura al ${new Date(data.fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')}`,
+        credito: data.saldoApertura < 0 ? -data.saldoApertura : 0,
+        debito: data.saldoApertura > 0 ? data.saldoApertura : 0,
+        esApertura: true,
+      })
+    }
     ;(data.ventas || []).forEach(v => {
       if (v.grupo_venta_id) { if (vistos.has(v.grupo_venta_id)) return; vistos.add(v.grupo_venta_id) }
       const grupo = v.grupo_venta_id ? data.ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
@@ -262,13 +273,23 @@ export default function Contactos({ usuario }) {
       })
     })
     // Gastos generales (silobolsa, flete, taller, etc.) — le debemos al proveedor.
+    // Un mismo gasto puede terminar pagado en parte con Caja 1 y en parte
+    // con Caja 2 (varios cheques/efectivo mezclados) — antes esto se
+    // ignoraba y todo el gasto se mostraba entero en una sola caja según
+    // `es_paralelo` del gasto, dejando a la otra caja con pagos "sueltos"
+    // sin su obligación correspondiente. Ahora se arma la obligación y el
+    // pago de cada caja a partir de lo que efectivamente se pagó ahí.
     ;(data.gastosGenerales || []).forEach(g => {
-      const esParaleloGg = g.es_paralelo || false
-      if (esParalela !== esParaleloGg) return
-      if (g.monto > 0) movs.push({ fecha: g.fecha, tipo: g.descripcion || g.categoria || 'Gasto', credito: 0, debito: g.monto })
-      ;(g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
-        movs.push({ fecha: g.fecha, tipo: 'Pago', credito: parseFloat(p.monto) || 0, debito: 0 })
-      })
+      const pagosValidos = (g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0)
+      const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
+      const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+      const pagadoTotal = pagosValidos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+      const pendienteTotal = (g.monto || 0) - pagadoTotal
+      // La parte todavía sin pagar se asigna a la caja "por defecto" del
+      // gasto (es_paralelo) — ahí es donde se va a terminar de pagar.
+      const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
+      if (debitoEnEstaCaja > 0) movs.push({ fecha: g.fecha, tipo: g.descripcion || g.categoria || 'Gasto', credito: 0, debito: debitoEnEstaCaja })
+      if (pagadoEnEstaCaja > 0) movs.push({ fecha: g.fecha, tipo: 'Pago', credito: pagadoEnEstaCaja, debito: 0 })
     })
     // Órdenes de trabajo con contratista — le debemos al proveedor.
     ;(data.ordenesTrabajo || []).forEach(ot => {
@@ -358,7 +379,7 @@ export default function Contactos({ usuario }) {
         movs.push({ fecha, tipo: 'Cobro', credito: 0, debito: parseFloat(p.monto) || 0 })
       })
     })
-    movs.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+    movs.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
     let saldoAcum = 0
     return movs.map(m => { saldoAcum += (m.credito || 0) - (m.debito || 0); return { ...m, saldoAcum } })
   }
@@ -429,7 +450,31 @@ export default function Contactos({ usuario }) {
   }
 
   function calcularSaldo(nombre) {
-    const data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
+    let data = transaccionesPorNombre[nombre] || { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] }
+    const contactoInfo = contactos.find(c => c.nombre === nombre)
+    const fechaCorte = contactoInfo?.fecha_corte_saldo
+    const saldoApertura = parseFloat(contactoInfo?.saldo_apertura) || 0
+    // Si el contacto tiene un saldo de apertura cargado (para arrancar
+    // limpio después de errores históricos), todo lo anterior a la fecha de
+    // corte se excluye del cálculo — sigue visible en el historial, pero no
+    // suma ni resta del saldo. El saldo de apertura reemplaza a todo eso.
+    if (fechaCorte) {
+      const despues = (arr, campoFecha) => (arr || []).filter(x => x[campoFecha] && x[campoFecha] >= fechaCorte)
+      data = {
+        ...data,
+        ventas: despues(data.ventas, 'creado_en'),
+        lotes: despues(data.lotes, 'fecha_ingreso'),
+        comprasInsumos: despues(data.comprasInsumos, 'fecha'),
+        ventasActivos: despues(data.ventasActivos, 'fecha'),
+        gastosGenerales: despues(data.gastosGenerales, 'fecha'),
+        serviciosTerceros: despues(data.serviciosTerceros, 'fecha'),
+        ordenesTrabajo: despues(data.ordenesTrabajo, 'fecha'),
+        ventasGranos: despues(data.ventasGranos, 'fecha'),
+        fletes: despues(data.fletes, 'fecha'),
+        retirosSocios: despues(data.retirosSocios, 'fecha'),
+        arriendos: despues(data.arriendos, 'fecha_vencimiento'),
+      }
+    }
     // Agrupar ventas multi-corral para no contar de más
     const gruposVistos = new Set()
     const ventasAgrupadas = data.ventas.filter(v => {
@@ -503,10 +548,12 @@ export default function Contactos({ usuario }) {
     // Arriendos de campos — le debemos al propietario hasta que se paguen.
     const totalArriendos = (data.arriendos || []).reduce((s, v) => s + (parseFloat(v.monto_total) || 0), 0)
     const pagadoArriendos = (data.arriendos || []).reduce((s, v) => s + (v.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
-    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales + totalOrdenes + totalFletes + totalCreditos + totalArriendos
+    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales + totalOrdenes + totalFletes + totalCreditos + totalArriendos + (saldoApertura > 0 ? saldoApertura : 0)
     const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoGastosGenerales + pagadoOrdenes + pagadoFletes + pagadoCreditos + pagadoArriendos
     const pendienteCompras = totalCompras - pagadoCompras
-    return { pendienteVentas, pendienteCompras, saldoNeto: pendienteVentas - pendienteCompras, totalVentas, cobradoVentas, totalCompras, pagadoCompras, ...data }
+    const totalVentasConApertura = totalVentas + (saldoApertura < 0 ? -saldoApertura : 0)
+    const pendienteVentasConApertura = pendienteVentas + (saldoApertura < 0 ? -saldoApertura : 0)
+    return { pendienteVentas: pendienteVentasConApertura, pendienteCompras, saldoNeto: pendienteVentasConApertura - pendienteCompras, totalVentas: totalVentasConApertura, cobradoVentas, totalCompras, pagadoCompras, saldoApertura, fechaCorte, ...data }
   }
 
   if (loading) return <Loader />
@@ -618,7 +665,7 @@ export default function Contactos({ usuario }) {
   // Vista ficha de contacto
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
-    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, gastosGenerales: gastosGeneralesCto, serviciosTerceros: serviciosTercerosCto, ordenesTrabajo: ordenesTrabajoCto, ventasGranos: ventasGranosCto, fletes: fletesCto, creditos: creditosCto, retirosSocios: retirosSociosCto, arriendos: arriendosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras } = calcularSaldo(nombre)
+    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, gastosGenerales: gastosGeneralesCto, serviciosTerceros: serviciosTercerosCto, ordenesTrabajo: ordenesTrabajoCto, ventasGranos: ventasGranosCto, fletes: fletesCto, creditos: creditosCto, retirosSocios: retirosSociosCto, arriendos: arriendosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras, saldoApertura, fechaCorte } = calcularSaldo(nombre)
     // Remitos sin precio todavía — se muestran en su propia pestaña, sin sumar al saldo
     const remitosSinPrecio = (comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha }))
     // Insumos ya cargados/pagados pero todavía no retirados físicamente
@@ -831,6 +878,17 @@ export default function Contactos({ usuario }) {
           const esParalela = tabFicha === 'paralela' && puedeVerParalelo
           const movimientos = []
 
+          // Saldo de apertura — si el contacto tiene uno cargado, aparece
+          // como primer movimiento, marcando desde dónde arranca el cálculo.
+          if (fechaCorte && saldoApertura && !esParalela) {
+            movimientos.push({
+              fecha: fechaCorte, fechaVto: null, tipo: 'APERTURA', nro: '—', esApertura: true,
+              descripcion: `Saldo de apertura al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} (lo anterior a esta fecha no suma)`,
+              credito: saldoApertura < 0 ? -saldoApertura : 0,
+              debito: saldoApertura > 0 ? saldoApertura : 0,
+            })
+          }
+
           // Ventas — agrupar multi-corral
           const ventasVistasCtaCte = new Set()
           ventasCto.forEach(v => {
@@ -960,19 +1018,27 @@ export default function Contactos({ usuario }) {
             })
           })
 
-          // Gastos generales (silobolsa, flete, taller, etc.) — le debemos al proveedor.
+          // Gastos generales (silobolsa, flete, taller, etc.) — le debemos al
+          // proveedor. Un mismo gasto puede quedar pagado en parte con Caja 1
+          // y en parte con Caja 2 — se arma la obligación y el pago de cada
+          // caja a partir de lo que efectivamente se pagó ahí, no del flag
+          // general del gasto (que antes dejaba a la otra caja con pagos
+          // sueltos, sin la obligación que los explicaba).
           ;(gastosGeneralesCto || []).forEach(g => {
-            const esParaleloGg = g.es_paralelo || false
-            if (esParalela && !esParaleloGg) return
-            if (!esParalela && esParaleloGg) return
-            if (g.monto > 0) {
+            const pagosValidos = (g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0)
+            const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
+            const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+            const pagadoTotal = pagosValidos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+            const pendienteTotal = (g.monto || 0) - pagadoTotal
+            const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
+            if (debitoEnEstaCaja > 0) {
               movimientos.push({
-                fecha: g.fecha, fechaVto: null, tipo: esParaleloGg ? 'PAR' : 'GASTO', nro: g.id,
+                fecha: g.fecha, fechaVto: null, tipo: esParalela ? 'PAR' : 'GASTO', nro: g.id,
                 descripcion: `${g.descripcion || g.categoria || 'Gasto'} · ${g.actividad || ''}`,
-                credito: 0, debito: g.monto, factura: g.comprobante,
+                credito: 0, debito: debitoEnEstaCaja, factura: g.comprobante,
               })
             }
-            ;(g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
+            pagosEnEstaCaja.forEach((p, pi) => {
               movimientos.push({
                 fecha: g.fecha, fechaVto: null, tipo: 'PAGO', nro: `gg${g.id}-${pi}`,
                 descripcion: `Pago ${g.descripcion || g.categoria || 'gasto'} · ${p.tipo || ''}`,
@@ -1135,7 +1201,7 @@ export default function Contactos({ usuario }) {
           })
 
           // Ordenar por fecha
-          movimientos.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+          movimientos.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
 
           // Calcular saldo acumulado
           let saldoAcum = 0
@@ -1292,6 +1358,23 @@ export default function Contactos({ usuario }) {
               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Observaciones</div>
               <input type="text" value={formContacto.observaciones || ''} onChange={e => setFormContacto({...formContacto, observaciones: e.target.value})}
                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+            </div>
+            <div style={{ gridColumn: '1/-1', background: S.amberLight, border: `1px solid ${S.amber}`, borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.amber, marginBottom: 8 }}>Saldo de apertura (opcional) — para arrancar limpio si el histórico calculado no coincide con la realidad</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Saldo en Caja 1 a la fecha de corte $</div>
+                  <input type="number" value={formContacto.saldo_apertura ?? ''} onChange={e => setFormContacto({...formContacto, saldo_apertura: e.target.value})}
+                    placeholder="positivo = le debemos · negativo = nos debe"
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Fecha de corte</div>
+                  <input type="date" value={formContacto.fecha_corte_saldo || ''} onChange={e => setFormContacto({...formContacto, fecha_corte_saldo: e.target.value})}
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: S.amber, marginTop: 6 }}>Con la fecha de corte cargada, todo lo anterior deja de sumar al saldo (sigue visible en el historial) y este número pasa a ser el punto de partida.</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
