@@ -2399,7 +2399,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
           <tbody>
             {ventas.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay ventas registradas.</td></tr>}
             {ventas.map(v => {
-              const cobrado = (v.pagos_detalle || []).filter(p => p.tipo !== 'canje').reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+              const cobrado = (v.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
               const pendiente = (v.total || 0) - cobrado
               return (
               <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
@@ -2477,7 +2477,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       {cobrandoId && (() => {
         const venta = ventas.find(v => v.id === cobrandoId)
         if (!venta) return null
-        const cobrado = (venta.pagos_detalle || []).filter(p => p.tipo !== 'canje').reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+        const cobrado = (venta.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
         const pendiente = (venta.total || 0) - cobrado
         const totalCargado = formCobro.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
         return (
