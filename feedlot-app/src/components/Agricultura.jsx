@@ -1021,7 +1021,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(),
-    descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '',
+    descripcion: '', proveedor: '', es_propia: false, lote_ids: [], superficie_ha: '',
     productos: [], gastos_propios: [],
     costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false,
   })
@@ -1045,8 +1045,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   }, [])
 
   const campo = campos.find(c => c.id === parseInt(form.campo_id))
-  const loteSeleccionado = campo?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
-  const superficieBase = loteSeleccionado?.superficie_ha || campo?.superficie_ha || 0
+  const lotesSeleccionados = (form.lote_ids || []).map(id => campo?.lotes_agricolas?.find(l => l.id === parseInt(id))).filter(Boolean)
+  const superficieBase = lotesSeleccionados.length > 0 ? lotesSeleccionados.reduce((s, l) => s + (parseFloat(l.superficie_ha) || 0), 0) : (campo?.superficie_ha || 0)
   const superficie = parseFloat(form.superficie_ha) || superficieBase || 0
 
   function addProducto() { setForm(prev => ({...prev, productos: [...prev.productos, { id: '', dosis: '', unidad: '', total: '' }]})) }
@@ -1063,7 +1063,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     const costoNum = parseFloat(form.costo_total) || totalGastosPropios || null
     const costoHa = costoNum && superficie ? Math.round(costoNum / superficie) : (parseFloat(form.costo_ha) || null)
 
-    // Gastos propios → caja como egreso interno
+    // Gastos propios → caja como egreso interno (uno solo, para todos los
+    // lotes juntos — no tiene sentido repetir el mismo gasto por cada uno)
     let caja_oficial_id = null
     if (form.es_propia && totalGastosPropios > 0) {
       const desc = `${form.tipo} — ${campo?.nombre || ''}`
@@ -1072,7 +1073,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       caja_oficial_id = co?.id || null
     }
 
-    // Descontar stock de productos usados — de forma atómica en la base
+    // Descontar stock de productos usados — con la superficie TOTAL (todos
+    // los lotes juntos), de forma atómica en la base. La dosis es por
+    // hectárea, así que da lo mismo hacerlo de una vez que lote por lote.
     for (const p of form.productos) {
       if (!p.id || !p.dosis || !superficie) continue
       const usado = parseFloat(p.dosis) * superficie
@@ -1080,37 +1083,51 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       if (errStock) { alert('Error al descontar stock: ' + errStock.message); setGuardando(false); return }
     }
 
-    const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
-      campo_id: parseInt(form.campo_id), campana_id: parseInt(form.campana_id) || null,
-      lote_id: form.lote_id ? parseInt(form.lote_id) : null,
-      superficie_ha_real: superficie || null,
-      tipo: form.tipo, fecha: form.fecha, descripcion: form.descripcion || null,
-      proveedor: form.proveedor || null, es_propia: form.es_propia,
-      productos: form.productos.length ? form.productos : null,
-      gastos_propios: form.gastos_propios.length ? form.gastos_propios : null,
-      costo_total: costoNum, costo_ha: costoHa, estado: 'completado',
-      observaciones: form.observaciones || null,
-      estado_pago: form.es_propia ? 'pagado' : 'pendiente',
-      caja_oficial_id, registrado_por: usuario?.id,
-    }).select().single()
-    if (errOrden) { alert('Error al guardar la orden: ' + errOrden.message); setGuardando(false); return }
+    // Si se eligieron varios lotes, se crea UNA orden por cada uno (mismos
+    // productos, proveedor, fecha, etc.) — cada una con su propia superficie
+    // real y su parte proporcional del costo, para que la rentabilidad por
+    // lote quede bien discriminada. Si no se eligió ningún lote, es una sola
+    // orden para "todo el campo", como antes.
+    const lotesAProcesar = lotesSeleccionados.length > 0 ? lotesSeleccionados : [null]
+    const ordenesInsertadas = []
+    for (const lote of lotesAProcesar) {
+      const superficieLote = lote ? (parseFloat(lote.superficie_ha) || 0) : superficie
+      const costoLote = lote && superficie > 0 ? Math.round((costoNum || 0) * (superficieLote / superficie)) : costoNum
+      const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
+        campo_id: parseInt(form.campo_id), campana_id: parseInt(form.campana_id) || null,
+        lote_id: lote ? lote.id : null,
+        superficie_ha_real: superficieLote || null,
+        tipo: form.tipo, fecha: form.fecha, descripcion: form.descripcion || null,
+        proveedor: form.proveedor || null, es_propia: form.es_propia,
+        productos: form.productos.length ? form.productos : null,
+        gastos_propios: form.gastos_propios.length ? form.gastos_propios : null,
+        costo_total: costoLote, costo_ha: costoHa, estado: 'completado',
+        observaciones: form.observaciones || null,
+        estado_pago: form.es_propia ? 'pagado' : 'pendiente',
+        caja_oficial_id, registrado_por: usuario?.id,
+      }).select().single()
+      if (errOrden) { alert('Error al guardar la orden' + (lote ? ` del lote ${lote.numero}` : '') + ': ' + errOrden.message); setGuardando(false); return }
+      ordenesInsertadas.push(ordenInsertada)
+    }
+    const ordenInsertada = ordenesInsertadas[0]
 
     // Si el trabajo propio se hizo con maquinaria/personal de Servicios, se
     // refleja como un "servicio interno" — mismo monto, sin caja de por medio
     // (no sale ni entra plata real, es la misma empresa). Así Agricultura ve
     // el costo real de la labor, y Servicios recibe el crédito por el uso de
     // su maquinaria, sin inflar el resultado consolidado de la empresa (se
-    // cancelan solos al sumar todas las actividades).
+    // cancelan solos al sumar todas las actividades). Uno solo por el total,
+    // aunque hayan sido varios lotes.
     if (form.es_propia && form.usa_maquinaria_servicios && costoNum > 0) {
       const campoNombre = campos.find(c => c.id === parseInt(form.campo_id))?.nombre || ''
       const campanaNombre = campanas.find(c => c.id === parseInt(form.campana_id))?.nombre || ''
       const { error: errServ } = await supabase.from('servicios_terceros').insert({
         cliente: 'Agricultura (interno)', labor: form.tipo, fecha: form.fecha,
         hectareas: superficie || null, precio_ha: costoHa, total: costoNum,
-        campo: campoNombre, nro_lote: form.lote_id ? String(form.lote_id) : null,
+        campo: campoNombre, nro_lote: lotesSeleccionados.length ? lotesSeleccionados.map(l => l.numero).join(', ') : null,
         cultivo: null, campania: campanaNombre, tipo_servicio: 'tercero',
         estado_pago: 'pagado', estado: 'completado',
-        observaciones: `Trabajo propio para Agricultura — orden #${ordenInsertada?.id}`,
+        observaciones: `Trabajo propio para Agricultura — orden${ordenesInsertadas.length > 1 ? 's' : ''} #${ordenesInsertadas.map(o => o?.id).join(', #')}`,
         registrado_por: usuario?.id,
       })
       if (errServ) alert('La orden se guardó, pero no se pudo reflejar el ingreso en Servicios: ' + errServ.message)
@@ -1119,7 +1136,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (!mobile) await cargar() // en el celular, la recarga se hace recién al volver al inicio (ver más abajo), para no remontar el formulario y perder la confirmación
     setShowForm(false)
     if (mobile) setOrdenGuardadaM(ordenInsertada)
-    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(), descripcion: '', proveedor: '', es_propia: false, lote_id: '', superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false })
+    setForm({ campo_id: '', campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(), descripcion: '', proveedor: '', es_propia: false, lote_ids: [], superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false })
     setGuardando(false)
   }
 
@@ -1269,14 +1286,26 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           </div>
           {lotesDelCampo.length > 0 && (
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Lote</div>
-              <select value={form.lote_id} onChange={e => setForm({...form, lote_id: e.target.value})}
-                style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
-                <option value="">— Todo el campo —</option>
-                {lotesDelCampo.map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
-              </select>
-              {loteSeleccionado?.imagen_url && (
-                <img src={loteSeleccionado.imagen_url} alt={`Mapa lote ${loteSeleccionado.numero}`}
+              <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Lote(s) — dejá vacío para todo el campo</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {lotesDelCampo.map(l => {
+                  const marcado = (form.lote_ids || []).includes(String(l.id))
+                  return (
+                    <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: CM.surface, border: `1px solid ${marcado ? CM.blue : CM.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 14, color: CM.text, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={marcado} onChange={e => {
+                        const ids = e.target.checked ? [...(form.lote_ids || []), String(l.id)] : (form.lote_ids || []).filter(x => x !== String(l.id))
+                        setForm({...form, lote_ids: ids})
+                      }} />
+                      Lote {l.numero} ({l.superficie_ha} ha)
+                    </label>
+                  )
+                })}
+              </div>
+              {lotesSeleccionados.length > 1 && (
+                <div style={{ fontSize: 11, color: CM.blue, marginTop: 4 }}>Se va a crear una orden por cada lote elegido, con los mismos productos y datos — {lotesSeleccionados.length} lotes, {superficieBase.toLocaleString('es-AR')} ha en total.</div>
+              )}
+              {lotesSeleccionados.length === 1 && lotesSeleccionados[0]?.imagen_url && (
+                <img src={lotesSeleccionados[0].imagen_url} alt={`Mapa lote ${lotesSeleccionados[0].numero}`}
                   style={{ width: '100%', borderRadius: 8, marginTop: 8, border: `1px solid ${CM.border}` }} />
               )}
               {campo?.imagen_url && (
@@ -1481,14 +1510,27 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           {showForm && (
             <Card titulo="Nueva orden de trabajo">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
-                <div><Label>Campo *</Label><select value={form.campo_id} onChange={e => { const c = campos.find(x => x.id === parseInt(e.target.value)); setForm({...form, campo_id: e.target.value, lote_id: '', superficie_ha: c?.superficie_ha ? String(c.superficie_ha) : ''}) }} style={inputStyle}><option value="">— Seleccioná —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.superficie_ha} ha)</option>)}</select></div>
-                <div><Label>Lote</Label>
-                  <select value={form.lote_id} onChange={e => { const l = campo?.lotes_agricolas?.find(x => x.id === parseInt(e.target.value)); setForm({...form, lote_id: e.target.value, superficie_ha: l?.superficie_ha ? String(l.superficie_ha) : (campo?.superficie_ha ? String(campo.superficie_ha) : '')}) }} style={inputStyle}>
-                    <option value="">— Todo el campo —</option>
-                    {(campo?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero} ({l.superficie_ha} ha)</option>)}
-                  </select>
-                  {loteSeleccionado?.imagen_url && (
-                    <img src={loteSeleccionado.imagen_url} alt={`Mapa lote ${loteSeleccionado.numero}`}
+                <div><Label>Campo *</Label><select value={form.campo_id} onChange={e => { const c = campos.find(x => x.id === parseInt(e.target.value)); setForm({...form, campo_id: e.target.value, lote_ids: [], superficie_ha: c?.superficie_ha ? String(c.superficie_ha) : ''}) }} style={inputStyle}><option value="">— Seleccioná —</option>{campos.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.superficie_ha} ha)</option>)}</select></div>
+                <div style={{ gridColumn: 'span 2' }}><Label>Lote(s) — dejá vacío para todo el campo</Label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {(campo?.lotes_agricolas || []).map(l => {
+                      const marcado = (form.lote_ids || []).includes(String(l.id))
+                      return (
+                        <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: marcado ? S.accentLight : S.surface, border: `1px solid ${marcado ? S.accent : S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, color: S.text, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={marcado} onChange={e => {
+                            const ids = e.target.checked ? [...(form.lote_ids || []), String(l.id)] : (form.lote_ids || []).filter(x => x !== String(l.id))
+                            setForm({...form, lote_ids: ids})
+                          }} />
+                          Lote {l.numero} ({l.superficie_ha} ha)
+                        </label>
+                      )
+                    })}
+                  </div>
+                  {lotesSeleccionados.length > 1 && (
+                    <div style={{ fontSize: 11, color: S.accent, marginTop: 4 }}>Se va a crear una orden por cada lote elegido, con los mismos productos y datos — {lotesSeleccionados.length} lotes, {superficieBase.toLocaleString('es-AR')} ha en total.</div>
+                  )}
+                  {lotesSeleccionados.length === 1 && lotesSeleccionados[0]?.imagen_url && (
+                    <img src={lotesSeleccionados[0].imagen_url} alt={`Mapa lote ${lotesSeleccionados[0].numero}`}
                       style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 8, marginTop: 8, border: `1px solid ${S.border}` }} />
                   )}
                   {campo?.imagen_url && (
