@@ -1114,13 +1114,20 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const campoDeEsteItem = campos.find(c => c.id === campoId)
       const superficieItem = lote ? (parseFloat(lote.superficie_ha) || 0) : (parseFloat(campoDeEsteItem?.superficie_ha) || 0)
       const costoItem = superficie > 0 ? Math.round((costoNum || 0) * (superficieItem / superficie)) : costoNum
+      // La dosis es por hectárea (no cambia), pero el "total" de cada
+      // producto sí tiene que recalcularse con la superficie DE ESTE lote —
+      // antes se copiaba el total ya calculado para la superficie combinada
+      // de todos los lotes juntos, y quedaba mal en cada orden individual.
+      const productosDeEsteItem = form.productos.map(p => ({
+        ...p, total: p.dosis ? (parseFloat(p.dosis) * superficieItem).toFixed(4).replace(/\.?0+$/, '') : p.total,
+      }))
       const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
         campo_id: campoId, campana_id: parseInt(form.campana_id) || null,
         lote_id: lote ? lote.id : null,
         superficie_ha_real: superficieItem || null,
         tipo: form.tipo, fecha: form.fecha, descripcion: form.descripcion || null,
         proveedor: form.proveedor || null, es_propia: form.es_propia,
-        productos: form.productos.length ? form.productos : null,
+        productos: productosDeEsteItem.length ? productosDeEsteItem : null,
         gastos_propios: form.gastos_propios.length ? form.gastos_propios : null,
         costo_total: costoItem, costo_ha: costoHa, estado: 'completado',
         observaciones: form.observaciones || null,
