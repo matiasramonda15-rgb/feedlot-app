@@ -360,6 +360,17 @@ export default function Sanidad({ usuario, mobile, nav }) {
           })
           if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); return }
         }
+        // Si se marcó "mover a enfermería", los animales tienen que salir
+        // físicamente del corral de origen y sumarse al de enfermería — antes
+        // esto no pasaba, solo quedaba el registro sin mover el número real.
+        if (corrEnf) {
+          const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', corrales[i].id).single()
+          const { error: errOrigen } = await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', corrales[i].id)
+          if (errOrigen) { alert('Error al descontar del corral de origen: ' + errOrigen.message); return }
+          const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnf.id).single()
+          const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnf.id)
+          if (errDestino) { alert('Error al sumar al corral de enfermería: ' + errDestino.message); return }
+        }
       }
     }
     await cargarDatos()
@@ -460,15 +471,28 @@ export default function Sanidad({ usuario, mobile, nav }) {
           // Un registro de enfermería POR ANIMAL, aunque se hayan cargado
           // juntos — así cada uno se puede dar de alta por separado más
           // adelante, aunque hayan arrancado el tratamiento el mismo día.
+          const corrEnfM = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
           const mlPorAnimalTotal = productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null
           for (let a = 0; a < cant; a++) {
             const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
-              corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
+              corral_origen_id: st.id, corral_id: corrEnfM?.id || null, descripcion: enf.desc, diagnostico: enf.diag,
               tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
               cantidad_ml: mlPorAnimalTotal,
               estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
             })
             if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); setGuardandoM(false); return }
+          }
+          // Si se marcó "mover a enfermería", los animales tienen que salir
+          // físicamente del corral de origen y sumarse al de enfermería —
+          // antes esto no pasaba, quedaba solo el registro sin mover el
+          // número real de cada corral.
+          if (corrEnfM) {
+            const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', st.id).single()
+            const { error: errOrigen } = await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', st.id)
+            if (errOrigen) { alert('Error al descontar del corral de origen: ' + errOrigen.message); setGuardandoM(false); return }
+            const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfM.id).single()
+            const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfM.id)
+            if (errDestino) { alert('Error al sumar al corral de enfermería: ' + errDestino.message); setGuardandoM(false); return }
           }
         }
       }
@@ -511,6 +535,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
       { key: 'revision', label: 'Revision' },
       { key: 'evento', label: 'Evento' },
       { key: 'historial', label: '📋 Historial' },
+      { key: 'enfermeria', label: '🏥 Enfermería' },
       { key: 'mortalidad', label: '💀 Muerte' },
       { key: 'stock', label: '📦 Stock' },
     ]
@@ -899,38 +924,50 @@ export default function Sanidad({ usuario, mobile, nav }) {
                         setGuardandoM(true)
                         try {
                           for (const enf of enfs) {
+                            const cant = enf.cantidad || 1
                             const productosValidos = (enf.productos || []).filter(p => p.prod)
                             if (productosValidos.length === 0) {
                               const { error } = await supabase.from('eventos_sanitarios').insert({
                                 tipo: 'revision', corral_id: revStateM[i]?.id, producto: null,
                                 observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-                                cantidad_animales: 1,
+                                cantidad_animales: cant,
                                 registrado_por: usuario?.id,
                               })
                               if (error) throw error
                             } else {
                               for (const p of productosValidos) {
-                                const mlNum = parseFloat(p.ml) || 0
+                                const mlNum = (parseFloat(p.ml) || 0) * cant
                                 if (p.prod_id && mlNum > 0) {
                                   await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
                                 }
                                 const { error } = await supabase.from('eventos_sanitarios').insert({
                                   tipo: 'revision', corral_id: revStateM[i]?.id, producto: p.prod,
-                                  observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-                                  cantidad_animales: 1, cantidad_ml: mlNum || null,
+                                  observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
+                                  cantidad_animales: cant, cantidad_ml: mlNum || null,
                                   registrado_por: usuario?.id,
                                 })
                                 if (error) throw error
                               }
                             }
-                            const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
-                              corral_origen_id: revStateM[i]?.id, descripcion: enf.desc, diagnostico: enf.diag,
-                              tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
-                              cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
-                              estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
-                              registrado_por: usuario?.id,
-                            })
-                            if (errEnf) throw errEnf
+                            const corrEnfBtn = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
+                            for (let a = 0; a < cant; a++) {
+                              const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
+                                corral_origen_id: revStateM[i]?.id, corral_id: corrEnfBtn?.id || null, descripcion: enf.desc, diagnostico: enf.diag,
+                                tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
+                                cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
+                                estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
+                                registrado_por: usuario?.id,
+                              })
+                              if (errEnf) throw errEnf
+                            }
+                            // Si se marcó "mover a enfermería", los animales tienen que salir
+                            // físicamente del corral de origen y sumarse al de enfermería.
+                            if (corrEnfBtn) {
+                              const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', revStateM[i]?.id).single()
+                              await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', revStateM[i]?.id)
+                              const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfBtn.id).single()
+                              await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfBtn.id)
+                            }
                           }
                           const n = [...revStateM]
                           n[i] = {...n[i], confirmado: true}
@@ -1033,6 +1070,58 @@ export default function Sanidad({ usuario, mobile, nav }) {
             </>
           )}
 
+          {pantSan === 'enfermeria' && (() => {
+            const activos = enfermeria.filter(e => e.estado === 'en_enfermeria' || e.estado === 'en tratamiento').slice(0, 30)
+            const hace48hs = new Date(); hace48hs.setHours(hace48hs.getHours() - 48)
+            async function deshacerEnfermeria(e) {
+              const corralDestino = corrales.find(c => c.id === e.corral_id)
+              const avisoMovimiento = e.estado === 'en_enfermeria' && corralDestino
+                ? `\n\nEste animal se había movido físicamente a ${corralDestino.numero ? 'C-' + corralDestino.numero : 'enfermería'} — al deshacer, vuelve a sumarse en el corral de origen y se resta de ahí.`
+                : ''
+              if (!confirm(`¿Deshacer este registro de "${e.diagnostico || 'tratamiento'}"?${avisoMovimiento}`)) return
+              if (e.estado === 'en_enfermeria' && e.corral_id && e.corral_origen_id) {
+                const { data: destinoFresh } = await supabase.from('corrales').select('animales').eq('id', e.corral_id).single()
+                await supabase.from('corrales').update({ animales: Math.max(0, (destinoFresh?.animales || 0) - 1) }).eq('id', e.corral_id)
+                const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', e.corral_origen_id).single()
+                await supabase.from('corrales').update({ animales: (origenFresh?.animales || 0) + 1 }).eq('id', e.corral_origen_id)
+              }
+              const { error } = await supabase.from('animales_enfermeria').delete().eq('id', e.id)
+              if (error) { alert('Error al deshacer: ' + error.message); return }
+              await cargarDatos()
+            }
+            return (
+              <div>
+                <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem' }}>Animales en tratamiento o en enfermería — se puede deshacer un registro cargado por error hasta 48hs después (si se había movido de corral, el movimiento también se revierte).</div>
+                {activos.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: CM.muted, fontSize: 13 }}>No hay animales en tratamiento ni en enfermería.</div>}
+                {activos.map(e => {
+                  const puedeDeshacer = new Date(e.creado_en) >= hace48hs
+                  const corralDestino = corrales.find(c => c.id === e.corral_id)
+                  return (
+                    <div key={e.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.6rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{e.diagnostico || '—'}</div>
+                        <div style={{ fontSize: 11, color: CM.muted, fontFamily: CM.mono }}>{new Date(e.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: CM.muted }}>
+                        Origen: {e.corrales?.numero ? `C-${e.corrales.numero}` : '—'}
+                        {e.estado === 'en_enfermeria' ? ` · Movido a ${corralDestino?.numero ? 'C-' + corralDestino.numero : 'enfermería'}` : ' · En tratamiento (sin mover)'}
+                      </div>
+                      {e.tratamiento && <div style={{ fontSize: 12, color: CM.text, marginTop: 4 }}>{e.tratamiento}</div>}
+                      {e.descripcion && <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>{e.descripcion}</div>}
+                      {puedeDeshacer && (
+                        <div style={{ textAlign: 'right', marginTop: 6 }}>
+                          <button onClick={() => deshacerEnfermeria(e)} style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid #EF4444`, color: '#EF4444', borderRadius: 5, cursor: 'pointer' }}>
+                            🗑 Deshacer
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
           {pantSan === 'mortalidad' && (
             <>
               <div style={{ background: '#3D1A1A', border: '1px solid #F09595', borderRadius: 12, padding: '1rem', marginBottom: '.85rem', fontSize: 12, color: '#F09595', lineHeight: 1.6 }}>
@@ -1095,11 +1184,24 @@ export default function Sanidad({ usuario, mobile, nav }) {
           {pantSan === 'historial' && (() => {
             const TIPO_LABELS_M = { ingreso: 'Ingreso', revision: 'Revision', tratamiento: 'Tratamiento', segunda_dosis: '2da dosis', mortalidad: 'Mortandad' }
             const eventosM = eventos.filter(e => e.producto !== 'Sin novedad').slice(0, 30)
+            const hace48hs = new Date(); hace48hs.setHours(hace48hs.getHours() - 48)
+            async function deshacerEvento(e) {
+              if (!confirm(`¿Deshacer este evento? "${e.producto || TIPO_LABELS_M[e.tipo]}" en ${e.corrales?.numero ? 'C-' + e.corrales.numero : 'todos'}.\n\nSi tenía dosis, se devuelve al stock. Esto NO deshace un movimiento a enfermería — si el animal se movió, avisá para corregirlo aparte.`)) return
+              if (e.producto && e.cantidad_ml) {
+                const { data: item } = await supabase.from('stock_sanitario').select('id, cantidad_ml').ilike('producto', e.producto).limit(1).maybeSingle()
+                if (item) await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + parseFloat(e.cantidad_ml) }).eq('id', item.id)
+              }
+              const { error } = await supabase.from('eventos_sanitarios').delete().eq('id', e.id)
+              if (error) { alert('Error al deshacer: ' + error.message); return }
+              await cargarDatos()
+            }
             return (
               <div>
-                <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem' }}>Últimos {eventosM.length} eventos registrados — para confirmar que quedó todo guardado.</div>
+                <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem' }}>Últimos {eventosM.length} eventos registrados — para confirmar que quedó todo guardado. Se puede deshacer un evento cargado por error hasta 48hs después.</div>
                 {eventosM.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: CM.muted, fontSize: 13 }}>Todavía no hay eventos registrados.</div>}
-                {eventosM.map(e => (
+                {eventosM.map(e => {
+                  const puedeDeshacer = new Date(e.creado_en) >= hace48hs
+                  return (
                   <div key={e.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.6rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>{e.producto || TIPO_LABELS_M[e.tipo] || e.tipo}</div>
@@ -1111,9 +1213,17 @@ export default function Sanidad({ usuario, mobile, nav }) {
                       {e.cantidad_animales ? ` · ${e.cantidad_animales} anim.` : ''}
                     </div>
                     {e.observaciones && <div style={{ fontSize: 12, color: CM.text, marginTop: 4 }}>{e.observaciones}</div>}
-                    <div style={{ fontSize: 10, color: CM.muted, marginTop: 4 }}>Registrado por {e.usuarios?.nombre || '—'}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                      <div style={{ fontSize: 10, color: CM.muted }}>Registrado por {e.usuarios?.nombre || '—'}</div>
+                      {puedeDeshacer && (
+                        <button onClick={() => deshacerEvento(e)} style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${CM.red || '#EF4444'}`, color: CM.red || '#EF4444', borderRadius: 5, cursor: 'pointer' }}>
+                          🗑 Deshacer
+                        </button>
+                      )}
+                    </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )
           })()}
