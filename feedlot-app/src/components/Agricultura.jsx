@@ -1125,6 +1125,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
   const [ordenesParaCombinar, setOrdenesParaCombinar] = useState([])
+  const [showLiquidar, setShowLiquidar] = useState(false)
+  const [proveedorLiquidar, setProveedorLiquidar] = useState('')
+  const [tarifaLiquidar, setTarifaLiquidar] = useState('')
+  const [guardandoLiquidar, setGuardandoLiquidar] = useState(false)
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
@@ -1206,7 +1210,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     for (const { campoId, lote } of lotesAProcesar) {
       const campoDeEsteItem = campos.find(c => c.id === campoId)
       const superficieItem = lote ? (parseFloat(lote.superficie_ha) || 0) : (parseFloat(campoDeEsteItem?.superficie_ha) || 0)
-      const costoItem = superficie > 0 ? Math.round((costoNum || 0) * (superficieItem / superficie)) : costoNum
+      const costoItem = costoNum == null ? null : (superficie > 0 ? Math.round(costoNum * (superficieItem / superficie)) : costoNum)
       // La dosis es por hectárea (no cambia), pero el "total" de cada
       // producto sí tiene que recalcularse con la superficie DE ESTE lote —
       // antes se copiaba el total ya calculado para la superficie combinada
@@ -1774,6 +1778,98 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           )}
 
           {/* Historial */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+            <button onClick={() => setShowLiquidar(true)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 6, cursor: 'pointer' }}>
+              💰 Liquidar servicio por proveedor
+            </button>
+          </div>
+          {showLiquidar && (() => {
+            const ordenesSinPrecio = ordenes.filter(o => !o.es_propia && o.proveedor && !o.costo_total)
+            const proveedoresConPendientes = [...new Set(ordenesSinPrecio.map(o => o.proveedor))]
+            const ordenesDelProveedor = proveedorLiquidar ? ordenesSinPrecio.filter(o => o.proveedor === proveedorLiquidar) : []
+            const totalHa = ordenesDelProveedor.reduce((s, o) => s + (parseFloat(o.superficie_ha_real) || 0), 0)
+            const tarifaNum = parseFloat(tarifaLiquidar) || 0
+            const totalGeneral = totalHa * tarifaNum
+            return (
+              <Card>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>💰 Liquidar servicio por proveedor</div>
+                <div style={{ fontSize: 12, color: S.muted, marginBottom: '1rem' }}>Juntá todas las órdenes sin precio de un contratista, poné una tarifa $/ha y calculá el total de una — antes de arreglar el pago.</div>
+                <div style={{ marginBottom: 12 }}>
+                  <Label>Proveedor</Label>
+                  <select value={proveedorLiquidar} onChange={e => setProveedorLiquidar(e.target.value)} style={inputStyle}>
+                    <option value="">— Seleccioná —</option>
+                    {proveedoresConPendientes.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  {proveedoresConPendientes.length === 0 && <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>No hay órdenes sin precio de ningún contratista por ahora.</div>}
+                </div>
+                {proveedorLiquidar && (
+                  <>
+                    <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead><tr style={{ background: S.bg }}>
+                          {['Fecha', 'Campo', 'Lote', 'Tipo', 'Hectáreas'].map(h => (
+                            <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {ordenesDelProveedor.map(o => {
+                            const campoO = campos.find(c => c.id === o.campo_id)
+                            const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+                            return (
+                              <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+                                <td style={{ padding: '7px 10px' }}>{campoO?.nombre || '—'}</td>
+                                <td style={{ padding: '7px 10px' }}>{loteO ? `Lote ${loteO.numero}` : 'Todo el campo'}</td>
+                                <td style={{ padding: '7px 10px' }}>{o.tipo}</td>
+                                <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{(parseFloat(o.superficie_ha_real) || 0).toLocaleString('es-AR')} ha</td>
+                              </tr>
+                            )
+                          })}
+                          <tr style={{ background: S.bg, fontWeight: 700 }}>
+                            <td colSpan={4} style={{ padding: '8px 10px' }}>TOTAL — {ordenesDelProveedor.length} orden{ordenesDelProveedor.length !== 1 ? 'es' : ''}</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{totalHa.toLocaleString('es-AR')} ha</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: 12 }}>
+                      <div>
+                        <Label>Tarifa $/ha acordada</Label>
+                        <input type="number" value={tarifaLiquidar} onChange={e => setTarifaLiquidar(e.target.value)} placeholder="ej. 12000" style={inputStyle} />
+                      </div>
+                      <div>
+                        <Label>Total a pagar</Label>
+                        <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, background: S.bg, fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: S.red }}>
+                          ${totalGeneral.toLocaleString('es-AR')}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button disabled={!proveedorLiquidar || !tarifaNum || guardandoLiquidar} onClick={async () => {
+                    setGuardandoLiquidar(true)
+                    for (const o of ordenesDelProveedor) {
+                      const costoOrden = Math.round((parseFloat(o.superficie_ha_real) || 0) * tarifaNum)
+                      const { error } = await supabase.from('ordenes_trabajo').update({ costo_ha: tarifaNum, costo_total: costoOrden }).eq('id', o.id)
+                      if (error) { alert('Error al actualizar la orden #' + o.id + ': ' + error.message); setGuardandoLiquidar(false); return }
+                    }
+                    setGuardandoLiquidar(false)
+                    setShowLiquidar(false)
+                    setProveedorLiquidar('')
+                    setTarifaLiquidar('')
+                    await cargar()
+                    alert(`Listo — se aplicó $${tarifaNum.toLocaleString('es-AR')}/ha a las ${ordenesDelProveedor.length} órdenes de ${proveedorLiquidar}. Ya podés registrar el pago desde cada una, o seleccionarlas para pagarlas juntas.`)
+                  }} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.amber, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: (!proveedorLiquidar || !tarifaNum) ? 0.5 : 1 }}>
+                    {guardandoLiquidar ? 'Aplicando...' : '✓ Aplicar tarifa a todas'}
+                  </button>
+                  <button onClick={() => { setShowLiquidar(false); setProveedorLiquidar(''); setTarifaLiquidar('') }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                </div>
+              </Card>
+            )
+          })()}
           {ordenesParaCombinar.length >= 2 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: S.purpleLight, border: `1px solid ${S.purple}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: S.purple, fontWeight: 600 }}>{ordenesParaCombinar.length} órdenes marcadas para combinar</span>
