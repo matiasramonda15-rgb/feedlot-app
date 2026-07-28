@@ -4009,41 +4009,27 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {i.retirado === false && retirandoId !== i.id && (
-                        <button onClick={() => { setRetirandoId(i.id); setCantidadRetiro('') }}
-                          style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
-                          📦 Registrar retiro
+                      {i.retirado === false && (
+                        <button onClick={async () => {
+                          const yaRetirado = i.cantidad_retirada || 0
+                          const restante = (i.cantidad || 0) - yaRetirado
+                          const respuesta = prompt(`¿Cuánto ${i.insumo_nombre || 'del insumo'} se retiró ahora?\n\nQueda pendiente: ${restante.toLocaleString('es-AR')}\n\nEscribí la cantidad (podés retirar menos que el total, o todo):`, '')
+                          if (respuesta === null) return
+                          const cant = parseFloat(respuesta.replace(',', '.'))
+                          if (!cant || cant <= 0) { alert('No se registró nada — hay que escribir un número mayor a 0.'); return }
+                          if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} por retirar de esta compra.`); return }
+                          if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} de ${i.insumo_nombre || 'insumo'} al stock.\n\n¿Es correcto?`)) return
+                          const item = stock.find(s => s.id === i.insumo_id)
+                          if (item) await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + cant, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                          const nuevaCantidadRetirada = yaRetirado + cant
+                          // Si con este retiro se completa toda la cantidad comprada, se
+                          // marca como retirado del todo; si no, sigue "en partes".
+                          const completo = nuevaCantidadRetirada >= (i.cantidad || 0) - 0.01
+                          await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', i.id)
+                          await cargar()
+                        }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
+                          📦 {(i.cantidad_retirada || 0) > 0 ? `${(i.cantidad_retirada || 0).toLocaleString('es-AR')}/${(i.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}
                         </button>
-                      )}
-                      {i.retirado === false && retirandoId === i.id && (
-                        <>
-                          <input type="number" value={cantidadRetiro} onChange={e => setCantidadRetiro(e.target.value)} autoFocus
-                            placeholder={`máx ${((i.cantidad || 0) - (i.cantidad_retirada || 0)).toLocaleString('es-AR')}`}
-                            style={{ width: 90, padding: '3px 6px', fontSize: 11, border: '1px solid #9F8ED4', borderRadius: 5, fontFamily: 'monospace' }} />
-                          <button onClick={async () => {
-                            const cant = parseFloat(cantidadRetiro) || 0
-                            const yaRetirado = i.cantidad_retirada || 0
-                            const restante = (i.cantidad || 0) - yaRetirado
-                            if (cant <= 0) { alert('Ingresá una cantidad'); return }
-                            if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} por retirar de esta compra`); return }
-                            const item = stock.find(s => s.id === i.insumo_id)
-                            if (item) await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + cant, actualizado_en: new Date().toISOString() }).eq('id', item.id)
-                            const nuevaCantidadRetirada = yaRetirado + cant
-                            // Si con este retiro se completa toda la cantidad comprada, se
-                            // marca como retirado del todo; si no, sigue "en partes".
-                            const completo = nuevaCantidadRetirada >= (i.cantidad || 0) - 0.01
-                            await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', i.id)
-                            setRetirandoId(null)
-                            setCantidadRetiro('')
-                            await cargar()
-                          }} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
-                            ✓
-                          </button>
-                          <button onClick={() => { setRetirandoId(null); setCantidadRetiro('') }}
-                            style={{ padding: '3px 6px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
-                            ✕
-                          </button>
-                        </>
                       )}
                       {i.pagos_detalle && i.estado_pago === 'pagado' && (
                         <button onClick={() => generarReciboAgro(i, i.pagos_detalle, stock)}

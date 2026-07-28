@@ -459,37 +459,27 @@ export default function Insumos({ usuario }) {
                     </td>
                     <td style={{ padding: '9px 12px' }}>
                       {c.retirado === false ? (
-                        retirandoId === c.id ? (
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                            <input type="number" value={cantidadRetiro} onChange={e => setCantidadRetiro(e.target.value)} autoFocus
-                              placeholder={`máx ${((c.cantidad || 0) - (c.cantidad_retirada || 0)).toLocaleString('es-AR')}`}
-                              style={{ width: 90, padding: '3px 6px', fontSize: 11, border: '1px solid #9F8ED4', borderRadius: 5, fontFamily: 'monospace' }} />
-                            <button onClick={async () => {
-                              const cant = parseFloat(cantidadRetiro) || 0
-                              const yaRetirado = c.cantidad_retirada || 0
-                              const restante = (c.cantidad || 0) - yaRetirado
-                              if (cant <= 0) { alert('Ingresá una cantidad'); return }
-                              if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} por retirar`); return }
-                              const listaStock = c.insumo_tipo === 'alimentacion' ? stockAlim : stockSan
-                              const item = listaStock.find(s => s.id === c.insumo_id)
-                              const tablaStock = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
-                              const colStock = c.insumo_tipo === 'alimentacion' ? 'cantidad_kg' : 'cantidad_ml'
-                              if (item) await supabase.from(tablaStock).update({ [colStock]: (item[colStock] || 0) + cant, actualizado_en: new Date().toISOString() }).eq('id', item.id)
-                              const nuevaCantidadRetirada = yaRetirado + cant
-                              const completo = nuevaCantidadRetirada >= (c.cantidad || 0) - 0.01
-                              await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', c.id)
-                              setRetirandoId(null); setCantidadRetiro('')
-                              await cargar()
-                            }} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>✓</button>
-                            <button onClick={() => { setRetirandoId(null); setCantidadRetiro('') }}
-                              style={{ padding: '3px 6px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => { setRetirandoId(c.id); setCantidadRetiro('') }}
-                            style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                            📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}
-                          </button>
-                        )
+                        <button onClick={async () => {
+                          const yaRetirado = c.cantidad_retirada || 0
+                          const restante = (c.cantidad || 0) - yaRetirado
+                          const respuesta = prompt(`¿Cuánto ${c.insumo_nombre || 'del insumo'} se retiró ahora?\n\nQueda pendiente: ${restante.toLocaleString('es-AR')} ${c.unidad || ''}\n\nEscribí la cantidad (podés retirar menos que el total, o todo):`, '')
+                          if (respuesta === null) return // canceló el prompt
+                          const cant = parseFloat(respuesta.replace(',', '.'))
+                          if (!cant || cant <= 0) { alert('No se registró nada — hay que escribir un número mayor a 0.'); return }
+                          if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} ${c.unidad || ''} por retirar — no se puede retirar más de eso.`); return }
+                          if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} ${c.unidad || ''} de ${c.insumo_nombre || 'insumo'} al stock.\n\n¿Es correcto?`)) return
+                          const listaStock = c.insumo_tipo === 'alimentacion' ? stockAlim : stockSan
+                          const item = listaStock.find(s => s.id === c.insumo_id)
+                          const tablaStock = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
+                          const colStock = c.insumo_tipo === 'alimentacion' ? 'cantidad_kg' : 'cantidad_ml'
+                          if (item) await supabase.from(tablaStock).update({ [colStock]: (item[colStock] || 0) + cant, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                          const nuevaCantidadRetirada = yaRetirado + cant
+                          const completo = nuevaCantidadRetirada >= (c.cantidad || 0) - 0.01
+                          await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', c.id)
+                          await cargar()
+                        }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}
+                        </button>
                       ) : <span style={{ color: S.hint, fontSize: 11 }}>—</span>}
                     </td>
                     <td style={{ padding: '8px 12px' }}>
