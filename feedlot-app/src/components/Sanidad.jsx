@@ -353,7 +353,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
             corral_id: corrEnf?.id || null,
             descripcion: enf.desc,
             diagnostico: enf.diag,
-            tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+            tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
             cantidad_ml: mlPorAnimalTotal,
             estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
             registrado_por: usuario?.id,
@@ -464,7 +464,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
           for (let a = 0; a < cant; a++) {
             const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
               corral_origen_id: st.id, descripcion: enf.desc, diagnostico: enf.diag,
-              tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+              tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
               cantidad_ml: mlPorAnimalTotal,
               estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
             })
@@ -925,7 +925,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                             }
                             const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
                               corral_origen_id: revStateM[i]?.id, descripcion: enf.desc, diagnostico: enf.diag,
-                              tratamiento: productosValidos.map(p => p.prod).join(', ') || null,
+                              tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
                               cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
                               estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
                               registrado_por: usuario?.id,
@@ -1627,14 +1627,14 @@ export default function Sanidad({ usuario, mobile, nav }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {['Fecha','Tipo','Corral','Producto','Animales','Observaciones','Por'].map(h => (
+                  {['Fecha','Tipo','Corral','Producto','Cantidad','Animales','Observaciones','Por'].map(h => (
                     <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {lista.length === 0 && (
-                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay eventos registrados.</td></tr>
+                  <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay eventos registrados.</td></tr>
                 )}
                 {lista.map(e => {
                   const tc = TIPO_COLORS[e.tipo] || { bg: S.bg, color: S.muted, label: e.tipo }
@@ -1644,6 +1644,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                       <td style={{ padding: '9px 12px' }}><Badge bg={tc.bg} color={tc.color}>{tc.label}</Badge></td>
                       <td style={{ padding: '9px 12px' }}>{e.corrales?.numero ? `C-${e.corrales.numero}` : 'Todos'}</td>
                       <td style={{ padding: '9px 12px' }}>{e.producto}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{e.cantidad_ml ? `${e.cantidad_ml} ml` : '—'}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{e.cantidad_animales}</td>
                       <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.observaciones || '—'}</td>
                       <td style={{ padding: '9px 12px', fontSize: 12 }}>{e.usuarios?.nombre || '—'}</td>

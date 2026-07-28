@@ -776,6 +776,98 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   win.document.close()
 }
 
+// Orden combinada "para la aplicadora" — junta varias órdenes (mismos
+// productos/dosis, distintos lotes) en una sola hoja, con la superficie
+// total y el total de cada producto sumado — así el operario carga la
+// máquina una sola vez, aunque en el sistema haya quedado registrado por
+// lote separado para que la rentabilidad de cada uno sea correcta.
+function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
+  const primera = ordenes[0]
+  const fecha = primera.fecha ? new Date(primera.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+  const superficieTotal = ordenes.reduce((s, o) => s + (parseFloat(o.superficie_ha_real) || 0), 0)
+
+  const filasLotes = ordenes.map(o => {
+    const campo = camposLista.find(c => c.id === o.campo_id)
+    const lote = campo?.lotes_agricolas?.find(l => l.id === o.lote_id)
+    return `<tr>
+      <td style="padding:6px 12px;border-bottom:1px solid #ddd;">${campo?.nombre || '—'}</td>
+      <td style="padding:6px 12px;border-bottom:1px solid #ddd;">${lote ? 'Lote ' + lote.numero : 'Todo el campo'}</td>
+      <td style="padding:6px 12px;border-bottom:1px solid #ddd;text-align:right;font-weight:600;">${(parseFloat(o.superficie_ha_real) || 0).toLocaleString('es-AR')} ha</td>
+    </tr>`
+  }).join('')
+
+  // Suma el total de cada producto (mismo id) entre todas las órdenes elegidas
+  const productosMapa = {}
+  ordenes.forEach(o => (o.productos || []).forEach(p => {
+    if (!productosMapa[p.id]) productosMapa[p.id] = { ...p, total: 0 }
+    productosMapa[p.id].total += parseFloat(p.total) || 0
+  }))
+  const filasProductos = Object.values(productosMapa).map(p => {
+    const item = stockAgro.find(s => String(s.id) === String(p.id))
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${p.dosis || '—'} ${p.unidad || item?.unidad || ''}/ha</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:right;font-weight:700;color:#1E5C2E;">${p.total.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ${item?.unidad || p.unidad || ''}</td>
+    </tr>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Orden de aplicación combinada — ${primera.tipo}</title>
+  <style>
+    @media print { .no-print { display: none; } body { margin: 0; } }
+    body { font-family: Arial, sans-serif; background: #fff; margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="position:fixed;top:10px;right:10px;z-index:999;">
+    <button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;margin-right:8px;">🖨️ Imprimir / Guardar PDF</button>
+    <button onclick="window.close()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:#fff;border:1px solid #ccc;border-radius:6px;">Cerrar</button>
+  </div>
+  <div style="max-width:680px;margin:0 auto;padding:24px;">
+    <div style="background:#3D1A6B;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">
+      <div style="font-size:18px;font-weight:900;letter-spacing:1px;margin-bottom:4px;">ORDEN DE APLICACIÓN — ${primera.tipo.toUpperCase()}</div>
+      <div style="font-size:13px;opacity:0.9;">Carga combinada · ${ordenes.length} lotes · ${superficieTotal.toLocaleString('es-AR')} ha total · ${fecha}</div>
+    </div>
+    <div style="border:2px solid #3D1A6B;border-top:none;border-radius:0 0 8px 8px;padding:20px;">
+      ${primera.proveedor ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Operario / Equipo:</span> <strong>${primera.proveedor}</strong></div>` : ''}
+      <div style="font-size:11px;font-weight:700;color:#3D1A6B;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Lotes incluidos en esta carga</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
+        <thead><tr style="background:#f0eafb;">
+          <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #3D1A6B;font-size:11px;text-transform:uppercase;color:#3D1A6B;">Campo</th>
+          <th style="padding:6px 12px;text-align:left;border-bottom:2px solid #3D1A6B;font-size:11px;text-transform:uppercase;color:#3D1A6B;">Lote</th>
+          <th style="padding:6px 12px;text-align:right;border-bottom:2px solid #3D1A6B;font-size:11px;text-transform:uppercase;color:#3D1A6B;">Superficie</th>
+        </tr></thead>
+        <tbody>${filasLotes}
+          <tr style="background:#f0eafb;font-weight:700;"><td colspan="2" style="padding:8px 12px;">TOTAL</td><td style="padding:8px 12px;text-align:right;">${superficieTotal.toLocaleString('es-AR')} ha</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos a cargar en la máquina (total combinado)</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:#f0f7f1;">
+          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Producto</th>
+          <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Tipo</th>
+          <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Dosis/ha</th>
+          <th style="padding:8px 12px;text-align:right;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Total a cargar</th>
+        </tr></thead>
+        <tbody>${filasProductos}</tbody>
+      </table>
+      <div style="margin-top:16px;padding:10px 14px;background:#FDF0E0;border-radius:6px;font-size:12px;color:#7A4500;">Esta hoja es solo para la carga de la máquina — en el sistema, este trabajo queda registrado por separado en cada lote, con su propio costo y superficie.</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#aaa;margin-top:8px;">RAMONDA HNOS S.A. · Pedro Barciocco 1221 · TEL: 3574-442656</div>
+  </div>
+</body>
+</html>`
+
+  const win = window.open('', '_blank')
+  win.document.write(html)
+  win.document.close()
+}
+
 function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro) {
   // Acepta una sola orden (uso normal desde la fila individual) o un array de
   // varias (cuando se pagan juntas, aunque sean de campos distintos) — en ese
@@ -1032,6 +1124,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // Pagos
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
+  const [ordenesParaCombinar, setOrdenesParaCombinar] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
@@ -1681,20 +1774,40 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           )}
 
           {/* Historial */}
+          {ordenesParaCombinar.length >= 2 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: S.purpleLight, border: `1px solid ${S.purple}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: S.purple, fontWeight: 600 }}>{ordenesParaCombinar.length} órdenes marcadas para combinar</span>
+              <button onClick={() => {
+                const elegidas = ordenesFiltradas.filter(o => ordenesParaCombinar.includes(o.id))
+                const tiposDistintos = new Set(elegidas.map(o => o.tipo))
+                if (tiposDistintos.size > 1) { alert('Las órdenes elegidas son de tipos distintos (' + [...tiposDistintos].join(', ') + ') — para la hoja de aplicación combinada tienen que ser todas del mismo tipo de trabajo.'); return }
+                generarOrdenAplicacionCombinada(elegidas, campos, stockAgro)
+              }} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: S.purple, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                🖨 Imprimir orden combinada para el aplicador
+              </button>
+              <button onClick={() => setOrdenesParaCombinar([])} style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.purple}`, color: S.purple, borderRadius: 6, cursor: 'pointer' }}>
+                Cancelar selección
+              </button>
+            </div>
+          )}
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
               <thead><tr style={{ background: S.bg }}>
-                {['Fecha', 'Campo', 'Lote', 'Tipo', 'Ejecución', 'Operario', 'Productos', 'Costo', 'Estado pago', ''].map(h => (
+                {['', 'Fecha', 'Campo', 'Lote', 'Tipo', 'Ejecución', 'Operario', 'Productos', 'Costo', 'Estado pago', ''].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
-                {ordenesFiltradas.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay órdenes registradas.</td></tr>}
+                {ordenesFiltradas.length === 0 && <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay órdenes registradas.</td></tr>}
                 {ordenesFiltradas.map(o => {
                   const campoO = campos.find(c => c.id === o.campo_id)
                   const loteO = (o.campos?.lotes_agricolas || campoO?.lotes_agricolas || []).find(l => l.id === o.lote_id)
                   return (
                     <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                      <td style={{ padding: '8px 12px' }}>
+                        <input type="checkbox" checked={ordenesParaCombinar.includes(o.id)}
+                          onChange={e => setOrdenesParaCombinar(e.target.checked ? [...ordenesParaCombinar, o.id] : ordenesParaCombinar.filter(id => id !== o.id))} />
+                      </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
                       <td style={{ padding: '8px 12px', fontWeight: 600 }}>{campoO?.nombre || '—'}</td>
                       <td style={{ padding: '8px 12px', color: S.muted }}>
