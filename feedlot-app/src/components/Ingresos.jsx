@@ -1412,6 +1412,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   const [chequesCartera, setChequesCartera] = useState([])
   // (PAGO_INIT ahora viene del módulo compartido ./PagoFormulario)
   const [registrandoPago, setRegistrandoPago] = useState(null)
+  const [verPagosArchivado, setVerPagosArchivado] = useState(null)
   const [formPago, setFormPago] = useState({ fecha: hoyLocal(), pagos: [{...PAGO_INIT}] })
   const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [guardando, setGuardando] = useState(false)
@@ -1827,7 +1828,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     }
 
     const totalPagado = pagosActuales.reduce((s, p) => s + (p.monto || 0), 0) + totalPagos
-    const nuevoEstado = totalLote && totalPagado > 0 && totalPagado >= totalLote * 0.99 ? 'pagado' : 'pendiente'
+    // Antes se usaba un 1% de tolerancia — con compras grandes eso son cientos
+    // de miles de pesos "perdonados" sin querer. Ahora es un monto fijo chico
+    // (solo para diferencias de redondeo reales, no saldos de verdad).
+    const nuevoEstado = totalLote && totalPagado > 0 && totalPagado >= totalLote - 1000 ? 'pagado' : 'pendiente'
 
     // Marcar vencimientos seleccionados como pagados en cuotas_pago
     const selKeys = formPago.vencimientos_sel || []
@@ -1851,14 +1855,23 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     await cargarPagos()
   }
 
-  async function eliminarPago(p, l, pagos, total) {
-    if (!confirm('¿Eliminar este pago? Se eliminará de la caja y se revertirán los cheques usados.')) return
+  async function eliminarPago(p, l, pagos, total, motivo) {
+    // "error": fue un error de carga — el cheque de tercero vuelve a estar
+    // sano en la cartera, se puede volver a usar.
+    // "rechazado": el cheque rebotó (sin fondos) — no vuelve a la cartera
+    // como si estuviera bien, queda marcado RECHAZADO (no se puede reusar).
+    const esRechazo = motivo === 'rechazado'
+    if (esRechazo && !confirm('¿Confirmás que el cheque fue RECHAZADO por el banco (sin fondos, etc.)? Va a quedar marcado como rechazado en la cartera, y esta compra vuelve a figurar con el saldo pendiente para pagarla con otra cosa.')) return
+    if (!esRechazo && !confirm('¿Eliminar este pago? Se eliminará de la caja y se revertirán los cheques usados (vuelven a la cartera como si nada hubiera pasado).')) return
     const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).eq('tipo', 'emitido').maybeSingle()
-    if (chAsoc) await supabase.from('cheques').delete().eq('id', chAsoc.id)
+    if (chAsoc) {
+      if (esRechazo) await supabase.from('cheques').update({ estado: 'rechazado' }).eq('id', chAsoc.id)
+      else await supabase.from('cheques').delete().eq('id', chAsoc.id)
+    }
     if (p.descripcion && p.descripcion.includes('Entregado a')) {
       const matchNums = [...p.descripcion.matchAll(/#(\S+)/g)].map(m => m[1]).filter(n => n !== 's/n')
       for (const num of matchNums) {
-        await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('numero', num).eq('estado', 'entregado')
+        await supabase.from('cheques').update(esRechazo ? { estado: 'rechazado' } : { estado: 'en_cartera', beneficiario: null }).eq('numero', num).eq('estado', 'entregado')
       }
     }
     await supabase.from('caja_oficial').delete().eq('pago_compra_id', p.id)
@@ -1867,7 +1880,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
     if (errDelPago) { alert('Error al eliminar el pago: ' + errDelPago.message); return }
     const pagosRest = pagos.filter(pp => pp.id !== p.id)
     const totalPagadoRest = pagosRest.reduce((s, pp) => s + (pp.monto || 0), 0)
-    const nuevoEstado = total && totalPagadoRest > 0 && totalPagadoRest >= total * 0.99 ? 'pagado' : 'pendiente'
+    const nuevoEstado = total && totalPagadoRest > 0 && totalPagadoRest >= total - 1000 ? 'pagado' : 'pendiente'
     await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', l.id)
     await cargarDatos()
     await cargarPagos()
@@ -2062,7 +2075,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                     <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                       <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
-                                      <button onClick={() => eliminarPago(p, l, pagos, total)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                      <button onClick={() => eliminarPago(p, l, pagos, total, 'error')} title="Deshacer (fue un error de carga)" style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                      {(p.forma_pago === 'cheque' || p.forma_pago === 'e-cheq') && (
+                                        <button onClick={() => eliminarPago(p, l, pagos, total, 'rechazado')} title="El cheque fue rechazado por el banco (sin fondos)" style={{ background: 'none', border: 'none', color: S.amber, cursor: 'pointer', fontSize: 13 }}>⚠️</button>
+                                      )}
                                     </div>
                                   </div>
                                 ))}
@@ -2230,8 +2246,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                   : archFiltrados.map(l => {
                     const totalArch = totalLoteCalc(l)
                     const pagosArch = pagosMap[l.id] || []
+                    const expandido = verPagosArchivado === l.id
                     return (
-                      <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>
+                      <div key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px' }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>C-{corrales.find(c => c.id === l.corral_cuarentena_id)?.numero || l.corral_cuarentena_id} · {l.procedencia || '—'}</div>
                           <div style={{ fontSize: 11, color: S.muted }}>{l.fecha_ingreso ? new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR') : ''} · {l.cantidad} animales</div>
@@ -2240,9 +2258,34 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                           <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.red, fontSize: 14 }}>
                             {totalArch > 0 ? `-$${totalArch.toLocaleString('es-AR')}` : '—'}
                           </div>
+                          <button onClick={() => setVerPagosArchivado(expandido ? null : l.id)}
+                            style={{ padding: '5px 10px', fontSize: 11, background: expandido ? S.amberLight : S.surface, border: `1px solid ${expandido ? S.amber : S.border}`, color: expandido ? S.amber : S.text, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            {expandido ? '▲ Cerrar' : '💳 Ver / corregir pagos'}
+                          </button>
                           <button onClick={() => generarReciboCompra(l, pagosArch, corrales)}
                             style={{ padding: '5px 10px', fontSize: 11, background: S.surface, border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>🖨️ Recibo</button>
                         </div>
+                      </div>
+                      {expandido && (
+                        <div style={{ padding: '0 14px 14px' }}>
+                          <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>Pagos realizados — tocá ✕ para deshacer uno si hubo un error (se revierte la caja y el cheque)</div>
+                          {pagosArch.length === 0 && <div style={{ fontSize: 13, color: S.hint }}>Sin pagos registrados.</div>}
+                          <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
+                            {pagosArch.map((p, pi) => (
+                              <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosArch.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                                <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                  <button onClick={() => eliminarPago(p, l, pagosArch, totalArch, 'error')} title="Deshacer (fue un error de carga)" style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                  {(p.forma_pago === 'cheque' || p.forma_pago === 'e-cheq') && (
+                                    <button onClick={() => eliminarPago(p, l, pagosArch, totalArch, 'rechazado')} title="El cheque fue rechazado por el banco (sin fondos)" style={{ background: 'none', border: 'none', color: S.amber, cursor: 'pointer', fontSize: 13 }}>⚠️</button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       </div>
                     )
                   })

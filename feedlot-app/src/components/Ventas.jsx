@@ -2233,7 +2233,10 @@ export default function Ventas({ usuario, mobile, nav }) {
                                     const idsGrupo = grupo.map(vv => vv.id)
                                     const { data: todosPageos } = await supabase.from('pagos_ventas').select('monto').in('venta_id', idsGrupo)
                                     const totalPag = (todosPageos || []).reduce((s, p) => s + (p.monto || 0), 0)
-                                    if (totalPag >= totalRealGrupo * 0.99) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
+                                    // Antes se toleraba un 1% del total — con ventas grandes eso
+                                    // puede ser un saldo real de cientos de miles de pesos, no un
+                                    // simple redondeo. Ahora es un monto fijo chico.
+                                    if (totalPag >= totalRealGrupo - 1000) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
                                     setRegistrandoPago(null)
                                     await cargar()
                                   }} style={{ flex: 1, padding: '4px', fontSize: 11, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 4, cursor: 'pointer' }}>
