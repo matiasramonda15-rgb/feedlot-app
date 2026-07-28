@@ -675,7 +675,7 @@ export default function Contactos({ usuario }) {
     // Remitos sin precio todavía — se muestran en su propia pestaña, sin sumar al saldo
     const remitosSinPrecio = (comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha }))
     // Insumos ya cargados/pagados pero todavía no retirados físicamente
-    const insumosPendRetiro = (comprasInsumosCto || []).filter(ci => ci.retirado === false).map(ci => ({ id: ci.id, tabla: 'compras_insumos', insumoId: ci.insumo_id, tipo: ci.insumo_tipo, desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha, total: ci.total }))
+    const insumosPendRetiro = (comprasInsumosCto || []).filter(ci => ci.retirado === false).map(ci => ({ id: ci.id, tabla: 'compras_insumos', insumoId: ci.insumo_id, tipo: ci.insumo_tipo, desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, cantidadRetirada: ci.cantidad_retirada || 0, unidad: ci.unidad, fecha: ci.fecha, total: ci.total }))
     // Gastos generales pendientes de pago (ej. un silobolsa retirado, esperando
     // la factura para saber el monto y pagarlo/compensarlo)
     const gastosPendientes = (gastosGeneralesCto || []).filter(g => g.estado_pago === 'pendiente').map(g => ({ desc: g.descripcion || g.categoria || 'Gasto', fecha: g.fecha, monto: g.monto, actividad: g.actividad }))
@@ -827,26 +827,37 @@ export default function Contactos({ usuario }) {
                 <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
                   Ya están cargados (y puede que ya pagados), pero todavía no se retiraron físicamente — por eso no suman al stock hasta que los marques como retirados.
                 </div>
-                {insumosPendRetiro.map((r, i) => (
+                {insumosPendRetiro.map((r, i) => {
+                  const restante = (r.cant || 0) - (r.cantidadRetirada || 0)
+                  return (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
                     <div>
                       <div style={{ color: '#3D1A6B', fontWeight: 600 }}>{r.desc} · {r.cant?.toLocaleString('es-AR')}{r.unidad ? ' ' + r.unidad : ''}</div>
                       <div style={{ color: S.muted, fontSize: 11, marginTop: 2 }}>
                         {r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{r.total ? ` · $${r.total.toLocaleString('es-AR')}` : ' · sin precio todavía'}
+                        {(r.cantidadRetirada || 0) > 0 ? ` · ya retirado: ${r.cantidadRetirada.toLocaleString('es-AR')}` : ''}
                       </div>
                     </div>
                     <button onClick={async () => {
+                      const respuesta = prompt(`¿Cuánto ${r.desc || 'del insumo'} se retiró ahora?\n\nQueda pendiente: ${restante.toLocaleString('es-AR')} ${r.unidad || ''}\n\nEscribí la cantidad (podés retirar menos que el total, o todo):`, '')
+                      if (respuesta === null) return
+                      const cant = parseFloat(respuesta.replace(',', '.'))
+                      if (!cant || cant <= 0) { alert('No se registró nada — hay que escribir un número mayor a 0.'); return }
+                      if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} ${r.unidad || ''} por retirar — no se puede retirar más de eso.`); return }
+                      if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} ${r.unidad || ''} de ${r.desc || 'insumo'} al stock.\n\n¿Es correcto?`)) return
                       const rpc = r.tipo === 'sanitario' ? 'incrementar_stock_sanitario' : r.tipo === 'agro' ? 'incrementar_stock_agro' : 'incrementar_stock_insumo'
-                      const { error: errRpc } = await supabase.rpc(rpc, { p_id: r.insumoId, p_delta: r.cant })
+                      const { error: errRpc } = await supabase.rpc(rpc, { p_id: r.insumoId, p_delta: cant })
                       if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
-                      const { error: errCi } = await supabase.from('compras_insumos').update({ retirado: true }).eq('id', r.id)
-                      if (errCi) { alert('El stock se actualizó, pero no se pudo marcar como retirado: ' + errCi.message); return }
+                      const nuevaCantidadRetirada = (r.cantidadRetirada || 0) + cant
+                      const completo = nuevaCantidadRetirada >= (r.cant || 0) - 0.01
+                      const { error: errCi } = await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', r.id)
+                      if (errCi) { alert('El stock se actualizó, pero no se pudo guardar el retiro: ' + errCi.message); return }
                       await cargar()
                     }} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      📦 Marcar retirado
+                      📦 {(r.cantidadRetirada || 0) > 0 ? 'Registrar más retiro' : 'Registrar retiro'}
                     </button>
                   </div>
-                ))}
+                )})}
               </>
             )}
           </div>
