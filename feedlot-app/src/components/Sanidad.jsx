@@ -319,6 +319,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
             tipo: 'revision', corral_id: corrales[i].id,
             producto: null, cantidad_animales: cant,
             observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
+            enviado_enfermeria: enf.mover_enfermeria || false,
             registrado_por: usuario?.id,
           })
           if (error) { alert('Error al guardar la novedad: ' + error.message); return }
@@ -337,6 +338,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
               tipo: 'revision', corral_id: corrales[i].id,
               producto: p.prod, cantidad_ml: mlTotal || null, cantidad_animales: cant,
               observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
+              enviado_enfermeria: enf.mover_enfermeria || false,
               registrado_por: usuario?.id,
             })
             if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); return }
@@ -370,6 +372,12 @@ export default function Sanidad({ usuario, mobile, nav }) {
           const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnf.id).single()
           const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnf.id)
           if (errDestino) { alert('Error al sumar al corral de enfermería: ' + errDestino.message); return }
+          // Que quede en el mismo historial de movimientos que se ve en
+          // Corrales y tropas, para tener todo junto en un solo lugar.
+          await supabase.from('movimientos').insert({
+            tipo: 'traslado', corral_origen_id: corrales[i].id, corral_destino_id: corrEnf.id,
+            cantidad: cant, motivo: `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
+          })
         }
       }
     }
@@ -450,7 +458,8 @@ export default function Sanidad({ usuario, mobile, nav }) {
             const { error } = await supabase.from('eventos_sanitarios').insert({
               tipo: 'revision', corral_id: st.id, producto: null,
               observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-              cantidad_animales: cant, registrado_por: usuario?.id,
+              cantidad_animales: cant, enviado_enfermeria: enf.mover_enfermeria || false,
+              registrado_por: usuario?.id,
             })
             if (error) { alert('Error al guardar la novedad: ' + error.message); setGuardandoM(false); return }
           } else {
@@ -463,7 +472,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
               const { error } = await supabase.from('eventos_sanitarios').insert({
                 tipo: 'revision', corral_id: st.id, producto: p.prod,
                 observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
-                cantidad_animales: cant, cantidad_ml: mlTotal || null, registrado_por: usuario?.id,
+                cantidad_animales: cant, cantidad_ml: mlTotal || null, enviado_enfermeria: enf.mover_enfermeria || false, registrado_por: usuario?.id,
               })
               if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); setGuardandoM(false); return }
             }
@@ -493,6 +502,10 @@ export default function Sanidad({ usuario, mobile, nav }) {
             const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfM.id).single()
             const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfM.id)
             if (errDestino) { alert('Error al sumar al corral de enfermería: ' + errDestino.message); setGuardandoM(false); return }
+            await supabase.from('movimientos').insert({
+              tipo: 'traslado', corral_origen_id: st.id, corral_destino_id: corrEnfM.id,
+              cantidad: cant, motivo: `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
+            })
           }
         }
       }
@@ -930,7 +943,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                               const { error } = await supabase.from('eventos_sanitarios').insert({
                                 tipo: 'revision', corral_id: revStateM[i]?.id, producto: null,
                                 observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-                                cantidad_animales: cant,
+                                cantidad_animales: cant, enviado_enfermeria: enf.mover_enfermeria || false,
                                 registrado_por: usuario?.id,
                               })
                               if (error) throw error
@@ -943,7 +956,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                                 const { error } = await supabase.from('eventos_sanitarios').insert({
                                   tipo: 'revision', corral_id: revStateM[i]?.id, producto: p.prod,
                                   observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
-                                  cantidad_animales: cant, cantidad_ml: mlNum || null,
+                                  cantidad_animales: cant, cantidad_ml: mlNum || null, enviado_enfermeria: enf.mover_enfermeria || false,
                                   registrado_por: usuario?.id,
                                 })
                                 if (error) throw error
@@ -967,6 +980,10 @@ export default function Sanidad({ usuario, mobile, nav }) {
                               await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', revStateM[i]?.id)
                               const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfBtn.id).single()
                               await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfBtn.id)
+                              await supabase.from('movimientos').insert({
+                                tipo: 'traslado', corral_origen_id: revStateM[i]?.id, corral_destino_id: corrEnfBtn.id,
+                                cantidad: cant, motivo: `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
+                              })
                             }
                           }
                           const n = [...revStateM]
@@ -1084,6 +1101,12 @@ export default function Sanidad({ usuario, mobile, nav }) {
                 await supabase.from('corrales').update({ animales: Math.max(0, (destinoFresh?.animales || 0) - 1) }).eq('id', e.corral_id)
                 const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', e.corral_origen_id).single()
                 await supabase.from('corrales').update({ animales: (origenFresh?.animales || 0) + 1 }).eq('id', e.corral_origen_id)
+                // El movimiento inverso también queda anotado en el historial,
+                // para que se vea claramente que fue una corrección.
+                await supabase.from('movimientos').insert({
+                  tipo: 'traslado', corral_origen_id: e.corral_id, corral_destino_id: e.corral_origen_id,
+                  cantidad: 1, motivo: `Sanidad — deshacer "${e.diagnostico || 'tratamiento'}"`, registrado_por: usuario?.id,
+                })
               }
               const { error } = await supabase.from('animales_enfermeria').delete().eq('id', e.id)
               if (error) { alert('Error al deshacer: ' + error.message); return }
@@ -1212,6 +1235,11 @@ export default function Sanidad({ usuario, mobile, nav }) {
                       {e.cantidad_ml ? ` · ${e.cantidad_ml} ml` : ''}
                       {e.cantidad_animales ? ` · ${e.cantidad_animales} anim.` : ''}
                     </div>
+                    {e.enviado_enfermeria && (
+                      <div style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, color: '#EF4444', background: '#3D1A1A', padding: '2px 8px', borderRadius: 4, marginTop: 4 }}>
+                        🏥 Enviado a enfermería
+                      </div>
+                    )}
                     {e.observaciones && <div style={{ fontSize: 12, color: CM.text, marginTop: 4 }}>{e.observaciones}</div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
                       <div style={{ fontSize: 10, color: CM.muted }}>Registrado por {e.usuarios?.nombre || '—'}</div>
@@ -1737,14 +1765,14 @@ export default function Sanidad({ usuario, mobile, nav }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  {['Fecha','Tipo','Corral','Producto','Cantidad','Animales','Observaciones','Por'].map(h => (
+                  {['Fecha','Tipo','Corral','Producto','Cantidad','Animales','Enfermería','Observaciones','Por'].map(h => (
                     <th key={h} style={{ background: S.bg, padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {lista.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay eventos registrados.</td></tr>
+                  <tr><td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay eventos registrados.</td></tr>
                 )}
                 {lista.map(e => {
                   const tc = TIPO_COLORS[e.tipo] || { bg: S.bg, color: S.muted, label: e.tipo }
@@ -1756,6 +1784,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                       <td style={{ padding: '9px 12px' }}>{e.producto}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: S.muted }}>{e.cantidad_ml ? `${e.cantidad_ml} ml` : '—'}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{e.cantidad_animales}</td>
+                      <td style={{ padding: '9px 12px' }}>{e.enviado_enfermeria ? <Badge bg={S.redLight} color={S.red}>🏥 Sí</Badge> : <span style={{ color: S.hint, fontSize: 12 }}>—</span>}</td>
                       <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.observaciones || '—'}</td>
                       <td style={{ padding: '9px 12px', fontSize: 12 }}>{e.usuarios?.nombre || '—'}</td>
                     </tr>
