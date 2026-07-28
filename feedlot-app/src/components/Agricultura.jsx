@@ -1109,6 +1109,10 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 
 // ── TAB ÓRDENES DE TRABAJO ──
 function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario, mobile, nav }) {
+  // Los productos de agro se cargan y consumen en cantidades grandes — no
+  // hace falta (ni tiene sentido en la práctica) manejar más de un decimal.
+  // Se redondea siempre al medio kg/litro más cercano.
+  const redondearMedio = (n, dosisChica) => dosisChica ? Math.round(n * 10000) / 10000 : Math.round(n * 2) / 2
   const [tabInner, setTabInner] = useState('ordenes')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
@@ -1184,7 +1188,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     // hectárea, así que da lo mismo hacerlo de una vez que por partes.
     for (const p of form.productos) {
       if (!p.id || !p.dosis || !superficie) continue
-      const usado = parseFloat(p.dosis) * superficie
+      const dosisChica = stockAgro.find(s => String(s.id) === String(p.id))?.dosis_chica
+      const usado = redondearMedio(parseFloat(p.dosis) * superficie, dosisChica)
       const { error: errStock } = await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -usado })
       if (errStock) { alert('Error al descontar stock: ' + errStock.message); setGuardando(false); return }
     }
@@ -1215,9 +1220,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       // producto sí tiene que recalcularse con la superficie DE ESTE lote —
       // antes se copiaba el total ya calculado para la superficie combinada
       // de todos los lotes juntos, y quedaba mal en cada orden individual.
-      const productosDeEsteItem = form.productos.map(p => ({
-        ...p, total: p.dosis ? (parseFloat(p.dosis) * superficieItem).toFixed(4).replace(/\.?0+$/, '') : p.total,
-      }))
+      const productosDeEsteItem = form.productos.map(p => {
+        const dosisChica = stockAgro.find(s => String(s.id) === String(p.id))?.dosis_chica
+        return { ...p, total: p.dosis ? String(redondearMedio(parseFloat(p.dosis) * superficieItem, dosisChica)) : p.total }
+      })
       const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
         campo_id: campoId, campana_id: parseInt(form.campana_id) || null,
         lote_id: lote ? lote.id : null,
@@ -1698,7 +1704,18 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 <div><Label>Campaña</Label><select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
                 <div><Label>Tipo de trabajo *</Label><select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS_ORDEN.map(t => <option key={t}>{t}</option>)}</select></div>
                 <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
-                <div><Label>Operario / Equipo</Label><input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} placeholder="Nombre del contratista u operario" /></div>
+                {!form.es_propia ? (
+                  <div>
+                    <Label>Proveedor (contratista)</Label>
+                    <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle}>
+                      <option value="">— Seleccioná —</option>
+                      {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </select>
+                    <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
+                  </div>
+                ) : (
+                  <div><Label>Operario / Equipo</Label><input type="text" value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle} placeholder="Nombre del operario propio" /></div>
+                )}
                 <div><Label>Descripción</Label><input type="text" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Observaciones</Label><input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} style={inputStyle} /></div>
               </div>
@@ -3360,7 +3377,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [tab, setTab] = useState('stock')
   const [showForm, setShowForm] = useState(false)
   const [editandoStock, setEditandoStock] = useState(null)
-  const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '' })
+  const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '', dosis_chica: false })
   const [showFormCompra, setShowFormCompra] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
@@ -3406,7 +3423,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>{s.tipo || '—'}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: CM.mono, color: bajo ? CM.red : CM.green }}>{(s.cantidad || 0).toLocaleString('es-AR')}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: CM.mono, color: bajo ? CM.red : CM.green }}>{(s.cantidad || 0).toLocaleString('es-AR', s.dosis_chica ? {} : { maximumFractionDigits: 1 })}</div>
                     <div style={{ fontSize: 11, color: CM.muted }}>{s.unidad}</div>
                     {bajo && <div style={{ fontSize: 11, color: CM.red, fontWeight: 600 }}>⚠ Bajo mínimo</div>}
                   </div>
@@ -3428,7 +3445,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   async function guardarStock() {
     if (!formStock.insumo) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, actualizado_en: new Date().toISOString() }
+    const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, dosis_chica: !!formStock.dosis_chica, actualizado_en: new Date().toISOString() }
     // Si se cargó precio en dólares, el precio en pesos se calcula solo con
     // la cotización del momento — si se cargó directo en pesos, se respeta eso.
     if (formStock.precio_referencia_usd) {
@@ -3443,7 +3460,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowForm(false); setEditandoStock(null)
-    setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '' })
+    setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '', dosis_chica: false })
     setGuardando(false)
   }
 
@@ -3735,7 +3752,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             + Registrar compra
           </button>
-          <button onClick={() => { setShowForm(!showForm); setShowFormCompra(false); setEditandoStock(null); setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '' }) }}
+          <button onClick={() => { setShowForm(!showForm); setShowFormCompra(false); setEditandoStock(null); setFormStock({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '', dosis_chica: false }) }}
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             + Nuevo insumo
           </button>
@@ -3769,6 +3786,10 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             <div><Label>Precio en $ {formStock.precio_referencia_usd ? '(calculado)' : ''}</Label><input type="number" value={formStock.precio_referencia_usd ? Math.round(parseFloat(formStock.precio_referencia_usd) * cotizacionDolar) : formStock.precio_referencia} onChange={e => setFormStock({...formStock, precio_referencia: e.target.value})} disabled={!!formStock.precio_referencia_usd} style={{...inputStyle, background: formStock.precio_referencia_usd ? S.bg : '#fff'}} /></div>
             <div><Label>Stock mínimo alerta</Label><input type="number" value={formStock.minimo_stock} onChange={e => setFormStock({...formStock, minimo_stock: e.target.value})} style={inputStyle} /></div>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem', fontSize: 13, color: S.text, cursor: 'pointer', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 12px', width: 'fit-content' }}>
+            <input type="checkbox" checked={!!formStock.dosis_chica} onChange={e => setFormStock({...formStock, dosis_chica: e.target.checked})} />
+            Se usa en dosis chicas — no redondear al medio {formStock.unidad === 'kg' ? 'kg' : 'litro'} en las órdenes
+          </label>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={guardarStock} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
             <button onClick={() => { setShowForm(false); setEditandoStock(null) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -3928,7 +3949,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}`, background: bajo ? S.redLight : 'transparent' }}>
                     <td style={{ padding: '8px 12px', fontWeight: 600 }}>{s.insumo}</td>
                     <td style={{ padding: '8px 12px' }}>{s.tipo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11 }}>{s.tipo}</span> : '—'}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: bajo ? S.red : S.green }}>{s.cantidad?.toLocaleString('es-AR')}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: bajo ? S.red : S.green }}>{s.cantidad?.toLocaleString('es-AR', s.dosis_chica ? {} : { maximumFractionDigits: 1 })}</td>
                     <td style={{ padding: '8px 12px', color: S.muted }}>{s.unidad}</td>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>
                       {s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}` : '—'}
@@ -3941,7 +3962,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     </td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'' }); setShowForm(true); setShowFormCompra(false) }}
+                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'', dosis_chica: s.dosis_chica || false }); setShowForm(true); setShowFormCompra(false) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                         <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('stock_agro').delete().eq('id', s.id); cargar() }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
@@ -3971,7 +3992,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                 <tr key={i.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(i.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                   <td style={{ padding: '8px 12px', fontWeight: 600 }}>{i.insumo_nombre || '—'}</td>
-                  <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{i.cantidad?.toLocaleString('es-AR')} {i.unidad || ''}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{i.cantidad?.toLocaleString('es-AR', { maximumFractionDigits: 1 })} {i.unidad || ''}</td>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>{i.precio_unitario ? `$${i.precio_unitario.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>}</td>
                   <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{i.total ? `$${i.total.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'}</td>
                   <td style={{ padding: '8px 12px', color: S.muted }}>{i.proveedor || '—'}</td>
