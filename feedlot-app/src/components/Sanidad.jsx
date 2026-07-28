@@ -548,7 +548,6 @@ export default function Sanidad({ usuario, mobile, nav }) {
       { key: 'revision', label: 'Revision' },
       { key: 'evento', label: 'Evento' },
       { key: 'historial', label: '📋 Historial' },
-      { key: 'enfermeria', label: '🏥 Enfermería' },
       { key: 'mortalidad', label: '💀 Muerte' },
       { key: 'stock', label: '📦 Stock' },
     ]
@@ -1086,64 +1085,6 @@ export default function Sanidad({ usuario, mobile, nav }) {
               </button>
             </>
           )}
-
-          {pantSan === 'enfermeria' && (() => {
-            const activos = enfermeria.filter(e => e.estado === 'en_enfermeria' || e.estado === 'en tratamiento').slice(0, 30)
-            const hace48hs = new Date(); hace48hs.setHours(hace48hs.getHours() - 48)
-            async function deshacerEnfermeria(e) {
-              const corralDestino = corrales.find(c => c.id === e.corral_id)
-              const avisoMovimiento = e.estado === 'en_enfermeria' && corralDestino
-                ? `\n\nEste animal se había movido físicamente a ${corralDestino.numero ? 'C-' + corralDestino.numero : 'enfermería'} — al deshacer, vuelve a sumarse en el corral de origen y se resta de ahí.`
-                : ''
-              if (!confirm(`¿Deshacer este registro de "${e.diagnostico || 'tratamiento'}"?${avisoMovimiento}`)) return
-              if (e.estado === 'en_enfermeria' && e.corral_id && e.corral_origen_id) {
-                const { data: destinoFresh } = await supabase.from('corrales').select('animales').eq('id', e.corral_id).single()
-                await supabase.from('corrales').update({ animales: Math.max(0, (destinoFresh?.animales || 0) - 1) }).eq('id', e.corral_id)
-                const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', e.corral_origen_id).single()
-                await supabase.from('corrales').update({ animales: (origenFresh?.animales || 0) + 1 }).eq('id', e.corral_origen_id)
-                // El movimiento inverso también queda anotado en el historial,
-                // para que se vea claramente que fue una corrección.
-                await supabase.from('movimientos').insert({
-                  tipo: 'traslado', corral_origen_id: e.corral_id, corral_destino_id: e.corral_origen_id,
-                  cantidad: 1, motivo: `Sanidad — deshacer "${e.diagnostico || 'tratamiento'}"`, registrado_por: usuario?.id,
-                })
-              }
-              const { error } = await supabase.from('animales_enfermeria').delete().eq('id', e.id)
-              if (error) { alert('Error al deshacer: ' + error.message); return }
-              await cargarDatos()
-            }
-            return (
-              <div>
-                <div style={{ fontSize: 12, color: CM.muted, marginBottom: '1rem' }}>Animales en tratamiento o en enfermería — se puede deshacer un registro cargado por error hasta 48hs después (si se había movido de corral, el movimiento también se revierte).</div>
-                {activos.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: CM.muted, fontSize: 13 }}>No hay animales en tratamiento ni en enfermería.</div>}
-                {activos.map(e => {
-                  const puedeDeshacer = new Date(e.creado_en) >= hace48hs
-                  const corralDestino = corrales.find(c => c.id === e.corral_id)
-                  return (
-                    <div key={e.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.85rem', marginBottom: '.6rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}>{e.diagnostico || '—'}</div>
-                        <div style={{ fontSize: 11, color: CM.muted, fontFamily: CM.mono }}>{new Date(e.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</div>
-                      </div>
-                      <div style={{ fontSize: 12, color: CM.muted }}>
-                        Origen: {e.corrales?.numero ? `C-${e.corrales.numero}` : '—'}
-                        {e.estado === 'en_enfermeria' ? ` · Movido a ${corralDestino?.numero ? 'C-' + corralDestino.numero : 'enfermería'}` : ' · En tratamiento (sin mover)'}
-                      </div>
-                      {e.tratamiento && <div style={{ fontSize: 12, color: CM.text, marginTop: 4 }}>{e.tratamiento}</div>}
-                      {e.descripcion && <div style={{ fontSize: 11, color: CM.muted, marginTop: 2 }}>{e.descripcion}</div>}
-                      {puedeDeshacer && (
-                        <div style={{ textAlign: 'right', marginTop: 6 }}>
-                          <button onClick={() => deshacerEnfermeria(e)} style={{ padding: '3px 10px', fontSize: 11, background: 'transparent', border: `1px solid #EF4444`, color: '#EF4444', borderRadius: 5, cursor: 'pointer' }}>
-                            🗑 Deshacer
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })()}
 
           {pantSan === 'mortalidad' && (
             <>
