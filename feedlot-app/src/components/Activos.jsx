@@ -334,6 +334,19 @@ export default function Activos({ usuario }) {
       const { error: errCuotas } = await supabase.from('pagos_creditos').delete().eq('credito_id', id)
       if (errCuotas) { alert('Error al borrar las cuotas del crédito: ' + errCuotas.message); return }
     }
+    // Un retiro de socios deja un movimiento en Caja 1 o Caja 2 (y a veces un
+    // cheque emitido) — antes esto quedaba huérfano al borrar el retiro, y
+    // había que ir a borrarlo a mano por separado.
+    if (tabla === 'retiros_socios') {
+      const { data: retiro } = await supabase.from('retiros_socios').select('caja_oficial_id, caja_paralela_id').eq('id', id).single()
+      if (retiro?.caja_oficial_id) {
+        await supabase.from('cheques').delete().eq('caja_oficial_id', retiro.caja_oficial_id)
+        await supabase.from('caja_oficial').delete().eq('id', retiro.caja_oficial_id)
+      }
+      if (retiro?.caja_paralela_id) {
+        await supabase.from('caja_paralela').delete().eq('id', retiro.caja_paralela_id)
+      }
+    }
     const { error } = await supabase.from(tabla).delete().eq('id', id)
     if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
