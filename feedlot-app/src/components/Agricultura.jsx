@@ -4010,7 +4010,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   <td style={{ padding: '8px 12px' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                       {i.retirado === false && retirandoId !== i.id && (
-                        <button onClick={() => { setRetirandoId(i.id); setCantidadRetiro(String((i.cantidad || 0) - (i.cantidad_retirada || 0))) }}
+                        <button onClick={() => { setRetirandoId(i.id); setCantidadRetiro('') }}
                           style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
                           📦 Registrar retiro
                         </button>
@@ -4018,6 +4018,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                       {i.retirado === false && retirandoId === i.id && (
                         <>
                           <input type="number" value={cantidadRetiro} onChange={e => setCantidadRetiro(e.target.value)} autoFocus
+                            placeholder={`máx ${((i.cantidad || 0) - (i.cantidad_retirada || 0)).toLocaleString('es-AR')}`}
                             style={{ width: 90, padding: '3px 6px', fontSize: 11, border: '1px solid #9F8ED4', borderRadius: 5, fontFamily: 'monospace' }} />
                           <button onClick={async () => {
                             const cant = parseFloat(cantidadRetiro) || 0

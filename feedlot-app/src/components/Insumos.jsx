@@ -462,7 +462,8 @@ export default function Insumos({ usuario }) {
                         retirandoId === c.id ? (
                           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                             <input type="number" value={cantidadRetiro} onChange={e => setCantidadRetiro(e.target.value)} autoFocus
-                              style={{ width: 80, padding: '3px 6px', fontSize: 11, border: '1px solid #9F8ED4', borderRadius: 5, fontFamily: 'monospace' }} />
+                              placeholder={`máx ${((c.cantidad || 0) - (c.cantidad_retirada || 0)).toLocaleString('es-AR')}`}
+                              style={{ width: 90, padding: '3px 6px', fontSize: 11, border: '1px solid #9F8ED4', borderRadius: 5, fontFamily: 'monospace' }} />
                             <button onClick={async () => {
                               const cant = parseFloat(cantidadRetiro) || 0
                               const yaRetirado = c.cantidad_retirada || 0
@@ -484,7 +485,7 @@ export default function Insumos({ usuario }) {
                               style={{ padding: '3px 6px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>✕</button>
                           </div>
                         ) : (
-                          <button onClick={() => { setRetirandoId(c.id); setCantidadRetiro(String((c.cantidad || 0) - (c.cantidad_retirada || 0))) }}
+                          <button onClick={() => { setRetirandoId(c.id); setCantidadRetiro('') }}
                             style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                             📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}
                           </button>
