@@ -532,7 +532,14 @@ export default function Insumos({ usuario }) {
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                               🖨️ Recibo
                             </button>
-                          : <button onClick={() => { setPagarInline(pagarInline === c.id ? null : c.id); setFormPagoInline({ fecha: hoyLocal(), tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: c.cuit || '', iva: c.iva || '', cbu: c.cbu || '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] }) }}
+                          : <button onClick={() => {
+                              setPagarInline(pagarInline === c.id ? null : c.id)
+                              // Si la compra ya tiene proveedor cargado, se busca el contacto
+                              // que coincide por nombre y se precarga solo — no tiene sentido
+                              // volver a preguntarlo si ya está clarísimo de quién es la deuda.
+                              const contactoMatch = c.proveedor ? contactos.find(ct => ct.nombre === c.proveedor) : null
+                              setFormPagoInline({ fecha: hoyLocal(), tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: contactoMatch?.cuit || c.cuit || '', iva: contactoMatch?.iva || c.iva || '', cbu: contactoMatch?.cbu || c.cbu || '', contacto_id: contactoMatch ? String(contactoMatch.id) : '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] })
+                            }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                               💳 Pagar
                             </button>
