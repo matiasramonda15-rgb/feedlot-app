@@ -45,6 +45,14 @@ export default function Activos({ usuario }) {
   const [vendiendoActivo, setVendiendoActivo] = useState(null)
   const [formVentaActivo, setFormVentaActivo] = useState({ comprador: '', monto: '', fecha: hoyLocal(), observaciones: '', es_paralelo: false })
   const [retiros, setRetiros] = useState([])
+  const [aportesMaiz, setAportesMaiz] = useState([])
+  const [retirosMaiz, setRetirosMaiz] = useState([])
+  const [stockInsumos, setStockInsumos] = useState([])
+  const [showAporteMaiz, setShowAporteMaiz] = useState(false)
+  const [showRetiroMaiz, setShowRetiroMaiz] = useState(false)
+  const [formAporteMaiz, setFormAporteMaiz] = useState({ socio: '', fecha: hoyLocal(), tn: '', stock_insumo_id: '', observaciones: '' })
+  const [formRetiroMaiz, setFormRetiroMaiz] = useState({ socio: '', fecha: hoyLocal(), monto: '', precio_pizarra: '', forma_pago: 'transferencia', observaciones: '' })
+  const [guardandoMaiz, setGuardandoMaiz] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [showFormActivo, setShowFormActivo] = useState(false)
   const [editandoActivo, setEditandoActivo] = useState(null)
@@ -67,12 +75,15 @@ export default function Activos({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: a }, { data: r }, { data: ct }, { data: cred }, { data: pc }] = await Promise.all([
+    const [{ data: a }, { data: r }, { data: ct }, { data: cred }, { data: pc }, { data: am }, { data: rm }, { data: si }] = await Promise.all([
       supabase.from('activos').select('*').order('fecha_compra', { ascending: false }),
       supabase.from('retiros_socios').select('*').order('fecha', { ascending: false }),
       supabase.from('contactos').select('id, nombre').order('nombre'),
       supabase.from('creditos').select('*, activos(nombre)').order('created_at', { ascending: false }),
       supabase.from('pagos_creditos').select('*').order('nro_cuota'),
+      supabase.from('aportes_maiz').select('*').order('fecha', { ascending: false }),
+      supabase.from('retiros_maiz').select('*').order('fecha', { ascending: false }),
+      supabase.from('stock_insumos').select('id, insumo, cantidad_kg').order('insumo'),
     ])
     setActivos(a || [])
     setRetiros(r || [])
@@ -82,6 +93,9 @@ export default function Activos({ usuario }) {
     const porCredito = {}
     ;(pc || []).forEach(p => { if (!porCredito[p.credito_id]) porCredito[p.credito_id] = []; porCredito[p.credito_id].push(p) })
     setPagosCreditos(porCredito)
+    setAportesMaiz(am || [])
+    setRetirosMaiz(rm || [])
+    setStockInsumos(si || [])
     setLoading(false)
   }
 
@@ -176,6 +190,61 @@ export default function Activos({ usuario }) {
     }
     setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '', cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
     setGuardando(false)
+  }
+
+  // Maíz que un socio trae como pago de honorarios particulares — entra al
+  // stock de granos general (se vende junto con todo lo demás), y él va
+  // sacando dinero en efectivo mes a mes, valuado a precio de pizarra del
+  // día menos 10%, hasta agotar el saldo en toneladas.
+  async function guardarAporteMaiz() {
+    if (!formAporteMaiz.socio || !formAporteMaiz.tn || !formAporteMaiz.stock_insumo_id) { alert('Completá socio, toneladas, y a qué maíz del stock se suma'); return }
+    setGuardandoMaiz(true)
+    const tn = parseFloat(formAporteMaiz.tn)
+    const kg = Math.round(tn * 1000)
+    // Suma directo al stock de Alimentación del feedlot — no es para vender,
+    // es para dar de comer, mezclado con el resto del maíz de la empresa.
+    const item = stockInsumos.find(s => s.id === parseInt(formAporteMaiz.stock_insumo_id))
+    const { error: errStock } = await supabase.from('stock_insumos').update({ cantidad_kg: (item?.cantidad_kg || 0) + kg, actualizado_en: new Date().toISOString() }).eq('id', formAporteMaiz.stock_insumo_id)
+    if (errStock) { alert('Error al sumar al stock de Alimentación: ' + errStock.message); setGuardandoMaiz(false); return }
+    const { error } = await supabase.from('aportes_maiz').insert({
+      socio: formAporteMaiz.socio, fecha: formAporteMaiz.fecha, tn, stock_insumo_id: parseInt(formAporteMaiz.stock_insumo_id),
+      observaciones: formAporteMaiz.observaciones || null, registrado_por: usuario?.id,
+    })
+    if (error) { alert('Error al guardar el aporte: ' + error.message); setGuardandoMaiz(false); return }
+    await cargar()
+    setShowAporteMaiz(false)
+    setFormAporteMaiz({ socio: '', fecha: hoyLocal(), tn: '', stock_insumo_id: '', observaciones: '' })
+    setGuardandoMaiz(false)
+  }
+
+  async function guardarRetiroMaiz() {
+    if (!formRetiroMaiz.socio || !formRetiroMaiz.monto || !formRetiroMaiz.precio_pizarra) { alert('Completá socio, monto y precio de pizarra del día'); return }
+    const tnAportadas = aportesMaiz.filter(a => a.socio === formRetiroMaiz.socio).reduce((s, a) => s + (parseFloat(a.tn) || 0), 0)
+    const tnConsumidas = retirosMaiz.filter(r => r.socio === formRetiroMaiz.socio).reduce((s, r) => s + (parseFloat(r.tn_consumidas) || 0), 0)
+    const tnDisponibles = tnAportadas - tnConsumidas
+    const monto = parseFloat(formRetiroMaiz.monto)
+    const pizarra = parseFloat(formRetiroMaiz.precio_pizarra)
+    const precioNeto = pizarra * 0.9
+    const tnAConsumir = monto / precioNeto
+    if (tnAConsumir > tnDisponibles + 0.01) {
+      alert(`No alcanza el saldo de maíz — quedan ${tnDisponibles.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn disponibles (≈ $${Math.round(tnDisponibles * precioNeto).toLocaleString('es-AR')} a este precio), y este retiro necesita ${tnAConsumir.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn.`)
+      return
+    }
+    setGuardandoMaiz(true)
+    const desc = `Retiro maíz — ${formRetiroMaiz.socio} · ${tnAConsumir.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn a $${Math.round(precioNeto).toLocaleString('es-AR')}/tn`
+    const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({
+      fecha: formRetiroMaiz.fecha, tipo: 'egreso', categoria: 'Retiro maíz aportado', descripcion: desc, monto, forma_pago: formRetiroMaiz.forma_pago,
+    }).select().single()
+    if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardandoMaiz(false); return }
+    const { error } = await supabase.from('retiros_maiz').insert({
+      socio: formRetiroMaiz.socio, fecha: formRetiroMaiz.fecha, monto, precio_pizarra: pizarra, precio_neto: precioNeto,
+      tn_consumidas: tnAConsumir, caja_oficial_id: co?.id, observaciones: formRetiroMaiz.observaciones || null, registrado_por: usuario?.id,
+    })
+    if (error) { alert('Error al guardar el retiro: ' + error.message); setGuardandoMaiz(false); return }
+    await cargar()
+    setShowRetiroMaiz(false)
+    setFormRetiroMaiz({ socio: '', fecha: hoyLocal(), monto: '', precio_pizarra: '', forma_pago: 'transferencia', observaciones: '' })
+    setGuardandoMaiz(false)
   }
 
   // Recibo imprimible de un pago a tercero hecho con la plata del socio (factura a
@@ -374,6 +443,7 @@ export default function Activos({ usuario }) {
     { key: 'activos', label: 'Activos' },
     { key: 'creditos', label: `Créditos${creditos.filter(c => c.estado === 'activo').length > 0 ? ` (${creditos.filter(c => c.estado === 'activo').length})` : ''}` },
     { key: 'socios', label: 'Socios y retiros' },
+    { key: 'maiz', label: '🌽 Maíz aportado' },
   ]
 
   return (
@@ -1158,6 +1228,160 @@ export default function Activos({ usuario }) {
           </Card>
         </div>
       )}
+
+      {tab === 'maiz' && (() => {
+        const socios = [...new Set([...aportesMaiz.map(a => a.socio), ...retirosMaiz.map(r => r.socio)])].sort()
+        const saldoDe = s => {
+          const aportado = aportesMaiz.filter(a => a.socio === s).reduce((sum, a) => sum + (parseFloat(a.tn) || 0), 0)
+          const consumido = retirosMaiz.filter(r => r.socio === s).reduce((sum, r) => sum + (parseFloat(r.tn_consumidas) || 0), 0)
+          return { aportado, consumido, disponible: aportado - consumido }
+        }
+        return (
+        <div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>
+            Maíz que traés como pago de honorarios particulares — entra al stock de Alimentación del feedlot (se usa para dar de comer, mezclado con el resto), y vas sacando dinero mes a mes, valuado a precio de pizarra del día menos 10%.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem' }}>
+            <button onClick={() => setShowAporteMaiz(!showAporteMaiz)}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              + Ingreso de maíz
+            </button>
+            <button onClick={() => setShowRetiroMaiz(!showRetiroMaiz)}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              + Retiro de dinero
+            </button>
+          </div>
+
+          {showAporteMaiz && (
+            <Card style={{ marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🌽 Nuevo ingreso de maíz</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: 12 }}>
+                <div><Label>Socio</Label><input type="text" value={formAporteMaiz.socio} onChange={e => setFormAporteMaiz({...formAporteMaiz, socio: e.target.value})} style={inputStyle} placeholder="Nombre" /></div>
+                <div><Label>Fecha</Label><input type="date" value={formAporteMaiz.fecha} onChange={e => setFormAporteMaiz({...formAporteMaiz, fecha: e.target.value})} style={inputStyle} /></div>
+                <div><Label>Toneladas</Label><input type="number" value={formAporteMaiz.tn} onChange={e => setFormAporteMaiz({...formAporteMaiz, tn: e.target.value})} style={inputStyle} placeholder="ej. 50" /></div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <Label>¿A qué maíz del stock de Alimentación se suma?</Label>
+                <select value={formAporteMaiz.stock_insumo_id} onChange={e => setFormAporteMaiz({...formAporteMaiz, stock_insumo_id: e.target.value})} style={inputStyle}>
+                  <option value="">— Seleccioná —</option>
+                  {stockInsumos.filter(s => s.insumo.toLowerCase().includes('maiz') || s.insumo.toLowerCase().includes('maíz')).map(s => <option key={s.id} value={s.id}>{s.insumo}</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom: 12 }}><Label>Observaciones</Label><input type="text" value={formAporteMaiz.observaciones} onChange={e => setFormAporteMaiz({...formAporteMaiz, observaciones: e.target.value})} style={inputStyle} placeholder="ej. honorarios trabajo campo X" /></div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={guardarAporteMaiz} disabled={guardandoMaiz} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardandoMaiz ? 'Guardando...' : 'Guardar'}</button>
+                <button onClick={() => setShowAporteMaiz(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              </div>
+            </Card>
+          )}
+
+          {showRetiroMaiz && (() => {
+            const saldo = formRetiroMaiz.socio ? saldoDe(formRetiroMaiz.socio) : null
+            const precioNetoPreview = formRetiroMaiz.precio_pizarra ? parseFloat(formRetiroMaiz.precio_pizarra) * 0.9 : null
+            const tnPreview = precioNetoPreview && formRetiroMaiz.monto ? parseFloat(formRetiroMaiz.monto) / precioNetoPreview : null
+            return (
+            <Card style={{ marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>💰 Nuevo retiro de dinero contra el maíz</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: 12 }}>
+                <div>
+                  <Label>Socio</Label>
+                  <select value={formRetiroMaiz.socio} onChange={e => setFormRetiroMaiz({...formRetiroMaiz, socio: e.target.value})} style={inputStyle}>
+                    <option value="">— Seleccioná —</option>
+                    {socios.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {saldo && <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>Disponible: {saldo.disponible.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</div>}
+                </div>
+                <div><Label>Fecha</Label><input type="date" value={formRetiroMaiz.fecha} onChange={e => setFormRetiroMaiz({...formRetiroMaiz, fecha: e.target.value})} style={inputStyle} /></div>
+                <div><Label>Precio de pizarra Rosario (hoy)</Label><input type="number" value={formRetiroMaiz.precio_pizarra} onChange={e => setFormRetiroMaiz({...formRetiroMaiz, precio_pizarra: e.target.value})} style={inputStyle} placeholder="$/tn" /></div>
+                <div><Label>Monto a retirar $</Label><input type="number" value={formRetiroMaiz.monto} onChange={e => setFormRetiroMaiz({...formRetiroMaiz, monto: e.target.value})} style={inputStyle} /></div>
+                <div>
+                  <Label>Forma de pago</Label>
+                  <select value={formRetiroMaiz.forma_pago} onChange={e => setFormRetiroMaiz({...formRetiroMaiz, forma_pago: e.target.value})} style={inputStyle}>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="efectivo">Efectivo</option>
+                  </select>
+                </div>
+                <div><Label>Observaciones</Label><input type="text" value={formRetiroMaiz.observaciones} onChange={e => setFormRetiroMaiz({...formRetiroMaiz, observaciones: e.target.value})} style={inputStyle} /></div>
+              </div>
+              {tnPreview != null && (
+                <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: S.text }}>
+                  Precio neto (pizarra − 10%): <strong>${Math.round(precioNetoPreview).toLocaleString('es-AR')}/tn</strong> · Este retiro consume <strong>{tnPreview.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong> del saldo.
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={guardarRetiroMaiz} disabled={guardandoMaiz} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardandoMaiz ? 'Guardando...' : 'Guardar'}</button>
+                <button onClick={() => setShowRetiroMaiz(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+              </div>
+            </Card>
+          )})()}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: '1.5rem' }}>
+            {socios.map(s => {
+              const saldo = saldoDe(s)
+              return (
+                <Card key={s}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{s}</div>
+                  <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 2 }}>Saldo disponible</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: saldo.disponible > 0 ? S.green : S.muted }}>{saldo.disponible.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</div>
+                  <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>{saldo.aportado.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn aportadas · {saldo.consumido.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn ya retiradas</div>
+                </Card>
+              )
+            })}
+            {socios.length === 0 && <div style={{ color: S.hint, fontSize: 13 }}>Todavía no hay ningún aporte de maíz cargado.</div>}
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Historial</div>
+          <Card>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr style={{ background: S.bg }}>
+                  {['Fecha', 'Socio', 'Movimiento', 'Detalle', ''].map(h => (
+                    <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {[...aportesMaiz.map(a => ({ ...a, _tipo: 'aporte' })), ...retirosMaiz.map(r => ({ ...r, _tipo: 'retiro' }))]
+                    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+                    .map((m, i) => (
+                      <tr key={m._tipo + m.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{m.fecha ? new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+                        <td style={{ padding: '7px 10px' }}>{m.socio}</td>
+                        <td style={{ padding: '7px 10px' }}>
+                          {m._tipo === 'aporte'
+                            ? <span style={{ color: S.green, fontWeight: 600 }}>🌽 +{parseFloat(m.tn).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</span>
+                            : <span style={{ color: S.red, fontWeight: 600 }}>💰 −{parseFloat(m.tn_consumidas).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn (${parseFloat(m.monto).toLocaleString('es-AR')})</span>}
+                        </td>
+                        <td style={{ padding: '7px 10px', color: S.muted, fontSize: 12 }}>
+                          {m._tipo === 'aporte' ? (m.observaciones || '—') : `Pizarra $${parseFloat(m.precio_pizarra).toLocaleString('es-AR')} → neto $${Math.round(m.precio_neto).toLocaleString('es-AR')}/tn`}
+                        </td>
+                        <td style={{ padding: '7px 10px' }}>
+                          <button onClick={async () => {
+                            if (!confirm('¿Eliminar este movimiento?')) return
+                            if (m._tipo === 'aporte') {
+                              if (m.stock_insumo_id) {
+                                const { data: item } = await supabase.from('stock_insumos').select('cantidad_kg').eq('id', m.stock_insumo_id).single()
+                                await supabase.from('stock_insumos').update({ cantidad_kg: Math.max(0, (item?.cantidad_kg || 0) - Math.round(m.tn * 1000)) }).eq('id', m.stock_insumo_id)
+                              }
+                              await supabase.from('aportes_maiz').delete().eq('id', m.id)
+                            } else {
+                              if (m.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', m.caja_oficial_id)
+                              await supabase.from('retiros_maiz').delete().eq('id', m.id)
+                            }
+                            await cargar()
+                          }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  {aportesMaiz.length === 0 && retirosMaiz.length === 0 && (
+                    <tr><td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>Sin movimientos todavía.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+        )
+      })()}
     </div>
   )
 } 
