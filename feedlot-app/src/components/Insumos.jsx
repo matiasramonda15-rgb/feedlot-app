@@ -292,9 +292,13 @@ export default function Insumos({ usuario }) {
       {/* TAB HISTORIAL */}
       {tab === 'compras' && (
         <div>
-          {/* Banner compras pendientes */}
+          {/* Banner compras pendientes — separado en dos: las que todavía no
+              tienen precio (hay que definirlo antes de poder pagarlas) y las
+              que ya tienen precio pero siguen sin pagarse del todo. */}
           {(() => {
-            const pendientes = compras.filter(c => c.estado_pago === 'pendiente')
+            const sinPrecioLista = compras.filter(c => c.estado_pago === 'pendiente' && !c.total && !c.precio_unitario)
+            const conPrecioLista = compras.filter(c => c.estado_pago === 'pendiente' && (c.total || c.precio_unitario))
+            const pendientes = [...sinPrecioLista, ...conPrecioLista]
             if (pendientes.length === 0) return null
             const totalSel = seleccionadas.reduce((s, id) => {
               const c = pendientes.find(x => x.id === id)
@@ -305,23 +309,49 @@ export default function Insumos({ usuario }) {
               return s + (modosGrupal[id] === 'total' ? Math.round(valor) : Math.round((c.cantidad || 0) * valor))
             }, 0)
 
-            return (
-              <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
-                    ⏳ {pendientes.length} compra{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} · ${pendientes.reduce((s,c)=>s+(c.total||0),0).toLocaleString('es-AR')}
+            return (<>
+              {sinPrecioLista.length > 0 && (
+                <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: S.amber, marginBottom: '1rem' }}>
+                    🏷️ {sinPrecioLista.length} compra{sinPrecioLista.length !== 1 ? 's' : ''} sin precio todavía — hay que definirlo antes de poder pagarlas
                   </div>
-                  {seleccionadas.length > 0 && (
-                    <button onClick={() => setShowPagosPend(!showPagosPend)}
-                      style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                      💳 {showPagosPend ? 'Ocultar' : 'Continuar con'} {seleccionadas.length} seleccionada{seleccionadas.length !== 1 ? 's' : ''}{totalSel > 0 ? ` · $${totalSel.toLocaleString('es-AR')}` : ''}
-                    </button>
-                  )}
+                  <ChecklistComprasPendientes pendientes={sinPrecioLista} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
+                    precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} modos={modosGrupal} setModos={setModosGrupal} />
                 </div>
-                <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
-                  precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} modos={modosGrupal} setModos={setModosGrupal} />
-              </div>
-            )
+              )}
+              {conPrecioLista.length > 0 && (
+                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: S.text }}>
+                      ⏳ {conPrecioLista.length} compra{conPrecioLista.length !== 1 ? 's' : ''} pendiente{conPrecioLista.length !== 1 ? 's' : ''} de pago · ${conPrecioLista.reduce((s,c)=>s+(c.total||0),0).toLocaleString('es-AR')}
+                    </div>
+                  </div>
+                  <ChecklistComprasPendientes pendientes={conPrecioLista} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
+                    precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} modos={modosGrupal} setModos={setModosGrupal} />
+                </div>
+              )}
+              {seleccionadas.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.25rem' }}>
+                  <button onClick={() => {
+                    const nuevoShow = !showPagosPend
+                    if (nuevoShow && !formPagoGrupal.contacto_id) {
+                      // Si todas las compras marcadas son del mismo proveedor, se
+                      // precarga solo — no tiene sentido volver a preguntarlo si
+                      // ya está clarísimo de quién es la deuda.
+                      const proveedores = [...new Set(seleccionadas.map(id => pendientes.find(x => x.id === id)?.proveedor).filter(Boolean))]
+                      if (proveedores.length === 1) {
+                        const contacto = contactos.find(c => c.nombre === proveedores[0])
+                        if (contacto) setFormPagoGrupal({...formPagoGrupal, contacto_id: String(contacto.id)})
+                      }
+                    }
+                    setShowPagosPend(nuevoShow)
+                  }}
+                    style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                    💳 {showPagosPend ? 'Ocultar' : 'Continuar con'} {seleccionadas.length} seleccionada{seleccionadas.length !== 1 ? 's' : ''}{totalSel > 0 ? ` · $${totalSel.toLocaleString('es-AR')}` : ''}
+                  </button>
+                </div>
+              )}
+            </>)
           })()}
 
           <div style={{ fontSize: 12, color: S.red, marginBottom: '1rem' }}>
@@ -389,7 +419,7 @@ export default function Insumos({ usuario }) {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button onClick={() => { setShowPagosPend(false); setSeleccionadas([]) }}
+                  <button onClick={() => { setShowPagosPend(false); setSeleccionadas([]); setFormPagoGrupal({...formPagoGrupal, contacto_id: ''}) }}
                     style={{ padding: '8px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                   <button onClick={async () => {
                     if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
