@@ -386,7 +386,10 @@ export default function Insumos({ usuario }) {
                     style={{ padding: '8px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                   <button onClick={async () => {
                     if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
-                    if (totalPagGrupal2 === 0) { alert('Ingresá el monto a pagar'); return }
+                    // Se permite dejar el pago en $0 — sirve para fijar el precio de una
+                    // compra sin sacar plata todavía (se paga después, de a poco). Se
+                    // pide confirmar para que no sea sin querer.
+                    if (totalPagGrupal2 === 0 && !confirm('No cargaste ningún pago — esto solo va a fijar el precio de la compra, dejándola pendiente por el total completo. ¿Es lo que querés?')) return
                     // Se permite pagar MENOS que el total (deja el resto pendiente, para
                     // pagar de a poco con el tiempo) — solo se bloquea si se carga de más.
                     if (totalSel2 > 0 && totalPagGrupal2 - totalSel2 > 0.5) { alert('El total de pagos es mayor que el total de las compras — revisá los montos.'); return }
