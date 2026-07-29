@@ -296,7 +296,14 @@ export default function Insumos({ usuario }) {
           {(() => {
             const pendientes = compras.filter(c => c.estado_pago === 'pendiente')
             if (pendientes.length === 0) return null
-            const totalSel = seleccionadas.reduce((s, id) => { const c = pendientes.find(x => x.id === id); return s + (c?.total || 0) }, 0)
+            const totalSel = seleccionadas.reduce((s, id) => {
+              const c = pendientes.find(x => x.id === id)
+              if (!c) return s
+              if (c.total) return s + c.total
+              if (!preciosGrupal[id]) return s
+              const valor = parseFloat(preciosGrupal[id])
+              return s + (modosGrupal[id] === 'total' ? Math.round(valor) : Math.round((c.cantidad || 0) * valor))
+            }, 0)
 
             return (
               <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
@@ -307,7 +314,7 @@ export default function Insumos({ usuario }) {
                   {seleccionadas.length > 0 && (
                     <button onClick={() => setShowPagosPend(!showPagosPend)}
                       style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                      💳 Pagar {seleccionadas.length} seleccionada{seleccionadas.length !== 1 ? 's' : ''} · ${totalSel.toLocaleString('es-AR')}
+                      💳 {showPagosPend ? 'Ocultar' : 'Continuar con'} {seleccionadas.length} seleccionada{seleccionadas.length !== 1 ? 's' : ''}{totalSel > 0 ? ` · $${totalSel.toLocaleString('es-AR')}` : ''}
                     </button>
                   )}
                 </div>
