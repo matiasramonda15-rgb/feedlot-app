@@ -204,9 +204,10 @@ export async function pagarComprasPendientes(supabase, {
     // separado (inflaba el "pagado" varias veces sobre lo mismo).
     const proporcion = totalCombinado > 0 ? (totalesFinales[id] || 0) / totalCombinado : (1 / seleccionadas.length)
     const pagosProporcionales = pagos.map(p => ({ ...p, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
+    const montoPagadoAhora = pagosProporcionales.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     const upd = {
-      estado_pago: 'pagado', caja_oficial_id, caja_paralela_id,
-      pagos_detalle: pagosProporcionales,
+      caja_oficial_id, caja_paralela_id,
+      pagos_detalle: [...(c.pagos_detalle || []), ...pagosProporcionales],
       forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
       es_paralelo: pagos.some(p => p.es_paralelo),
     }
@@ -214,6 +215,7 @@ export async function pagarComprasPendientes(supabase, {
     // Si la compra se cargó sin precio, se define recién ahora al pagar —
     // si se cargó en dólares, se convierte a pesos con la cotización del día
     // antes de guardar (el stock y la caja siempre quedan en pesos).
+    let totalDeEstaCompra = c.total || (c.precio_unitario ? Math.round((c.cantidad || 0) * c.precio_unitario) : null)
     if (!(c.total || c.precio_unitario) && precios[id]) {
       const valorIngresado = parseFloat(precios[id])
       const esUsd = monedas?.[id] === 'USD' && cotizacionDolar
@@ -231,10 +233,19 @@ export async function pagarComprasPendientes(supabase, {
       }
       upd.precio_unitario = precioFinal
       upd.total = totalFinal
+      totalDeEstaCompra = totalFinal
       if (esUsd) { upd.precio_unitario_usd = esModoTotal ? null : valorIngresado; upd.cotizacion_dolar = cotizacionDolar }
       if (facturas?.[id]) upd.numero_factura = facturas[id]
       if (actualizarPrecioReferencia) await actualizarPrecioReferencia(c, precioFinal)
     }
+    // Si lo que se pagó ahora (más lo ya pagado antes, si venía de una
+    // compra ya con algo abonado) alcanza el total, queda pagado. Si no,
+    // sigue pendiente por la diferencia — así se puede fijar el precio de
+    // una compra grande y pagarla de a poco con el tiempo, sin que quede
+    // marcada como "pagada" de entrada.
+    const pagadoPrevio = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+    const pagadoTotalAcumulado = pagadoPrevio + montoPagadoAhora
+    upd.estado_pago = totalDeEstaCompra && pagadoTotalAcumulado >= totalDeEstaCompra - 1000 ? 'pagado' : 'pendiente'
     const { error } = await supabase.from('compras_insumos').update(upd).eq('id', id)
     if (error) return { error }
   }

@@ -373,11 +373,12 @@ export default function Insumos({ usuario }) {
                 )}
 
                 {/* Resumen */}
-                <div style={{ background: Math.abs(totalSel2 - totalPagGrupal2) < 0.5 || totalSel2 === 0 ? S.accentLight : S.amberLight, border: `1px solid ${Math.abs(totalSel2 - totalPagGrupal2) < 0.5 || totalSel2 === 0 ? S.accent : S.amber}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, margin: '1rem 0' }}>
+                <div style={{ background: totalPagGrupal2 - totalSel2 > 0.5 || totalSel2 === 0 ? S.amberLight : S.accentLight, border: `1px solid ${totalPagGrupal2 - totalSel2 > 0.5 || totalSel2 === 0 ? S.amber : S.accent}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, margin: '1rem 0' }}>
                   <span>Total seleccionado: <strong>${totalSel2.toLocaleString('es-AR')}</strong></span>
                   <span style={{ margin: '0 12px', color: S.muted }}>|</span>
                   <span>Total pagos: <strong>${totalPagGrupal2.toLocaleString('es-AR')}</strong></span>
-                  {Math.abs(totalSel2 - totalPagGrupal2) >= 0.5 && totalSel2 > 0 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${Math.abs(totalSel2 - totalPagGrupal2).toLocaleString('es-AR')}</span>}
+                  {totalSel2 - totalPagGrupal2 > 0.5 && totalSel2 > 0 && <span style={{ marginLeft: 12, color: S.muted }}>Queda pendiente: ${(totalSel2 - totalPagGrupal2).toLocaleString('es-AR')}</span>}
+                  {totalPagGrupal2 - totalSel2 > 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Excede el total por: ${(totalPagGrupal2 - totalSel2).toLocaleString('es-AR')}</span>}
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -386,7 +387,9 @@ export default function Insumos({ usuario }) {
                   <button onClick={async () => {
                     if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
                     if (totalPagGrupal2 === 0) { alert('Ingresá el monto a pagar'); return }
-                    if (totalSel2 > 0 && Math.abs(totalSel2 - totalPagGrupal2) > 0.5) { alert('El total de pagos no coincide con el total de las compras'); return }
+                    // Se permite pagar MENOS que el total (deja el resto pendiente, para
+                    // pagar de a poco con el tiempo) — solo se bloquea si se carga de más.
+                    if (totalSel2 > 0 && totalPagGrupal2 - totalSel2 > 0.5) { alert('El total de pagos es mayor que el total de las compras — revisá los montos.'); return }
                     setGuardandoPago(true)
                     const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
                     const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`

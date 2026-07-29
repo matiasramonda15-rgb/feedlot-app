@@ -1279,7 +1279,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (faltante) { alert('Falta cargar el costo de alguna de las órdenes seleccionadas.'); return }
     const totalSel = seleccionadas.reduce((s, id) => { const o = pendientes.find(x => x.id === id); return s + (o ? montoOrden(o) : 0) }, 0)
     const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-    if (Math.abs(totalSel - totalPagGrupal) > 0.5) { alert(`El total de pagos ($${totalPagGrupal.toLocaleString('es-AR')}) no coincide con el total seleccionado ($${totalSel.toLocaleString('es-AR')})`); return }
+    if (totalPagGrupal - totalSel > 0.5) { alert(`El total de pagos ($${totalPagGrupal.toLocaleString('es-AR')}) es mayor que el total seleccionado ($${totalSel.toLocaleString('es-AR')}) — revisá los montos.`); return }
     setGuardandoPago(true)
 
     let caja_oficial_id = null, caja_paralela_id = null
@@ -1308,13 +1308,23 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
     for (const id of seleccionadas) {
       const o = pendientes.find(x => x.id === id)
-      const upd = { estado_pago: 'pagado', caja_oficial_id, caja_paralela_id, pagos_detalle: formPagoGrupal.pagos, domicilio: formPagoGrupal.domicilio || null, localidad: formPagoGrupal.localidad || null, cuit: formPagoGrupal.cuit || null, iva: formPagoGrupal.iva || null, cbu: formPagoGrupal.cbu || null }
+      const totalOrden = o ? montoOrden(o) : 0
+      const proporcion = totalSel > 0 ? totalOrden / totalSel : (1 / seleccionadas.length)
+      const pagosProporcionales = formPagoGrupal.pagos.map(p => ({ ...p, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
+      const montoPagadoAhora = pagosProporcionales.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+      const pagadoPrevio = (o?.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+      const upd = { caja_oficial_id, caja_paralela_id, pagos_detalle: [...(o?.pagos_detalle || []), ...pagosProporcionales], domicilio: formPagoGrupal.domicilio || null, localidad: formPagoGrupal.localidad || null, cuit: formPagoGrupal.cuit || null, iva: formPagoGrupal.iva || null, cbu: formPagoGrupal.cbu || null }
       // Si la orden no tenía costo cargado, se define recién ahora al pagar
+      let totalFinalOrden = totalOrden
       if (o && !o.costo_total && costosPend[id]) {
         const costoFinal = parseFloat(costosPend[id])
         upd.costo_total = costoFinal
         upd.costo_ha = o.superficie_ha_real ? Math.round(costoFinal / o.superficie_ha_real) : null
+        totalFinalOrden = costoFinal
       }
+      // Se permite pagar de a poco — solo queda "pagado" si entre lo de antes
+      // y lo de ahora se cubre el total real.
+      upd.estado_pago = totalFinalOrden && (pagadoPrevio + montoPagadoAhora) >= totalFinalOrden - 1000 ? 'pagado' : 'pendiente'
       await supabase.from('ordenes_trabajo').update(upd).eq('id', id)
     }
 
