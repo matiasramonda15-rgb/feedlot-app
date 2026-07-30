@@ -237,9 +237,13 @@ function generarRecibo(gasto, pagos) {
       var maxHeight = 277 * 3.7795; // ~277mm en px (A4 menos márgenes)
       var actualHeight = el.scrollHeight;
       if (actualHeight > maxHeight) {
+        // "zoom" (a diferencia de transform:scale) sí reduce el tamaño real
+        // que ocupa en la hoja al imprimir, así entra todo en una sola
+        // página — transform solo lo hacía ver más chico en pantalla, pero
+        // el navegador seguía calculando el salto de página con el tamaño
+        // original, y terminaba igual en dos hojas.
         var scale = maxHeight / actualHeight;
-        el.style.transform = 'scale(' + scale + ')';
-        el.style.width = (100 / scale) + '%';
+        el.style.zoom = scale;
       }
     };
   </script>

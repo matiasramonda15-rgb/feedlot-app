@@ -62,7 +62,7 @@ export default function Activos({ usuario }) {
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
 
   const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0, vida_util_anios: 10 })
-  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '' })
+  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, es_adelanto: false, tercero: '' })
 
   useEffect(() => { cargar() }, [])
 
@@ -135,6 +135,8 @@ export default function Activos({ usuario }) {
     const monto = parseFloat(formRetiro.monto)
     const desc = formRetiro.no_afecta_caja
       ? `Retiro socio — ${formRetiro.socio} · pagó a ${formRetiro.tercero}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
+      : formRetiro.es_adelanto
+      ? `Retiro socio — ${formRetiro.socio} · adelanto para pagarle a ${formRetiro.tercero || 'un tercero'}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
       : `Retiro socio — ${formRetiro.socio}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
     // Si la plata la puso el socio directamente, o si el retiro se saldó con un
@@ -174,7 +176,7 @@ export default function Activos({ usuario }) {
     if (formRetiro.no_afecta_caja) {
       generarReciboRetiro({ ...formRetiro, monto, fecha: formRetiro.fecha })
     }
-    setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, tercero: '', cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
+    setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, es_adelanto: false, tercero: '', cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
     setGuardando(false)
   }
 
@@ -1011,9 +1013,34 @@ export default function Activos({ usuario }) {
                   </div>
                 )}
               </div>
+              {!formRetiro.no_afecta_caja && (
+                <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem', marginBottom: '.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: formRetiro.es_adelanto ? 10 : 0 }}>
+                    <input type="checkbox" id="es_adelanto" checked={!!formRetiro.es_adelanto} onChange={e => setFormRetiro({...formRetiro, es_adelanto: e.target.checked, tercero: e.target.checked ? formRetiro.tercero : ''})} />
+                    <label htmlFor="es_adelanto" style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      Es un adelanto — el socio saca la plata ahora para pagarle a un tercero después
+                    </label>
+                  </div>
+                  {formRetiro.es_adelanto && (
+                    <>
+                      <div style={{ marginBottom: 10 }}>
+                        <Label>¿A quién le va a pagar?</Label>
+                        <select value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle}>
+                          <option value="">— Seleccioná —</option>
+                          {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                        </select>
+                        <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
+                      </div>
+                      <div style={{ fontSize: 11, color: S.hint }}>
+                        A diferencia de la opción de arriba, esto SÍ descuenta la plata real de la caja — es solo una nota de para qué se está sacando, para no perder el rastro.
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem', marginBottom: '.75rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: formRetiro.no_afecta_caja ? 10 : 0 }}>
-                  <input type="checkbox" id="no_afecta_caja" checked={formRetiro.no_afecta_caja} onChange={e => setFormRetiro({...formRetiro, no_afecta_caja: e.target.checked, es_paralelo: false})} />
+                  <input type="checkbox" id="no_afecta_caja" checked={formRetiro.no_afecta_caja} onChange={e => setFormRetiro({...formRetiro, no_afecta_caja: e.target.checked, es_paralelo: false, es_adelanto: false})} />
                   <label htmlFor="no_afecta_caja" style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                     El socio pagó directamente a un tercero (factura a nombre de la sociedad, pero la plata no salió de la caja)
                   </label>
