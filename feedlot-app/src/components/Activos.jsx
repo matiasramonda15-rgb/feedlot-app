@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
-import { abrirReciboDoble } from '../shared/reciboLogic'
+import { abrirReciboDoble, generarOrdenDePago } from '../shared/reciboLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -183,23 +183,19 @@ export default function Activos({ usuario }) {
   // Recibo imprimible de un pago a tercero hecho con la plata del socio (factura a
   // nombre de la sociedad para descargar IVA, pero la plata no sale de la caja).
   function generarReciboRetiro(r) {
-    const fechaStr = r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR') : ''
-    abrirReciboDoble({
-      titulo: 'Recibo de pago',
-      numero: Date.now().toString().slice(-6),
-      fecha: fechaStr,
-      filas: [
-        ['Pagado a', r.tercero],
-        ['Concepto', r.concepto || '—'],
-        ['Forma de pago', r.forma_pago],
-      ],
-      monto: `$ ${Number(r.monto).toLocaleString('es-AR')}`,
-      colorMonto: '#1E5C2E',
+    const pago = {
+      tipo: r.forma_pago,
+      monto: r.monto,
+      es_paralelo: r.es_paralelo,
+      subtipo_cheque: r.forma_pago === 'cheque' ? 'propio' : '',
+      cheque_propio: r.forma_pago === 'cheque' ? { numero: r.cheque_numero, banco: r.cheque_banco, fecha_vencimiento: r.cheque_vencimiento } : null,
+    }
+    generarOrdenDePago({
+      destinatario: r.tercero,
+      fecha: r.fecha,
+      concepto: `${r.concepto || 'Pago por cuenta y orden de Ramonda Hnos S.A.'} · ${r.tercero || ''}`,
+      pagos: [pago],
       notaPie: `Pago realizado por cuenta y orden de Ramonda Hnos S.A., aportado directamente por el socio ${r.socio}.`,
-      firmaIzq: 'Recibí conforme',
-      firmaDer: 'Ramonda Hnos S.A.',
-      etiquetaCopia1: 'Copia — ' + (r.tercero || 'tercero'),
-      etiquetaCopia2: 'Copia — Ramonda Hnos S.A.',
     })
   }
 
