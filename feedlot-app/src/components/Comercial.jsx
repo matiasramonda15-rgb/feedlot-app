@@ -47,7 +47,7 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
               </button>
             ))}
             <div style={{ width: 1, background: S.border, margin: '0 4px' }} />
-            {[['en_cartera', '📥 En cartera'], ['entregado', '📤 Entregados'], ['depositado', '🏦 Depositados'], ['todos', 'Ver todos']].map(([f, l]) => (
+            {[['en_cartera', '📥 En cartera'], ['entregado', '📤 Entregados'], ['depositado', '🏦 Depositados'], ['cobrado', '✅ Cobrados'], ['todos', 'Ver todos']].map(([f, l]) => (
               <button key={f} onClick={() => setFiltroEstado(f)}
                 style={{ padding: '6px 12px', fontSize: 12, fontWeight: filtroEstado === f ? 600 : 400, background: filtroEstado === f ? S.purple : 'transparent', border: `1px solid ${filtroEstado === f ? S.purple : S.border}`, color: filtroEstado === f ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 {l}
@@ -56,7 +56,7 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
           </div>
           <div style={{ fontSize: 12, color: S.muted }}>{items.length} cheques</div>
         </div>
-        {(filtroEstado === 'entregado' || filtroEstado === 'depositado') && (
+        {(filtroEstado === 'entregado' || filtroEstado === 'depositado' || filtroEstado === 'cobrado') && (
           <div style={{ fontSize: 11, color: S.hint, marginTop: -8, marginBottom: 12 }}>
             Se muestran los últimos 35 días desde el vencimiento — tocá "Ver todos" para buscar uno más viejo.
           </div>
@@ -162,6 +162,7 @@ export default function Comercial({ usuario }) {
   // depositados quedan archivados, para no mezclarlos en la lista del día a
   // día. Se puede desplegar "Ver todos" para buscar uno viejo.
   const [filtroEstadoCheque, setFiltroEstadoCheque] = useState('en_cartera')
+  const [diasProyeccion, setDiasProyeccion] = useState(7)
   const [filtroEstadoChequePar, setFiltroEstadoChequePar] = useState('en_cartera')
   const [showFormOf, setShowFormOf] = useState(false)
   const [showFormPar, setShowFormPar] = useState(false)
@@ -359,16 +360,18 @@ export default function Comercial({ usuario }) {
   const chVence7Of = chOficial.filter(c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
   const chVence7Par = chParalelo.filter(c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
   const hace35dias = new Date(); hace35dias.setDate(hace35dias.getDate() - 35)
-  // Los cheques ya "entregados"/"depositados" — resueltos, sin nada para
-  // hacer con ellos — dejan de mostrarse a los 35 días de vencidos, para que
-  // esa lista no se haga eterna. "En cartera" y "Ver todos" no tienen este
-  // límite, ya que ahí sí puede hacer falta ver algo viejo puntual.
+  // Los cheques ya "entregados"/"depositados"/"cobrados" — resueltos, sin
+  // nada para hacer con ellos — dejan de mostrarse a los 35 días de
+  // vencidos, para que esa lista no se haga eterna. "En cartera" y "Ver
+  // todos" no tienen este límite, ya que ahí sí puede hacer falta ver algo
+  // viejo puntual.
+  const ESTADOS_ARCHIVABLES = ['entregado', 'depositado', 'cobrado']
   const filtrarViejos = c => {
-    if (filtroEstadoCheque !== 'entregado' && filtroEstadoCheque !== 'depositado') return true
+    if (!ESTADOS_ARCHIVABLES.includes(filtroEstadoCheque)) return true
     return !c.fecha_vencimiento || new Date(c.fecha_vencimiento + 'T12:00:00') >= hace35dias
   }
   const filtrarViejosPar = c => {
-    if (filtroEstadoChequePar !== 'entregado' && filtroEstadoChequePar !== 'depositado') return true
+    if (!ESTADOS_ARCHIVABLES.includes(filtroEstadoChequePar)) return true
     return !c.fecha_vencimiento || new Date(c.fecha_vencimiento + 'T12:00:00') >= hace35dias
   }
   const chFiltradosOf = (filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm)
@@ -433,6 +436,51 @@ export default function Comercial({ usuario }) {
           </div>
         ))}
       </div>
+
+      {/* Proyección de fondos necesarios — cuánto tiene que haber en el banco
+          para cubrir los cheques EMITIDOS (los que van a salir de la cuenta)
+          que vencen dentro de la ventana de días elegida. */}
+      {(() => {
+        const hoy = new Date()
+        const limite = new Date(Date.now() + diasProyeccion * 86400000)
+        const enVentana = c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') >= new Date(hoy.toDateString()) && new Date(c.fecha_vencimiento + 'T12:00:00') <= limite
+        const emOfVentana = chOficialEm.filter(enVentana)
+        const emParVentana = chParaleloEm.filter(enVentana)
+        const totalOf = emOfVentana.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+        const totalPar = emParVentana.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+        return (
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>💵 Fondos necesarios — cheques emitidos por vencer</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[5, 15, 30].map(d => (
+                  <button key={d} onClick={() => setDiasProyeccion(d)}
+                    style={{ padding: '5px 12px', fontSize: 12, fontWeight: diasProyeccion === d ? 600 : 400, background: diasProyeccion === d ? S.accent : 'transparent', border: `1px solid ${diasProyeccion === d ? S.accent : S.border}`, color: diasProyeccion === d ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                    {d} días
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Caja 1</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: totalOf > 0 ? S.red : S.green }}>${totalOf.toLocaleString('es-AR')}</div>
+                <div style={{ fontSize: 11, color: S.hint }}>{emOfVentana.length} cheque{emOfVentana.length !== 1 ? 's' : ''}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: S.purple, textTransform: 'uppercase' }}>Caja 2</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: totalPar > 0 ? S.red : S.green }}>${totalPar.toLocaleString('es-AR')}</div>
+                <div style={{ fontSize: 11, color: S.hint }}>{emParVentana.length} cheque{emParVentana.length !== 1 ? 's' : ''}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Total a cubrir</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: (totalOf + totalPar) > 0 ? S.red : S.green }}>${(totalOf + totalPar).toLocaleString('es-AR')}</div>
+                <div style={{ fontSize: 11, color: S.hint }}>en los próximos {diasProyeccion} días</div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.5rem' }}>
         {TABS.map(t => (
