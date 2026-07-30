@@ -547,9 +547,17 @@ export default function Insumos({ usuario }) {
                             </button>
                         }
                         <button onClick={async () => {
-                          if (!confirm('¿Eliminar esta compra? Se eliminará también de la caja.')) return
-                          if (c.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', c.caja_oficial_id)
+                          if (!confirm('¿Eliminar esta compra? Se eliminará también de la caja y se revertirán los cheques usados.')) return
+                          if (c.caja_oficial_id) {
+                            await supabase.from('cheques').delete().eq('caja_oficial_id', c.caja_oficial_id).eq('tipo', 'emitido')
+                            await supabase.from('caja_oficial').delete().eq('id', c.caja_oficial_id)
+                          }
                           if (c.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', c.caja_paralela_id)
+                          for (const p of (c.pagos_detalle || [])) {
+                            if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
+                              for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
+                            }
+                          }
                           // Si esto vino de una venta interna todavía sin retirar (o retirada
                           // solo en parte), no hay que restar la cantidad completa del stock —
                           // solo lo que efectivamente se llegó a sumar con algún retiro.

@@ -227,7 +227,18 @@ export default function Fletes({ usuario }) {
                           style={{ padding: '3px 8px', fontSize: 11, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>💳 Pagar</button>
                       )}
                       <button onClick={async () => {
-                        if (!confirm('¿Eliminar este flete?')) return
+                        if (!confirm('¿Eliminar este flete? Se eliminará también de la caja y se revertirán los cheques usados.')) return
+                        // Antes esto borraba directo, dejando la caja y los
+                        // cheques sueltos si el flete ya estaba pagado.
+                        if (f.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', f.caja_oficial_id)
+                        if (f.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', f.caja_paralela_id)
+                        for (const p of (f.pagos_detalle || [])) {
+                          if (p.subtipo_cheque === 'propio') {
+                            if (f.caja_oficial_id) await supabase.from('cheques').delete().eq('caja_oficial_id', f.caja_oficial_id).eq('tipo', 'emitido')
+                          } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
+                            for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
+                          }
+                        }
                         await supabase.from('fletes').delete().eq('id', f.id)
                         await cargar()
                       }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>🗑</button>

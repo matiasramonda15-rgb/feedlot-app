@@ -1170,12 +1170,22 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 ✏️ Editar
                               </button>
                               <button onClick={async () => {
-                                if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral.')) return
+                                if (!confirm('¿Eliminar esta venta? Se devuelven los animales al corral, y se revierten los pagos/cheques ya cobrados si tenía.')) return
                                 const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
                                 const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
                                 if (corral?.rol === 'libre') updateCorral.rol = 'clasificado'
                                 const { error: errC } = await supabase.from('corrales').update(updateCorral).eq('id', v.corral_id)
                                 if (errC) { alert('Error al devolver los animales al corral: ' + errC.message); return }
+                                // Antes esto no limpiaba los pagos ya cobrados — si la venta tenía
+                                // algo cobrado, la caja y los cheques quedaban sueltos, apuntando a
+                                // una venta que ya no existía más.
+                                const { data: pagosVenta } = await supabase.from('pagos_ventas').select('id').eq('venta_id', v.id)
+                                for (const pv of (pagosVenta || [])) {
+                                  await supabase.from('cheques').delete().eq('pago_venta_id', pv.id)
+                                  await supabase.from('caja_oficial').delete().eq('pago_venta_id', pv.id)
+                                  await supabase.from('caja_paralela').delete().eq('pago_venta_id', pv.id)
+                                }
+                                await supabase.from('pagos_ventas').delete().eq('venta_id', v.id)
                                 const { error: errV } = await supabase.from('ventas').delete().eq('id', v.id)
                                 if (errV) { alert('Error al eliminar la venta: ' + errV.message); return }
                                 cargar()
@@ -1296,7 +1306,16 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 ✏️ Editar
                               </button>
                               <button onClick={async () => {
-                                if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${(g || []).length} corrales.`)) return
+                                if (!confirm(`¿Eliminar esta venta? Se devuelven los animales a ${(g || []).length} corrales, y se revierten los pagos/cheques ya cobrados si tenía.`)) return
+                                // Antes esto no limpiaba los pagos ya cobrados del grupo — la caja y
+                                // los cheques quedaban sueltos, apuntando a una venta que ya no existía.
+                                const { data: pagosGrupo } = await supabase.from('pagos_ventas').select('id').eq('grupo_venta_id', v0.grupo_venta_id)
+                                for (const pv of (pagosGrupo || [])) {
+                                  await supabase.from('cheques').delete().eq('pago_venta_id', pv.id)
+                                  await supabase.from('caja_oficial').delete().eq('pago_venta_id', pv.id)
+                                  await supabase.from('caja_paralela').delete().eq('pago_venta_id', pv.id)
+                                }
+                                await supabase.from('pagos_ventas').delete().eq('grupo_venta_id', v0.grupo_venta_id)
                                 for (const v of g) {
                                   const { data: corral } = await supabase.from('corrales').select('animales, rol').eq('id', v.corral_id).single()
                                   const updateCorral = { animales: (corral?.animales || 0) + v.cantidad }
@@ -2060,7 +2079,16 @@ export default function Ventas({ usuario, mobile, nav }) {
                                       <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralela ? ' · Caja 2' : ''}</span>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                         <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
-                                        <button onClick={async () => { await supabase.from('pagos_ventas').delete().eq('id', p.id); await cargar() }} style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                        <button onClick={async () => {
+                                          if (!confirm('¿Deshacer este pago? Se eliminará de la caja y el cheque, si tenía.')) return
+                                          // Antes esto borraba el pago directo, dejando la caja y el
+                                          // cheque recibido sueltos.
+                                          await supabase.from('cheques').delete().eq('pago_venta_id', p.id)
+                                          await supabase.from('caja_oficial').delete().eq('pago_venta_id', p.id)
+                                          await supabase.from('caja_paralela').delete().eq('pago_venta_id', p.id)
+                                          await supabase.from('pagos_ventas').delete().eq('id', p.id)
+                                          await cargar()
+                                        }} style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                       </div>
                                     </div>
                                   ))}

@@ -2025,8 +2025,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                             generarReciboOrden(o, campos, campanas, stockAgro)
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>}
                           <button onClick={async () => {
-                            if (!confirm('¿Eliminar esta orden? Se repondrá el stock de los insumos que se habían descontado.')) return
-                            if (o.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', o.caja_oficial_id)
+                            if (!confirm('¿Eliminar esta orden? Se repondrá el stock de los insumos que se habían descontado, y se revertirá la caja y los cheques si estaba pagada.')) return
+                            if (o.caja_oficial_id) {
+                              await supabase.from('cheques').delete().eq('caja_oficial_id', o.caja_oficial_id).eq('tipo', 'emitido')
+                              await supabase.from('caja_oficial').delete().eq('id', o.caja_oficial_id)
+                            }
                             if (o.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', o.caja_paralela_id)
                             // Reponer stock de los insumos que se habían descontado al crear esta orden
                             for (const p of (o.productos || [])) {
@@ -3260,7 +3263,16 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                               💳 Registrar pago
                             </button>
                         }
-                        <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('vencimientos_arriendo').delete().eq('id', v.id); cargarVencimientos() }}
+                        <button onClick={async () => {
+                          if (!confirm('¿Eliminar? Si estaba pagado, se revertirá la caja y los cheques.')) return
+                          if (v.caja_oficial_id) {
+                            await supabase.from('cheques').delete().eq('caja_oficial_id', v.caja_oficial_id).eq('tipo', 'emitido')
+                            await supabase.from('caja_oficial').delete().eq('id', v.caja_oficial_id)
+                          }
+                          if (v.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', v.caja_paralela_id)
+                          await supabase.from('vencimientos_arriendo').delete().eq('id', v.id)
+                          cargarVencimientos()
+                        }}
                           style={{ padding: '4px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                       </div>
                     </div>
@@ -4091,9 +4103,17 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>
                       )}
                       <button onClick={async () => {
-                        if (!confirm('¿Eliminar esta compra? Se eliminará de la caja.')) return
-                        if (i.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
+                        if (!confirm('¿Eliminar esta compra? Se eliminará de la caja y se revertirán los cheques usados.')) return
+                        if (i.caja_oficial_id) {
+                          await supabase.from('cheques').delete().eq('caja_oficial_id', i.caja_oficial_id).eq('tipo', 'emitido')
+                          await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
+                        }
                         if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
+                        for (const p of (i.pagos_detalle || [])) {
+                          if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
+                            for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
+                          }
+                        }
                         // Si nunca se retiró nada, no hay nada que restar del stock. Si se
                         // retiró una parte, se resta solo esa parte (no la cantidad total
                         // comprada, que puede no coincidir si el retiro fue parcial).

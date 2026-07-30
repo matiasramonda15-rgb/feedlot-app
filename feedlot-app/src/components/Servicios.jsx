@@ -1304,7 +1304,17 @@ export default function Servicios({ usuario, mobile, nav }) {
                             ✏
                           </button>
                           <button onClick={async () => {
-                            if (!confirm(`¿Eliminar servicio de ${s.cliente} - ${s.labor}?`)) return
+                            if (!confirm(`¿Eliminar servicio de ${s.cliente} - ${s.labor}? Se eliminará también de la caja y los cheques cobrados.`)) return
+                            // Antes esto borraba directo, dejando la caja y los
+                            // cheques recibidos sueltos si el servicio ya estaba cobrado.
+                            if (s.caja_oficial_id) {
+                              await supabase.from('cheques').delete().eq('caja_oficial_id', s.caja_oficial_id).eq('tipo', 'recibido')
+                              await supabase.from('caja_oficial').delete().eq('id', s.caja_oficial_id)
+                            }
+                            if (s.caja_paralela_id) {
+                              await supabase.from('cheques').delete().eq('caja_paralela_id', s.caja_paralela_id).eq('tipo', 'recibido')
+                              await supabase.from('caja_paralela').delete().eq('id', s.caja_paralela_id)
+                            }
                             await supabase.from('servicios_terceros').delete().eq('id', s.id)
                             await cargar()
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: `1px solid #F09595`, color: S.red, borderRadius: 4, cursor: 'pointer' }}>

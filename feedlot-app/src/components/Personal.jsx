@@ -130,9 +130,16 @@ export default function Personal({ usuario }) {
     setGuardando(false)
   }
 
-  async function eliminarPago(id) {
-    if (!confirm('¿Eliminar este pago?')) return
-    const { error } = await supabase.from('pagos_empleados').delete().eq('id', id)
+  async function eliminarPago(p) {
+    if (!confirm('¿Eliminar este pago? Se eliminará también de la caja y se revertirá el cheque si tenía.')) return
+    // Antes esto borraba directo, dejando la caja y el cheque emitido
+    // sueltos si el pago se había hecho con cheque.
+    if (p.caja_oficial_id) {
+      await supabase.from('cheques').delete().eq('caja_oficial_id', p.caja_oficial_id).eq('tipo', 'emitido')
+      await supabase.from('caja_oficial').delete().eq('id', p.caja_oficial_id)
+    }
+    if (p.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', p.caja_paralela_id)
+    const { error } = await supabase.from('pagos_empleados').delete().eq('id', p.id)
     if (error) { alert('Error al eliminar: ' + error.message); return }
     await cargar()
   }
@@ -468,7 +475,7 @@ export default function Personal({ usuario }) {
                               etiquetaCopia2: 'Copia — Ramonda Hnos S.A.',
                             })
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨 Recibo</button>
-                          <button onClick={() => eliminarPago(p.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                          <button onClick={() => eliminarPago(p)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                         </div>
                       </td>
                     </tr>
