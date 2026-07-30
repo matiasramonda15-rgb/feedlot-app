@@ -61,17 +61,27 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
           {deudasPendientes.length > 0 && (
             <>
               <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>
-                Compensar contra (lo que se le debe a este contacto)
+                Compensar contra (lo que se le debe a este contacto) — podés marcar varias
               </div>
-              <select value={pago.canje_deuda_id || ''} onChange={e => {
-                const deuda = deudasPendientes.find(d => String(d.id) === e.target.value)
-                onChange({ ...pago, canje_deuda_id: e.target.value || null, canje_detalle: deuda ? deuda.label : pago.canje_detalle, monto: deuda ? String(deuda.monto) : pago.monto })
-              }} style={{ ...inp, marginBottom: 6 }}>
-                <option value="">— Elegir de lo pendiente, o escribir abajo —</option>
-                {deudasPendientes.map(d => (
-                  <option key={d.id} value={d.id}>{d.label} · ${d.monto.toLocaleString('es-AR')}</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                {deudasPendientes.map(d => {
+                  const idsSeleccionados = pago.canje_deuda_ids || (pago.canje_deuda_id ? [pago.canje_deuda_id] : [])
+                  const marcado = idsSeleccionados.includes(String(d.id))
+                  return (
+                    <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: marcado ? '#F0EAFB' : S.surface, border: `1px solid ${marcado ? '#3D1A6B' : S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={marcado} onChange={e => {
+                        const idsPrevios = pago.canje_deuda_ids || (pago.canje_deuda_id ? [pago.canje_deuda_id] : [])
+                        const nuevosIds = e.target.checked ? [...idsPrevios, String(d.id)] : idsPrevios.filter(id => id !== String(d.id))
+                        const deudasElegidas = deudasPendientes.filter(x => nuevosIds.includes(String(x.id)))
+                        const montoTotal = deudasElegidas.reduce((s, x) => s + (x.monto || 0), 0)
+                        const detalleTotal = deudasElegidas.map(x => x.label).join(' + ')
+                        onChange({ ...pago, canje_deuda_id: null, canje_deuda_ids: nuevosIds, canje_detalle: detalleTotal || pago.canje_detalle, monto: nuevosIds.length ? String(montoTotal) : pago.monto })
+                      }} />
+                      <span>{d.label} · ${d.monto.toLocaleString('es-AR')}</span>
+                    </label>
+                  )
+                })}
+              </div>
             </>
           )}
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>A cambio de</div>

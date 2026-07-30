@@ -2513,14 +2513,17 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       if (!monto) continue
       if (pago.tipo === 'canje') {
         pagosDetalle.push({ ...pago, monto })
-        // Si el canje se vinculó a una deuda puntual (ej. una compra de
-        // insumos pendiente), esa deuda también se marca como pagada con
-        // canje del otro lado — así queda calzado de verdad, no solo
-        // descripto en un texto.
-        if (pago.canje_deuda_id) {
-          const [tabla, idStr] = pago.canje_deuda_id.split('-')
+        // Si el canje se vinculó a una o varias deudas puntuales (ej. varias
+        // compras de insumos pendientes), cada una se marca como pagada con
+        // canje del otro lado, POR SU PROPIO MONTO — así queda calzado de
+        // verdad, no solo descripto en un texto.
+        const idsDeuda = pago.canje_deuda_ids || (pago.canje_deuda_id ? [pago.canje_deuda_id] : [])
+        for (const deudaIdStr of idsDeuda) {
+          const [tabla, idStr] = deudaIdStr.split('-')
           const id = parseInt(idStr)
-          const nuevoPago = { tipo: 'canje', monto, canje_detalle: `Compensado con venta ${venta.cultivo} — ${venta.comprador || ''}` }
+          const deudaOriginal = deudasContacto.find(d => String(d.id) === deudaIdStr)
+          const montoEstaDeuda = deudaOriginal?.monto ?? monto
+          const nuevoPago = { tipo: 'canje', monto: montoEstaDeuda, canje_detalle: `Compensado con venta ${venta.cultivo} — ${venta.comprador || ''}` }
           if (tabla === 'ci') {
             const { data } = await supabase.from('compras_insumos').select('pagos_detalle').eq('id', id).single()
             await supabase.from('compras_insumos').update({ estado_pago: 'pagado', pagos_detalle: [...(data?.pagos_detalle || []), nuevoPago] }).eq('id', id)
