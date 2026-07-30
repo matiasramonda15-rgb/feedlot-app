@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Btn, Loader } from './UI'
-import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
+import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso, confirmarRevisionBisemanal, procesarEnfermosCorral } from '../shared/sanidadLogic'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -292,95 +292,10 @@ export default function Sanidad({ usuario, mobile, nav }) {
   }
 
   async function confirmarRevision() {
-    const sin = revState.filter(s => s.ok === null).length
-    if (sin > 0) { alert(`Falta revisar ${sin} corral${sin !== 1 ? 'es' : ''}.`); return }
-
-    const { error: errRev } = await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
-    if (errRev) { alert('Error al registrar la revisión: ' + errRev.message); return }
-
-    for (let i = 0; i < corrales.length; i++) {
-      const st = revState[i]
-      if (st.ok) {
-        const { error } = await supabase.from('eventos_sanitarios').insert({
-          tipo: 'revision', corral_id: corrales[i].id,
-          producto: 'Sin novedad', cantidad_animales: corrales[i].animales,
-          observaciones: 'Sin novedades', registrado_por: usuario?.id,
-        })
-        if (error) { alert(`Error al guardar la revisión del corral ${corrales[i].numero}: ` + error.message); return }
-        continue
-      }
-      for (const enf of (st.enfermos || [])) {
-        if (!enf.desc) continue
-        const cant = enf.cantidad || 1
-        const productosValidos = (enf.productos || []).filter(p => p.prod)
-        if (productosValidos.length === 0) {
-          // Novedad sin ningún producto aplicado — igual queda registrada
-          const { error } = await supabase.from('eventos_sanitarios').insert({
-            tipo: 'revision', corral_id: corrales[i].id,
-            producto: null, cantidad_animales: cant,
-            observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-            enviado_enfermeria: enf.mover_enfermeria || false,
-            registrado_por: usuario?.id,
-          })
-          if (error) { alert('Error al guardar la novedad: ' + error.message); return }
-        } else {
-          // Un evento POR CADA producto realmente aplicado — así el historial
-          // muestra el nombre real de cada vacuna/producto, no un genérico "Varios".
-          // El ml cargado es la dosis POR ANIMAL, se multiplica por la cantidad.
-          for (const p of productosValidos) {
-            const mlPorAnimal = parseFloat(p.ml) || 0
-            const mlTotal = mlPorAnimal * cant
-            if (p.prod_id && mlTotal > 0) {
-              const { error: errStock } = await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlTotal })
-              if (errStock) { alert('Error al descontar stock de ' + p.prod + ': ' + errStock.message); return }
-            }
-            const { error } = await supabase.from('eventos_sanitarios').insert({
-              tipo: 'revision', corral_id: corrales[i].id,
-              producto: p.prod, cantidad_ml: mlTotal || null, cantidad_animales: cant,
-              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
-              enviado_enfermeria: enf.mover_enfermeria || false,
-              registrado_por: usuario?.id,
-            })
-            if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); return }
-          }
-        }
-        // Registrar en animales_enfermeria — un registro POR ANIMAL, aunque
-        // se hayan cargado juntos, para poder dar de alta a cada uno por
-        // separado más adelante.
-        const corrEnf = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
-        const mlPorAnimalTotal = productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null
-        for (let a = 0; a < cant; a++) {
-          const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
-            corral_origen_id: corrales[i].id,
-            corral_id: corrEnf?.id || null,
-            descripcion: enf.desc,
-            diagnostico: enf.diag,
-            tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
-            cantidad_ml: mlPorAnimalTotal,
-            estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
-            registrado_por: usuario?.id,
-          })
-          if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); return }
-        }
-        // Si se marcó "mover a enfermería", los animales tienen que salir
-        // físicamente del corral de origen y sumarse al de enfermería — antes
-        // esto no pasaba, solo quedaba el registro sin mover el número real.
-        if (corrEnf) {
-          const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', corrales[i].id).single()
-          const { error: errOrigen } = await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', corrales[i].id)
-          if (errOrigen) { alert('Error al descontar del corral de origen: ' + errOrigen.message); return }
-          const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnf.id).single()
-          const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnf.id)
-          if (errDestino) { alert('Error al sumar al corral de enfermería: ' + errDestino.message); return }
-          // Que quede en el mismo historial de movimientos que se ve en
-          // Corrales y tropas, para tener todo junto en un solo lugar.
-          await supabase.from('movimientos').insert({
-            tipo: 'traslado', corral_origen_id: corrales[i].id, corral_destino_id: corrEnf.id,
-            cantidad: cant, motivo: `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
-          })
-        }
-      }
-    }
+    const corrEnf = corrales.find(c => c.rol === 'enfermeria')
+    const estados = corrales.map((c, i) => ({ corralId: c.id, animales: c.animales, ok: revState[i].ok, enfermos: revState[i].enfermos }))
+    const { error } = await confirmarRevisionBisemanal(supabase, { estados, corralEnfermeriaId: corrEnf?.id || null, usuario })
+    if (error) { alert(error.message.startsWith('Falta revisar') ? error.message : 'Error al guardar la revisión: ' + error.message); return }
     await cargarDatos()
     alert('Revision confirmada correctamente.')
   }
@@ -436,79 +351,11 @@ export default function Sanidad({ usuario, mobile, nav }) {
     }
 
     async function confirmarRevisionM() {
-      const sin = revStateM.filter(s => s.ok === null).length
-      if (sin > 0) { alert(`Falta revisar ${sin} corral${sin !== 1 ? 'es' : ''}.`); return }
       setGuardandoM(true)
-      const { error: errRev } = await supabase.from('revisiones').insert({ tipo: 'bisemanal', registrado_por: usuario?.id })
-      if (errRev) { alert('Error al registrar la revisión: ' + errRev.message); setGuardandoM(false); return }
-      for (const st of revStateM) {
-        if (st.ok) {
-          const { error } = await supabase.from('eventos_sanitarios').insert({
-            tipo: 'revision', corral_id: st.id, producto: 'Sin novedad',
-            cantidad_animales: st.animales, observaciones: 'Sin novedades', registrado_por: usuario?.id,
-          })
-          if (error) { alert('Error al guardar: ' + error.message); setGuardandoM(false); return }
-          continue
-        }
-        for (const enf of (st.enfermos || [])) {
-          if (!enf.desc) continue
-          const cant = enf.cantidad || 1
-          const productosValidos = (enf.productos || []).filter(p => p.prod)
-          if (productosValidos.length === 0) {
-            const { error } = await supabase.from('eventos_sanitarios').insert({
-              tipo: 'revision', corral_id: st.id, producto: null,
-              observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-              cantidad_animales: cant, enviado_enfermeria: enf.mover_enfermeria || false,
-              registrado_por: usuario?.id,
-            })
-            if (error) { alert('Error al guardar la novedad: ' + error.message); setGuardandoM(false); return }
-          } else {
-            for (const p of productosValidos) {
-              // El ml cargado es la dosis POR ANIMAL — se multiplica por la
-              // cantidad para saber cuánto descontar del stock en total.
-              const mlPorAnimal = parseFloat(p.ml) || 0
-              const mlTotal = mlPorAnimal * cant
-              if (p.prod_id && mlTotal > 0) await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlTotal })
-              const { error } = await supabase.from('eventos_sanitarios').insert({
-                tipo: 'revision', corral_id: st.id, producto: p.prod,
-                observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
-                cantidad_animales: cant, cantidad_ml: mlTotal || null, enviado_enfermeria: enf.mover_enfermeria || false, registrado_por: usuario?.id,
-              })
-              if (error) { alert('Error al guardar el evento de ' + p.prod + ': ' + error.message); setGuardandoM(false); return }
-            }
-          }
-          // Un registro de enfermería POR ANIMAL, aunque se hayan cargado
-          // juntos — así cada uno se puede dar de alta por separado más
-          // adelante, aunque hayan arrancado el tratamiento el mismo día.
-          const corrEnfM = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
-          const mlPorAnimalTotal = productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null
-          for (let a = 0; a < cant; a++) {
-            const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
-              corral_origen_id: st.id, corral_id: corrEnfM?.id || null, descripcion: enf.desc, diagnostico: enf.diag,
-              tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
-              cantidad_ml: mlPorAnimalTotal,
-              estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
-            })
-            if (errEnf) { alert('Error al registrar en enfermería: ' + errEnf.message); setGuardandoM(false); return }
-          }
-          // Si se marcó "mover a enfermería", los animales tienen que salir
-          // físicamente del corral de origen y sumarse al de enfermería —
-          // antes esto no pasaba, quedaba solo el registro sin mover el
-          // número real de cada corral.
-          if (corrEnfM) {
-            const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', st.id).single()
-            const { error: errOrigen } = await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', st.id)
-            if (errOrigen) { alert('Error al descontar del corral de origen: ' + errOrigen.message); setGuardandoM(false); return }
-            const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfM.id).single()
-            const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfM.id)
-            if (errDestino) { alert('Error al sumar al corral de enfermería: ' + errDestino.message); setGuardandoM(false); return }
-            await supabase.from('movimientos').insert({
-              tipo: 'traslado', corral_origen_id: st.id, corral_destino_id: corrEnfM.id,
-              cantidad: cant, motivo: `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
-            })
-          }
-        }
-      }
+      const corrEnf = corrales.find(c => c.rol === 'enfermeria')
+      const estados = revStateM.map(st => ({ corralId: st.id, animales: st.animales, ok: st.ok, enfermos: st.enfermos }))
+      const { error } = await confirmarRevisionBisemanal(supabase, { estados, corralEnfermeriaId: corrEnf?.id || null, usuario })
+      if (error) { alert(error.message.startsWith('Falta revisar') ? error.message : 'Error al guardar: ' + error.message); setGuardandoM(false); return }
       await cargarDatos()
       alert('Revision confirmada.')
       setPantSan('alertas')
@@ -934,63 +781,15 @@ export default function Sanidad({ usuario, mobile, nav }) {
                         const enfs = c.enfermos.filter(e => (e.productos||[]).some(p=>p.prod) || e.desc || e.diag)
                         if (!enfs.length) { alert('Completá al menos un animal con diagnóstico o producto'); return }
                         setGuardandoM(true)
-                        try {
-                          for (const enf of enfs) {
-                            const cant = enf.cantidad || 1
-                            const productosValidos = (enf.productos || []).filter(p => p.prod)
-                            if (productosValidos.length === 0) {
-                              const { error } = await supabase.from('eventos_sanitarios').insert({
-                                tipo: 'revision', corral_id: revStateM[i]?.id, producto: null,
-                                observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}`,
-                                cantidad_animales: cant, enviado_enfermeria: enf.mover_enfermeria || false,
-                                registrado_por: usuario?.id,
-                              })
-                              if (error) throw error
-                            } else {
-                              for (const p of productosValidos) {
-                                const mlNum = (parseFloat(p.ml) || 0) * cant
-                                if (p.prod_id && mlNum > 0) {
-                                  await supabase.rpc('incrementar_stock_sanitario', { p_id: p.prod_id, p_delta: -mlNum })
-                                }
-                                const { error } = await supabase.from('eventos_sanitarios').insert({
-                                  tipo: 'revision', corral_id: revStateM[i]?.id, producto: p.prod,
-                                  observaciones: `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`,
-                                  cantidad_animales: cant, cantidad_ml: mlNum || null, enviado_enfermeria: enf.mover_enfermeria || false,
-                                  registrado_por: usuario?.id,
-                                })
-                                if (error) throw error
-                              }
-                            }
-                            const corrEnfBtn = enf.mover_enfermeria ? corrales.find(c => c.rol === 'enfermeria') : null
-                            for (let a = 0; a < cant; a++) {
-                              const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
-                                corral_origen_id: revStateM[i]?.id, corral_id: corrEnfBtn?.id || null, descripcion: enf.desc, diagnostico: enf.diag,
-                                tratamiento: productosValidos.map(p => `${p.prod}${p.ml ? ` (${p.ml} ml)` : ''}`).join(', ') || null,
-                                cantidad_ml: productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null,
-                                estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento',
-                                registrado_por: usuario?.id,
-                              })
-                              if (errEnf) throw errEnf
-                            }
-                            // Si se marcó "mover a enfermería", los animales tienen que salir
-                            // físicamente del corral de origen y sumarse al de enfermería.
-                            if (corrEnfBtn) {
-                              const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', revStateM[i]?.id).single()
-                              await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', revStateM[i]?.id)
-                              const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfBtn.id).single()
-                              await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfBtn.id)
-                              await supabase.from('movimientos').insert({
-                                tipo: 'traslado', corral_origen_id: revStateM[i]?.id, corral_destino_id: corrEnfBtn.id,
-                                cantidad: cant, motivo: `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
-                              })
-                            }
-                          }
+                        const corrEnfBtn = corrales.find(c => c.rol === 'enfermeria')
+                        const { error } = await procesarEnfermosCorral(supabase, { corralId: revStateM[i]?.id, enfermos: enfs, corralEnfermeriaId: corrEnfBtn?.id || null, usuario })
+                        if (error) {
+                          alert('Error: ' + error.message)
+                          setGuardandoM(false)
+                        } else {
                           const n = [...revStateM]
                           n[i] = {...n[i], confirmado: true}
                           setRevStateM(n)
-                          setGuardandoM(false)
-                        } catch(err) {
-                          alert('Error: ' + (err.message || JSON.stringify(err)))
                           setGuardandoM(false)
                         }
                       }} disabled={guardandoM}

@@ -243,7 +243,7 @@ export default function Agricultura({ usuario, mobile, nav }) {
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
-      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} stockInsumosAlim={stockInsumosAlim} usuario={usuario} contactos={contactos} />}
+      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} />}
@@ -2349,7 +2349,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
 }
 
 // ── TAB VENTAS DE GRANOS ──
-function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar, stockInsumosAlim, usuario, contactos }) {
+function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, cargar, stockInsumosAlim, stockAgro, usuario, contactos }) {
   const [showForm, setShowForm] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
@@ -2790,7 +2790,26 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
               <div style={{ fontSize: 12, color: S.amber, marginBottom: 16 }}>Pendiente de cobro: ${pendiente.toLocaleString('es-AR')} de ${(venta.total || 0).toLocaleString('es-AR')}</div>
               <div><Label>Fecha</Label><input type="date" value={formCobro.fecha} onChange={e => setFormCobro({...formCobro, fecha: e.target.value})} style={{...inputStyle, marginBottom: 12}} /></div>
               <Label>Formas de cobro</Label>
-              <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} deudasPendientes={deudasContacto} />
+              <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} deudasPendientes={deudasContacto}
+                opcionesInsumo={[
+                  ...stockAgro.map(s => ({ tabla: 'agro', id: s.id, nombre: s.insumo, unidad: s.unidad })),
+                  ...stockInsumosAlim.map(s => ({ tabla: 'alimentacion', id: s.id, nombre: s.insumo, unidad: s.unidad })),
+                ]}
+                onCrearDeuda={async ({ tabla, insumoId, insumoNombre, unidad, cantidad, precioUnitario, monto }) => {
+                  // Se carga como pendiente de RETIRO (no suma al stock todavía)
+                  // — el mismo criterio que usamos con el maíz de Matías, la urea
+                  // de Galeazzi, etc: primero queda la deuda registrada, y el
+                  // stock se actualiza recién cuando físicamente se retire.
+                  const { data, error } = await supabase.from('compras_insumos').insert({
+                    fecha: formCobro.fecha, insumo_id: insumoId, insumo_tipo: tabla, insumo_nombre: insumoNombre,
+                    cantidad, unidad, precio_unitario: precioUnitario, total: monto,
+                    proveedor: venta.comprador || null, estado_pago: 'pendiente', retirado: false, cantidad_retirada: 0,
+                    observaciones: `Canje contra venta de ${venta.cultivo}`,
+                  }).select().single()
+                  if (error) { alert('Error al cargar la compra: ' + error.message); return null }
+                  cargarDeudasContacto(venta.comprador)
+                  return { id: `ci-${data.id}`, label: `${insumoNombre} · ${cantidad.toLocaleString('es-AR')} ${unidad}`, monto }
+                }} />
               {totalCargado > 0 && Math.abs(totalCargado - pendiente) > 0.5 && (
                 <div style={{ fontSize: 12, color: S.amber, marginTop: 8 }}>El total cargado (${totalCargado.toLocaleString('es-AR')}) no coincide con lo pendiente — se puede cobrar parcial, no hace falta que sea exacto.</div>
               )}

@@ -18,11 +18,18 @@ const inpDefault = { width: '100%', border: '1px solid #E2DDD6', borderRadius: 6
 // cheque / e-cheq / canje, marcás si es paralelo, y si es cheque (físico o
 // electrónico) se abre el desglose propio/tercero con sus datos — incluida
 // la selección de cheques ya en cartera para depositar/endosar.
-export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [] }) {
+export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [] }) {
   const inp = inputStyle || inpDefault
   const set = (campo, valor) => onChange({ ...pago, [campo]: valor })
   const setChequePropio = (campo, valor) => onChange({ ...pago, cheque_propio: { ...(pago.cheque_propio || {}), [campo]: valor } })
   const esCheque = pago.tipo === 'cheque' || pago.tipo === 'e-cheq'
+  const [mostrarNuevaDeuda, setMostrarNuevaDeuda] = useState(false)
+  const [nuevaDeudaInsumo, setNuevaDeudaInsumo] = useState('')
+  const [nuevaDeudaCantidad, setNuevaDeudaCantidad] = useState('')
+  const [nuevaDeudaPrecio, setNuevaDeudaPrecio] = useState('')
+  const [creandoDeuda, setCreandoDeuda] = useState(false)
+  const insumoElegido = opcionesInsumo.find(o => `${o.tabla}-${o.id}` === nuevaDeudaInsumo)
+  const montoNuevaDeuda = Math.round((parseFloat(nuevaDeudaCantidad) || 0) * (parseFloat(nuevaDeudaPrecio) || 0))
 
   return (
     <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: 12, marginBottom: 8 }}>
@@ -83,6 +90,54 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
                 })}
               </div>
             </>
+          )}
+          {onCrearDeuda && !mostrarNuevaDeuda && (
+            <button onClick={() => setMostrarNuevaDeuda(true)} type="button"
+              style={{ padding: '5px 10px', fontSize: 11, background: 'transparent', border: `1px dashed ${S.border}`, color: S.accent, borderRadius: 6, cursor: 'pointer', marginBottom: 8, width: '100%', textAlign: 'left' }}>
+              + Cargar una compra nueva para compensar (sin salir de acá)
+            </button>
+          )}
+          {onCrearDeuda && mostrarNuevaDeuda && (
+            <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: 10, marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 6 }}>Nueva compra para compensar</div>
+              <select value={nuevaDeudaInsumo} onChange={e => setNuevaDeudaInsumo(e.target.value)} style={{ ...inp, marginBottom: 6 }}>
+                <option value="">— Elegí el insumo —</option>
+                {opcionesInsumo.filter(o => o.tabla === 'agro').length > 0 && (
+                  <optgroup label="🌾 Agricultura">
+                    {opcionesInsumo.filter(o => o.tabla === 'agro').map(o => <option key={`agro-${o.id}`} value={`agro-${o.id}`}>{o.nombre}</option>)}
+                  </optgroup>
+                )}
+                {opcionesInsumo.filter(o => o.tabla === 'alimentacion').length > 0 && (
+                  <optgroup label="🌽 Alimentación (Feedlot)">
+                    {opcionesInsumo.filter(o => o.tabla === 'alimentacion').map(o => <option key={`alimentacion-${o.id}`} value={`alimentacion-${o.id}`}>{o.nombre}</option>)}
+                  </optgroup>
+                )}
+              </select>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input type="number" placeholder={`Cantidad${insumoElegido?.unidad ? ' (' + insumoElegido.unidad + ')' : ''}`} value={nuevaDeudaCantidad} onChange={e => setNuevaDeudaCantidad(e.target.value)} style={{ ...inp, flex: 1 }} />
+                <input type="number" placeholder={`$/${insumoElegido?.unidad || 'unidad'}`} value={nuevaDeudaPrecio} onChange={e => setNuevaDeudaPrecio(e.target.value)} style={{ ...inp, flex: 1 }} />
+              </div>
+              {montoNuevaDeuda > 0 && <div style={{ fontSize: 12, color: S.text, marginBottom: 6 }}>Total: <strong>${montoNuevaDeuda.toLocaleString('es-AR')}</strong></div>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="button" disabled={creandoDeuda || !insumoElegido || !nuevaDeudaCantidad || !nuevaDeudaPrecio} onClick={async () => {
+                  setCreandoDeuda(true)
+                  const nueva = await onCrearDeuda({ tabla: insumoElegido.tabla, insumoId: insumoElegido.id, insumoNombre: insumoElegido.nombre, unidad: insumoElegido.unidad, cantidad: parseFloat(nuevaDeudaCantidad) || 0, precioUnitario: parseFloat(nuevaDeudaPrecio) || 0, monto: montoNuevaDeuda })
+                  setCreandoDeuda(false)
+                  if (!nueva) return
+                  const idsPrevios = pago.canje_deuda_ids || (pago.canje_deuda_id ? [pago.canje_deuda_id] : [])
+                  const nuevosIds = [...idsPrevios, String(nueva.id)]
+                  const montoTotal = [...deudasPendientes, nueva].filter(x => nuevosIds.includes(String(x.id))).reduce((s, x) => s + (x.monto || 0), 0)
+                  const detalleTotal = [...deudasPendientes, nueva].filter(x => nuevosIds.includes(String(x.id))).map(x => x.label).join(' + ')
+                  onChange({ ...pago, canje_deuda_id: null, canje_deuda_ids: nuevosIds, canje_detalle: detalleTotal, monto: String(montoTotal) })
+                  setNuevaDeudaInsumo(''); setNuevaDeudaCantidad(''); setNuevaDeudaPrecio(''); setMostrarNuevaDeuda(false)
+                }} style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: (creandoDeuda || !insumoElegido || !nuevaDeudaCantidad || !nuevaDeudaPrecio) ? 0.5 : 1 }}>
+                  {creandoDeuda ? '...' : '✓ Crear'}
+                </button>
+                <button type="button" onClick={() => { setMostrarNuevaDeuda(false); setNuevaDeudaInsumo(''); setNuevaDeudaCantidad(''); setNuevaDeudaPrecio('') }}
+                  style={{ padding: '8px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>
+              </div>
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 4 }}>Suma al stock (o queda pendiente de retirar, según el módulo) y se carga como pendiente de pago, a nombre de este contacto — queda seleccionada para compensar automáticamente.</div>
+            </div>
           )}
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>A cambio de</div>
           <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
@@ -158,12 +213,12 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
 
 // Lista completa de pagos: varias FilaPago + botón de agregar + resumen del
 // total cargado contra el monto objetivo (si se pasa).
-export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [] }) {
+export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [] }) {
   const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
   return (
     <div>
       {pagos.map((pago, idx) => (
-        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra} deudasPendientes={deudasPendientes}
+        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra} deudasPendientes={deudasPendientes} onCrearDeuda={onCrearDeuda} opcionesInsumo={opcionesInsumo}
           onChange={p => onChangePagos(pagos.map((pp, i) => i === idx ? p : pp))}
           onRemove={pagos.length > 1 ? () => onChangePagos(pagos.filter((_, i) => i !== idx)) : null}
         />
