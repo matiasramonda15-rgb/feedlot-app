@@ -124,6 +124,7 @@ export default function Insumos({ usuario }) {
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
     numero_factura: '',
     observaciones: '',
+    es_paralelo: false,
     pagos: [{ ...PAGO_INIT }],
   })
 
@@ -232,7 +233,11 @@ export default function Insumos({ usuario }) {
       cuit: form.cuit || null, iva: form.iva || null, cbu: form.cbu || null,
       numero_factura: form.numero_factura || null,
       forma_pago: pagarAhora && total ? form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
-      es_paralelo: form.pagos.some(p => p.es_paralelo),
+      // Si se eligió "Caja 2" al cargar la compra (aunque todavía no se
+      // pague), se respeta esa elección — antes esto solo se definía recién
+      // al pagar, así que una compra pendiente siempre quedaba en Caja 1
+      // por defecto, aunque en realidad correspondiera a la otra caja.
+      es_paralelo: form.es_paralelo || form.pagos.some(p => p.es_paralelo),
       pagos_detalle: pagarAhora && total ? form.pagos : null,
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id,
@@ -790,6 +795,10 @@ export default function Insumos({ usuario }) {
                 <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
               </div>
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: S.text, cursor: 'pointer', width: 'fit-content' }}>
+              <input type="checkbox" checked={form.es_paralelo} onChange={e => setForm({...form, es_paralelo: e.target.checked})} />
+              Es Caja 2 — se ve en el resumen de cuenta del proveedor en la caja correcta, aunque todavía no se pague
+            </label>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={() => { setPagarAhora(false); guardar() }} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -853,6 +862,10 @@ export default function Insumos({ usuario }) {
                 <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
               </div>
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: S.text, cursor: 'pointer', width: 'fit-content' }}>
+              <input type="checkbox" checked={form.es_paralelo} onChange={e => setForm({...form, es_paralelo: e.target.checked})} />
+              Es Caja 2 — se ve en el resumen de cuenta del proveedor en la caja correcta, aunque todavía no se pague
+            </label>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={() => { setPagarAhora(false); guardar() }} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
