@@ -449,10 +449,9 @@ export default function Personal({ usuario }) {
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.green }}>${p.monto?.toLocaleString('es-AR')}</td>
                       <td style={{ padding: '9px 12px' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => {
-                            abrirReciboDoble({
+                          <button onClick={async () => {
+                            await abrirReciboDoble(supabase, {
                               titulo: 'Recibo de Pago',
-                              numero: String(p.id).padStart(6, '0'),
                               fecha: new Date(p.fecha).toLocaleDateString('es-AR'),
                               filas: [
                                 ['Empleado', p.empleados?.nombre || '—'],

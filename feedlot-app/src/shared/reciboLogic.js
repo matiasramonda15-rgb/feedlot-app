@@ -17,6 +17,16 @@
 //     etiquetaCopia2: 'Copia — Ramonda Hnos S.A.',
 //   })
 
+// Numeración correlativa — un solo contador para TODOS los recibos de la
+// app, sin importar desde qué módulo se generen. Cada vez que se abre un
+// recibo para imprimir, se pide el próximo número (nunca se repite, aunque
+// se cierre sin imprimir — como una numeradora de facturero real).
+export async function siguienteNumeroRecibo(supabase) {
+  const { data, error } = await supabase.rpc('siguiente_numero_recibo')
+  if (error) { console.error('Error al pedir el número de recibo:', error); return null }
+  return data
+}
+
 function copiaHTML({ titulo, numero, fecha, filas, montoLabel, monto, colorMonto, notaPie, firmaIzq, firmaDer, etiqueta }) {
   const filasHtml = filas
     .filter(([, val]) => val !== null && val !== undefined && val !== '')
@@ -87,7 +97,8 @@ export function montoEnLetras(monto) {
 }
 
 // pagos: array de { tipo, monto, subtipo_cheque, cheque_propio: {numero,banco,fecha_vencimiento}, cheque_tercero_detalle: [{numero,banco,fecha_vencimiento,monto}], es_paralelo }
-export function generarOrdenDePago({ destinatario, domicilio, localidad, cuit, iva, cbu, fecha, concepto, pagos, notaPie }) {
+export async function generarOrdenDePago(supabase, { destinatario, domicilio, localidad, cuit, iva, cbu, fecha, concepto, pagos, notaPie }) {
+  const numero = await siguienteNumeroRecibo(supabase)
   const fechaStr = fecha ? new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
   const totalMonto = (pagos || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
 
@@ -133,6 +144,7 @@ export function generarOrdenDePago({ destinatario, domicilio, localidad, cuit, i
           <td style="width:33%;text-align:right;vertical-align:top;">
             <div>CUIT: &nbsp;30-71682182-6</div>
             <div>I.V.A. &nbsp;Responsable inscripto</div>
+            <div style="margin-top:6px;font-weight:bold;">N° ${numero ? String(numero).padStart(6, '0') : '—'}</div>
           </td>
         </tr>
       </table>
@@ -268,8 +280,9 @@ export function generarReciboDobleHTML(params) {
   </body></html>`
 }
 
-export function abrirReciboDoble(params) {
-  const html = generarReciboDobleHTML(params)
+export async function abrirReciboDoble(supabase, params) {
+  const numero = await siguienteNumeroRecibo(supabase)
+  const html = generarReciboDobleHTML({ ...params, numero: numero ? String(numero).padStart(6, '0') : params.numero })
   const win = window.open('', '_blank')
   win.document.write(html)
   win.document.close()

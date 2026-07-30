@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 
 const S = {
@@ -34,7 +35,8 @@ function numeroALetras(num) {
   return resultado.trim()
 }
 
-function generarRecibo(datos, pagos) {
+async function generarRecibo(datos, pagos) {
+  const numero = await siguienteNumeroRecibo(supabase)
   const fecha = new Date(datos.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const totalMonto = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
   const entero = Math.floor(totalMonto)
@@ -53,7 +55,7 @@ function generarRecibo(datos, pagos) {
     <table style="width:100%;margin-bottom:10px;"><tr>
       <td style="width:33%;vertical-align:top;"><div style="font-weight:bold;">Pedro Barciocco 1221</div><div>TEL: 3574-442656</div><div style="margin-top:8px;border:1px solid #333;display:inline-block;padding:2px 6px;font-weight:bold;">X &nbsp; NO VALIDO COMO FACTURA</div><div style="font-size:11px;margin-top:2px;">Orden de pago</div></td>
       <td style="width:34%;text-align:center;vertical-align:middle;"><div style="font-size:22px;font-weight:900;">RAMONDA</div><div style="font-size:14px;font-weight:600;">HNOS S.A.</div></td>
-      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: &nbsp;30-71682182-6</div><div>I.V.A. &nbsp;Responsable inscripto</div></td>
+      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: &nbsp;30-71682182-6</div><div>I.V.A. &nbsp;Responsable inscripto</div><div style="margin-top:6px;font-weight:bold;">N° ${numero ? String(numero).padStart(6, '0') : '—'}</div></td>
     </tr></table>
     <hr style="border:1px solid #333;margin:8px 0;">
     <table style="width:100%;border:1px solid #333;border-collapse:collapse;">

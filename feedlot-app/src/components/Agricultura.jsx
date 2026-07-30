@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
-import { abrirReciboDoble } from '../shared/reciboLogic'
+import { abrirReciboDoble, siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 
@@ -868,7 +868,8 @@ function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
   win.document.close()
 }
 
-function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro) {
+async function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro) {
+  const numero = await siguienteNumeroRecibo(supabase)
   // Acepta una sola orden (uso normal desde la fila individual) o un array de
   // varias (cuando se pagan juntas, aunque sean de campos distintos) — en ese
   // caso arma UN SOLO comprobante con el detalle de cada campo, no uno por cada.
@@ -936,7 +937,7 @@ function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro) {
     <table style="width:100%;margin-bottom:10px;"><tr>
       <td style="width:33%;vertical-align:top;"><div style="font-weight:bold;">Pedro Barciocco 1221</div><div>TEL: 3574-442656</div><div style="margin-top:8px;border:1px solid #333;display:inline-block;padding:2px 6px;font-weight:bold;">X &nbsp; NO VALIDO COMO FACTURA</div><div style="font-size:11px;margin-top:2px;">Orden de pago</div></td>
       <td style="width:34%;text-align:center;vertical-align:middle;"><div style="font-size:22px;font-weight:900;">RAMONDA</div><div style="font-size:14px;font-weight:600;">HNOS S.A.</div></td>
-      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: &nbsp;30-71682182-6</div><div>I.V.A. &nbsp;Responsable inscripto</div></td>
+      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: &nbsp;30-71682182-6</div><div>I.V.A. &nbsp;Responsable inscripto</div><div style="margin-top:6px;font-weight:bold;">N° ${numero ? String(numero).padStart(6, '0') : '—'}</div></td>
     </tr></table>
     <hr style="border:1px solid #333;margin:8px 0;">
     <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
@@ -2953,7 +2954,8 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
 
 // ── TAB ARRIENDOS ──
 
-function generarReciboArriendo(v, campo, pagos) {
+async function generarReciboArriendo(v, campo, pagos) {
+  const numero = await siguienteNumeroRecibo(supabase)
   const fecha = v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
   const totalMonto = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
   const entero = Math.floor(totalMonto)
@@ -2988,7 +2990,7 @@ function generarReciboArriendo(v, campo, pagos) {
     <table style="width:100%;margin-bottom:10px;"><tr>
       <td style="width:33%;vertical-align:top;"><div style="font-weight:bold;">Pedro Barciocco 1221</div><div>TEL: 3574-442656</div><div style="margin-top:8px;border:1px solid #333;display:inline-block;padding:2px 6px;font-weight:bold;">X NO VALIDO COMO FACTURA</div></td>
       <td style="width:34%;text-align:center;vertical-align:middle;"><div style="font-size:22px;font-weight:900;">RAMONDA</div><div style="font-size:14px;font-weight:600;">HNOS S.A.</div></td>
-      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: 30-71682182-6</div><div>FECHA <strong>${fecha}</strong></div></td>
+      <td style="width:33%;text-align:right;vertical-align:top;"><div>CUIT: 30-71682182-6</div><div>FECHA <strong>${fecha}</strong></div><div style="margin-top:6px;font-weight:bold;">N° ${numero ? String(numero).padStart(6, '0') : '—'}</div></td>
     </tr></table>
     <hr style="border:1px solid #333;margin:8px 0;">
     <table style="width:100%;border:1px solid #333;border-collapse:collapse;">
@@ -3359,16 +3361,15 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
 
   // Recibo imprimible de pago de agroquímicos — acepta una compra sola o varias
   // juntas (pago agrupado), y arma un recibo doble (proveedor + empresa).
-  function generarReciboAgro(compraOCompras, pagos, stockRef) {
+  async function generarReciboAgro(compraOCompras, pagos, stockRef) {
     const compras = Array.isArray(compraOCompras) ? compraOCompras : [compraOCompras]
     const totalMonto = compras.reduce((s, c) => s + (c.total || 0), 0)
     const proveedor = compras[0]?.proveedor || '—'
     const fecha = compras[0]?.fecha ? new Date(compras[0].fecha + 'T12:00:00').toLocaleDateString('es-AR') : new Date().toLocaleDateString('es-AR')
     const detalle = compras.map(c => `${c.insumo_nombre || 'Agroquímico'} · ${(c.cantidad || 0).toLocaleString('es-AR')} ${c.unidad || ''}`).join(' + ')
     const formaPago = (pagos || []).map(p => p.subtipo_cheque || p.tipo).filter(Boolean).join(' + ') || '—'
-    abrirReciboDoble({
+    await abrirReciboDoble(supabase, {
       titulo: 'Recibo de pago',
-      numero: Date.now().toString().slice(-6),
       fecha,
       filas: [
         ['Proveedor', proveedor],

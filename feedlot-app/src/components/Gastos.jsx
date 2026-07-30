@@ -50,8 +50,8 @@ const FORM_INIT = {
 }
 
 
-function generarRecibo(gasto, pagos) {
-  generarOrdenDePago({
+async function generarRecibo(supabase, gasto, pagos) {
+  await generarOrdenDePago(supabase, {
     destinatario: gasto.proveedor,
     domicilio: gasto.domicilio,
     localidad: gasto.localidad,
@@ -661,7 +661,7 @@ export default function Gastos({ usuario }) {
                             💳 Completar pago
                           </button>
                         )}
-                        <button onClick={() => generarRecibo(g, g.pagos_detalle || [])}
+                        <button onClick={() => generarRecibo(supabase, g, g.pagos_detalle || [])}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                           🖨️ Recibo
                         </button>

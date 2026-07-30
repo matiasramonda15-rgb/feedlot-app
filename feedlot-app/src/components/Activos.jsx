@@ -182,7 +182,7 @@ export default function Activos({ usuario }) {
 
   // Recibo imprimible de un pago a tercero hecho con la plata del socio (factura a
   // nombre de la sociedad para descargar IVA, pero la plata no sale de la caja).
-  function generarReciboRetiro(r) {
+  async function generarReciboRetiro(r) {
     const pago = {
       tipo: r.forma_pago,
       monto: r.monto,
@@ -190,7 +190,7 @@ export default function Activos({ usuario }) {
       subtipo_cheque: r.forma_pago === 'cheque' ? 'propio' : '',
       cheque_propio: r.forma_pago === 'cheque' ? { numero: r.cheque_numero, banco: r.cheque_banco, fecha_vencimiento: r.cheque_vencimiento } : null,
     }
-    generarOrdenDePago({
+    await generarOrdenDePago(supabase, {
       destinatario: r.tercero,
       fecha: r.fecha,
       concepto: `${r.concepto || 'Pago por cuenta y orden de Ramonda Hnos S.A.'} · ${r.tercero || ''}`,
@@ -1143,10 +1143,9 @@ export default function Activos({ usuario }) {
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>-${r.monto?.toLocaleString('es-AR')}</td>
                       <td style={{ padding: '9px 12px' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => {
-                            abrirReciboDoble({
+                          <button onClick={async () => {
+                            await abrirReciboDoble(supabase, {
                               titulo: 'Comprobante de Retiro',
-                              numero: String(r.id).padStart(6, '0'),
                               fecha: new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR'),
                               filas: [
                                 ['Socio', r.socio],
