@@ -2418,13 +2418,18 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       const { error: eCaja } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'ingreso', descripcion: desc, monto: totalNegro })
       if (eCaja) alert('La venta se guardó, pero no se pudo cargar en Caja 2: ' + eCaja.message)
     } else if (editando) {
-      // Editar una venta ya confirmada (con su monto real) — se respeta lo
-      // que ya estaba cargado en esos campos, solo se actualizan los datos
-      // básicos de la operación.
-      const { error } = await supabase.from('ventas_granos').update({
+      // Editar una venta ya confirmada — antes esto NO actualizaba el total,
+      // aunque se cambiara el kg o el precio (quedaba "congelado" con el
+      // valor viejo, dando la sensación de que la edición no hacía nada).
+      // Ahora si hay precio pactado, el total se recalcula con los datos
+      // nuevos — si se cargó una liquidación real distinta (con "Agregar
+      // otra liquidación"), esa sigue siendo la fuente de verdad aparte.
+      const upd = {
         campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
         precio_tn: precioTn || null, comprador: form.comprador || null, observaciones: form.observaciones || null,
-      }).eq('id', editando)
+      }
+      if (precioTn) { upd.total = total; upd.monto_facturado = total }
+      const { error } = await supabase.from('ventas_granos').update(upd).eq('id', editando)
       if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
     } else {
       // Venta recién pactada — se calza el precio hoy, pero el contrato y el
@@ -3579,15 +3584,31 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     // Actualizar stock: la cantidad se suma solo si ya se retiró físicamente.
     // Si se dejó marcado "todavía no lo retiramos", el stock queda igual hasta
     // que se marque como retirado más adelante.
-    // El precio de referencia solo se actualiza si ya se conoce (remito con precio o pago realizado).
+    // El precio de referencia queda como PROMEDIO PONDERADO entre lo que ya
+    // había en stock y esta compra nueva — así refleja el costo real de lo
+    // que hay guardado, no solo el último precio pagado. El precio real de
+    // esta compra puntual queda aparte, en precio_ultima_compra, para poder
+    // compararlo y detectar si algo se cargó mal.
     const item = stock.find(s => s.id === parseInt(formCompra.agroquimico_id))
     if (item && formCompra.retirado) {
-      const upd = { cantidad: (item.cantidad || 0) + cantidad, actualizado_en: new Date().toISOString() }
-      if (precioUnit) upd.precio_referencia = precioUnit
+      const cantidadAnterior = parseFloat(item.cantidad) || 0
+      const precioAnterior = parseFloat(item.precio_referencia) || precioUnit
+      const cantidadTotal = cantidadAnterior + cantidad
+      const upd = { cantidad: cantidadTotal, actualizado_en: new Date().toISOString() }
+      if (precioUnit) {
+        upd.precio_referencia = cantidadTotal > 0
+          ? Math.round(((cantidadAnterior * precioAnterior) + (cantidad * precioUnit)) / cantidadTotal * 100) / 100
+          : precioUnit
+        upd.precio_ultima_compra = precioUnit
+      }
       if (precioUnitUsd) upd.precio_referencia_usd = precioUnitUsd
       await supabase.from('stock_agro').update(upd).eq('id', item.id)
     } else if (item && precioUnit) {
-      const upd = { precio_referencia: precioUnit, actualizado_en: new Date().toISOString() }
+      const upd = { precio_ultima_compra: precioUnit, actualizado_en: new Date().toISOString() }
+      // Si todavía no se retiró, no hay cantidad nueva sumándose al stock
+      // todavía — el promedio ponderado se termina de ajustar recién cuando
+      // se marque como retirado (ahí se sabe cuánto entra de verdad).
+      if (!item.precio_referencia) upd.precio_referencia = precioUnit
       if (precioUnitUsd) upd.precio_referencia_usd = precioUnitUsd
       await supabase.from('stock_agro').update(upd).eq('id', item.id)
     }
@@ -3651,7 +3672,19 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             creditoEsDolares: formPagoGrupal.credito_es_dolares, cotizacionDolarCredito: cotizacionDolar, creditoMontoUsd: formPagoGrupal.credito_monto_usd,
             actualizarPrecioReferencia: async (i, precioFinal) => {
               if (!i.insumo_id) return
-              await supabase.from('stock_agro').update({ precio_referencia: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
+              const { data: item } = await supabase.from('stock_agro').select('cantidad, precio_referencia').eq('id', i.insumo_id).single()
+              // El stock ya incluye esta compra (se sumó al cargarla) — así
+              // que lo que había ANTES es el total actual menos esta compra.
+              // Eso, valuado al precio promedio viejo, más esta compra al
+              // precio nuevo, da el promedio ponderado correcto.
+              const cantidadEstaCompra = parseFloat(i.cantidad) || 0
+              const cantidadTotal = parseFloat(item?.cantidad) || 0
+              const cantidadAnterior = Math.max(0, cantidadTotal - cantidadEstaCompra)
+              const precioAnterior = parseFloat(item?.precio_referencia) || precioFinal
+              const nuevoPromedio = cantidadTotal > 0
+                ? Math.round(((cantidadAnterior * precioAnterior) + (cantidadEstaCompra * precioFinal)) / cantidadTotal * 100) / 100
+                : precioFinal
+              await supabase.from('stock_agro').update({ precio_referencia: nuevoPromedio, precio_ultima_compra: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
             },
           })
           if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
@@ -3971,7 +4004,10 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: bajo ? S.red : S.green }}>{s.cantidad?.toLocaleString('es-AR', s.dosis_chica ? {} : { maximumFractionDigits: 1 })}</td>
                     <td style={{ padding: '8px 12px', color: S.muted }}>{s.unidad}</td>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: S.muted }}>
-                      {s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}` : '—'}
+                      {s.precio_referencia ? <div>${s.precio_referencia.toLocaleString('es-AR')} <span style={{ fontSize: 10, color: S.hint, fontFamily: "'IBM Plex Sans', sans-serif" }}>prom.</span></div> : '—'}
+                      {s.precio_ultima_compra && s.precio_ultima_compra !== s.precio_referencia && (
+                        <div style={{ fontSize: 11, color: S.accent }}>última: ${s.precio_ultima_compra.toLocaleString('es-AR')}</div>
+                      )}
                       {s.precio_referencia_usd ? <div style={{ fontSize: 11, color: S.green }}>US$ {s.precio_referencia_usd.toLocaleString('es-AR')}</div> : null}
                     </td>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{s.minimo_stock || '—'}</td>
