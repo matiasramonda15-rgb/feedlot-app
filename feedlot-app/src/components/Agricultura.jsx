@@ -3625,7 +3625,12 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         async function pagarSeleccionadas() {
           if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
           if (faltaPrecio) { alert('Falta cargar el precio de la factura en alguna de las compras seleccionadas.'); return }
-          if (Math.abs(totalSel - totalPagGrupal) > 0.5) { alert(`El total de pagos no coincide`); return }
+          // Se permite dejar el pago en $0 — sirve para fijar el precio de una
+          // compra sin sacar plata todavía (se paga después, de a poco).
+          if (totalPagGrupal === 0 && !confirm('No cargaste ningún pago — esto solo va a fijar el precio de la compra, dejándola pendiente por el total completo. ¿Es lo que querés?')) return
+          // Se permite pagar MENOS que el total (deja el resto pendiente) —
+          // solo se bloquea si se carga de más.
+          if (totalSel > 0 && totalPagGrupal - totalSel > 0.5) { alert('El total de pagos es mayor que el total de las compras — revisá los montos.'); return }
           setGuardandoPago(true)
           const comprasPagadas = seleccionadas.map(id => {
             const i = ingresos.find(x => x.id === id)
