@@ -452,13 +452,18 @@ export default function Comercial({ usuario }) {
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>💵 Fondos necesarios — cheques emitidos por vencer</div>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {[5, 15, 30].map(d => (
                   <button key={d} onClick={() => setDiasProyeccion(d)}
                     style={{ padding: '5px 12px', fontSize: 12, fontWeight: diasProyeccion === d ? 600 : 400, background: diasProyeccion === d ? S.accent : 'transparent', border: `1px solid ${diasProyeccion === d ? S.accent : S.border}`, color: diasProyeccion === d ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer' }}>
                     {d} días
                   </button>
                 ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
+                  <input type="number" min="1" value={diasProyeccion} onChange={e => setDiasProyeccion(Math.max(1, parseInt(e.target.value) || 1))}
+                    style={{ width: 60, padding: '5px 8px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, textAlign: 'center' }} />
+                  <span style={{ fontSize: 12, color: S.muted }}>días</span>
+                </div>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
