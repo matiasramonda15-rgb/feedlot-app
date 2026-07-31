@@ -422,8 +422,12 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     if (!formIngreso.cantidad) { alert('Ingresa la cantidad'); return }
     const item = stockDB.find(s => s.insumo === formIngreso.insumo)
     if (!item) { alert(`No se encontró el insumo "${formIngreso.insumo}" en el stock. Probá recargar la página y volver a intentar.`); return }
-    setGuardando(true)
     const cant = parseFloat(formIngreso.cantidad)
+    // Un ingreso de más de 500.000 kg de una sola vez es rarísimo — lo más
+    // probable es que sea un typo con algún cero de más (nos pasó justo con
+    // esto). No bloquea, solo pide confirmar antes de seguir.
+    if (cant > 500000 && !confirm(`${cant.toLocaleString('es-AR')} kg es una cantidad muy grande para un solo ingreso — ¿es correcto, o se pasó algún cero de más?`)) return
+    setGuardando(true)
     const pctMsForm = parseFloat(formIngreso.pct_ms) || null
     const kgMsForm = pctMsForm ? Math.round(cant * pctMsForm / 100 * 10) / 10 : null
     // La cantidad solo se suma al stock si ya se retiró físicamente — si se dejó

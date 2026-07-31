@@ -139,6 +139,9 @@ export default function Insumos({ usuario }) {
       return
     }
     const cantidad = parseFloat(form.cantidad)
+    // Una cantidad muy grande de una sola vez suele ser un typo con algún
+    // cero de más — no bloquea, solo pide confirmar antes de seguir.
+    if (cantidad > 500000 && !confirm(`${cantidad.toLocaleString('es-AR')} ${form.unidad} es una cantidad muy grande para un solo ingreso — ¿es correcto, o se pasó algún cero de más?`)) return
     const precioUnit = form.precio_unitario ? parseFloat(form.precio_unitario) : null
     const total = precioUnit ? (form.total ? parseFloat(form.total) : Math.round(cantidad * precioUnit)) : null
     const totalPagos = form.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)

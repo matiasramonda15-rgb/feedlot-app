@@ -3522,6 +3522,10 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     const precioUnitDesdeUsd = precioUnitUsd ? Math.round(precioUnitUsd * cotizacionDolar) : null
     if (pagarAhora && !formCompra.precio_unitario && !precioUnitDesdeUsd) { alert('Para pagar ahora necesitás ingresar el precio unitario (en pesos o en dólares). Si todavía no llegó la factura, desmarcá "Pagar ahora" y cargá el remito sin precio.'); return }
     const cantidad = parseFloat(formCompra.cantidad)
+    // Una cantidad muy grande de una sola vez suele ser un typo con algún
+    // cero de más (nos pasó con una compra de semillas) — no bloquea, solo
+    // pide confirmar antes de seguir.
+    if (cantidad > 500000 && !confirm(`${cantidad.toLocaleString('es-AR')} es una cantidad muy grande para una sola compra — ¿es correcto, o se pasó algún cero de más?`)) return
     const precioUnit = precioUnitDesdeUsd || (formCompra.precio_unitario ? parseFloat(formCompra.precio_unitario) : null)
     const total = precioUnit ? (formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit)) : null
     const totalPagos = formCompra.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)

@@ -13,6 +13,12 @@ const S = {
 
 const MENU = [
   {
+    section: 'NOVEDADES',
+    items: [
+      { id: 'novedades',    label: '📋 Novedades',         roles: ['dueno', 'secretaria', 'encargado'] },
+    ]
+  },
+  {
     section: 'FEEDLOT',
     items: [
       { id: 'tablero',      label: 'Tablero',             roles: ['dueno', 'secretaria', 'encargado'] },
@@ -59,6 +65,7 @@ const MENU = [
     items: [
       { id: 'reportes',     label: 'Reportes',            roles: ['dueno'] },
       { id: 'presupuesto',  label: 'Presupuesto',         roles: ['dueno'] },
+      { id: 'diagnostico',  label: '🩺 Diagnóstico',       roles: ['dueno'] },
     ]
   },
 ]
