@@ -31,7 +31,18 @@ async function chequearPagosSinCaja() {
   // Una compra pagada con crédito no tiene movimiento de caja directo — la
   // plata sale de a poco, con cada cuota — así que no es un error real.
   const { data: creditos } = await supabase.from('creditos').select('compra_insumos_id').not('compra_insumos_id', 'is', null)
-  const idsConCredito = new Set((creditos || []).map(c => c.compra_insumos_id))
+  const idsCreditoDirectos = (creditos || []).map(c => c.compra_insumos_id)
+  // Un crédito puede cubrir VARIAS compras juntas (una sola cuota para
+  // todo), pero la base solo permite vincular una — así que las demás
+  // "hermanas" (mismo proveedor y misma fecha que una que sí está
+  // vinculada) también se dan por cubiertas por ese mismo crédito.
+  const { data: comprasBase } = await supabase.from('compras_insumos').select('id, proveedor, fecha').in('id', idsCreditoDirectos.length ? idsCreditoDirectos : [-1])
+  const clavesConCredito = new Set((comprasBase || []).map(c => `${c.proveedor}|${c.fecha}`))
+  const { data: todasCompras } = await supabase.from('compras_insumos').select('id, proveedor, fecha')
+  const idsConCredito = new Set([
+    ...idsCreditoDirectos,
+    ...(todasCompras || []).filter(c => clavesConCredito.has(`${c.proveedor}|${c.fecha}`)).map(c => c.id),
+  ])
   for (const t of TABLAS_PAGO) {
     let query = supabase.from(t.tabla).select('*')
     if (t.estado) query = query.eq(t.estado, t.valorPagado)
