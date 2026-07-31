@@ -1128,16 +1128,24 @@ export default function Activos({ usuario }) {
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead><tr style={{ background: S.bg }}>
-                  {['Fecha', 'Socio', 'Concepto', 'Forma pago', 'Monto', ''].map(h => (
+                  {['Fecha', 'Socio', 'Tipo', 'Concepto', 'Forma pago', 'Monto', ''].map(h => (
                     <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
-                  {retirosFiltrados.length === 0 && <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay retiros registrados.</td></tr>}
+                  {retirosFiltrados.length === 0 && <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay retiros registrados.</td></tr>}
                   {retirosFiltrados.map(r => (
                     <tr key={r.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                       <td style={{ padding: '9px 12px', fontWeight: 600 }}>{r.socio}</td>
+                      <td style={{ padding: '9px 12px' }}>
+                        {r.no_afecta_caja
+                          ? <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.purpleLight || '#F0EAFB', color: '#3D1A6B', whiteSpace: 'nowrap' }}>🧾 Pagó con plata propia</span>
+                          : r.es_adelanto
+                          ? <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber, whiteSpace: 'nowrap' }}>📌 Adelanto p/ tercero</span>
+                          : <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.redLight, color: S.red, whiteSpace: 'nowrap' }}>💵 Salió de la caja</span>
+                        }
+                      </td>
                       <td style={{ padding: '9px 12px', color: S.muted }}>{r.concepto || '—'}</td>
                       <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{r.forma_pago}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>-${r.monto?.toLocaleString('es-AR')}</td>

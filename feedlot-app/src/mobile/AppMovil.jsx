@@ -45,7 +45,7 @@ export default function AppMovil({ usuario, onLogout }) {
     const ayerStr = ayer.toISOString().split('T')[0]
     const [{ data: formulasDB }, { data: cfgMixer }, { data: racionesAyer }, { data: revisionesHoy }, { data: remitosSinPrecio }, { data: insumosSinRetirar }] = await Promise.all([
       supabase.from('formulas_mixer').select('*').order('orden'),
-      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento', 'fecha_term_c']),
+      supabase.from('configuracion').select('clave, valor').in('clave', ['capacidad_mixer_terminacion', 'capacidad_mixer_recria', 'capacidad_mixer_acostumbramiento', 'fecha_term_c', 'alerta_remitos_snooze_hasta', 'alerta_insumos_snooze_hasta']),
       supabase.from('raciones_app').select('corral_id, kg_total, fecha, creado_en, tipo_dieta, corrales(numero)').order('creado_en', { ascending: false }).limit(500),
       supabase.from('revisiones').select('id, creado_en').eq('tipo', 'bisemanal').order('creado_en', { ascending: false }).limit(1),
       supabase.from('compras_insumos').select('id, insumo_nombre, fecha, proveedor').is('total', null).neq('insumo_tipo', 'agro').order('fecha'),
@@ -106,7 +106,13 @@ export default function AppMovil({ usuario, onLogout }) {
     // Solo avisar de lo que ya lleva unos días — recién cargado no es urgente
     const remitosSinPrecioViejos = (remitosSinPrecio || []).filter(r => (diasDesde(r.fecha) || 0) >= 3)
     const insumosSinRetirarViejos = (insumosSinRetirar || []).filter(r => (diasDesde(r.fecha) || 0) >= 5)
-    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0) && (!s.pedido_realizado_hasta || s.pedido_realizado_hasta < hoyStr)), stockSanitario: (stockSan || []).filter(p => !p.pedido_realizado_hasta || p.pedido_realizado_hasta < hoyStr), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [], revisionHoyHecha, remitosSinPrecio: remitosSinPrecioViejos, insumosSinRetirar: insumosSinRetirarViejos })
+    // Si se tocó "Entendido" hace poco, no se vuelve a mostrar hasta que pase
+    // la fecha guardada — pero sigue apareciendo si de verdad no se hizo nada.
+    const snoozeRemitos = (cfgMixer || []).find(c => c.clave === 'alerta_remitos_snooze_hasta')?.valor
+    const snoozeInsumos = (cfgMixer || []).find(c => c.clave === 'alerta_insumos_snooze_hasta')?.valor
+    const remitosSinPrecioFiltrados = (snoozeRemitos && snoozeRemitos >= hoyStr) ? [] : remitosSinPrecioViejos
+    const insumosSinRetirarFiltrados = (snoozeInsumos && snoozeInsumos >= hoyStr) ? [] : insumosSinRetirarViejos
+    setDatos({ corrales: corralesOrdenados, proximaPesada: proximaPesadaCalc, alertas: alertas || [], procedencias, compradores, ventasSinPrecio: ventas || [], stockBajo: (stockBajo || []).filter(s => (s.cantidad_kg || 0) <= (s.minimo_kg || 0) && (!s.pedido_realizado_hasta || s.pedido_realizado_hasta < hoyStr)), stockSanitario: (stockSan || []).filter(p => !p.pedido_realizado_hasta || p.pedido_realizado_hasta < hoyStr), formulas: formulasObj, capMixer, fechaTermC, kgsAyer, dietaAyer, lotes: lotes || [], movimientos: movimientos || [], revisionHoyHecha, remitosSinPrecio: remitosSinPrecioFiltrados, insumosSinRetirar: insumosSinRetirarFiltrados })
   }
 
   const pantallas = {
@@ -211,6 +217,7 @@ function Home({ usuario, nav, onLogout, datos }) {
       titulo: `${remitosSinPrecio.length} remito${remitosSinPrecio.length !== 1 ? 's' : ''} sin precio hace días`,
       sub: `${nombres}${remitosSinPrecio.length > 3 ? '...' : ''} · completar en Insumos, desde la compu`,
       urgente: true,
+      snoozeKey: 'alerta_remitos_snooze_hasta',
     })
   }
   // Insumos ya pagados pero sin retirar hace rato — avisar para que alguien
@@ -224,6 +231,7 @@ function Home({ usuario, nav, onLogout, datos }) {
       titulo: `${insumosSinRetirar.length} insumo${insumosSinRetirar.length !== 1 ? 's' : ''} pagado${insumosSinRetirar.length !== 1 ? 's' : ''} sin retirar`,
       sub: `Hace más de 5 días · ${proveedores} · marcar retirado en Contactos, desde la compu`,
       urgente: true,
+      snoozeKey: 'alerta_insumos_snooze_hasta',
     })
   }
 
@@ -266,6 +274,18 @@ function Home({ usuario, nav, onLogout, datos }) {
                 if (onReload) await onReload()
               }} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: C.greenLight || '#1A3D2E', border: `1px solid ${C.green}`, color: C.green, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 ✓ Pedido hecho
+              </button>
+            ) : t.snoozeKey ? (
+              <button onClick={async (e) => {
+                e.stopPropagation()
+                // No se descarta del todo — vuelve a aparecer en unos días si
+                // para entonces nadie lo solucionó de verdad.
+                const hasta = new Date(); hasta.setDate(hasta.getDate() + 4)
+                const hastaStr = `${hasta.getFullYear()}-${String(hasta.getMonth() + 1).padStart(2, '0')}-${String(hasta.getDate()).padStart(2, '0')}`
+                await supabase.from('configuracion').upsert({ clave: t.snoozeKey, valor: hastaStr }, { onConflict: 'clave' })
+                if (onReload) await onReload()
+              }} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, background: C.greenLight || '#1A3D2E', border: `1px solid ${C.green}`, color: C.green, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                ✓ Entendido
               </button>
             ) : t.pantalla ? (
               <div onClick={() => nav(t.pantalla)} style={{ fontSize: 18, color: C.muted, cursor: 'pointer' }}>›</div>
