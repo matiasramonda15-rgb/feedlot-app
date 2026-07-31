@@ -23,8 +23,11 @@ export default function Novedades({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const esDueno = usuario?.rol === 'dueno'
 
+  const [errorCarga, setErrorCarga] = useState(null)
+
   async function cargar() {
-    const { data } = await supabase.from('novedades').select('*').order('fecha', { ascending: false }).order('id', { ascending: false })
+    const { data, error } = await supabase.from('novedades').select('*').order('fecha', { ascending: false }).order('id', { ascending: false })
+    if (error) setErrorCarga(error.message)
     setNovedades(data || [])
     setLoading(false)
   }
@@ -102,6 +105,12 @@ export default function Novedades({ usuario }) {
         </div>
       )}
 
+      {errorCarga && (
+        <div style={{ background: S.greenLight ? '#FDF0F0' : '#FDF0F0', border: '1px solid #F09595', borderRadius: 10, padding: '1rem', marginBottom: '1rem', color: '#7A1A1A', fontSize: 13 }}>
+          Error al cargar las novedades: {errorCarga}
+        </div>
+      )}
+
       {novedades.length === 0 && (
         <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Todavía no hay novedades cargadas.</div>
       )}
@@ -132,4 +141,4 @@ export default function Novedades({ usuario }) {
       ))}
     </div>
   )
-} 
+}
