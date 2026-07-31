@@ -65,7 +65,7 @@ const MENU = [
     items: [
       { id: 'reportes',     label: 'Reportes',            roles: ['dueno'] },
       { id: 'presupuesto',  label: 'Presupuesto',         roles: ['dueno'] },
-      { id: 'diagnostico',  label: '🩺 Diagnóstico',       roles: ['dueno'] },
+      { id: 'diagnostico',  label: '🩺 Diagnóstico',       roles: ['dueno', 'secretaria'] },
     ]
   },
 ]
