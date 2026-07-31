@@ -132,4 +132,4 @@ export default function Novedades({ usuario }) {
       ))}
     </div>
   )
-}
+} 
