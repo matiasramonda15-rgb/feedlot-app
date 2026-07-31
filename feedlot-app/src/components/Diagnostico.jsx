@@ -28,12 +28,17 @@ const TABLAS_PAGO = [
 
 async function chequearPagosSinCaja() {
   const problemas = []
+  // Una compra pagada con crédito no tiene movimiento de caja directo — la
+  // plata sale de a poco, con cada cuota — así que no es un error real.
+  const { data: creditos } = await supabase.from('creditos').select('compra_insumos_id').not('compra_insumos_id', 'is', null)
+  const idsConCredito = new Set((creditos || []).map(c => c.compra_insumos_id))
   for (const t of TABLAS_PAGO) {
     let query = supabase.from(t.tabla).select('*')
     if (t.estado) query = query.eq(t.estado, t.valorPagado)
     const { data, error } = await query
     if (error) continue
     for (const row of (data || [])) {
+      if (t.tabla === 'compras_insumos' && idsConCredito.has(row.id)) continue
       const tieneCaja = row.caja_oficial_id || row.caja_paralela_id
       const esCanje = (row.pagos_detalle || []).some(p => p.tipo === 'canje') || row.pagos_detalle === null && row.forma_pago === 'canje'
       const noAfectaCaja = row.no_afecta_caja === true
