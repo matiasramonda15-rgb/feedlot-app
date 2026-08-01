@@ -82,7 +82,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
   const [guardandoMort, setGuardandoMort] = useState(false)
   const [vacunacionLote, setVacunacionLote] = useState({}) // { [lote_id]: { vacunas: [{prod_id, dosis}], guardando, confirmada, resumen } }
   const [showFormStockSan, setShowFormStockSan] = useState(false)
-  const [formStockSan, setFormStockSan] = useState({ producto_id: '', cantidad: '', unidad: 'ml', proveedor: '', remito: '' })
+  const [formStockSan, setFormStockSan] = useState({ productos: [{ producto_id: '', cantidad: '', unidad: 'ml' }], proveedor: '', remito: '' })
   const [guardandoStockSan, setGuardandoStockSan] = useState(false)
   // historialSan already declared above
   const [showNuevoProd, setShowNuevoProd] = useState(false)
@@ -185,26 +185,29 @@ export default function Sanidad({ usuario, mobile, nav }) {
   }
 
   async function guardarIngresoSan() {
-    if (!formStockSan.producto_id || !formStockSan.cantidad) { alert('Completá producto y cantidad'); return }
+    const validos = formStockSan.productos.filter(p => p.producto_id && p.cantidad)
+    if (validos.length === 0) { alert('Completá al menos un producto con cantidad'); return }
     setGuardandoStockSan(true)
-    const prod = productos.find(p => String(p.id) === String(formStockSan.producto_id))
-    if (prod) {
-      const cant = parseFloat(formStockSan.cantidad)
+    const hoy = new Date()
+    const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+    for (const item of validos) {
+      const prod = productos.find(p => String(p.id) === String(item.producto_id))
+      if (!prod) continue
+      const cant = parseFloat(item.cantidad)
       // Actualizar stock de forma atómica (suma en la base, no en la app) para
       // no pisar otra operación que toque el mismo producto casi al mismo tiempo
       const { error: errRpc } = await supabase.rpc('incrementar_stock_sanitario', { p_id: prod.id, p_delta: cant })
-      if (errRpc) { alert('Error al actualizar el stock: ' + errRpc.message); setGuardandoStockSan(false); return }
+      if (errRpc) { alert(`Error al actualizar el stock de ${prod.n}: ` + errRpc.message); setGuardandoStockSan(false); return }
       await supabase.from('stock_sanitario').update({ pedido_realizado: false }).eq('id', prod.id)
       // Crear compra pendiente en compras_insumos para que Paula complete precio y pague
-      const hoy = new Date()
-      const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`
+      // — un registro por cada producto, pero todos con el mismo remito y proveedor.
       const { error: errCompraSan } = await supabase.from('compras_insumos').insert({
         fecha: fechaHoy,
         insumo_id: prod.id,
         insumo_tipo: 'sanitario',
         insumo_nombre: prod.n,
         cantidad: cant,
-        unidad: formStockSan.unidad,
+        unidad: item.unidad,
         proveedor: formStockSan.proveedor || null,
         numero_factura: formStockSan.remito || null,
         precio_unitario: null,
@@ -212,11 +215,11 @@ export default function Sanidad({ usuario, mobile, nav }) {
         estado_pago: 'pendiente',
         registrado_por: usuario?.id,
       })
-      if (errCompraSan) { alert('El stock se actualizó, pero no se pudo guardar el registro de compra: ' + errCompraSan.message); setGuardandoStockSan(false); return }
+      if (errCompraSan) { alert(`El stock de ${prod.n} se actualizó, pero no se pudo guardar el registro de compra: ` + errCompraSan.message); setGuardandoStockSan(false); return }
     }
     await cargarProductos()
     setShowFormStockSan(false)
-    setFormStockSan({ producto_id: '', cantidad: '', unidad: 'ml', proveedor: '', remito: '' })
+    setFormStockSan({ productos: [{ producto_id: '', cantidad: '', unidad: 'ml' }], proveedor: '', remito: '' })
     setGuardandoStockSan(false)
   }
 
@@ -1747,29 +1750,53 @@ export default function Sanidad({ usuario, mobile, nav }) {
           {showFormStockSan && (
             <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: S.accent, marginBottom: '1rem' }}>Registrar ingreso de producto sanitario</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto *</div>
-                  <select value={formStockSan.producto_id} onChange={e => {
-                    const p = productos.find(x => String(x.id) === e.target.value)
-                    setFormStockSan({...formStockSan, producto_id: e.target.value, unidad: p?.unidad || 'ml'})
-                  }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }}>
-                    <option value="">— Seleccioná —</option>
-                    {productos.map(p => <option key={p.id} value={p.id}>{p.n} ({p.tipo})</option>)}
-                  </select>
+
+              {formStockSan.productos.map((item, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '.6rem', marginBottom: '.6rem', alignItems: 'end' }}>
+                  <div>
+                    {idx === 0 && <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto *</div>}
+                    <select value={item.producto_id} onChange={e => {
+                      const p = productos.find(x => String(x.id) === e.target.value)
+                      const nuevos = [...formStockSan.productos]
+                      nuevos[idx] = { ...item, producto_id: e.target.value, unidad: p?.unidad || 'ml' }
+                      setFormStockSan({...formStockSan, productos: nuevos})
+                    }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }}>
+                      <option value="">— Seleccioná —</option>
+                      {productos.map(p => <option key={p.id} value={p.id}>{p.n} ({p.tipo})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {idx === 0 && <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad *</div>}
+                    <input type="number" value={item.cantidad} onChange={e => {
+                      const nuevos = [...formStockSan.productos]
+                      nuevos[idx] = { ...item, cantidad: e.target.value }
+                      setFormStockSan({...formStockSan, productos: nuevos})
+                    }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                  </div>
+                  <div>
+                    {idx === 0 && <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Unidad</div>}
+                    <select value={item.unidad} onChange={e => {
+                      const nuevos = [...formStockSan.productos]
+                      nuevos[idx] = { ...item, unidad: e.target.value }
+                      setFormStockSan({...formStockSan, productos: nuevos})
+                    }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
+                      {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {formStockSan.productos.length > 1 && (
+                      <button onClick={() => setFormStockSan({...formStockSan, productos: formStockSan.productos.filter((_, i) => i !== idx)})}
+                        style={{ padding: '9px 10px', fontSize: 13, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>✕</button>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad *</div>
-                  <input type="number" value={formStockSan.cantidad} onChange={e => setFormStockSan({...formStockSan, cantidad: e.target.value})}
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Unidad</div>
-                  <select value={formStockSan.unidad} onChange={e => setFormStockSan({...formStockSan, unidad: e.target.value})}
-                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface }}>
-                    {['ml', 'dosis', 'kg', 'comprimido', 'unidad'].map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
+              ))}
+              <button onClick={() => setFormStockSan({...formStockSan, productos: [...formStockSan.productos, { producto_id: '', cantidad: '', unidad: 'ml' }]})}
+                style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px dashed ${S.border}`, color: S.accent, borderRadius: 6, cursor: 'pointer', marginBottom: '1rem' }}>
+                + Agregar otro producto de este mismo remito
+              </button>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Proveedor</div>
                   <select value={formStockSan.proveedor} onChange={e => setFormStockSan({...formStockSan, proveedor: e.target.value})}
