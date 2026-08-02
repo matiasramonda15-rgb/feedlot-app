@@ -22,7 +22,21 @@ function fmt(n) {
 
 // Trae y agrupa los ingresos/egresos reales de UNA actividad, desde fechaDesde.
 // Devuelve { ingresos: {categoria: {'anio-mes': monto}}, egresos: {...} }
-async function cargarDatosActividad(actividad, fechaDesde) {
+// Compras de insumos que ya están cubiertas por un crédito (directo, o
+// "hermanas" del mismo remito/fecha/proveedor) — no deben contarse como
+// salida de caja en el mes de la compra, porque la plata real recién sale
+// después, con cada cuota del crédito (esa sí ya se cuenta aparte).
+async function idsComprasConCredito() {
+  const { data: creditos } = await supabase.from('creditos').select('compra_insumos_id').not('compra_insumos_id', 'is', null)
+  const idsDirectos = (creditos || []).map(c => c.compra_insumos_id)
+  if (idsDirectos.length === 0) return new Set()
+  const { data: comprasBase } = await supabase.from('compras_insumos').select('id, proveedor, fecha').in('id', idsDirectos)
+  const claves = new Set((comprasBase || []).map(c => `${c.proveedor}|${c.fecha}`))
+  const { data: todas } = await supabase.from('compras_insumos').select('id, proveedor, fecha')
+  return new Set((todas || []).filter(c => claves.has(`${c.proveedor}|${c.fecha}`)).map(c => c.id))
+}
+
+async function cargarDatosActividad(actividad, fechaDesde, idsCredito) {
   const ingresos = {}
   const egresos = {}
   const suma = (obj, categoria, fecha, monto) => {
@@ -40,14 +54,14 @@ async function cargarDatosActividad(actividad, fechaDesde) {
     const [{ data: ventas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }] = await Promise.all([
       supabase.from('ventas').select('total, creado_en, comprador').gte('creado_en', fechaDesde),
       supabase.from('lotes').select('monto_facturado, iva_monto, monto_negro, fecha_ingreso, procedencia').gte('fecha_ingreso', fechaDesde),
-      supabase.from('compras_insumos').select('total, fecha, proveedor, insumo_tipo').gte('fecha', fechaDesde).in('insumo_tipo', ['alimentacion', 'sanitario']),
+      supabase.from('compras_insumos').select('id, total, fecha, proveedor, insumo_tipo').gte('fecha', fechaDesde).in('insumo_tipo', ['alimentacion', 'sanitario']),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
       supabase.from('gastos_generales').select('monto, fecha, categoria, actividad').gte('fecha', fechaDesde).in('actividad', ['Feedlot', 'General']),
       supabase.from('fletes').select('monto, fecha, transportista, estado_pago').gte('fecha', fechaDesde).eq('estado_pago', 'pagado'),
     ])
     ;(ventas || []).forEach(v => suma(ingresos, `Venta hacienda — ${v.comprador || 'sin comprador'}`, v.creado_en?.split('T')[0], v.total))
     ;(lotes || []).forEach(l => suma(egresos, `Compra hacienda — ${l.procedencia || 'sin procedencia'}`, l.fecha_ingreso, (l.monto_facturado || 0) + (l.iva_monto || 0) + (l.monto_negro || 0)))
-    ;(compras || []).forEach(c => suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total))
+    ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total) })
     ;(pagosEmp || []).forEach(p => {
       const act = p.empleados?.actividad
       if (act !== 'Feedlot' && act !== 'General') return
@@ -60,14 +74,14 @@ async function cargarDatosActividad(actividad, fechaDesde) {
   } else if (actividad === 'Agricultura') {
     const [{ data: ventasG }, { data: compras }, { data: ordenes }, { data: gastosAgro }, { data: pagosEmp }, { data: gastosGen }] = await Promise.all([
       supabase.from('ventas_granos').select('total, monto_negro, fecha, comprador, estado').gte('fecha', fechaDesde).neq('estado', 'pactada'),
-      supabase.from('compras_insumos').select('total, fecha, proveedor').gte('fecha', fechaDesde).eq('insumo_tipo', 'agro'),
+      supabase.from('compras_insumos').select('id, total, fecha, proveedor').gte('fecha', fechaDesde).eq('insumo_tipo', 'agro'),
       supabase.from('ordenes_trabajo').select('costo_total, fecha, proveedor, tipo').gte('fecha', fechaDesde).eq('es_propia', false),
       supabase.from('gastos_generales').select('monto, fecha, categoria').gte('fecha', fechaDesde).eq('actividad', 'Agricultura'),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
       supabase.from('gastos_generales').select('monto, fecha, categoria').gte('fecha', fechaDesde).eq('actividad', 'General'),
     ])
     ;(ventasG || []).forEach(v => suma(ingresos, `Venta granos — ${v.comprador || 'sin comprador'}`, v.fecha, (v.total || 0) + (v.monto_negro || 0)))
-    ;(compras || []).forEach(c => suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total))
+    ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total) })
     ;(ordenes || []).forEach(o => suma(egresos, `${o.tipo || 'Orden de trabajo'} — ${o.proveedor || 'sin proveedor'}`, o.fecha, o.costo_total))
     ;(gastosAgro || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, g.monto))
     ;(pagosEmp || []).forEach(p => {
@@ -223,7 +237,8 @@ export default function Presupuesto({ usuario }) {
     const fechaDesde = `${anioDesde}-${String(mesDesde).padStart(2, '0')}-01`
 
     const resultados = {}
-    for (const act of ACTIVIDADES) resultados[act] = await cargarDatosActividad(act, fechaDesde)
+    const idsCredito = await idsComprasConCredito()
+    for (const act of ACTIVIDADES) resultados[act] = await cargarDatosActividad(act, fechaDesde, idsCredito)
     resultados['Generales'] = await cargarDatosGenerales(fechaDesde)
 
     // Mezclar las cuotas de crédito (ya repartidas por actividad) en los
