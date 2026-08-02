@@ -2584,6 +2584,50 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
         </button>
       </div>
 
+      {/* Disponible para vender — conectado a Cosechas: sube cuando se
+          cosecha, baja cuando se vende. Separado en lo que sigue en bolsa
+          (en el campo, sin mover) y lo que ya se entregó en algún acopio. */}
+      {(() => {
+        const porCultivo = {}
+        cosechas.forEach(c => {
+          if (!porCultivo[c.cultivo]) porCultivo[c.cultivo] = { bolsa: 0, acopio: 0, cosechado: 0 }
+          const kg = parseFloat(c.kg_totales) || 0
+          porCultivo[c.cultivo].cosechado += kg
+          if (c.destino === 'bolsa') porCultivo[c.cultivo].bolsa += kg
+          else if (c.destino === 'acopio') porCultivo[c.cultivo].acopio += kg
+        })
+        ventas.forEach(v => {
+          if (!porCultivo[v.cultivo]) porCultivo[v.cultivo] = { bolsa: 0, acopio: 0, cosechado: 0 }
+          if (!porCultivo[v.cultivo].vendido) porCultivo[v.cultivo].vendido = 0
+          porCultivo[v.cultivo].vendido += parseFloat(v.kg) || 0
+        })
+        const cultivosConDatos = Object.keys(porCultivo).filter(c => porCultivo[c].cosechado > 0)
+        if (cultivosConDatos.length === 0) return null
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(cultivosConDatos.length, 3)}, 1fr)`, gap: 12, marginBottom: '1.5rem' }}>
+            {cultivosConDatos.map(cultivo => {
+              const d = porCultivo[cultivo]
+              const vendido = d.vendido || 0
+              const disponible = Math.max(0, d.cosechado - vendido)
+              return (
+                <div key={cultivo} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>🌾 {cultivo}</div>
+                  <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Disponible para vender</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: disponible > 0 ? S.green : S.hint, marginBottom: 8 }}>
+                    {(disponible / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, fontSize: 12, color: S.muted, flexWrap: 'wrap' }}>
+                    <span>📦 En bolsa: <strong style={{ color: S.text }}>{(d.bolsa / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong></span>
+                    <span>🚛 Entregado: <strong style={{ color: S.text }}>{(d.acopio / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong></span>
+                  </div>
+                  <div style={{ fontSize: 10, color: S.hint, marginTop: 6 }}>Cosechado: {(d.cosechado/1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn · Vendido: {(vendido/1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
       {showForm && (
         <Card titulo={editando ? 'Editar venta' : 'Nueva venta de granos'}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>

@@ -269,7 +269,7 @@ export default function Creditos({ usuario }) {
       {/* Lista créditos */}
       {creditos.map(c => {
         const pagos = pagosCreditos[c.id] || []
-        const totalPagado = pagos.reduce((a, p) => a + (p.monto || 0), 0)
+        const totalPagado = pagos.filter(p => p.estado === 'pagado').reduce((a, p) => a + (p.monto || 0), 0)
         const pct = c.es_dolares
           ? (c.cant_cuotas ? Math.round((c.cuotas_pagadas || 0) / c.cant_cuotas * 100) : 0)
           : (c.monto_total ? Math.round(totalPagado / c.monto_total * 100) : 0)
