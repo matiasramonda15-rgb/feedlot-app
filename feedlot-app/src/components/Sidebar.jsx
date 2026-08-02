@@ -49,6 +49,7 @@ const MENU = [
     items: [
       { id: 'personal',     label: 'Personal',            roles: ['dueno', 'secretaria'] },
       { id: 'gastos',       label: 'Gastos generales',    roles: ['dueno', 'secretaria'] },
+      { id: 'creditos',     label: 'Créditos',            roles: ['dueno', 'secretaria'] },
       { id: 'activos',      label: 'Activos y socios',    roles: ['dueno', 'secretaria'] },
     ]
   },

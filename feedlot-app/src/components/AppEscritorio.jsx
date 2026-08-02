@@ -14,6 +14,7 @@ var Reportes     = lazy(() => import('./Reportes'))
 var Agricultura  = lazy(() => import('./Agricultura'))
 var Servicios    = lazy(() => import('./Servicios'))
 var Personal     = lazy(() => import('./Personal'))
+var Creditos     = lazy(() => import('./Creditos'))
 var Gastos       = lazy(() => import('./Gastos'))
 var Comercial    = lazy(() => import('./Comercial'))
 var Contactos    = lazy(() => import('./Contactos'))
@@ -28,7 +29,7 @@ var Novedades    = lazy(() => import('./Novedades'))
 const MODULOS = {
   tablero: Tablero, corrales: Corrales, ingresos: Ingresos, pesada: Pesada,
   ventas: Ventas, alimentacion: Alimentacion, sanidad: Sanidad, reportes: Reportes,
-  agricultura: Agricultura, servicios: Servicios, personal: Personal, gastos: Gastos,
+  agricultura: Agricultura, servicios: Servicios, personal: Personal, creditos: Creditos, gastos: Gastos,
   comercial: Comercial, contactos: Contactos, activos: Activos, socios: Activos, insumos: Insumos, fletes: Fletes,
   cuentas_pagar: CuentasPagar,
   presupuesto: Presupuesto,
