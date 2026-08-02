@@ -125,10 +125,12 @@ async function cargarDatosGenerales(fechaDesde) {
 // insumos, va entera a la actividad de ese insumo (Agro → Agricultura, el
 // resto → Feedlot). Si no hay ninguna referencia, se asume Feedlot.
 async function cargarCreditosPorActividad(fechaDesde) {
-  const [{ data: cuotas }, { data: activos }] = await Promise.all([
-    supabase.from('pagos_creditos').select('monto, fecha, fecha_pago, creditos(entidad, activo_id, compras_insumos(insumo_tipo))').gte('fecha', fechaDesde),
+  const [{ data: cuotas }, { data: activos }, { data: cfg }] = await Promise.all([
+    supabase.from('pagos_creditos').select('monto, monto_usd, fecha, fecha_pago, estado, creditos(entidad, activo_id, compras_insumos(insumo_tipo))').gte('fecha', fechaDesde),
     supabase.from('activos').select('id, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa'),
+    supabase.from('configuracion').select('valor').eq('clave', 'cotizacion_dolar_agro').maybeSingle(),
   ])
+  const cotizacionHoy = parseFloat(cfg?.valor) || 0
   const resultado = { Feedlot: {}, Agricultura: {}, Servicios: {} }
   const suma = (act, categoria, fecha, monto) => {
     if (!fecha || !monto) return
@@ -138,18 +140,56 @@ async function cargarCreditosPorActividad(fechaDesde) {
     resultado[act][categoria][key] = (resultado[act][categoria][key] || 0) + monto
   }
   ;(cuotas || []).forEach(c => {
-    if (!c.monto) return
     const fecha = c.fecha_pago || c.fecha
-    const nombre = `Cuotas de crédito — ${c.creditos?.entidad || 'sin entidad'}`
+    // Si es una cuota en dólares todavía sin pagar, no tiene monto en pesos
+    // cargado (recién se sabe al pagarla) — se estima con la cotización de
+    // hoy, aclarando en el nombre que es una proyección, no el monto real.
+    let monto = c.monto
+    let esEstimado = false
+    if (!monto && c.monto_usd && c.estado !== 'pagado' && cotizacionHoy > 0) {
+      monto = c.monto_usd * cotizacionHoy
+      esEstimado = true
+    }
+    if (!monto) return
+    const nombre = `Cuotas de crédito — ${c.creditos?.entidad || 'sin entidad'}${esEstimado ? ' (USD, estimado a hoy)' : ''}`
     const activo = c.creditos?.activo_id ? activos?.find(a => a.id === c.creditos.activo_id) : null
     if (activo) {
-      if (activo.pct_feedlot > 0) suma('Feedlot', nombre, fecha, c.monto * (activo.pct_feedlot / 100))
-      if ((activo.pct_agricultura || 0) + (activo.pct_alfalfa || 0) > 0) suma('Agricultura', nombre, fecha, c.monto * (((activo.pct_agricultura || 0) + (activo.pct_alfalfa || 0)) / 100))
-      if (activo.pct_servicios > 0) suma('Servicios', nombre, fecha, c.monto * (activo.pct_servicios / 100))
+      if (activo.pct_feedlot > 0) suma('Feedlot', nombre, fecha, monto * (activo.pct_feedlot / 100))
+      if ((activo.pct_agricultura || 0) + (activo.pct_alfalfa || 0) > 0) suma('Agricultura', nombre, fecha, monto * (((activo.pct_agricultura || 0) + (activo.pct_alfalfa || 0)) / 100))
+      if (activo.pct_servicios > 0) suma('Servicios', nombre, fecha, monto * (activo.pct_servicios / 100))
     } else {
       const tipoInsumo = c.creditos?.compras_insumos?.insumo_tipo
-      suma(tipoInsumo === 'agro' ? 'Agricultura' : 'Feedlot', nombre, fecha, c.monto)
+      suma(tipoInsumo === 'agro' ? 'Agricultura' : 'Feedlot', nombre, fecha, monto)
     }
+  })
+  return resultado
+}
+
+// Compras de hacienda (terneros) que todavía no se terminaron de pagar, con
+// una fecha de vencimiento cargada en Ingresos — se muestran como egreso
+// proyectado de Feedlot en el mes que corresponda, para no perderlas de
+// vista al planificar los próximos meses.
+async function cargarCuotasTerneros(fechaDesde) {
+  const [{ data: lotes }, { data: pagos }] = await Promise.all([
+    supabase.from('lotes').select('id, procedencia, monto_total_con_iva, fecha_vencimiento_pago, estado_pago').eq('estado_pago', 'pendiente').not('fecha_vencimiento_pago', 'is', null),
+    supabase.from('pagos_compras').select('lote_id, monto'),
+  ])
+  const pagadoPorLote = {}
+  ;(pagos || []).forEach(p => { pagadoPorLote[p.lote_id] = (pagadoPorLote[p.lote_id] || 0) + (parseFloat(p.monto) || 0) })
+  const resultado = { Feedlot: {} }
+  ;(lotes || []).forEach(l => {
+    const total = parseFloat(l.monto_total_con_iva) || 0
+    const pendiente = Math.max(0, total - (pagadoPorLote[l.id] || 0))
+    if (pendiente <= 0 || !l.fecha_vencimiento_pago) return
+    const d = new Date(l.fecha_vencimiento_pago + 'T12:00:00')
+    // Solo interesan los vencimientos de acá en adelante (los ya vencidos y
+    // sin pagar son otro problema — se ven en el Diagnóstico, no en la
+    // proyección de meses futuros).
+    if (`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` < fechaDesde) return
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}`
+    const nombre = `Cuotas terneros — ${l.procedencia || 'sin procedencia'}`
+    if (!resultado.Feedlot[nombre]) resultado.Feedlot[nombre] = {}
+    resultado.Feedlot[nombre][key] = (resultado.Feedlot[nombre][key] || 0) + pendiente
   })
   return resultado
 }
@@ -198,6 +238,17 @@ export default function Presupuesto({ usuario }) {
         })
       })
     }
+
+    // Mismo criterio para los saldos de hacienda todavía pendientes de pago
+    // (cargados en Ingresos, con su fecha de vencimiento) — quedan en el mes
+    // que corresponda, dentro de los egresos de Feedlot.
+    const cuotasTerneros = await cargarCuotasTerneros(fechaDesde)
+    Object.entries(cuotasTerneros.Feedlot || {}).forEach(([cat, meses]) => {
+      if (!resultados.Feedlot.egresos[cat]) resultados.Feedlot.egresos[cat] = {}
+      Object.entries(meses).forEach(([mkey, monto]) => {
+        resultados.Feedlot.egresos[cat][mkey] = (resultados.Feedlot.egresos[cat][mkey] || 0) + monto
+      })
+    })
 
     const { data: proy } = await supabase.from('presupuesto_lineas').select('*').gte('anio', anioDesde)
     const proyMap = {}
