@@ -2164,7 +2164,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
   // desde Mercadería (Servicios) — sin tener que ir a esa pantalla, donde
   // el botón quedaba muy a mano y se podía tocar por error en el campo.
   useEffect(() => {
-    supabase.from('registros_mercaderia').select('id, campo, nro_lote, cosecha_id, es_propio, archivado').eq('es_propio', true).not('cosecha_id', 'is', null).then(({ data }) => setRegistrosMercaderia(data || []))
+    supabase.from('registros_mercaderia').select('id, campo, nro_lote, cosecha_id, cosecha_id_acopio, es_propio, archivado').eq('es_propio', true).then(({ data }) => setRegistrosMercaderia((data || []).filter(r => r.cosecha_id || r.cosecha_id_acopio)))
   }, [cosechas])
 
   async function guardar() {
@@ -2346,7 +2346,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('cosechas').delete().eq('id', c.id); cargar() }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                   {(() => {
-                    const regVinculado = registrosMercaderia.find(r => r.cosecha_id === c.id && !r.archivado)
+                    const regVinculado = registrosMercaderia.find(r => (r.cosecha_id === c.id || r.cosecha_id_acopio === c.id) && !r.archivado)
                     if (!regVinculado) return null
                     return (
                       <button onClick={async () => {

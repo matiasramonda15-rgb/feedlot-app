@@ -42,6 +42,23 @@ function Lbl({ children }) {
 const LABORES = ['Siembra', 'Cosecha', 'Pulverización', 'Fertilización', 'Roturación', 'Rastreo', 'Flete', 'Otro']
 const CULTIVOS = ['Maíz', 'Soja', 'Trigo', 'Sorgo', 'Girasol', 'Cebada', 'Otro']
 
+// Un mismo registro de campo propio puede terminar con parte de la cosecha
+// en bolsa propia y parte entregada directo a un acopio (según a dónde vaya
+// cada camión) — así que se manejan como DOS cosechas posibles por
+// registro, una por destino, creándose recién cuando hace falta.
+async function obtenerOCrearCosecha(reg, destino, campos) {
+  const campoId = destino === 'acopio' ? 'cosecha_id_acopio' : 'cosecha_id'
+  if (reg[campoId]) return { id: reg[campoId], registro: reg }
+  const { data: cos, error } = await supabase.from('cosechas').insert({
+    campo_id: reg.campo_id, cultivo: reg.cultivo || null, fecha: reg.fecha || hoyLocal(),
+    kg_totales: 0, destino: destino === 'acopio' ? 'acopio' : 'bolsa',
+    observaciones: `Cargado desde registro de mercadería${reg.nro_lote ? ' — ' + reg.nro_lote : ''}`,
+  }).select().single()
+  if (error) return { error }
+  await supabase.from('registros_mercaderia').update({ [campoId]: cos.id }).eq('id', reg.id)
+  return { id: cos.id, registro: { ...reg, [campoId]: cos.id } }
+}
+
 export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
@@ -65,7 +82,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [registroActivoM, setRegistroActivoM] = useState(null)
   const [showFormRegM, setShowFormRegM] = useState(false)
   const [formRegM, setFormRegM] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
-  const [formDescM, setFormDescM] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
+  const [formDescM, setFormDescM] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal(), destino: '' })
   const [guardandoDescM, setGuardandoDescM] = useState(false)
   const [guardandoRegM, setGuardandoRegM] = useState(false)
   const [editandoDescIdM, setEditandoDescIdM] = useState(null)
@@ -112,7 +129,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [registroActivo, setRegistroActivo] = useState(null)
   const [showFormReg, setShowFormReg] = useState(false)
   const [formReg, setFormReg] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
-  const [formDescargaReg, setFormDescargaReg] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
+  const [formDescargaReg, setFormDescargaReg] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal(), destino: '' })
   const [guardandoReg, setGuardandoReg] = useState(false)
   const [guardandoDescargaReg, setGuardandoDescargaReg] = useState(false)
 
@@ -526,25 +543,15 @@ export default function Servicios({ usuario, mobile, nav }) {
       if (formRegM.es_propio && !formRegM.campo_id) { alert('Elegí el campo'); return }
       if (!formRegM.es_propio && !formRegM.campo) { alert('Ingresá el campo'); return }
       setGuardandoRegM(true)
-      let cosechaId = null
-      if (formRegM.es_propio) {
-        // Se crea la cosecha ya mismo (arranca en 0 kg) — cada descarga que
-        // Brian vaya cargando la va sumando sola, sin que haga falta pasar
-        // por Agricultura para nada.
-        const campoSel = campos.find(c => String(c.id) === String(formRegM.campo_id))
-        const { data: cos, error: errCos } = await supabase.from('cosechas').insert({
-          campo_id: parseInt(formRegM.campo_id), cultivo: formRegM.cultivo || null, fecha: formRegM.fecha || hoyLocal(),
-          kg_totales: 0, destino: 'bolsa', observaciones: `Cargado desde registro de mercadería${formRegM.nro_lote ? ' — ' + formRegM.nro_lote : ''}`,
-        }).select().single()
-        if (errCos) { alert('Error al crear la cosecha: ' + errCos.message); setGuardandoRegM(false); return }
-        cosechaId = cos.id
-      }
+      // Ya no se crea la cosecha acá — recién se sabe el destino (bolsa
+      // propia o acopio) cuando se carga el primer camión, así que la
+      // cosecha se crea sola en ese momento (ver guardarDescargaM).
       const { data, error } = await supabase.from('registros_mercaderia').insert({
         campo: formRegM.es_propio ? (campos.find(c => String(c.id) === String(formRegM.campo_id))?.nombre || formRegM.campo) : formRegM.campo,
         cliente: formRegM.cliente || null,
         nro_lote: formRegM.nro_lote || null, cultivo: formRegM.cultivo || null,
         fecha: formRegM.fecha || null,
-        es_propio: formRegM.es_propio, campo_id: formRegM.es_propio ? parseInt(formRegM.campo_id) : null, cosecha_id: cosechaId,
+        es_propio: formRegM.es_propio, campo_id: formRegM.es_propio ? parseInt(formRegM.campo_id) : null,
       }).select().single()
       if (error) { alert('Error: ' + error.message); setGuardandoRegM(false); return }
       setRegistros(prev => [data, ...prev])
@@ -557,25 +564,33 @@ export default function Servicios({ usuario, mobile, nav }) {
 
     async function guardarDescargaM(regId) {
       if (!formDescM.kg) { alert('Ingresá los kg'); return }
+      if (formDescM.tipo === 'camion' && registros.find(r => r.id === regId)?.es_propio && !formDescM.destino) { alert('¿A dónde va este camión — acopio o silo bolsa propio?'); return }
       setGuardandoDescM(true)
       const kgNum = parseFloat(formDescM.kg)
+      // Bolsa siempre es bolsa propia. Camión puede ir a cualquiera de los
+      // dos, según lo que Brian elija. "Otro" (pesadas manuales, etc.) se
+      // asume bolsa propia por defecto.
+      const destino = formDescM.tipo === 'camion' ? formDescM.destino : 'bolsa_propia'
       const { error } = await supabase.from('descargas_mercaderia').insert({
         registro_id: regId, fecha: formDescM.fecha, tipo: formDescM.tipo,
         patente: formDescM.tipo === 'camion' ? (formDescM.patente || null) : null,
-        kg: kgNum,
+        kg: kgNum, destino: formDescM.tipo === 'camion' ? destino : null,
         observaciones: formDescM.tipo !== 'camion' ? (formDescM.observaciones || null) : null,
         registrado_por: usuario?.id,
       })
       if (error) { alert('Error al guardar la descarga: ' + error.message); setGuardandoDescM(false); return }
-      // Si el registro es de campo propio, tiene una cosecha vinculada — se
-      // le suman los kg ahí mismo, sin tener que ir a Agricultura a cargarlo
-      // por separado.
+      // Si el registro es de campo propio, se suma a la cosecha que
+      // corresponda según el destino — se crea sola la primera vez que
+      // hace falta, sin tener que ir a Agricultura a cargarla.
       const registroActual = registros.find(r => r.id === regId)
-      if (registroActual?.cosecha_id) {
-        const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', registroActual.cosecha_id).single()
-        await supabase.from('cosechas').update({ kg_totales: (parseFloat(cos?.kg_totales) || 0) + kgNum }).eq('id', registroActual.cosecha_id)
+      if (registroActual?.es_propio) {
+        const { id: cosechaId, error: errCos, registro: regActualizado } = await obtenerOCrearCosecha(registroActual, destino, campos)
+        if (errCos) { alert('Error al preparar la cosecha: ' + errCos.message); setGuardandoDescM(false); return }
+        if (regActualizado) setRegistros(prev => prev.map(r => r.id === regId ? regActualizado : r))
+        const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', cosechaId).single()
+        await supabase.from('cosechas').update({ kg_totales: (parseFloat(cos?.kg_totales) || 0) + kgNum }).eq('id', cosechaId)
       }
-      setFormDescM({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
+      setFormDescM({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal(), destino: '' })
       setGuardandoDescM(false)
       await cargarDescargasReg(regId)
       setOkM('descarga')
@@ -975,6 +990,19 @@ export default function Servicios({ usuario, mobile, nav }) {
                             <label style={lblM}>Patente</label>
                             <input type="text" value={formDescM.patente} onChange={e => setFormDescM({...formDescM, patente: e.target.value.toUpperCase()})}
                               style={inpM} placeholder="ej. ABC 123" />
+                            {reg.es_propio && (
+                              <>
+                                <label style={lblM}>¿A dónde va este camión? *</label>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
+                                  {[{ v: 'acopio', l: '🏭 Acopio' }, { v: 'bolsa_propia', l: '🎒 Silo bolsa propio' }].map(d => (
+                                    <button key={d.v} onClick={() => setFormDescM({...formDescM, destino: d.v})}
+                                      style={{ padding: '10px 6px', fontSize: 12, fontWeight: 600, border: `2px solid ${formDescM.destino === d.v ? CM.accent : CM.border}`, background: formDescM.destino === d.v ? CM.accent + '22' : 'transparent', color: formDescM.destino === d.v ? CM.accent : CM.muted, borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
+                                      {d.l}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
                           </>
                         ) : (
                           <>
@@ -2265,20 +2293,35 @@ export default function Servicios({ usuario, mobile, nav }) {
                           placeholder={formDescargaReg.tipo === 'camion' ? 'ej. ABC 123' : 'ej. Bolsa 8'}
                           style={{ ...inp, textTransform: formDescargaReg.tipo === 'camion' ? 'uppercase' : 'none' }} />
                       </div>
+                      {formDescargaReg.tipo === 'camion' && reg.es_propio && (
+                        <div>
+                          <Lbl>¿A dónde va? *</Lbl>
+                          <select value={formDescargaReg.destino} onChange={e => setFormDescargaReg({ ...formDescargaReg, destino: e.target.value })} style={inp}>
+                            <option value="">— Elegir —</option>
+                            <option value="acopio">🏭 Acopio</option>
+                            <option value="bolsa_propia">🎒 Silo bolsa propio</option>
+                          </select>
+                        </div>
+                      )}
                       <div><Lbl>Kg *</Lbl><input type="number" value={formDescargaReg.kg} onChange={e => setFormDescargaReg({ ...formDescargaReg, kg: e.target.value })} placeholder="ej. 28500" style={inpMono} /></div>
                       <div><Lbl>Fecha</Lbl><input type="date" value={formDescargaReg.fecha} onChange={e => setFormDescargaReg({ ...formDescargaReg, fecha: e.target.value })} style={inp} /></div>
                       <button onClick={async () => {
                         if (!formDescargaReg.kg) { alert('Ingresá los kg'); return }
+                        if (formDescargaReg.tipo === 'camion' && reg.es_propio && !formDescargaReg.destino) { alert('¿A dónde va este camión — acopio o silo bolsa propio?'); return }
                         setGuardandoDescargaReg(true)
                         const kgNum = parseFloat(formDescargaReg.kg)
-                        await supabase.from('descargas_mercaderia').insert({ registro_id: reg.id, fecha: formDescargaReg.fecha, tipo: formDescargaReg.tipo, patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente || null) : null, kg: kgNum, observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null, registrado_por: usuario?.id })
-                        // Si el registro es de campo propio, tiene una cosecha vinculada
-                        // — se le suman los kg ahí mismo, sin pasar por Agricultura.
-                        if (reg.cosecha_id) {
-                          const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', reg.cosecha_id).single()
-                          await supabase.from('cosechas').update({ kg_totales: (parseFloat(cos?.kg_totales) || 0) + kgNum }).eq('id', reg.cosecha_id)
+                        const destino = formDescargaReg.tipo === 'camion' ? formDescargaReg.destino : 'bolsa_propia'
+                        await supabase.from('descargas_mercaderia').insert({ registro_id: reg.id, fecha: formDescargaReg.fecha, tipo: formDescargaReg.tipo, patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente || null) : null, kg: kgNum, destino: formDescargaReg.tipo === 'camion' ? destino : null, observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null, registrado_por: usuario?.id })
+                        // Si el registro es de campo propio, se suma a la cosecha que
+                        // corresponda según el destino — se crea sola la primera vez.
+                        if (reg.es_propio) {
+                          const { id: cosechaId, error: errCos } = await obtenerOCrearCosecha(reg, destino, campos)
+                          if (errCos) { alert('Error al preparar la cosecha: ' + errCos.message); setGuardandoDescargaReg(false); return }
+                          const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', cosechaId).single()
+                          await supabase.from('cosechas').update({ kg_totales: (parseFloat(cos?.kg_totales) || 0) + kgNum }).eq('id', cosechaId)
+                          await cargar()
                         }
-                        setFormDescargaReg({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
+                        setFormDescargaReg({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal(), destino: '' })
                         setGuardandoDescargaReg(false)
                         await cargarDescargasReg(reg.id)
                       }} disabled={guardandoDescargaReg}
