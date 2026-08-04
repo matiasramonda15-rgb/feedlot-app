@@ -128,6 +128,8 @@ export default function Servicios({ usuario, mobile, nav }) {
   // Descargas mercadería
   const [registroActivo, setRegistroActivo] = useState(null)
   const [showFormReg, setShowFormReg] = useState(false)
+  const [filtroTransporte, setFiltroTransporte] = useState('')
+  const [precioTonTransporte, setPrecioTonTransporte] = useState('')
   const [formReg, setFormReg] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
   const [formDescargaReg, setFormDescargaReg] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal(), destino: '' })
   const [guardandoReg, setGuardandoReg] = useState(false)
@@ -2277,6 +2279,65 @@ export default function Servicios({ usuario, mobile, nav }) {
                         </tfoot>
                       </table>
                     )}
+                    {reg.es_propio && desc.length > 0 && (() => {
+                      const descFiltrados = filtroTransporte ? desc.filter(d => (d.patente || '').toLowerCase().includes(filtroTransporte.toLowerCase())) : []
+                      const kgFiltrado = descFiltrados.reduce((s, d) => s + (d.kg || 0), 0)
+                      const precioTonNum = parseFloat(precioTonTransporte) || 0
+                      const totalFlete = (kgFiltrado / 1000) * precioTonNum
+                      return (
+                        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: S.text, marginBottom: 8 }}>🚛 Liquidar transporte</div>
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                            <input type="text" value={filtroTransporte} onChange={e => setFiltroTransporte(e.target.value)} placeholder="Filtrar por patente..." style={{ ...inp, maxWidth: 200 }} />
+                            <input type="number" value={precioTonTransporte} onChange={e => setPrecioTonTransporte(e.target.value)} placeholder="$/tonelada" style={{ ...inpMono, maxWidth: 150 }} />
+                          </div>
+                          {filtroTransporte && (
+                            descFiltrados.length === 0 ? (
+                              <div style={{ fontSize: 12, color: S.hint }}>Ningún camión coincide con "{filtroTransporte}".</div>
+                            ) : (
+                              <>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 10 }}>
+                                  <thead><tr>{['Fecha', 'Patente', 'Kg'].map(h => <th key={h} style={{ padding: '5px 8px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
+                                  <tbody>
+                                    {descFiltrados.map(d => (
+                                      <tr key={d.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                        <td style={{ padding: '5px 8px', fontFamily: 'monospace', color: S.muted }}>{d.fecha ? new Date(d.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}</td>
+                                        <td style={{ padding: '5px 8px', fontFamily: 'monospace' }}>{d.patente || '—'}</td>
+                                        <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontWeight: 600 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: S.bg, borderRadius: 6, padding: '10px 12px' }}>
+                                  <div style={{ fontSize: 12 }}>
+                                    <strong>{descFiltrados.length}</strong> viaje{descFiltrados.length !== 1 ? 's' : ''} · <strong>{(kgFiltrado / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong>
+                                    {precioTonNum > 0 && <span> · Total: <strong style={{ color: S.accent }}>${totalFlete.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong></span>}
+                                  </div>
+                                  <button onClick={() => {
+                                    const win = window.open('', '_blank')
+                                    win.document.write(`<!DOCTYPE html><html><head><title>Liquidación de flete — ${filtroTransporte}</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px;color:#1A1916}h2{margin-bottom:.25rem}p{color:#6B6760;margin-bottom:1.5rem;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #E2DDD6;padding:8px 12px;text-align:left}th{background:#F7F5F0;font-weight:600;font-size:11px;text-transform:uppercase}tfoot tr{background:#E8F4EB;font-weight:700}.resumen{margin-top:1.5rem;padding:1rem;background:#F7F5F0;border-radius:8px}@media print{button{display:none}}</style></head><body>
+                                      <h2>Liquidación de flete — ${filtroTransporte}</h2>
+                                      <p>Campo: ${reg.campo}${reg.nro_lote ? ' — ' + reg.nro_lote : ''} · ${reg.cultivo || ''} · Emitido ${new Date().toLocaleDateString('es-AR')}</p>
+                                      <table><thead><tr><th>Fecha</th><th>Patente</th><th>Kg</th></tr></thead><tbody>
+                                        ${descFiltrados.map(d => `<tr><td>${d.fecha ? new Date(d.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td><td>${d.patente || '—'}</td><td>${(d.kg || 0).toLocaleString('es-AR')} kg</td></tr>`).join('')}
+                                      </tbody><tfoot><tr><td colspan="2">Total</td><td>${kgFiltrado.toLocaleString('es-AR')} kg (${(kgFiltrado/1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn)</td></tr></tfoot></table>
+                                      <div class="resumen">
+                                        <div>Precio por tonelada: <strong>$${precioTonNum.toLocaleString('es-AR')}</strong></div>
+                                        <div style="font-size:18px;margin-top:6px;">Total a pagar: <strong>$${totalFlete.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong></div>
+                                      </div>
+                                      <button onclick="window.print()" style="margin-top:2rem;padding:10px 20px;font-size:14px;cursor:pointer;">🖨️ Imprimir</button>
+                                    </body></html>`)
+                                    win.document.close()
+                                  }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                                    🖨️ Imprimir resumen
+                                  </button>
+                                </div>
+                              </>
+                            )
+                          )}
+                        </div>
+                      )
+                    })()}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
                       <div>
                         <Lbl>Tipo</Lbl>
