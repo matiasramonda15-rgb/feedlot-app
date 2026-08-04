@@ -230,7 +230,11 @@ export default function Contactos({ usuario }) {
       const sumCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
       const sumRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
       const sumNegro = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
-      const montoFact = tieneFacturado ? (sumFact + sumIva - sumCom - sumRet) : grupo.reduce((s, vv) => s + (vv.total || 0), 0)
+      // Si ya se cargó como monto negro (Caja 2), no hay que "adivinar" el
+      // facturado con el total — antes eso hacía que la misma venta apareciera
+      // duplicada en las dos cajas. Solo se usa el total como respaldo cuando
+      // ninguna de las dos cosas está definida todavía.
+      const montoFact = tieneFacturado ? (sumFact + sumIva - sumCom - sumRet) : (sumNegro > 0 ? 0 : grupo.reduce((s, vv) => s + (vv.total || 0), 0))
       const fecha = v.fecha || v.creado_en?.split('T')[0]
       if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (Caja 2)', credito: sumNegro, debito: 0 }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Venta hacienda', credito: montoFact, debito: 0 }) }
@@ -922,12 +926,19 @@ export default function Contactos({ usuario }) {
               // usaba monto_facturado, sin sumar el IVA ni restar la retención, y por
               // eso la cuenta corriente oficial no coincidía con Gestión Comercial.
               const tieneFacturado = grupo.some(vv => vv.monto_facturado !== null && vv.monto_facturado !== undefined)
-              if (!tieneFacturado) return grupo.reduce((s, vv) => s + (vv.total || 0), 0)
-              const sumFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
-              const sumIva = grupo.reduce((s, vv) => s + (vv.iva_monto || 0), 0)
-              const sumCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
-              const sumRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
-              return sumFact + sumIva - sumCom - sumRet
+              if (tieneFacturado) {
+                const sumFact = grupo.reduce((s, vv) => s + (vv.monto_facturado || 0), 0)
+                const sumIva = grupo.reduce((s, vv) => s + (vv.iva_monto || 0), 0)
+                const sumCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
+                const sumRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
+                return sumFact + sumIva - sumCom - sumRet
+              }
+              // Si ya se cargó como monto negro (Caja 2), no hay que "adivinar" el
+              // facturado con el total — antes eso hacía que la misma venta apareciera
+              // duplicada en Caja 1 y Caja 2 al mismo tiempo. Solo se usa el total
+              // como respaldo cuando ninguna de las dos cosas está definida todavía.
+              const sumNegroPrevio = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
+              return sumNegroPrevio > 0 ? 0 : grupo.reduce((s, vv) => s + (vv.total || 0), 0)
             })()
             const montoParalelo = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
             const corralesStr = grupo.length > 1 ? grupo.map(vv => `C-${vv.corrales?.numero}`).join(', ') : `C-${v.corrales?.numero}`
