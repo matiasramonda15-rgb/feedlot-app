@@ -475,27 +475,12 @@ export default function Contactos({ usuario }) {
     const fechaCorte = contactoInfo?.fecha_corte_saldo
     const saldoApertura = parseFloat(contactoInfo?.saldo_apertura) || 0
     const saldoAperturaCaja2 = parseFloat(contactoInfo?.saldo_apertura_caja2) || 0
-    // Si el contacto tiene un saldo de apertura cargado (para arrancar
-    // limpio después de errores históricos), todo lo anterior a la fecha de
-    // corte se excluye del cálculo — sigue visible en el historial, pero no
-    // suma ni resta del saldo. El saldo de apertura reemplaza a todo eso.
-    if (fechaCorte) {
-      const despues = (arr, campoFecha) => (arr || []).filter(x => x[campoFecha] && x[campoFecha] >= fechaCorte)
-      data = {
-        ...data,
-        ventas: despues(data.ventas, 'creado_en'),
-        lotes: despues(data.lotes, 'fecha_ingreso'),
-        comprasInsumos: despues(data.comprasInsumos, 'fecha'),
-        ventasActivos: despues(data.ventasActivos, 'fecha'),
-        gastosGenerales: despues(data.gastosGenerales, 'fecha'),
-        serviciosTerceros: despues(data.serviciosTerceros, 'fecha'),
-        ordenesTrabajo: despues(data.ordenesTrabajo, 'fecha'),
-        ventasGranos: despues(data.ventasGranos, 'fecha'),
-        fletes: despues(data.fletes, 'fecha'),
-        retirosSocios: despues(data.retirosSocios, 'fecha'),
-        arriendos: despues(data.arriendos, 'fecha_vencimiento'),
-      }
-    }
+    // El saldo de apertura ahora se SUMA a todo el historial real (no
+    // reemplaza ni excluye nada) — funciona como si fuera el primer
+    // movimiento de la cuenta, con la fecha de corte como su fecha. Antes
+    // se usaba para "cortar" y descartar todo lo anterior, pero eso hacía
+    // desaparecer operaciones reales del cálculo — ahora todo sigue
+    // contando, y el ajuste es solo la diferencia a agregar al principio.
     // Agrupar ventas multi-corral para no contar de más
     const gruposVistos = new Set()
     const ventasAgrupadas = data.ventas.filter(v => {
@@ -734,6 +719,12 @@ export default function Contactos({ usuario }) {
             </button>
             {contactoData && (
               <>
+                <button onClick={async () => {
+                  await supabase.from('contactos').update({ cuenta_verificada: !contactoData.cuenta_verificada }).eq('id', contactoData.id)
+                  setContactos(prev => prev.map(c => c.id === contactoData.id ? { ...c, cuenta_verificada: !contactoData.cuenta_verificada } : c))
+                }} style={{ padding: '7px 14px', fontSize: 12, background: contactoData.cuenta_verificada ? S.greenLight : 'transparent', border: `1px solid ${contactoData.cuenta_verificada ? S.green : S.border}`, color: contactoData.cuenta_verificada ? S.green : S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  {contactoData.cuenta_verificada ? '✓ Cuenta revisada' : '○ Marcar como revisada'}
+                </button>
                 <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
                   style={{ padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
                   Editar contacto
@@ -915,7 +906,7 @@ export default function Contactos({ usuario }) {
           if (fechaCorte && saldoApertura && !esParalela) {
             movimientos.push({
               fecha: fechaCorte, fechaVto: null, tipo: 'APERTURA', nro: '—', esApertura: true,
-              descripcion: `Saldo de apertura al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} (lo anterior a esta fecha no suma)`,
+              descripcion: `Ajuste de saldo al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} — diferencia agregada al principio`,
               credito: saldoApertura < 0 ? -saldoApertura : 0,
               debito: saldoApertura > 0 ? saldoApertura : 0,
             })
@@ -923,7 +914,7 @@ export default function Contactos({ usuario }) {
           if (fechaCorte && saldoAperturaCaja2 && esParalela) {
             movimientos.push({
               fecha: fechaCorte, fechaVto: null, tipo: 'APERTURA', nro: '—', esApertura: true,
-              descripcion: `Saldo de apertura al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} en Caja 2 (lo anterior a esta fecha no suma)`,
+              descripcion: `Ajuste de saldo al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} en Caja 2 — diferencia agregada al principio`,
               credito: saldoAperturaCaja2 < 0 ? -saldoAperturaCaja2 : 0,
               debito: saldoAperturaCaja2 > 0 ? saldoAperturaCaja2 : 0,
             })
@@ -1416,27 +1407,27 @@ export default function Contactos({ usuario }) {
                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
             </div>
             <div style={{ gridColumn: '1/-1', background: S.amberLight, border: `1px solid ${S.amber}`, borderRadius: 8, padding: '10px 12px' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: S.amber, marginBottom: 8 }}>Saldo de apertura (opcional) — para arrancar limpio si el histórico calculado no coincide con la realidad</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.amber, marginBottom: 8 }}>Ajuste de saldo (opcional) — si el histórico calculado no coincide con la realidad</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Saldo en Caja 1 a la fecha de corte $</div>
+                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Diferencia a sumar en Caja 1 $</div>
                   <input type="number" value={formContacto.saldo_apertura ?? ''} onChange={e => setFormContacto({...formContacto, saldo_apertura: e.target.value})}
                     placeholder="positivo = le debemos · negativo = nos debe"
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Saldo en Caja 2 a la fecha de corte $</div>
+                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Diferencia a sumar en Caja 2 $</div>
                   <input type="number" value={formContacto.saldo_apertura_caja2 ?? ''} onChange={e => setFormContacto({...formContacto, saldo_apertura_caja2: e.target.value})}
                     placeholder="positivo = le debemos · negativo = nos debe"
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Fecha de corte</div>
+                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Fecha del ajuste</div>
                   <input type="date" value={formContacto.fecha_corte_saldo || ''} onChange={e => setFormContacto({...formContacto, fecha_corte_saldo: e.target.value})}
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                 </div>
               </div>
-              <div style={{ fontSize: 10, color: S.amber, marginTop: 6 }}>Con la fecha de corte cargada, todo lo anterior deja de sumar al saldo (sigue visible en el historial) y este número pasa a ser el punto de partida — la misma fecha aplica para las dos cajas.</div>
+              <div style={{ fontSize: 10, color: S.amber, marginTop: 6 }}>Este monto es la DIFERENCIA entre el saldo real que sabés que hay y lo que calcula el sistema con el historial — se suma como si fuera el primer movimiento de la cuenta, en la fecha que pongas acá. No borra ni descarta ningún movimiento anterior, todos siguen contando igual.</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1464,7 +1455,19 @@ export default function Contactos({ usuario }) {
               onMouseLeave={e => e.currentTarget.style.borderColor = S.border}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{nombre}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{nombre}</div>
+                    {contactoData && (
+                      <span onClick={async (e) => {
+                        e.stopPropagation()
+                        await supabase.from('contactos').update({ cuenta_verificada: !contactoData.cuenta_verificada }).eq('id', contactoData.id)
+                        setContactos(prev => prev.map(c => c.id === contactoData.id ? { ...c, cuenta_verificada: !contactoData.cuenta_verificada } : c))
+                      }} title={contactoData.cuenta_verificada ? 'Cuenta corriente revisada — tocá para desmarcar' : 'Marcar como revisada'}
+                        style={{ cursor: 'pointer', fontSize: 13, color: contactoData.cuenta_verificada ? S.green : S.border, lineHeight: 1 }}>
+                        ✓
+                      </span>
+                    )}
+                  </div>
                   {contactoData?.tipo && <div style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize', marginTop: 2 }}>{contactoData.tipo.replace(/_/g, ' ')}</div>}
                 </div>
                 {tieneTransacciones && (
