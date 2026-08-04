@@ -59,44 +59,6 @@ async function obtenerOCrearCosecha(reg, destino, campos) {
   return { id: cos.id, registro: { ...reg, [campoId]: cos.id } }
 }
 
-// Botón que hay que mantener apretado (por defecto 2 segundos) para que
-// dispare la acción — pensado para el celular en el campo, donde con los
-// movimientos del tractor es fácil tocar sin querer. Un toque suelto y
-// rápido no hace nada; muestra el progreso con un relleno mientras se
-// mantiene apretado.
-function BotonMantenerPresionado({ onConfirmar, duracionMs = 2000, style, children }) {
-  const [progreso, setProgreso] = useState(0)
-  const intervaloRef = useRef(null)
-  const timeoutRef = useRef(null)
-
-  function iniciar(e) {
-    e.preventDefault()
-    const inicio = Date.now()
-    intervaloRef.current = setInterval(() => {
-      setProgreso(Math.min(100, ((Date.now() - inicio) / duracionMs) * 100))
-    }, 50)
-    timeoutRef.current = setTimeout(() => {
-      cancelar()
-      onConfirmar()
-    }, duracionMs)
-  }
-  function cancelar() {
-    clearInterval(intervaloRef.current)
-    clearTimeout(timeoutRef.current)
-    setProgreso(0)
-  }
-
-  return (
-    <button
-      onTouchStart={iniciar} onTouchEnd={cancelar} onTouchCancel={cancelar}
-      onMouseDown={iniciar} onMouseUp={cancelar} onMouseLeave={cancelar}
-      style={{ ...style, position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${progreso}%`, background: 'rgba(255,255,255,0.5)', transition: progreso === 0 ? 'none' : 'width 0.05s linear', pointerEvents: 'none' }} />
-      <span style={{ position: 'relative' }}>{children}</span>
-    </button>
-  )
-}
-
 export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
@@ -115,7 +77,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   // Todas las patentes/apodos ya usados alguna vez, para sugerírselos a
   // Brian cuando carga un camión nuevo — así elige de la lista en vez de
   // escribir de nuevo y arriesgarse a un typeo distinto ("Wally" vs "Waly").
-  const patentesConocidas = [...new Set(Object.values(descargasReg).flat().map(d => d.patente).filter(Boolean))].sort()
+  const patentesConocidas = [...new Set(Object.values(descargasReg).flat().map(d => (d.patente || '').trim()).filter(Boolean))].sort()
   // Estado propio del modo celular
   const [tabM, setTabM] = useState('servicio')
   const [formM, setFormM] = useState({ campania: '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
@@ -617,7 +579,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       const destino = formDescM.tipo === 'camion' ? formDescM.destino : 'bolsa_propia'
       const { error } = await supabase.from('descargas_mercaderia').insert({
         registro_id: regId, fecha: formDescM.fecha, tipo: formDescM.tipo,
-        patente: formDescM.tipo === 'camion' ? (formDescM.patente || null) : null,
+        patente: formDescM.tipo === 'camion' ? (formDescM.patente.trim() || null) : null,
         kg: kgNum, destino: formDescM.tipo === 'camion' ? destino : null,
         observaciones: formDescM.tipo !== 'camion' ? (formDescM.observaciones || null) : null,
         registrado_por: usuario?.id,
@@ -962,7 +924,8 @@ export default function Servicios({ usuario, mobile, nav }) {
                                       <span style={{ fontFamily: CM.mono, fontWeight: 700, fontSize: 14 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</span>
                                       <button onClick={() => { setEditandoDescIdM(d.id); setEditDescKgM(String(d.kg || '')); setEditDescPatenteM(d.patente || d.observaciones || '') }}
                                         style={{ padding: '4px 8px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 6, cursor: 'pointer' }}>✏</button>
-                                      <BotonMantenerPresionado onConfirmar={async () => {
+                                      <button onClick={async () => {
+                                        if (!confirm('¿Eliminar esta descarga?')) return
                                         await supabase.from('descargas_mercaderia').delete().eq('id', d.id)
                                         const cosechaAfectada = d.destino === 'acopio' ? reg.cosecha_id_acopio : reg.cosecha_id
                                         if (cosechaAfectada) {
@@ -970,7 +933,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                                           await supabase.from('cosechas').update({ kg_totales: Math.max(0, (parseFloat(cos?.kg_totales) || 0) - (d.kg || 0)) }).eq('id', cosechaAfectada)
                                         }
                                         await cargarDescargasReg(reg.id)
-                                      }} style={{ padding: '4px 8px', fontSize: 12, background: '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 6, cursor: 'pointer' }} title="Mantené apretado 2 segundos para eliminar">🗑</BotonMantenerPresionado>
+                                      }} style={{ padding: '4px 8px', fontSize: 12, background: '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 6, cursor: 'pointer' }}>🗑</button>
                                     </div>
                                   </div>
                                 ) : (
@@ -2330,8 +2293,8 @@ export default function Servicios({ usuario, mobile, nav }) {
                       // coincidiera y ese viaje quedara afuera sin darse
                       // cuenta. Ahora se elige de una lista con lo que ya
                       // está cargado, así no hace falta escribirlo de nuevo.
-                      const patentesUnicas = [...new Set(desc.map(d => d.patente).filter(Boolean))].sort()
-                      const descFiltrados = filtroTransporte ? desc.filter(d => d.patente === filtroTransporte) : []
+                      const patentesUnicas = [...new Set(desc.map(d => (d.patente || '').trim()).filter(Boolean))].sort()
+                      const descFiltrados = filtroTransporte ? desc.filter(d => (d.patente || '').trim() === filtroTransporte) : []
                       const kgFiltrado = descFiltrados.reduce((s, d) => s + (d.kg || 0), 0)
                       const precioTonNum = parseFloat(precioTonTransporte) || 0
                       const totalFlete = (kgFiltrado / 1000) * precioTonNum
@@ -2432,7 +2395,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                         setGuardandoDescargaReg(true)
                         const kgNum = parseFloat(formDescargaReg.kg)
                         const destino = formDescargaReg.tipo === 'camion' ? formDescargaReg.destino : 'bolsa_propia'
-                        await supabase.from('descargas_mercaderia').insert({ registro_id: reg.id, fecha: formDescargaReg.fecha, tipo: formDescargaReg.tipo, patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente || null) : null, kg: kgNum, destino: formDescargaReg.tipo === 'camion' ? destino : null, observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null, registrado_por: usuario?.id })
+                        await supabase.from('descargas_mercaderia').insert({ registro_id: reg.id, fecha: formDescargaReg.fecha, tipo: formDescargaReg.tipo, patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente.trim() || null) : null, kg: kgNum, destino: formDescargaReg.tipo === 'camion' ? destino : null, observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null, registrado_por: usuario?.id })
                         // Si el registro es de campo propio, se suma a la cosecha que
                         // corresponda según el destino — se crea sola la primera vez.
                         if (reg.es_propio) {
