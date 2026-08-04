@@ -59,6 +59,44 @@ async function obtenerOCrearCosecha(reg, destino, campos) {
   return { id: cos.id, registro: { ...reg, [campoId]: cos.id } }
 }
 
+// Botón que hay que mantener apretado (por defecto 2 segundos) para que
+// dispare la acción — pensado para el celular en el campo, donde con los
+// movimientos del tractor es fácil tocar sin querer. Un toque suelto y
+// rápido no hace nada; muestra el progreso con un relleno mientras se
+// mantiene apretado.
+function BotonMantenerPresionado({ onConfirmar, duracionMs = 2000, style, children }) {
+  const [progreso, setProgreso] = useState(0)
+  const intervaloRef = useRef(null)
+  const timeoutRef = useRef(null)
+
+  function iniciar(e) {
+    e.preventDefault()
+    const inicio = Date.now()
+    intervaloRef.current = setInterval(() => {
+      setProgreso(Math.min(100, ((Date.now() - inicio) / duracionMs) * 100))
+    }, 50)
+    timeoutRef.current = setTimeout(() => {
+      cancelar()
+      onConfirmar()
+    }, duracionMs)
+  }
+  function cancelar() {
+    clearInterval(intervaloRef.current)
+    clearTimeout(timeoutRef.current)
+    setProgreso(0)
+  }
+
+  return (
+    <button
+      onTouchStart={iniciar} onTouchEnd={cancelar} onTouchCancel={cancelar}
+      onMouseDown={iniciar} onMouseUp={cancelar} onMouseLeave={cancelar}
+      style={{ ...style, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${progreso}%`, background: 'rgba(255,255,255,0.5)', transition: progreso === 0 ? 'none' : 'width 0.05s linear', pointerEvents: 'none' }} />
+      <span style={{ position: 'relative' }}>{children}</span>
+    </button>
+  )
+}
+
 export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
@@ -924,15 +962,15 @@ export default function Servicios({ usuario, mobile, nav }) {
                                       <span style={{ fontFamily: CM.mono, fontWeight: 700, fontSize: 14 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</span>
                                       <button onClick={() => { setEditandoDescIdM(d.id); setEditDescKgM(String(d.kg || '')); setEditDescPatenteM(d.patente || d.observaciones || '') }}
                                         style={{ padding: '4px 8px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 6, cursor: 'pointer' }}>✏</button>
-                                      <button onClick={async () => {
-                                        if (!confirm('¿Eliminar esta descarga?')) return
+                                      <BotonMantenerPresionado onConfirmar={async () => {
                                         await supabase.from('descargas_mercaderia').delete().eq('id', d.id)
-                                        if (reg.cosecha_id) {
-                                          const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', reg.cosecha_id).single()
-                                          await supabase.from('cosechas').update({ kg_totales: Math.max(0, (parseFloat(cos?.kg_totales) || 0) - (d.kg || 0)) }).eq('id', reg.cosecha_id)
+                                        const cosechaAfectada = d.destino === 'acopio' ? reg.cosecha_id_acopio : reg.cosecha_id
+                                        if (cosechaAfectada) {
+                                          const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', cosechaAfectada).single()
+                                          await supabase.from('cosechas').update({ kg_totales: Math.max(0, (parseFloat(cos?.kg_totales) || 0) - (d.kg || 0)) }).eq('id', cosechaAfectada)
                                         }
                                         await cargarDescargasReg(reg.id)
-                                      }} style={{ padding: '4px 8px', fontSize: 12, background: '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 6, cursor: 'pointer' }}>🗑</button>
+                                      }} style={{ padding: '4px 8px', fontSize: 12, background: '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 6, cursor: 'pointer' }} title="Mantené apretado 2 segundos para eliminar">🗑</BotonMantenerPresionado>
                                     </div>
                                   </div>
                                 ) : (
