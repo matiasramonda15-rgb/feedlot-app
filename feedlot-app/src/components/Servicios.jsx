@@ -64,7 +64,8 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [okM, setOkM] = useState('')
   const [registroActivoM, setRegistroActivoM] = useState(null)
   const [showFormRegM, setShowFormRegM] = useState(false)
-  const [formRegM, setFormRegM] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
+  const [verArchivados, setVerArchivados] = useState(false)
+  const [formRegM, setFormRegM] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
   const [formDescM, setFormDescM] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
   const [guardandoDescM, setGuardandoDescM] = useState(false)
   const [guardandoRegM, setGuardandoRegM] = useState(false)
@@ -111,7 +112,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   // Descargas mercadería
   const [registroActivo, setRegistroActivo] = useState(null)
   const [showFormReg, setShowFormReg] = useState(false)
-  const [formReg, setFormReg] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
+  const [formReg, setFormReg] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
   const [formDescargaReg, setFormDescargaReg] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
   const [guardandoReg, setGuardandoReg] = useState(false)
   const [guardandoDescargaReg, setGuardandoDescargaReg] = useState(false)
@@ -523,33 +524,58 @@ export default function Servicios({ usuario, mobile, nav }) {
     }
 
     async function guardarRegistroMercaderiaM() {
-      if (!formRegM.campo) { alert('Ingresá el campo'); return }
+      if (formRegM.es_propio && !formRegM.campo_id) { alert('Elegí el campo'); return }
+      if (!formRegM.es_propio && !formRegM.campo) { alert('Ingresá el campo'); return }
       setGuardandoRegM(true)
+      let cosechaId = null
+      if (formRegM.es_propio) {
+        // Se crea la cosecha ya mismo (arranca en 0 kg) — cada descarga que
+        // Brian vaya cargando la va sumando sola, sin que haga falta pasar
+        // por Agricultura para nada.
+        const campoSel = campos.find(c => String(c.id) === String(formRegM.campo_id))
+        const { data: cos, error: errCos } = await supabase.from('cosechas').insert({
+          campo_id: parseInt(formRegM.campo_id), cultivo: formRegM.cultivo || null, fecha: formRegM.fecha || hoyLocal(),
+          kg_totales: 0, destino: 'bolsa', observaciones: `Cargado desde registro de mercadería${formRegM.nro_lote ? ' — ' + formRegM.nro_lote : ''}`,
+        }).select().single()
+        if (errCos) { alert('Error al crear la cosecha: ' + errCos.message); setGuardandoRegM(false); return }
+        cosechaId = cos.id
+      }
       const { data, error } = await supabase.from('registros_mercaderia').insert({
-        campo: formRegM.campo, cliente: formRegM.cliente || null,
+        campo: formRegM.es_propio ? (campos.find(c => String(c.id) === String(formRegM.campo_id))?.nombre || formRegM.campo) : formRegM.campo,
+        cliente: formRegM.cliente || null,
         nro_lote: formRegM.nro_lote || null, cultivo: formRegM.cultivo || null,
         fecha: formRegM.fecha || null,
+        es_propio: formRegM.es_propio, campo_id: formRegM.es_propio ? parseInt(formRegM.campo_id) : null, cosecha_id: cosechaId,
       }).select().single()
       if (error) { alert('Error: ' + error.message); setGuardandoRegM(false); return }
       setRegistros(prev => [data, ...prev])
       setRegistroActivoM(data)
       setDescargasReg(prev => ({ ...prev, [data.id]: [] }))
       setShowFormRegM(false)
-      setFormRegM({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
+      setFormRegM({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
       setGuardandoRegM(false)
     }
 
     async function guardarDescargaM(regId) {
       if (!formDescM.kg) { alert('Ingresá los kg'); return }
       setGuardandoDescM(true)
+      const kgNum = parseFloat(formDescM.kg)
       const { error } = await supabase.from('descargas_mercaderia').insert({
         registro_id: regId, fecha: formDescM.fecha, tipo: formDescM.tipo,
         patente: formDescM.tipo === 'camion' ? (formDescM.patente || null) : null,
-        kg: parseFloat(formDescM.kg),
+        kg: kgNum,
         observaciones: formDescM.tipo !== 'camion' ? (formDescM.observaciones || null) : null,
         registrado_por: usuario?.id,
       })
       if (error) { alert('Error al guardar la descarga: ' + error.message); setGuardandoDescM(false); return }
+      // Si el registro es de campo propio, tiene una cosecha vinculada — se
+      // le suman los kg ahí mismo, sin tener que ir a Agricultura a cargarlo
+      // por separado.
+      const registroActual = registros.find(r => r.id === regId)
+      if (registroActual?.cosecha_id) {
+        const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', registroActual.cosecha_id).single()
+        await supabase.from('cosechas').update({ kg_totales: (parseFloat(cos?.kg_totales) || 0) + kgNum }).eq('id', registroActual.cosecha_id)
+      }
       setFormDescM({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
       setGuardandoDescM(false)
       await cargarDescargasReg(regId)
@@ -653,9 +679,9 @@ export default function Servicios({ usuario, mobile, nav }) {
                     <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
                       <select value={p.id} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], id: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 2 }}>
                         <option value="">— Insumo —</option>
-                        {stockAgro.filter(s => form.labor === 'Siembra' ? s.tipo === 'Semilla' : form.labor === 'Cosecha' ? s.tipo === 'Silobolsa' : true).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
+                        {stockAgro.filter(s => formM.labor === 'Siembra' ? s.tipo === 'Semilla' : formM.labor === 'Cosecha' ? s.tipo === 'Silobolsa' : true).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
                       </select>
-                      <input type="number" value={p.total} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], total: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 1 }} placeholder="Cant." inputMode="decimal" />
+                      <input type="number" step="0.1" value={p.total} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], total: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 1 }} placeholder="Cant. (ej. 1,5)" inputMode="decimal" />
                       <button onClick={() => setFormM({...formM, productos: formM.productos.filter((_, ix) => ix !== i)})} style={{ padding: '10px 12px', background: CM.redLight || '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 8, cursor: 'pointer' }}>✕</button>
                     </div>
                   ))}
@@ -793,8 +819,25 @@ export default function Servicios({ usuario, mobile, nav }) {
               </button>
               {showFormRegM && (
                 <div style={{ background: CM.surface, border: `1px solid ${CM.accent}`, borderRadius: 12, padding: '1rem', marginBottom: '1rem' }}>
-                  <label style={lblM}>Campo *</label>
-                  <input type="text" value={formRegM.campo} onChange={e => setFormRegM({...formRegM, campo: e.target.value})} style={inpM} placeholder="ej. La Esperanza" />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 14, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={formRegM.es_propio} onChange={e => setFormRegM({...formRegM, es_propio: e.target.checked, campo: '', campo_id: ''})} />
+                    Es campo propio
+                  </label>
+                  {formRegM.es_propio ? (
+                    <>
+                      <label style={lblM}>Campo *</label>
+                      <select value={formRegM.campo_id} onChange={e => setFormRegM({...formRegM, campo_id: e.target.value})} style={inpM}>
+                        <option value="">— Seleccioná —</option>
+                        {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      </select>
+                      <div style={{ fontSize: 11, color: CM.muted, marginBottom: 8 }}>Los kg que cargues acá van a sumarse solos a Cosechas, en Agricultura.</div>
+                    </>
+                  ) : (
+                    <>
+                      <label style={lblM}>Campo *</label>
+                      <input type="text" value={formRegM.campo} onChange={e => setFormRegM({...formRegM, campo: e.target.value})} style={inpM} placeholder="ej. La Esperanza" />
+                    </>
+                  )}
                   <label style={lblM}>Cliente/Propietario</label>
                   <select value={formRegM.cliente} onChange={e => setFormRegM({...formRegM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Sin especificar —</option>
@@ -817,7 +860,13 @@ export default function Servicios({ usuario, mobile, nav }) {
               {registros.length === 0 && !showFormRegM && (
                 <div style={{ textAlign: 'center', color: CM.muted, padding: '2rem', fontSize: 14 }}>No hay registros. Creá uno con "+ Nuevo campo".</div>
               )}
-              {registros.map(reg => {
+              {registros.some(r => r.archivado) && (
+                <button onClick={() => setVerArchivados(!verArchivados)}
+                  style={{ width: '100%', padding: '8px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 8, cursor: 'pointer', marginBottom: 10 }}>
+                  {verArchivados ? '▲ Ocultar archivados' : `📦 Ver archivados (${registros.filter(r => r.archivado).length})`}
+                </button>
+              )}
+              {registros.filter(reg => verArchivados ? reg.archivado : !reg.archivado).map(reg => {
                 const desc = descargasReg[reg.id] || []
                 const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
                 const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
@@ -825,13 +874,22 @@ export default function Servicios({ usuario, mobile, nav }) {
                 const kgTotal = kgCamion + kgBolsa + kgOtro
                 const isActivo = registroActivoM?.id === reg.id
                 return (
-                  <div key={reg.id} style={{ background: CM.surface, border: `1px solid ${isActivo ? CM.accent : CM.border}`, borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
+                  <div key={reg.id} style={{ background: CM.surface, border: `1px solid ${isActivo ? CM.accent : CM.border}`, borderRadius: 12, marginBottom: 12, overflow: 'hidden', opacity: reg.archivado ? 0.6 : 1 }}>
                     <div style={{ padding: '1rem' }} onClick={async () => {
                       if (isActivo) { setRegistroActivoM(null); return }
                       await cargarDescargasReg(reg.id)
                       setRegistroActivoM(reg)
                     }}>
-                      <div style={{ fontWeight: 700, fontSize: 16 }}>{reg.campo}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ fontWeight: 700, fontSize: 16 }}>{reg.campo}{reg.archivado && <span style={{ fontSize: 11, fontWeight: 600, color: CM.muted, marginLeft: 6 }}>(archivado)</span>}</div>
+                        <button onClick={async (e) => {
+                          e.stopPropagation()
+                          await supabase.from('registros_mercaderia').update({ archivado: !reg.archivado }).eq('id', reg.id)
+                          setRegistros(prev => prev.map(r => r.id === reg.id ? { ...r, archivado: !reg.archivado } : r))
+                        }} style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
+                          {reg.archivado ? '↩ Reactivar' : '📦 Archivar'}
+                        </button>
+                      </div>
                       <div style={{ fontSize: 12, color: CM.muted, marginTop: 2 }}>{reg.cliente || '—'} · {reg.nro_lote || 'Sin lote'} · {reg.cultivo}</div>
                       {kgTotal > 0 && (
                         <div style={{ marginTop: 8, display: 'flex', gap: 10, fontSize: 12, flexWrap: 'wrap' }}>
@@ -864,6 +922,10 @@ export default function Servicios({ usuario, mobile, nav }) {
                                       <button onClick={async () => {
                                         if (!confirm('¿Eliminar esta descarga?')) return
                                         await supabase.from('descargas_mercaderia').delete().eq('id', d.id)
+                                        if (reg.cosecha_id) {
+                                          const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', reg.cosecha_id).single()
+                                          await supabase.from('cosechas').update({ kg_totales: Math.max(0, (parseFloat(cos?.kg_totales) || 0) - (d.kg || 0)) }).eq('id', reg.cosecha_id)
+                                        }
                                         await cargarDescargasReg(reg.id)
                                       }} style={{ padding: '4px 8px', fontSize: 12, background: '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 6, cursor: 'pointer' }}>🗑</button>
                                     </div>
@@ -881,11 +943,18 @@ export default function Servicios({ usuario, mobile, nav }) {
                                       placeholder="ej. 28500" inputMode="decimal" style={{ ...inpM, marginBottom: 8 }} />
                                     <div style={{ display: 'flex', gap: 8 }}>
                                       <button onClick={async () => {
+                                        const nuevoKg = parseFloat(editDescKgM) || d.kg
                                         await supabase.from('descargas_mercaderia').update({
-                                          kg: parseFloat(editDescKgM) || d.kg,
+                                          kg: nuevoKg,
                                           patente: d.tipo === 'camion' ? (editDescPatenteM || null) : d.patente,
                                           observaciones: d.tipo !== 'camion' ? (editDescPatenteM || null) : d.observaciones,
                                         }).eq('id', d.id)
+                                        // Si cambió el kg, se ajusta la cosecha por la diferencia (no
+                                        // por el total nuevo, para no pisar otras descargas del mismo campo).
+                                        if (reg.cosecha_id && nuevoKg !== d.kg) {
+                                          const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', reg.cosecha_id).single()
+                                          await supabase.from('cosechas').update({ kg_totales: Math.max(0, (parseFloat(cos?.kg_totales) || 0) + (nuevoKg - d.kg)) }).eq('id', reg.cosecha_id)
+                                        }
                                         setEditandoDescIdM(null)
                                         await cargarDescargasReg(reg.id)
                                       }} style={{ flex: 1, padding: '10px', fontSize: 13, fontWeight: 600, background: CM.green, border: 'none', color: '#fff', borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
@@ -1132,7 +1201,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                         <option value="">— Seleccioná el insumo —</option>
                         {stockAgro.filter(s => formM.labor === 'Siembra' ? s.tipo === 'Semilla' : formM.labor === 'Cosecha' ? s.tipo === 'Silobolsa' : true).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad}) — stock: {s.cantidad?.toLocaleString('es-AR')}</option>)}
                       </select>
-                      <input type="number" value={p.total} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], total: e.target.value }; setForm({ ...form, productos: np }) }} placeholder="Cantidad total" style={inpMono} />
+                      <input type="number" step="0.1" value={p.total} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], total: e.target.value }; setForm({ ...form, productos: np }) }} placeholder="Cantidad total (ej. 1,5)" style={inpMono} />
                       <button onClick={() => setForm({ ...form, productos: form.productos.filter((_, ix) => ix !== i) })} style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
                     </div>
                   ))}
@@ -2012,8 +2081,22 @@ export default function Servicios({ usuario, mobile, nav }) {
           {showFormReg && (
             <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>Nuevo registro de campo</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 13, cursor: 'pointer' }}>
+                <input type="checkbox" checked={formReg.es_propio} onChange={e => setFormReg({ ...formReg, es_propio: e.target.checked, campo: '', campo_id: '' })} />
+                Es campo propio
+              </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
-                <div><Lbl>Campo *</Lbl><input type="text" value={formReg.campo} onChange={e => setFormReg({ ...formReg, campo: e.target.value })} placeholder="ej. La Esperanza" style={inp} /></div>
+                <div>
+                  <Lbl>Campo *</Lbl>
+                  {formReg.es_propio ? (
+                    <select value={formReg.campo_id} onChange={e => setFormReg({ ...formReg, campo_id: e.target.value })} style={inp}>
+                      <option value="">— Seleccioná —</option>
+                      {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" value={formReg.campo} onChange={e => setFormReg({ ...formReg, campo: e.target.value })} placeholder="ej. La Esperanza" style={inp} />
+                  )}
+                </div>
                 <div>
                   <Lbl>Cliente/Propietario</Lbl>
                   <select value={formReg.cliente} onChange={e => setFormReg({ ...formReg, cliente: e.target.value })} style={inp}>
@@ -2025,16 +2108,28 @@ export default function Servicios({ usuario, mobile, nav }) {
                 <div><Lbl>Cultivo</Lbl><select value={formReg.cultivo} onChange={e => setFormReg({ ...formReg, cultivo: e.target.value })} style={inp}>{CULTIVOS.map(c => <option key={c}>{c}</option>)}</select></div>
                 <div><Lbl>Fecha inicio</Lbl><input type="date" value={formReg.fecha} onChange={e => setFormReg({ ...formReg, fecha: e.target.value })} style={inp} /></div>
               </div>
+              {formReg.es_propio && <div style={{ fontSize: 11, color: S.muted, marginBottom: 10 }}>Los kg que se carguen acá van a sumarse solos a Cosechas, en Agricultura.</div>}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={async () => {
-                  if (!formReg.campo) { alert('Ingresá el campo'); return }
+                  if (formReg.es_propio && !formReg.campo_id) { alert('Elegí el campo'); return }
+                  if (!formReg.es_propio && !formReg.campo) { alert('Ingresá el campo'); return }
                   setGuardandoReg(true)
+                  let cosechaId = null
+                  if (formReg.es_propio) {
+                    const { data: cos, error: errCos } = await supabase.from('cosechas').insert({
+                      campo_id: parseInt(formReg.campo_id), cultivo: formReg.cultivo || null, fecha: formReg.fecha || hoyLocal(),
+                      kg_totales: 0, destino: 'bolsa', observaciones: `Cargado desde registro de mercadería${formReg.nro_lote ? ' — ' + formReg.nro_lote : ''}`,
+                    }).select().single()
+                    if (errCos) { alert('Error al crear la cosecha: ' + errCos.message); setGuardandoReg(false); return }
+                    cosechaId = cos.id
+                  }
                   const { data, error } = await supabase.from('registros_mercaderia').insert({
-                    campo: formReg.campo,
+                    campo: formReg.es_propio ? (campos.find(c => String(c.id) === String(formReg.campo_id))?.nombre || formReg.campo) : formReg.campo,
                     cliente: formReg.cliente || null,
                     nro_lote: formReg.nro_lote || null,
                     cultivo: formReg.cultivo || null,
                     fecha: formReg.fecha || null,
+                    es_propio: formReg.es_propio, campo_id: formReg.es_propio ? parseInt(formReg.campo_id) : null, cosecha_id: cosechaId,
                   }).select().single()
                   if (error) { alert('Error: ' + error.message); setGuardandoReg(false); return }
                   if (data) {
@@ -2043,7 +2138,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                     setDescargasReg(prev => ({ ...prev, [data.id]: [] }))
                   }
                   setShowFormReg(false)
-                  setFormReg({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal() })
+                  setFormReg({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
                   setGuardandoReg(false)
                 }} disabled={guardandoReg}
                   style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
@@ -2054,7 +2149,13 @@ export default function Servicios({ usuario, mobile, nav }) {
             </div>
           )}
           {registros.length === 0 && !showFormReg && <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay registros. Creá uno con "+ Nuevo campo".</div>}
-          {registros.map(reg => {
+          {registros.some(r => r.archivado) && (
+            <button onClick={() => setVerArchivados(!verArchivados)}
+              style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', marginBottom: 12 }}>
+              {verArchivados ? '▲ Ocultar archivados' : `📦 Ver archivados (${registros.filter(r => r.archivado).length})`}
+            </button>
+          )}
+          {registros.filter(reg => verArchivados ? reg.archivado : !reg.archivado).map(reg => {
             const desc = descargasReg[reg.id] || []
             const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
             const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
@@ -2062,10 +2163,10 @@ export default function Servicios({ usuario, mobile, nav }) {
             const kgTotal = kgCamion + kgBolsa + kgOtro
             const isActivo = registroActivo?.id === reg.id
             return (
-              <div key={reg.id} style={{ background: S.surface, border: `1px solid ${isActivo ? S.accent : S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+              <div key={reg.id} style={{ background: S.surface, border: `1px solid ${isActivo ? S.accent : S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden', opacity: reg.archivado ? 0.65 : 1 }}>
                 <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>{reg.campo}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{reg.campo}{reg.archivado && <span style={{ fontSize: 11, fontWeight: 600, color: S.muted, marginLeft: 6 }}>(archivado)</span>}</div>
                     <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                       {reg.cliente || '—'} · {reg.nro_lote || 'Sin lote'} · {reg.cultivo}
                       {reg.fecha ? ` · ${new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-AR')}` : ''}
@@ -2120,8 +2221,15 @@ export default function Servicios({ usuario, mobile, nav }) {
                       {isActivo ? '▲ Cerrar' : '📦 Ver / Registrar'}
                     </button>
                     <button onClick={async () => {
-                      if (!confirm(`¿Eliminar el registro de "${reg.campo}"? Se borrarán también todas las descargas.`)) return
+                      await supabase.from('registros_mercaderia').update({ archivado: !reg.archivado }).eq('id', reg.id)
+                      setRegistros(prev => prev.map(r => r.id === reg.id ? { ...r, archivado: !reg.archivado } : r))
+                    }} style={{ padding: '6px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                      {reg.archivado ? '↩ Reactivar' : '📦 Archivar'}
+                    </button>
+                    <button onClick={async () => {
+                      if (!confirm(`¿Eliminar el registro de "${reg.campo}"? Se borrarán también todas las descargas${reg.cosecha_id ? ' y la cosecha cargada' : ''}.`)) return
                       await supabase.from('descargas_mercaderia').delete().eq('registro_id', reg.id)
+                      if (reg.cosecha_id) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id)
                       await supabase.from('registros_mercaderia').delete().eq('id', reg.id)
                       setRegistros(prev => prev.filter(r => r.id !== reg.id))
                       if (registroActivo?.id === reg.id) setRegistroActivo(null)
@@ -2146,6 +2254,10 @@ export default function Servicios({ usuario, mobile, nav }) {
                                 <button onClick={async () => {
                                   if (!confirm('¿Eliminar esta descarga?')) return
                                   await supabase.from('descargas_mercaderia').delete().eq('id', d.id)
+                                  if (reg.cosecha_id) {
+                                    const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', reg.cosecha_id).single()
+                                    await supabase.from('cosechas').update({ kg_totales: Math.max(0, (parseFloat(cos?.kg_totales) || 0) - (d.kg || 0)) }).eq('id', reg.cosecha_id)
+                                  }
                                   await cargarDescargasReg(reg.id)
                                 }} style={{ padding: '3px 7px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>🗑</button>
                               </td>
@@ -2186,7 +2298,14 @@ export default function Servicios({ usuario, mobile, nav }) {
                       <button onClick={async () => {
                         if (!formDescargaReg.kg) { alert('Ingresá los kg'); return }
                         setGuardandoDescargaReg(true)
-                        await supabase.from('descargas_mercaderia').insert({ registro_id: reg.id, fecha: formDescargaReg.fecha, tipo: formDescargaReg.tipo, patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente || null) : null, kg: parseFloat(formDescargaReg.kg), observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null, registrado_por: usuario?.id })
+                        const kgNum = parseFloat(formDescargaReg.kg)
+                        await supabase.from('descargas_mercaderia').insert({ registro_id: reg.id, fecha: formDescargaReg.fecha, tipo: formDescargaReg.tipo, patente: formDescargaReg.tipo === 'camion' ? (formDescargaReg.patente || null) : null, kg: kgNum, observaciones: formDescargaReg.tipo !== 'camion' ? (formDescargaReg.observaciones || null) : null, registrado_por: usuario?.id })
+                        // Si el registro es de campo propio, tiene una cosecha vinculada
+                        // — se le suman los kg ahí mismo, sin pasar por Agricultura.
+                        if (reg.cosecha_id) {
+                          const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', reg.cosecha_id).single()
+                          await supabase.from('cosechas').update({ kg_totales: (parseFloat(cos?.kg_totales) || 0) + kgNum }).eq('id', reg.cosecha_id)
+                        }
                         setFormDescargaReg({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
                         setGuardandoDescargaReg(false)
                         await cargarDescargasReg(reg.id)
