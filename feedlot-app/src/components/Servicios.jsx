@@ -74,6 +74,10 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [campos, setCampos] = useState([])
   const [stockAgro, setStockAgro] = useState([])
   const [descargasReg, setDescargasReg] = useState({})
+  // Todas las patentes/apodos ya usados alguna vez, para sugerírselos a
+  // Brian cuando carga un camión nuevo — así elige de la lista en vez de
+  // escribir de nuevo y arriesgarse a un typeo distinto ("Wally" vs "Waly").
+  const patentesConocidas = [...new Set(Object.values(descargasReg).flat().map(d => d.patente).filter(Boolean))].sort()
   // Estado propio del modo celular
   const [tabM, setTabM] = useState('servicio')
   const [formM, setFormM] = useState({ campania: '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
@@ -989,9 +993,12 @@ export default function Servicios({ usuario, mobile, nav }) {
                         </div>
                         {formDescM.tipo === 'camion' ? (
                           <>
-                            <label style={lblM}>Patente</label>
+                            <label style={lblM}>Patente / Chofer</label>
                             <input type="text" value={formDescM.patente} onChange={e => setFormDescM({...formDescM, patente: e.target.value.toUpperCase()})}
-                              style={inpM} placeholder="ej. ABC 123" />
+                              style={inpM} placeholder="ej. ABC 123 o Wally" list="patentes-sugeridas" />
+                            <datalist id="patentes-sugeridas">
+                              {patentesConocidas.map(p => <option key={p} value={p} />)}
+                            </datalist>
                             {reg.es_propio && (
                               <>
                                 <label style={lblM}>¿A dónde va este camión? *</label>
@@ -2280,7 +2287,13 @@ export default function Servicios({ usuario, mobile, nav }) {
                       </table>
                     )}
                     {reg.es_propio && desc.length > 0 && (() => {
-                      const descFiltrados = filtroTransporte ? desc.filter(d => (d.patente || '').toLowerCase().includes(filtroTransporte.toLowerCase())) : []
+                      // Antes era un campo de texto libre para filtrar — el
+                      // riesgo era que un typeo distinto (Wally vs Waly) no
+                      // coincidiera y ese viaje quedara afuera sin darse
+                      // cuenta. Ahora se elige de una lista con lo que ya
+                      // está cargado, así no hace falta escribirlo de nuevo.
+                      const patentesUnicas = [...new Set(desc.map(d => d.patente).filter(Boolean))].sort()
+                      const descFiltrados = filtroTransporte ? desc.filter(d => d.patente === filtroTransporte) : []
                       const kgFiltrado = descFiltrados.reduce((s, d) => s + (d.kg || 0), 0)
                       const precioTonNum = parseFloat(precioTonTransporte) || 0
                       const totalFlete = (kgFiltrado / 1000) * precioTonNum
@@ -2288,7 +2301,10 @@ export default function Servicios({ usuario, mobile, nav }) {
                         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1rem' }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: S.text, marginBottom: 8 }}>🚛 Liquidar transporte</div>
                           <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                            <input type="text" value={filtroTransporte} onChange={e => setFiltroTransporte(e.target.value)} placeholder="Filtrar por patente..." style={{ ...inp, maxWidth: 200 }} />
+                            <select value={filtroTransporte} onChange={e => setFiltroTransporte(e.target.value)} style={{ ...inp, maxWidth: 200 }}>
+                              <option value="">— Elegí patente/chofer —</option>
+                              {patentesUnicas.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
                             <input type="number" value={precioTonTransporte} onChange={e => setPrecioTonTransporte(e.target.value)} placeholder="$/tonelada" style={{ ...inpMono, maxWidth: 150 }} />
                           </div>
                           {filtroTransporte && (
@@ -2348,11 +2364,17 @@ export default function Servicios({ usuario, mobile, nav }) {
                         </select>
                       </div>
                       <div>
-                        <Lbl>{formDescargaReg.tipo === 'camion' ? 'Patente' : 'Detalle'}</Lbl>
+                        <Lbl>{formDescargaReg.tipo === 'camion' ? 'Patente / Chofer' : 'Detalle'}</Lbl>
                         <input type="text" value={formDescargaReg.tipo === 'camion' ? formDescargaReg.patente : formDescargaReg.observaciones}
-                          onChange={e => setFormDescargaReg({ ...formDescargaReg, [formDescargaReg.tipo === 'camion' ? 'patente' : 'observaciones']: e.target.value })}
-                          placeholder={formDescargaReg.tipo === 'camion' ? 'ej. ABC 123' : 'ej. Bolsa 8'}
-                          style={{ ...inp, textTransform: formDescargaReg.tipo === 'camion' ? 'uppercase' : 'none' }} />
+                          onChange={e => setFormDescargaReg({ ...formDescargaReg, [formDescargaReg.tipo === 'camion' ? 'patente' : 'observaciones']: formDescargaReg.tipo === 'camion' ? e.target.value.toUpperCase() : e.target.value })}
+                          placeholder={formDescargaReg.tipo === 'camion' ? 'ej. ABC 123 o Wally' : 'ej. Bolsa 8'}
+                          list={formDescargaReg.tipo === 'camion' ? 'patentes-sugeridas' : undefined}
+                          style={inp} />
+                        {formDescargaReg.tipo === 'camion' && (
+                          <datalist id="patentes-sugeridas">
+                            {patentesConocidas.map(p => <option key={p} value={p} />)}
+                          </datalist>
+                        )}
                       </div>
                       {formDescargaReg.tipo === 'camion' && reg.es_propio && (
                         <div>
