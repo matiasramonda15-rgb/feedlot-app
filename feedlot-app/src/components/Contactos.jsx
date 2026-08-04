@@ -148,6 +148,7 @@ export default function Contactos({ usuario }) {
       observaciones: formContacto.observaciones || null,
       actividades: (formContacto.actividades && formContacto.actividades.length > 0) ? formContacto.actividades : null,
       saldo_apertura: formContacto.saldo_apertura !== '' && formContacto.saldo_apertura != null ? parseFloat(formContacto.saldo_apertura) : null,
+      saldo_apertura_caja2: formContacto.saldo_apertura_caja2 !== '' && formContacto.saldo_apertura_caja2 != null ? parseFloat(formContacto.saldo_apertura_caja2) : null,
       fecha_corte_saldo: formContacto.fecha_corte_saldo || null,
     }
     if (formContacto.id) {
@@ -218,6 +219,15 @@ export default function Contactos({ usuario }) {
         tipo: `Saldo de apertura al ${new Date(data.fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')}`,
         credito: data.saldoApertura < 0 ? -data.saldoApertura : 0,
         debito: data.saldoApertura > 0 ? data.saldoApertura : 0,
+        esApertura: true,
+      })
+    }
+    if (data.fechaCorte && data.saldoAperturaCaja2 && esParalela) {
+      movs.push({
+        fecha: data.fechaCorte,
+        tipo: `Saldo de apertura al ${new Date(data.fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} (Caja 2)`,
+        credito: data.saldoAperturaCaja2 < 0 ? -data.saldoAperturaCaja2 : 0,
+        debito: data.saldoAperturaCaja2 > 0 ? data.saldoAperturaCaja2 : 0,
         esApertura: true,
       })
     }
@@ -464,6 +474,7 @@ export default function Contactos({ usuario }) {
     const contactoInfo = contactos.find(c => c.nombre === nombre)
     const fechaCorte = contactoInfo?.fecha_corte_saldo
     const saldoApertura = parseFloat(contactoInfo?.saldo_apertura) || 0
+    const saldoAperturaCaja2 = parseFloat(contactoInfo?.saldo_apertura_caja2) || 0
     // Si el contacto tiene un saldo de apertura cargado (para arrancar
     // limpio después de errores históricos), todo lo anterior a la fecha de
     // corte se excluye del cálculo — sigue visible en el historial, pero no
@@ -558,12 +569,12 @@ export default function Contactos({ usuario }) {
     // Arriendos de campos — le debemos al propietario hasta que se paguen.
     const totalArriendos = (data.arriendos || []).reduce((s, v) => s + (parseFloat(v.monto_total) || 0), 0)
     const pagadoArriendos = (data.arriendos || []).reduce((s, v) => s + (v.pagos_detalle || []).reduce((ss, p) => ss + (parseFloat(p.monto) || 0), 0), 0)
-    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales + totalOrdenes + totalFletes + totalCreditos + totalArriendos + (saldoApertura > 0 ? saldoApertura : 0)
+    const totalCompras = totalComprasHacienda + totalComprasInsumos + totalGastosGenerales + totalOrdenes + totalFletes + totalCreditos + totalArriendos + (saldoApertura > 0 ? saldoApertura : 0) + (saldoAperturaCaja2 > 0 ? saldoAperturaCaja2 : 0)
     const pagadoCompras = pagadoComprasHacienda + pagadoComprasInsumos + pagadoGastosGenerales + pagadoOrdenes + pagadoFletes + pagadoCreditos + pagadoArriendos
     const pendienteCompras = totalCompras - pagadoCompras
-    const totalVentasConApertura = totalVentas + (saldoApertura < 0 ? -saldoApertura : 0)
-    const pendienteVentasConApertura = pendienteVentas + (saldoApertura < 0 ? -saldoApertura : 0)
-    return { pendienteVentas: pendienteVentasConApertura, pendienteCompras, saldoNeto: pendienteVentasConApertura - pendienteCompras, totalVentas: totalVentasConApertura, cobradoVentas, totalCompras, pagadoCompras, saldoApertura, fechaCorte, ...data }
+    const totalVentasConApertura = totalVentas + (saldoApertura < 0 ? -saldoApertura : 0) + (saldoAperturaCaja2 < 0 ? -saldoAperturaCaja2 : 0)
+    const pendienteVentasConApertura = pendienteVentas + (saldoApertura < 0 ? -saldoApertura : 0) + (saldoAperturaCaja2 < 0 ? -saldoAperturaCaja2 : 0)
+    return { pendienteVentas: pendienteVentasConApertura, pendienteCompras, saldoNeto: pendienteVentasConApertura - pendienteCompras, totalVentas: totalVentasConApertura, cobradoVentas, totalCompras, pagadoCompras, saldoApertura, saldoAperturaCaja2, fechaCorte, ...data }
   }
 
   if (loading) return <Loader />
@@ -675,7 +686,7 @@ export default function Contactos({ usuario }) {
   // Vista ficha de contacto
   if (contactoSeleccionado) {
     const nombre = contactoSeleccionado
-    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, gastosGenerales: gastosGeneralesCto, serviciosTerceros: serviciosTercerosCto, ordenesTrabajo: ordenesTrabajoCto, ventasGranos: ventasGranosCto, fletes: fletesCto, creditos: creditosCto, retirosSocios: retirosSociosCto, arriendos: arriendosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras, saldoApertura, fechaCorte } = calcularSaldo(nombre)
+    const { ventas: ventasCto, lotes: lotesCto, comprasInsumos: comprasInsumosCto, ventasActivos: ventasActivosCto, gastosGenerales: gastosGeneralesCto, serviciosTerceros: serviciosTercerosCto, ordenesTrabajo: ordenesTrabajoCto, ventasGranos: ventasGranosCto, fletes: fletesCto, creditos: creditosCto, retirosSocios: retirosSociosCto, arriendos: arriendosCto, pendienteVentas, pendienteCompras, saldoNeto, totalVentas, cobradoVentas, totalCompras, pagadoCompras, saldoApertura, saldoAperturaCaja2, fechaCorte } = calcularSaldo(nombre)
     // Remitos sin precio todavía — se muestran en su propia pestaña, sin sumar al saldo
     const remitosSinPrecio = (comprasInsumosCto || []).filter(ci => !ci.total).map(ci => ({ desc: ci.insumo_nombre || 'Insumo', cant: ci.cantidad, unidad: ci.unidad, fecha: ci.fecha }))
     // Insumos ya cargados/pagados pero todavía no retirados físicamente
@@ -907,6 +918,14 @@ export default function Contactos({ usuario }) {
               descripcion: `Saldo de apertura al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} (lo anterior a esta fecha no suma)`,
               credito: saldoApertura < 0 ? -saldoApertura : 0,
               debito: saldoApertura > 0 ? saldoApertura : 0,
+            })
+          }
+          if (fechaCorte && saldoAperturaCaja2 && esParalela) {
+            movimientos.push({
+              fecha: fechaCorte, fechaVto: null, tipo: 'APERTURA', nro: '—', esApertura: true,
+              descripcion: `Saldo de apertura al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} en Caja 2 (lo anterior a esta fecha no suma)`,
+              credito: saldoAperturaCaja2 < 0 ? -saldoAperturaCaja2 : 0,
+              debito: saldoAperturaCaja2 > 0 ? saldoAperturaCaja2 : 0,
             })
           }
 
@@ -1398,10 +1417,16 @@ export default function Contactos({ usuario }) {
             </div>
             <div style={{ gridColumn: '1/-1', background: S.amberLight, border: `1px solid ${S.amber}`, borderRadius: 8, padding: '10px 12px' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.amber, marginBottom: 8 }}>Saldo de apertura (opcional) — para arrancar limpio si el histórico calculado no coincide con la realidad</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                 <div>
                   <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Saldo en Caja 1 a la fecha de corte $</div>
                   <input type="number" value={formContacto.saldo_apertura ?? ''} onChange={e => setFormContacto({...formContacto, saldo_apertura: e.target.value})}
+                    placeholder="positivo = le debemos · negativo = nos debe"
+                    style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Saldo en Caja 2 a la fecha de corte $</div>
+                  <input type="number" value={formContacto.saldo_apertura_caja2 ?? ''} onChange={e => setFormContacto({...formContacto, saldo_apertura_caja2: e.target.value})}
                     placeholder="positivo = le debemos · negativo = nos debe"
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }} />
                 </div>
@@ -1411,7 +1436,7 @@ export default function Contactos({ usuario }) {
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
                 </div>
               </div>
-              <div style={{ fontSize: 10, color: S.amber, marginTop: 6 }}>Con la fecha de corte cargada, todo lo anterior deja de sumar al saldo (sigue visible en el historial) y este número pasa a ser el punto de partida.</div>
+              <div style={{ fontSize: 10, color: S.amber, marginTop: 6 }}>Con la fecha de corte cargada, todo lo anterior deja de sumar al saldo (sigue visible en el historial) y este número pasa a ser el punto de partida — la misma fecha aplica para las dos cajas.</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
