@@ -64,7 +64,6 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [okM, setOkM] = useState('')
   const [registroActivoM, setRegistroActivoM] = useState(null)
   const [showFormRegM, setShowFormRegM] = useState(false)
-  const [verArchivados, setVerArchivados] = useState(false)
   const [formRegM, setFormRegM] = useState({ campo: '', cliente: '', nro_lote: '', cultivo: 'Maíz', fecha: hoyLocal(), es_propio: false, campo_id: '' })
   const [formDescM, setFormDescM] = useState({ tipo: 'camion', patente: '', kg: '', observaciones: '', fecha: hoyLocal() })
   const [guardandoDescM, setGuardandoDescM] = useState(false)
@@ -860,13 +859,7 @@ export default function Servicios({ usuario, mobile, nav }) {
               {registros.length === 0 && !showFormRegM && (
                 <div style={{ textAlign: 'center', color: CM.muted, padding: '2rem', fontSize: 14 }}>No hay registros. Creá uno con "+ Nuevo campo".</div>
               )}
-              {registros.some(r => r.archivado) && (
-                <button onClick={() => setVerArchivados(!verArchivados)}
-                  style={{ width: '100%', padding: '8px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 8, cursor: 'pointer', marginBottom: 10 }}>
-                  {verArchivados ? '▲ Ocultar archivados' : `📦 Ver archivados (${registros.filter(r => r.archivado).length})`}
-                </button>
-              )}
-              {registros.filter(reg => verArchivados ? reg.archivado : !reg.archivado).map(reg => {
+              {registros.filter(reg => !reg.archivado).map(reg => {
                 const desc = descargasReg[reg.id] || []
                 const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
                 const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
@@ -874,22 +867,13 @@ export default function Servicios({ usuario, mobile, nav }) {
                 const kgTotal = kgCamion + kgBolsa + kgOtro
                 const isActivo = registroActivoM?.id === reg.id
                 return (
-                  <div key={reg.id} style={{ background: CM.surface, border: `1px solid ${isActivo ? CM.accent : CM.border}`, borderRadius: 12, marginBottom: 12, overflow: 'hidden', opacity: reg.archivado ? 0.6 : 1 }}>
+                  <div key={reg.id} style={{ background: CM.surface, border: `1px solid ${isActivo ? CM.accent : CM.border}`, borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
                     <div style={{ padding: '1rem' }} onClick={async () => {
                       if (isActivo) { setRegistroActivoM(null); return }
                       await cargarDescargasReg(reg.id)
                       setRegistroActivoM(reg)
                     }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ fontWeight: 700, fontSize: 16 }}>{reg.campo}{reg.archivado && <span style={{ fontSize: 11, fontWeight: 600, color: CM.muted, marginLeft: 6 }}>(archivado)</span>}</div>
-                        <button onClick={async (e) => {
-                          e.stopPropagation()
-                          await supabase.from('registros_mercaderia').update({ archivado: !reg.archivado }).eq('id', reg.id)
-                          setRegistros(prev => prev.map(r => r.id === reg.id ? { ...r, archivado: !reg.archivado } : r))
-                        }} style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${CM.border}`, color: CM.muted, borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
-                          {reg.archivado ? '↩ Reactivar' : '📦 Archivar'}
-                        </button>
-                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{reg.campo}</div>
                       <div style={{ fontSize: 12, color: CM.muted, marginTop: 2 }}>{reg.cliente || '—'} · {reg.nro_lote || 'Sin lote'} · {reg.cultivo}</div>
                       {kgTotal > 0 && (
                         <div style={{ marginTop: 8, display: 'flex', gap: 10, fontSize: 12, flexWrap: 'wrap' }}>
@@ -2149,13 +2133,7 @@ export default function Servicios({ usuario, mobile, nav }) {
             </div>
           )}
           {registros.length === 0 && !showFormReg && <div style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay registros. Creá uno con "+ Nuevo campo".</div>}
-          {registros.some(r => r.archivado) && (
-            <button onClick={() => setVerArchivados(!verArchivados)}
-              style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', marginBottom: 12 }}>
-              {verArchivados ? '▲ Ocultar archivados' : `📦 Ver archivados (${registros.filter(r => r.archivado).length})`}
-            </button>
-          )}
-          {registros.filter(reg => verArchivados ? reg.archivado : !reg.archivado).map(reg => {
+          {registros.filter(reg => !reg.archivado).map(reg => {
             const desc = descargasReg[reg.id] || []
             const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
             const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
@@ -2163,10 +2141,10 @@ export default function Servicios({ usuario, mobile, nav }) {
             const kgTotal = kgCamion + kgBolsa + kgOtro
             const isActivo = registroActivo?.id === reg.id
             return (
-              <div key={reg.id} style={{ background: S.surface, border: `1px solid ${isActivo ? S.accent : S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden', opacity: reg.archivado ? 0.65 : 1 }}>
+              <div key={reg.id} style={{ background: S.surface, border: `1px solid ${isActivo ? S.accent : S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
                 <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>{reg.campo}{reg.archivado && <span style={{ fontSize: 11, fontWeight: 600, color: S.muted, marginLeft: 6 }}>(archivado)</span>}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{reg.campo}</div>
                     <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                       {reg.cliente || '—'} · {reg.nro_lote || 'Sin lote'} · {reg.cultivo}
                       {reg.fecha ? ` · ${new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-AR')}` : ''}
@@ -2219,12 +2197,6 @@ export default function Servicios({ usuario, mobile, nav }) {
                       setRegistroActivo(reg)
                     }} style={{ padding: '6px 12px', fontSize: 12, background: isActivo ? S.accentLight : S.bg, border: `1px solid ${isActivo ? S.accent : S.border}`, color: isActivo ? S.accent : S.muted, borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
                       {isActivo ? '▲ Cerrar' : '📦 Ver / Registrar'}
-                    </button>
-                    <button onClick={async () => {
-                      await supabase.from('registros_mercaderia').update({ archivado: !reg.archivado }).eq('id', reg.id)
-                      setRegistros(prev => prev.map(r => r.id === reg.id ? { ...r, archivado: !reg.archivado } : r))
-                    }} style={{ padding: '6px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                      {reg.archivado ? '↩ Reactivar' : '📦 Archivar'}
                     </button>
                     <button onClick={async () => {
                       if (!confirm(`¿Eliminar el registro de "${reg.campo}"? Se borrarán también todas las descargas${reg.cosecha_id ? ' y la cosecha cargada' : ''}.`)) return

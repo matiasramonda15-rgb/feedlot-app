@@ -2158,6 +2158,14 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
+  const [registrosMercaderia, setRegistrosMercaderia] = useState([])
+
+  // Para poder "cerrar" desde acá una cosecha que se venía cargando sola
+  // desde Mercadería (Servicios) — sin tener que ir a esa pantalla, donde
+  // el botón quedaba muy a mano y se podía tocar por error en el campo.
+  useEffect(() => {
+    supabase.from('registros_mercaderia').select('id, campo, nro_lote, cosecha_id, es_propio, archivado').eq('es_propio', true).not('cosecha_id', 'is', null).then(({ data }) => setRegistrosMercaderia(data || []))
+  }, [cosechas])
 
   async function guardar() {
     if (!form.campo_id || !form.cultivo || !form.tn_totales) { alert('Completá campo, cultivo y tn totales'); return }
@@ -2337,6 +2345,20 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                   }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('cosechas').delete().eq('id', c.id); cargar() }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
+                  {(() => {
+                    const regVinculado = registrosMercaderia.find(r => r.cosecha_id === c.id && !r.archivado)
+                    if (!regVinculado) return null
+                    return (
+                      <button onClick={async () => {
+                        if (!confirm(`¿Terminaste de cosechar "${c.campos?.nombre || regVinculado.campo}"? Se cierra el registro en Mercadería (deja de sumar descargas nuevas ahí) — la cosecha y el stock quedan igual.`)) return
+                        await supabase.from('registros_mercaderia').update({ archivado: true }).eq('id', regVinculado.id)
+                        setRegistrosMercaderia(prev => prev.map(r => r.id === regVinculado.id ? { ...r, archivado: true } : r))
+                      }} title="Cierra el registro en Mercadería — ya no suma descargas nuevas ahí"
+                        style={{ padding: '3px 8px', fontSize: 11, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 5, cursor: 'pointer' }}>
+                        🏁 Terminar cosecha
+                      </button>
+                    )
+                  })()}
                 </td>
               </tr>
               )
