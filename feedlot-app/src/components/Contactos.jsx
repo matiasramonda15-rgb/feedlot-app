@@ -248,14 +248,18 @@ export default function Contactos({ usuario }) {
       // ninguna de las dos cosas está definida todavía.
       const montoFact = tieneFacturado ? (sumFact + sumIva - sumCom - sumRet) : (sumNegro > 0 ? 0 : grupo.reduce((s, vv) => s + (vv.total || 0), 0))
       const fecha = v.fecha || v.creado_en?.split('T')[0]
+      const fechaCorta = fecha ? new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''
+      const cantVenta = grupo.reduce((s, vv) => s + (vv.cantidad || 0), 0)
       if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (Caja 2)', credito: sumNegro, debito: 0 }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Venta hacienda', credito: montoFact, debito: 0 }) }
-      // Cobros ya registrados contra esta venta — bajan lo que nos deben
+      // Cobros ya registrados contra esta venta — bajan lo que nos deben.
+      // Antes decía solo "Cobro", sin aclarar de cuál venta — con varias
+      // ventas activas a la vez no quedaba claro qué estaba pagando cada uno.
       grupo.forEach(vv => {
         (pagosVenta[vv.id] || []).forEach(p => {
           const esPagoParalelo = p.es_paralelo || false
           if (esParalela !== esPagoParalelo) return
-          if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: 'Cobro', credito: 0, debito: p.monto })
+          if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: `Cobro — venta ${fechaCorta}${cantVenta ? ` (${cantVenta} cab)` : ''}`, credito: 0, debito: p.monto })
         })
       })
     })
@@ -329,7 +333,8 @@ export default function Contactos({ usuario }) {
       ;(vg.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
-        movs.push({ fecha: vg.fecha, tipo: 'Cobro', credito: 0, debito: parseFloat(p.monto) || 0 })
+        const fechaVgCorta = vg.fecha ? new Date(vg.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''
+        movs.push({ fecha: vg.fecha, tipo: `Cobro — venta ${vg.cultivo || 'grano'} ${fechaVgCorta}`, credito: 0, debito: parseFloat(p.monto) || 0 })
       })
     })
     // Fletes — le debemos al transportista. Se pagan de una sola vez (sin
@@ -397,7 +402,8 @@ export default function Contactos({ usuario }) {
       ;(st.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
-        movs.push({ fecha, tipo: 'Cobro', credito: 0, debito: parseFloat(p.monto) || 0 })
+        const fechaStCorta = fecha ? new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''
+        movs.push({ fecha, tipo: `Cobro — ${st.labor || 'servicio'} ${fechaStCorta}`, credito: 0, debito: parseFloat(p.monto) || 0 })
       })
     })
     // (Acá vivía un resto de la lógica vieja que todavía cortaba el
