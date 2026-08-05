@@ -35,6 +35,8 @@ export default function Contactos({ usuario }) {
   const [vencimientosCompra, setVencimientosCompra] = useState({})
   const [filtro, setFiltro] = useState('')
   const [contactoSeleccionado, setContactoSeleccionado] = useState(null)
+  const [filtroResumenDesde, setFiltroResumenDesde] = useState('')
+  const [filtroResumenHasta, setFiltroResumenHasta] = useState('')
   const [mostrarNegro, setMostrarNegro] = useState(false)
   const [tabFicha, setTabFicha] = useState('oficial')
   const puedeVerParalelo = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
@@ -209,7 +211,7 @@ export default function Contactos({ usuario }) {
   // Arma la lista de movimientos de una cuenta (oficial o paralela) para un
   // contacto — misma lógica/fórmulas que la tabla de la ficha, para que el
   // resumen impreso coincida con lo que se ve en pantalla.
-  function construirMovimientosParaImpresion(nombre, esParalela) {
+  function construirMovimientosParaImpresion(nombre, esParalela, desde = null, hasta = null) {
     const data = calcularSaldo(nombre)
     const movs = []
     const vistos = new Set()
@@ -398,16 +400,102 @@ export default function Contactos({ usuario }) {
         movs.push({ fecha, tipo: 'Cobro', credito: 0, debito: parseFloat(p.monto) || 0 })
       })
     })
-    const movsVisibles = data.fechaCorte ? movs.filter(m => m.esApertura || (m.fecha && m.fecha >= data.fechaCorte)) : movs
-    movsVisibles.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
+    // (Acá vivía un resto de la lógica vieja que todavía cortaba el
+    // historial por fecha_corte_saldo — aunque ya se había sacado de
+    // calcularSaldo, esta función seguía aplicándolo por su cuenta. Por eso
+    // el historial de Soto "desaparecía": esto es lo que lo estaba
+    // cortando. Ahora no se excluye nada por fecha de corte — el ajuste ya
+    // se suma solo, como el primer movimiento.)
+    movs.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
     let saldoAcum = 0
-    return movsVisibles.map(m => { saldoAcum += (m.credito || 0) - (m.debito || 0); return { ...m, saldoAcum } })
+    const movsConSaldo = movs.map(m => { saldoAcum += (m.credito || 0) - (m.debito || 0); return { ...m, saldoAcum } })
+    // Filtro de rango de fechas para el resumen (opcional) — todo lo de
+    // antes del "desde" se resume en un solo renglón de "Saldo anterior",
+    // para no tener que mandar el historial completo pero sin perder la
+    // cuenta de cuánto se arrastraba.
+    if (!desde && !hasta) return movsConSaldo
+    const dentroDeRango = m => (!desde || (m.fecha || '') >= desde) && (!hasta || (m.fecha || '') <= hasta)
+    const antes = movsConSaldo.filter(m => desde && (m.fecha || '') < desde)
+    const enRango = movsConSaldo.filter(dentroDeRango)
+    const resultado = []
+    if (antes.length > 0) {
+      resultado.push({ fecha: desde, tipo: `Saldo anterior al ${new Date(desde + 'T12:00:00').toLocaleDateString('es-AR')}`, credito: 0, debito: 0, saldoAcum: antes[antes.length - 1].saldoAcum, esSaldoAnterior: true })
+    }
+    resultado.push(...enRango)
+    return resultado
+  }
+
+  // Carga jsPDF + el plugin de tablas (autoTable) desde un CDN, una sola vez
+  // — así se puede descargar el resumen como PDF real y mandarlo por
+  // WhatsApp o mail directo, en vez de depender del diálogo de imprimir del
+  // navegador (que en Edge/celular no siempre deja guardar como PDF fácil).
+  async function cargarJsPDF() {
+    if (window.jspdf?.jsPDF && window.jspdf.jsPDF.API.autoTable) return window.jspdf.jsPDF
+    if (!window.jspdf) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+        s.onload = resolve; s.onerror = reject
+        document.head.appendChild(s)
+      })
+    }
+    if (!window.jspdf.jsPDF.API.autoTable) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'
+        s.onload = resolve; s.onerror = reject
+        document.head.appendChild(s)
+      })
+    }
+    return window.jspdf.jsPDF
+  }
+
+  async function descargarPDFResumen(nombre) {
+    const contactoData = contactos.find(c => c.nombre === nombre)
+    const movOficial = construirMovimientosParaImpresion(nombre, false, filtroResumenDesde || null, filtroResumenHasta || null)
+    const movParalela = puedeVerParalelo ? construirMovimientosParaImpresion(nombre, true, filtroResumenDesde || null, filtroResumenHasta || null) : []
+    const fmt = n => `$ ${Math.round(n || 0).toLocaleString('es-AR')}`
+    const fmtFecha = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+
+    const JsPDF = await cargarJsPDF()
+    const doc = new JsPDF()
+    doc.setFontSize(16); doc.text('RAMONDA HNOS S.A.', 14, 18)
+    doc.setFontSize(10); doc.setTextColor(107, 103, 96); doc.text('Resumen de cuenta', 14, 25)
+    doc.setFontSize(13); doc.setTextColor(26, 25, 22); doc.text(nombre, 14, 36)
+    doc.setFontSize(9); doc.setTextColor(107, 103, 96)
+    const datosLinea = [contactoData?.cuit ? `CUIT: ${contactoData.cuit}` : '', contactoData?.localidad, contactoData?.telefono].filter(Boolean).join('  ·  ')
+    if (datosLinea) doc.text(datosLinea, 14, 42)
+
+    let y = 50
+    const tablaCaja = (movs, titulo) => {
+      if (movs.length === 0) return
+      doc.setFontSize(11); doc.setTextColor(26, 25, 22); doc.text(titulo, 14, y)
+      doc.autoTable({
+        startY: y + 4,
+        head: [['Fecha', 'Concepto', 'Débito', 'Crédito', 'Saldo']],
+        body: movs.map(m => [fmtFecha(m.fecha), m.tipo, m.debito ? fmt(m.debito) : '', m.credito ? fmt(m.credito) : '', fmt(m.saldoAcum)]),
+        foot: [['', 'Saldo final', '', '', fmt(movs[movs.length - 1]?.saldoAcum || 0)]],
+        theme: 'plain',
+        headStyles: { fillColor: [247, 245, 240], textColor: [26, 25, 22], fontStyle: 'bold', fontSize: 8 },
+        footStyles: { fillColor: [247, 245, 240], textColor: [26, 25, 22], fontStyle: 'bold', fontSize: 8 },
+        bodyStyles: { fontSize: 8, textColor: [26, 25, 22] },
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right', fontStyle: 'bold' } },
+        margin: { left: 14, right: 14 },
+      })
+      y = doc.lastAutoTable.finalY + 14
+    }
+    tablaCaja(movOficial, 'Caja 1')
+    tablaCaja(movParalela, 'Caja 2')
+
+    doc.setFontSize(8); doc.setTextColor(107, 103, 96)
+    doc.text(`Emitido el ${new Date().toLocaleDateString('es-AR')}`, 196, 290, { align: 'right' })
+    doc.save(`Resumen ${nombre} — ${new Date().toLocaleDateString('es-AR').replace(/\//g, '-')}.pdf`)
   }
 
   function generarResumenCuenta(nombre) {
     const contactoData = contactos.find(c => c.nombre === nombre)
-    const movOficial = construirMovimientosParaImpresion(nombre, false)
-    const movParalela = puedeVerParalelo ? construirMovimientosParaImpresion(nombre, true) : []
+    const movOficial = construirMovimientosParaImpresion(nombre, false, filtroResumenDesde || null, filtroResumenHasta || null)
+    const movParalela = puedeVerParalelo ? construirMovimientosParaImpresion(nombre, true, filtroResumenDesde || null, filtroResumenHasta || null) : []
     const fmt = n => `$ ${Math.round(n || 0).toLocaleString('es-AR')}`
     const fmtFecha = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR') : '—'
 
@@ -717,6 +805,10 @@ export default function Contactos({ usuario }) {
               style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer' }}>
               🖨️ Imprimir / Enviar resumen
             </button>
+            <button onClick={() => descargarPDFResumen(nombre)}
+              style={{ padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
+              ⬇️ Descargar PDF
+            </button>
             {contactoData && (
               <>
                 <button onClick={async () => {
@@ -736,6 +828,32 @@ export default function Contactos({ usuario }) {
               </>
             )}
           </div>
+        </div>
+
+        {/* Filtro de fechas para el resumen — no afecta los totales que se
+            ven en pantalla, solo lo que se imprime/descarga */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem', flexWrap: 'wrap', background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '8px 12px' }}>
+          <span style={{ fontSize: 11, color: S.muted, fontWeight: 600 }}>Resumen desde:</span>
+          {[
+            { label: '30 días', dias: 30 }, { label: '60 días', dias: 60 }, { label: '90 días', dias: 90 },
+          ].map(o => (
+            <button key={o.dias} onClick={() => {
+              const d = new Date(); d.setDate(d.getDate() - o.dias)
+              setFiltroResumenDesde(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)
+              setFiltroResumenHasta('')
+            }} style={{ padding: '4px 10px', fontSize: 11, background: S.bg, border: `1px solid ${S.border}`, color: S.text, borderRadius: 5, cursor: 'pointer' }}>
+              {o.label}
+            </button>
+          ))}
+          <input type="date" value={filtroResumenDesde} onChange={e => setFiltroResumenDesde(e.target.value)} style={{ padding: '4px 8px', fontSize: 11, border: `1px solid ${S.border}`, borderRadius: 5 }} />
+          <span style={{ fontSize: 11, color: S.muted }}>hasta</span>
+          <input type="date" value={filtroResumenHasta} onChange={e => setFiltroResumenHasta(e.target.value)} style={{ padding: '4px 8px', fontSize: 11, border: `1px solid ${S.border}`, borderRadius: 5 }} />
+          {(filtroResumenDesde || filtroResumenHasta) && (
+            <button onClick={() => { setFiltroResumenDesde(''); setFiltroResumenHasta('') }}
+              style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>
+              ✕ Ver todo
+            </button>
+          )}
         </div>
 
         {/* Datos del contacto */}
