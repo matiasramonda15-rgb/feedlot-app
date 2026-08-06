@@ -303,11 +303,6 @@ export default function Contactos({ usuario }) {
       const pagosValidos = (g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0)
       const pagadoTotal = pagosValidos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       const pendienteTotal = (g.monto || 0) - pagadoTotal
-      // Si ya está completamente pagado (en cualquier combinación de cajas),
-      // no aporta nada al saldo pendiente — se saca del historial en vez de
-      // mostrar la obligación y el pago que la cancela, para no ensuciar la
-      // vista con movimientos ya resueltos.
-      if (pendienteTotal <= 0.5) return
       const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
       const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       // La parte todavía sin pagar se asigna a la caja "por defecto" del
@@ -1190,9 +1185,6 @@ export default function Contactos({ usuario }) {
             const pagosValidos = (g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0)
             const pagadoTotal = pagosValidos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const pendienteTotal = (g.monto || 0) - pagadoTotal
-            // Ya está completamente pagado — no aporta al saldo, se saca del
-            // historial para no mostrar movimientos ya resueltos.
-            if (pendienteTotal <= 0.5) return
             const pagosEnEstaCaja = pagosValidos.filter(p => (p.es_paralelo || false) === esParalela)
             const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
