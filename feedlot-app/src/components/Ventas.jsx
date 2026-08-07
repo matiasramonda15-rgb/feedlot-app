@@ -144,6 +144,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [editandoBanner, setEditandoBanner] = useState(null)
   const [pagosVenta, setPagosVenta] = useState({})
   const [registrandoPago, setRegistrandoPago] = useState(null)
+  const [guardandoPagoVenta, setGuardandoPagoVenta] = useState(false)
   const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
   const [verPagosArchivadaVenta, setVerPagosArchivadaVenta] = useState(null)
@@ -2212,15 +2213,20 @@ export default function Ventas({ usuario, mobile, nav }) {
                             )}
                                 <div style={{ display: 'flex', gap: 4 }}>
                                   <button onClick={async () => {
+                                    // Sin esto, un doble clic (algo fácil que pase sin querer,
+                                    // sobre todo con varias formas de pago cargadas) dispara todo
+                                    // el guardado dos veces y duplica cheques y movimientos de caja.
+                                    if (guardandoPagoVenta) return
+                                    setGuardandoPagoVenta(true)
                                     const entradasValidas = formPagos.filter(fp => fp.monto)
-                                    if (entradasValidas.length === 0) return
+                                    if (entradasValidas.length === 0) { setGuardandoPagoVenta(false); return }
                                     const montoTotalPagos = entradasValidas.reduce((s, fp) => s + (parseFloat(fp.monto) || 0), 0)
                                     // Si la suma de todos los pagos es mayor al saldo pendiente, queda un
                                     // excedente a favor del comprador (para descontar en una próxima venta).
                                     const excedente = Math.round((montoTotalPagos - saldo) * 100) / 100
                                     let notaExcedente = null
                                     if (excedente > 0) {
-                                      if (!confirm(`Este pago ($${montoTotalPagos.toLocaleString('es-AR')}) es mayor al saldo pendiente ($${Math.round(saldo).toLocaleString('es-AR')}).\n\nQueda $${excedente.toLocaleString('es-AR')} a favor del comprador. ¿Confirmás?`)) return
+                                      if (!confirm(`Este pago ($${montoTotalPagos.toLocaleString('es-AR')}) es mayor al saldo pendiente ($${Math.round(saldo).toLocaleString('es-AR')}).\n\nQueda $${excedente.toLocaleString('es-AR')} a favor del comprador. ¿Confirmás?`)) { setGuardandoPagoVenta(false); return }
                                       notaExcedente = `Sobrepago: $${excedente.toLocaleString('es-AR')} a favor del comprador`
                                     }
                                     for (const fp of entradasValidas) {
@@ -2239,11 +2245,11 @@ export default function Ventas({ usuario, mobile, nav }) {
                                       if (!esCanje) {
                                         if (esParalela) {
                                           const { data: cp, error: eCp } = await supabase.from('caja_paralela').insert({ fecha: fp.fecha, tipo: 'ingreso', descripcion: 'Venta hacienda ' + corralesStr + ' ' + (v.comprador || ''), monto, pago_venta_id: pagoId }).select().single()
-                                          if (eCp) { alert('Error al registrar en Caja 2: ' + eCp.message + ' — el pago no se terminó de confirmar, revisá e intentá de nuevo.'); return }
+                                          if (eCp) { alert('Error al registrar en Caja 2: ' + eCp.message + ' — el pago no se terminó de confirmar, revisá e intentá de nuevo.'); setGuardandoPagoVenta(false); return }
                                           cajaParalelaId = cp?.id || null
                                         } else {
                                           const { data: co, error: eCo } = await supabase.from('caja_oficial').insert({ fecha: fp.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: 'Venta ' + corralesStr + ' ' + (v.comprador || ''), monto, forma_pago: fp.forma_pago, pago_venta_id: pagoId }).select().single()
-                                          if (eCo) { alert('Error al registrar en caja oficial: ' + eCo.message + ' — el pago no se terminó de confirmar, revisá e intentá de nuevo.'); return }
+                                          if (eCo) { alert('Error al registrar en caja oficial: ' + eCo.message + ' — el pago no se terminó de confirmar, revisá e intentá de nuevo.'); setGuardandoPagoVenta(false); return }
                                           cajaOficialId = co?.id || null
                                         }
                                       }
@@ -2252,7 +2258,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                         // Antes esto no revisaba ningún error — si fallaba, la caja quedaba
                                         // cargada pero el cheque se perdía sin ningún aviso. Ahora se corta
                                         // el pago si no se puede guardar el cheque.
-                                        if (eCheq) { alert(`El cheque N° ${fp.numero_cheque || '(sin número)'} no se pudo guardar en la cartera (${eCheq.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
+                                        if (eCheq) { alert(`El cheque N° ${fp.numero_cheque || '(sin número)'} no se pudo guardar en la cartera (${eCheq.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); setGuardandoPagoVenta(false); return }
                                       }
                                     }
                                     // Sumar los pagos de TODO el grupo (si la venta es de varios corrales
@@ -2267,9 +2273,10 @@ export default function Ventas({ usuario, mobile, nav }) {
                                     // simple redondeo. Ahora es un monto fijo chico.
                                     if (totalPag >= totalRealGrupo - 1000) for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
                                     setRegistrandoPago(null)
+                                    setGuardandoPagoVenta(false)
                                     await cargar()
-                                  }} style={{ flex: 1, padding: '4px', fontSize: 11, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 4, cursor: 'pointer' }}>
-                                    Guardar {formPagos.length > 1 ? 'todo' : ''}
+                                  }} disabled={guardandoPagoVenta} style={{ flex: 1, padding: '4px', fontSize: 11, fontWeight: 600, background: '#1E5C2E', border: '1px solid #1E5C2E', color: '#fff', borderRadius: 4, cursor: 'pointer', opacity: guardandoPagoVenta ? 0.6 : 1 }}>
+                                    {guardandoPagoVenta ? 'Guardando...' : `Guardar ${formPagos.length > 1 ? 'todo' : ''}`}
                                   </button>
                                   <button onClick={() => setRegistrandoPago(null)}
                                     style={{ padding: '4px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 4, cursor: 'pointer' }}>

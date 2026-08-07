@@ -50,6 +50,7 @@ export default function Insumos({ usuario }) {
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [pagarInline, setPagarInline] = useState(null)
+  const [guardandoPagoInline, setGuardandoPagoInline] = useState(false)
   const [retirandoId, setRetirandoId] = useState(null)
   const [cantidadRetiro, setCantidadRetiro] = useState('')
   const [formPagoInline, setFormPagoInline] = useState({ fecha: hoyLocal(), tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
@@ -649,9 +650,13 @@ export default function Insumos({ usuario }) {
                               Cancelar
                             </button>
                             <button onClick={async () => {
+                              // Sin esto, un doble clic dispara todo el guardado dos veces y
+                              // duplica cheques y movimientos de caja (nos pasó con un pago real).
+                              if (guardandoPagoInline) return
                               const pagos = formPagoInline.pagos
                               const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
                               if (!totalPagos) { alert('Ingresá el monto'); return }
+                              setGuardandoPagoInline(true)
                               const desc = `Pago compra ${c.insumo_nombre}${c.proveedor ? ` — ${c.proveedor}` : ''}`
                               let caja_oficial_id = null, caja_paralela_id = null
                               for (const pago of pagos) {
@@ -668,12 +673,12 @@ export default function Insumos({ usuario }) {
                                 }
                                 if (pago.tipo === 'e-cheq' && pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
                                   for (const chId of pago.cheque_tercero_ids) {
-                                    await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+                                    await supabase.from('cheques').update({ estado: 'entregado', beneficiario: formPagoInline.proveedor || c.proveedor || null }).eq('id', parseInt(chId))
                                   }
                                 }
                                 if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
                                   const { error: eCheqInline } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
-                                  if (eCheqInline) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqInline.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
+                                  if (eCheqInline) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqInline.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); setGuardandoPagoInline(false); return }
                                 }
                               }
                               const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : c.precio_unitario || (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
@@ -684,10 +689,11 @@ export default function Insumos({ usuario }) {
                                 await supabase.from(tabla).update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
                               }
                               setPagarInline(null)
+                              setGuardandoPagoInline(false)
                               await cargar()
                               generarRecibo({ ...c, fecha: formPagoInline.fecha, precio_unitario: precioUnit, total: totalPagos }, pagos)
-                            }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
-                              💾 Confirmar y emitir recibo
+                            }} disabled={guardandoPagoInline} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: guardandoPagoInline ? 0.6 : 1 }}>
+                              {guardandoPagoInline ? 'Guardando...' : '💾 Confirmar y emitir recibo'}
                             </button>
                           </div>
                         </div>

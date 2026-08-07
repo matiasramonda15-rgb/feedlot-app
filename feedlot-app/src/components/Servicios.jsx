@@ -1934,7 +1934,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                               const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPagoMO.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, beneficiario: empleadoSeleccionado || null, estado: 'entregado', caja_oficial_id, es_electronico: p.tipo === 'e-cheq' })
                               if (errCheq) { alert('Error al registrar el cheque: ' + errCheq.message); return }
                             } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
-                              for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+                              for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'entregado', beneficiario: empleadoSeleccionado || null }).eq('id', parseInt(chId))
                             }
                           }
                           // Marcar como pagado — crear entrada si no existe
