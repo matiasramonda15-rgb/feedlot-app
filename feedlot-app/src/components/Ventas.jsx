@@ -146,6 +146,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [registrandoPago, setRegistrandoPago] = useState(null)
   const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
+  const [verPagosArchivadaVenta, setVerPagosArchivadaVenta] = useState(null)
   const [filtroArchivadas, setFiltroArchivadas] = useState({ comprador: '', desde: '', hasta: '' })
   const [filtroVentas, setFiltroVentas] = useState('')
   const [grupoExpandido, setGrupoExpandido] = useState(null)
@@ -2344,15 +2345,52 @@ export default function Ventas({ usuario, mobile, nav }) {
                       const grupo = v.grupo_venta_id ? ventas.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) : [v]
                       const totalArch = v.grupo_venta_id ? (v.monto_total_grupo || (grupo || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
                       const corrStr = v.grupo_venta_id ? (grupo || []).map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
+                      const rowKeyArch = v.grupo_venta_id || v.id
+                      const pagosArch = (grupo || []).flatMap(vv => (pagosVenta && pagosVenta[vv.id]) || [])
+                      const expandidoArch = verPagosArchivadaVenta === rowKeyArch
                       return (
-                        <div key={v.grupo_venta_id || v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}` }}>
+                        <div key={rowKeyArch} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px' }}>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{corrStr} · {v.comprador || '—'}</div>
                             <div style={{ fontSize: 11, color: S.muted }}>{new Date((v.fecha||v.creado_en?.split('T')[0]||v.creado_en)+'T12:00:00').toLocaleDateString('es-AR')} · {(grupo || []).reduce((s,gv)=>s+(gv.cantidad||0),0)} animales</div>
                           </div>
-                          <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green, fontSize: 14 }}>
-                            {totalArch > 0 ? `$${totalArch.toLocaleString('es-AR')}` : '—'}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green, fontSize: 14 }}>
+                              {totalArch > 0 ? `$${totalArch.toLocaleString('es-AR')}` : '—'}
+                            </div>
+                            <button onClick={() => setVerPagosArchivadaVenta(expandidoArch ? null : rowKeyArch)}
+                              style={{ padding: '5px 10px', fontSize: 11, background: expandidoArch ? S.amberLight : S.surface, border: `1px solid ${expandidoArch ? S.amber : S.border}`, color: expandidoArch ? S.amber : S.text, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              {expandidoArch ? '▲ Cerrar' : '💳 Ver / corregir pagos'}
+                            </button>
                           </div>
+                        </div>
+                        {expandidoArch && (
+                          <div style={{ padding: '0 14px 14px' }}>
+                            <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>Pagos realizados — tocá ✕ para deshacer uno si hubo un error (se revierte la caja y el cheque)</div>
+                            {pagosArch.length === 0 && <div style={{ fontSize: 13, color: S.hint }}>Sin pagos registrados.</div>}
+                            {pagosArch.length > 0 && (
+                              <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
+                                {pagosArch.map((p, pi) => (
+                                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosArch.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                                    <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralela ? ' · Caja 2' : ''}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                      <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                      <button onClick={async () => {
+                                        if (!confirm('¿Deshacer este pago? Se eliminará de la caja y el cheque, si tenía.')) return
+                                        await supabase.from('cheques').delete().eq('pago_venta_id', p.id)
+                                        await supabase.from('caja_oficial').delete().eq('pago_venta_id', p.id)
+                                        await supabase.from('caja_paralela').delete().eq('pago_venta_id', p.id)
+                                        await supabase.from('pagos_ventas').delete().eq('id', p.id)
+                                        await cargar()
+                                      }} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         </div>
                       )
                     })
