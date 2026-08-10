@@ -899,7 +899,12 @@ async function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro
     const campo = camposLista.find(c => c.id === o.campo_id)
     const lote = campo?.lotes_agricolas?.find(l => l.id === o.lote_id)
     const campana = campanas.find(c => c.id === o.campana_id)
-    const superficie = lote?.superficie_ha || campo?.superficie_ha || '—'
+    // La superficie que se muestra tiene que ser la que se cargó en ESTA
+    // orden puntual (superficie_ha_real) — antes usaba la del campo/lote
+    // (la de contrato), que a veces no coincide con la hectárea trabajable
+    // real y hacía que el recibo mostrara un número distinto al que se
+    // había cargado a mano al hacer la orden.
+    const superficie = o.superficie_ha_real || lote?.superficie_ha || campo?.superficie_ha || '—'
     return `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;">${o.tipo} — ${campo?.nombre || ''}${lote ? ` Lote ${lote.numero}` : ''} · ${superficie} ha${campana ? ` · ${campana.nombre}` : ''}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(o.costo_total || 0).toLocaleString('es-AR')}</td>
@@ -983,7 +988,7 @@ async function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro
 
 function generarRemitoOrden(orden, campo, campana, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
-  const superficie = campo?.superficie_ha || '—'
+  const superficie = orden.superficie_ha_real || campo?.superficie_ha || '—'
   const productos = orden.productos || []
   const pagos = orden.pagos_detalle || []
 
