@@ -1187,10 +1187,22 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     // Descontar stock de productos usados — con la superficie TOTAL (todos
     // los campos/lotes juntos), de forma atómica en la base. La dosis es por
     // hectárea, así que da lo mismo hacerlo de una vez que por partes.
+    // Se guarda cuánto se descontó REALMENTE (puede ser menos que lo
+    // calculado si no había suficiente stock) — así, si después se elimina
+    // la orden, se repone exactamente eso y no una cantidad inventada que
+    // nunca existió en stock.
+    const descontadoRealPorProducto = {}
     for (const p of form.productos) {
       if (!p.id || !p.dosis || !superficie) continue
-      const dosisChica = stockAgro.find(s => String(s.id) === String(p.id))?.dosis_chica
+      const stockItem = stockAgro.find(s => String(s.id) === String(p.id))
+      const dosisChica = stockItem?.dosis_chica
       const usado = redondearMedio(parseFloat(p.dosis) * superficie, dosisChica)
+      const stockDisponible = parseFloat(stockItem?.cantidad) || 0
+      const realmenteDescontado = Math.min(usado, stockDisponible)
+      if (realmenteDescontado < usado) {
+        if (!confirm(`Ojo: no hay suficiente stock de ${stockItem?.insumo || 'este producto'} — hacían falta ${usado.toLocaleString('es-AR')} y solo hay ${stockDisponible.toLocaleString('es-AR')}. Se va a descontar lo que hay y el stock queda en 0. ¿Seguir igual?`)) { setGuardando(false); return }
+      }
+      descontadoRealPorProducto[p.id] = realmenteDescontado
       const { error: errStock } = await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -usado })
       if (errStock) { alert('Error al descontar stock: ' + errStock.message); setGuardando(false); return }
     }
@@ -1223,7 +1235,13 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       // de todos los lotes juntos, y quedaba mal en cada orden individual.
       const productosDeEsteItem = form.productos.map(p => {
         const dosisChica = stockAgro.find(s => String(s.id) === String(p.id))?.dosis_chica
-        return { ...p, total: p.dosis ? String(redondearMedio(parseFloat(p.dosis) * superficieItem, dosisChica)) : p.total }
+        // La parte de "lo realmente descontado" que le corresponde a esta
+        // orden puntual, en la misma proporción que su superficie sobre el
+        // total — para que la suma de todas las órdenes coincida con lo que
+        // se sacó de stock de verdad.
+        const descontadoReal = descontadoRealPorProducto[p.id]
+        const descontadoRealItem = (descontadoReal != null && superficie > 0) ? Math.round((descontadoReal * (superficieItem / superficie)) * 10000) / 10000 : undefined
+        return { ...p, total: p.dosis ? String(redondearMedio(parseFloat(p.dosis) * superficieItem, dosisChica)) : p.total, descontado_real: descontadoRealItem }
       })
       const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
         campo_id: campoId, campana_id: parseInt(form.campana_id) || null,
@@ -2031,10 +2049,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                               await supabase.from('caja_oficial').delete().eq('id', o.caja_oficial_id)
                             }
                             if (o.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', o.caja_paralela_id)
-                            // Reponer stock de los insumos que se habían descontado al crear esta orden
+                            // Reponer stock de los insumos que se habían descontado al crear
+                            // esta orden — se usa lo que REALMENTE se descontó en su momento
+                            // (guardado en descontado_real), no lo recalculado de nuevo, porque
+                            // si en ese momento no había suficiente stock, lo real pudo haber
+                            // sido menos (y sumar de más crea stock de la nada).
                             for (const p of (o.productos || [])) {
-                              if (!p.id || !p.dosis || !o.superficie_ha_real) continue
-                              const usado = parseFloat(p.dosis) * o.superficie_ha_real
+                              if (!p.id) continue
+                              const usado = p.descontado_real != null ? p.descontado_real : (p.dosis && o.superficie_ha_real ? parseFloat(p.dosis) * o.superficie_ha_real : 0)
+                              if (!usado) continue
                               await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: usado })
                             }
                             await supabase.from('ordenes_trabajo').delete().eq('id', o.id)
@@ -3694,7 +3717,12 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (item && formCompra.retirado) {
       const cantidadAnterior = parseFloat(item.cantidad) || 0
       const precioAnterior = parseFloat(item.precio_referencia) || precioUnit
-      const cantidadTotal = cantidadAnterior + cantidad
+      // Redondeado igual que en las órdenes (medio litro/kg, salvo "dosis
+      // chica") — sin esto, una compra cargada con algún decimal de más
+      // (ej. un dato de balanza) contamina el stock para siempre, porque
+      // después se le va restando y resta arrastra el mismo error.
+      const cantidadTotalCruda = cantidadAnterior + cantidad
+      const cantidadTotal = item.dosis_chica ? Math.round(cantidadTotalCruda * 10000) / 10000 : Math.round(cantidadTotalCruda * 2) / 2
       const upd = { cantidad: cantidadTotal, actualizado_en: new Date().toISOString() }
       if (precioUnit) {
         upd.precio_referencia = cantidadTotal > 0
@@ -4176,7 +4204,11 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                           if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} por retirar de esta compra.`); return }
                           if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} de ${i.insumo_nombre || 'insumo'} al stock.\n\n¿Es correcto?`)) return
                           const item = stock.find(s => s.id === i.insumo_id)
-                          if (item) await supabase.from('stock_agro').update({ cantidad: (item.cantidad || 0) + cant, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                          if (item) {
+                            const nuevaCantidadCruda = (item.cantidad || 0) + cant
+                            const nuevaCantidad = item.dosis_chica ? Math.round(nuevaCantidadCruda * 10000) / 10000 : Math.round(nuevaCantidadCruda * 2) / 2
+                            await supabase.from('stock_agro').update({ cantidad: nuevaCantidad, actualizado_en: new Date().toISOString() }).eq('id', item.id)
+                          }
                           const nuevaCantidadRetirada = yaRetirado + cant
                           // Si con este retiro se completa toda la cantidad comprada, se
                           // marca como retirado del todo; si no, sigue "en partes".

@@ -1494,10 +1494,17 @@ export default function Contactos({ usuario }) {
             ))}
             <div>
               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Tipo</div>
-              <select value={formContacto.tipo || 'otro'} onChange={e => setFormContacto({...formContacto, tipo: e.target.value})}
+              <select value={TIPOS.includes(formContacto.tipo) ? formContacto.tipo : (formContacto.tipo ? 'personalizado' : 'otro')}
+                onChange={e => setFormContacto({...formContacto, tipo: e.target.value === 'personalizado' ? '' : e.target.value})}
                 style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface }}>
                 {TIPOS.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+                <option value="personalizado">✏️ Otro (escribir)</option>
               </select>
+              {(!TIPOS.includes(formContacto.tipo)) && (
+                <input type="text" value={formContacto.tipo || ''} onChange={e => setFormContacto({...formContacto, tipo: e.target.value})}
+                  placeholder="Escribí el tipo — ej. Corredor, Veterinario, Banco..."
+                  style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', marginTop: 6 }} />
+              )}
             </div>
             <div style={{ gridColumn: '1/-1' }}>
               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 5 }}>Asociado a (para que aparezca solo en las listas relevantes — si no marcás nada, aparece en todas)</div>
