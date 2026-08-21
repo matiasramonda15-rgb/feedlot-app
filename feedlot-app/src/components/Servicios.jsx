@@ -452,8 +452,9 @@ export default function Servicios({ usuario, mobile, nav }) {
     }).join('')
     const totalNeto = seleccionadas.reduce((a, id) => { const s = servicios.find(x => x.id === id); const p = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s?.precio_ha; return a + (p && s?.hectareas ? Math.round(p * s.hectareas) : (s?.total || 0)) }, 0)
     const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
-    win.document.write(`<!DOCTYPE html><html><head><title>Recibo Servicios</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px}h2{margin-bottom:1rem}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5;font-weight:600}tfoot td{font-weight:700;background:#e8f4eb}.total{font-size:16px;font-weight:700;margin-top:1rem}@media print{button{display:none}}</style></head><body>
-      <h2>Recibo de Servicios — Ramonda Hnos S.A.</h2>
+    win.document.write(`<!DOCTYPE html><html><head><title>Resumen de Servicios</title><style>body{font-family:'IBM Plex Sans',sans-serif;padding:2rem;font-size:13px}h2{margin-bottom:1rem}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5;font-weight:600}tfoot td{font-weight:700;background:#e8f4eb}.total{font-size:16px;font-weight:700;margin-top:1rem}@media print{button{display:none}}</style></head><body>
+      <h2>Resumen de Servicios — Ramonda Hnos S.A.</h2>
+      <p style="color:#888">Para revisar antes de facturar — no es un comprobante de pago.</p>
       <p>Fecha: ${formPago.fecha} | Cliente: ${servicios.find(x => x.id === seleccionadas[0])?.cliente || ''}</p>
       <table><thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Servicio/Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>Total c/IVA</th><th>Caja 2</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -463,6 +464,42 @@ export default function Servicios({ usuario, mobile, nav }) {
       <br><button onclick="window.print()">🖨 Imprimir</button>
     </body></html>`)
     win.document.close()
+  }
+
+  async function descargarResumenPDF() {
+    const ivaPct = parseFloat(formPago.iva_pct) || 0
+    const cliente = servicios.find(x => x.id === seleccionadas[0])?.cliente || ''
+    const filas = seleccionadas.map(id => {
+      const s = servicios.find(x => x.id === id)
+      const precioHa = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s?.precio_ha
+      const neto = precioHa && s?.hectareas ? Math.round(precioHa * s.hectareas) : (s?.total || 0)
+      const conIva = Math.round(neto * (1 + ivaPct / 100))
+      return [s?.fecha || '', `${s?.campo || ''}${s?.nro_lote ? ' · ' + s.nro_lote : ''}`, `${s?.labor} ${s?.cultivo || ''}`, `${s?.hectareas} ha`, `$${(precioHa || 0).toLocaleString('es-AR')}`, `$${neto.toLocaleString('es-AR')}`, `$${conIva.toLocaleString('es-AR')}`]
+    })
+    const totalNeto = seleccionadas.reduce((a, id) => { const s = servicios.find(x => x.id === id); const p = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s?.precio_ha; return a + (p && s?.hectareas ? Math.round(p * s.hectareas) : (s?.total || 0)) }, 0)
+    const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
+
+    const JsPDF = await cargarJsPDF()
+    const doc = new JsPDF()
+    doc.setFontSize(16); doc.text('RAMONDA HNOS S.A.', 14, 18)
+    doc.setFontSize(10); doc.setTextColor(107, 103, 96); doc.text('Resumen de Servicios — para revisar antes de facturar', 14, 25)
+    doc.setFontSize(9); doc.text(`Fecha: ${formPago.fecha}  ·  Cliente: ${cliente}`, 14, 32)
+    doc.autoTable({
+      startY: 38,
+      head: [['Fecha', 'Campo/Lote', 'Servicio', 'Ha', '$/Ha', 'Neto', 'Total c/IVA']],
+      body: filas,
+      foot: [['', '', '', '', 'TOTAL', `$${totalNeto.toLocaleString('es-AR')}`, `$${totalConIva.toLocaleString('es-AR')}`]],
+      theme: 'plain',
+      headStyles: { fillColor: [247, 245, 240], textColor: [26, 25, 22], fontStyle: 'bold', fontSize: 8 },
+      footStyles: { fillColor: [232, 244, 235], textColor: [26, 25, 22], fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { fontSize: 8, textColor: [26, 25, 22] },
+      columnStyles: { 5: { halign: 'right' }, 6: { halign: 'right' } },
+      margin: { left: 14, right: 14 },
+    })
+    const y = doc.lastAutoTable.finalY + 10
+    doc.setFontSize(11); doc.text(`IVA ${ivaPct}% = $${(totalConIva - totalNeto).toLocaleString('es-AR')}`, 14, y)
+    doc.setFontSize(13); doc.text(`Total a facturar: $${totalConIva.toLocaleString('es-AR')}`, 14, y + 8)
+    doc.save(`Resumen servicios ${cliente} — ${formPago.fecha}.pdf`)
   }
 
   // Filtrado
@@ -1554,7 +1591,11 @@ export default function Servicios({ usuario, mobile, nav }) {
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={imprimirRecibo}
                     style={{ padding: '6px 14px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                    🖨 Ver recibo
+                    🖨 Resumen para enviar
+                  </button>
+                  <button onClick={descargarResumenPDF}
+                    style={{ padding: '6px 14px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                    ⬇️ Descargar PDF
                   </button>
                   <button onClick={() => setShowPago(!showPago)}
                     style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
