@@ -314,6 +314,8 @@ export default function Servicios({ usuario, mobile, nav }) {
   }
 
   async function guardarEdit() {
+    const precioHaNum = formEdit.precio_ha !== '' && formEdit.precio_ha != null ? parseFloat(formEdit.precio_ha) : null
+    const totalNum = formEdit.total !== '' && formEdit.total != null ? parseFloat(formEdit.total) : null
     const { error } = await supabase.from('servicios_terceros').update({
       campania: formEdit.campania,
       cliente: formEdit.cliente,
@@ -326,8 +328,18 @@ export default function Servicios({ usuario, mobile, nav }) {
       hectareas: parseFloat(formEdit.hectareas),
       empleado1: formEdit.empleado1 || null,
       empleado2: formEdit.empleado2 || null,
+      precio_ha: precioHaNum,
+      total: totalNum,
     }).eq('id', editandoId)
     if (error) { alert('Error al guardar los cambios: ' + error.message); return }
+    // Si este servicio tiene una orden de trabajo vinculada en Agricultura,
+    // el precio tiene que quedar igual de los dos lados — antes acá no se
+    // tocaba, y quedaban desincronizados si se corregía solo desde acá.
+    const servicioActual = servicios.find(s => s.id === editandoId)
+    if (servicioActual?.orden_trabajo_id) {
+      const { error: errOrden } = await supabase.from('ordenes_trabajo').update({ costo_ha: precioHaNum, costo_total: totalNum }).eq('id', servicioActual.orden_trabajo_id)
+      if (errOrden) alert('El servicio se guardó, pero no se pudo actualizar el precio en la orden de Agricultura: ' + errOrden.message)
+    }
     setEditandoId(null)
     await cargar()
   }
@@ -1336,6 +1348,12 @@ export default function Servicios({ usuario, mobile, nav }) {
                           <div><Lbl>Campo</Lbl><input type="text" value={formEdit.campo || ''} onChange={e => setFormEdit({ ...formEdit, campo: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>N° Lote</Lbl><input type="text" value={formEdit.nro_lote || ''} onChange={e => setFormEdit({ ...formEdit, nro_lote: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>Hectáreas</Lbl><input type="number" value={formEdit.hectareas} onChange={e => setFormEdit({ ...formEdit, hectareas: e.target.value })} style={{ ...inpMono, padding: '6px 8px' }} /></div>
+                          <div><Lbl>$/ha</Lbl><input type="number" value={formEdit.precio_ha ?? ''} onChange={e => {
+                            const precioHa = e.target.value
+                            const totalCalc = precioHa && formEdit.hectareas ? Math.round(parseFloat(precioHa) * parseFloat(formEdit.hectareas)) : formEdit.total
+                            setFormEdit({ ...formEdit, precio_ha: precioHa, total: totalCalc })
+                          }} placeholder="ej. 135000" style={{ ...inpMono, padding: '6px 8px' }} /></div>
+                          <div><Lbl>Total $</Lbl><input type="number" value={formEdit.total ?? ''} onChange={e => setFormEdit({ ...formEdit, total: e.target.value })} placeholder="ej. 5535000" style={{ ...inpMono, padding: '6px 8px' }} /></div>
                           <div><Lbl>Empleado 1</Lbl><select value={formEdit.empleado1 || ''} onChange={e => setFormEdit({ ...formEdit, empleado1: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Sin asignar —</option>{empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}</select></div>
                           <div><Lbl>Empleado 2</Lbl><select value={formEdit.empleado2 || ''} onChange={e => setFormEdit({ ...formEdit, empleado2: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Sin asignar —</option>{empleados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}</select></div>
                         </div>
@@ -1381,9 +1399,12 @@ export default function Servicios({ usuario, mobile, nav }) {
                               const monto = parseFloat(val)
                               if (!monto || monto <= 0) { alert('Ingresá un número válido'); return }
                               const precioHa = s.hectareas ? Math.round(monto / s.hectareas) : null
-                              const { error: e1 } = await supabase.from('servicios_terceros').update({ total: monto, precio_ha: precioHa, estado_pago: 'pagado' }).eq('id', s.id)
+                              // Cargar el precio NO significa que ya se pagó — queda
+                              // pendiente igual, para poder mandar la factura y recién
+                              // registrar el pago cuando se cancele de verdad.
+                              const { error: e1 } = await supabase.from('servicios_terceros').update({ total: monto, precio_ha: precioHa }).eq('id', s.id)
                               if (e1) { alert('Error al actualizar el servicio: ' + e1.message); return }
-                              const { error: e2 } = await supabase.from('ordenes_trabajo').update({ costo_total: monto, costo_ha: precioHa, estado_pago: 'pagado' }).eq('id', s.orden_trabajo_id)
+                              const { error: e2 } = await supabase.from('ordenes_trabajo').update({ costo_total: monto, costo_ha: precioHa }).eq('id', s.orden_trabajo_id)
                               if (e2) alert('El servicio se actualizó, pero no se pudo actualizar la orden en Agricultura: ' + e2.message)
                               await cargar()
                             }} style={{ padding: '3px 8px', fontSize: 11, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}>
