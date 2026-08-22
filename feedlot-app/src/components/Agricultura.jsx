@@ -1295,7 +1295,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const campoNombre = camposSeleccionados.map(c => c.nombre).join(', ')
       const campanaNombre = campanas.find(c => c.id === parseInt(form.campana_id))?.nombre || ''
       const { error: errServ } = await supabase.from('servicios_terceros').insert({
-        cliente: 'Agricultura (interno)', labor: form.tipo, fecha: form.fecha,
+        cliente: 'Ramonda Hnos SA', labor: form.tipo, fecha: form.fecha,
         hectareas: superficie || null, precio_ha: costoHa, total: costoNum,
         campo: campoNombre, nro_lote: lotesSeleccionados.length ? lotesSeleccionados.map(l => l.numero).join(', ') : null,
         cultivo: null, campania: campanaNombre, tipo_servicio: 'tercero',
@@ -2448,7 +2448,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
       const data = {
         campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
         precio_tn: precioTn || null, total, monto_facturado: total, monto_negro: 0,
-        comprador: 'Feedlot (interno)', numero_contrato: null, observaciones: form.observaciones || null,
+        comprador: 'Ramonda Hnos SA', numero_contrato: null, observaciones: `Traspaso interno Agricultura → Feedlot${form.observaciones ? ' — ' + form.observaciones : ''}`,
         estado: 'confirmado',
       }
       const { data: vg, error: errVg } = await supabase.from('ventas_granos').insert(data).select().single()
@@ -2462,9 +2462,9 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
         insumo_id: parseInt(form.stock_insumo_id), insumo_tipo: 'alimentacion',
         insumo_nombre: stockItem?.insumo || form.cultivo, unidad: 'kg',
         cantidad: kg, precio_unitario: precioTn ? Math.round(precioTn / 1000 * 100) / 100 : null, total,
-        proveedor: 'Agricultura (interno)', fecha: form.fecha,
+        proveedor: 'Ramonda Hnos SA', fecha: form.fecha,
         estado_pago: 'pagado', retirado: true, registrado_por: usuario?.id,
-        observaciones: `Traspaso interno — venta de granos #${vg?.id}`,
+        observaciones: `Traspaso interno Agricultura → Feedlot — venta de granos #${vg?.id}`,
       })
       if (errCompra) {
         alert('La venta se guardó, pero no se pudo reflejar en Alimentación: ' + errCompra.message)
