@@ -200,6 +200,19 @@ export default function Agricultura({ usuario, mobile, nav }) {
   const ventasActivas = ventasGranos.filter(v => v.campana_id === campanaActiva?.id)
   const ingresosGranos = ventasActivas.reduce((s, v) => s + (v.total || 0), 0)
 
+  // Rendimiento promedio por cultivo en la campaña activa — kg cosechados
+  // de ese cultivo (todos los campos juntos) sobre las hectáreas sembradas
+  // de ese mismo cultivo (del plan de siembra, no de lo cosechado), para
+  // tener un solo número representativo de "cómo vino" cada cultivo este
+  // año, más allá del rendimiento particular de cada lote.
+  const planesActivos = planes.filter(p => p.campana_id === campanaActiva?.id)
+  const rendimientoPorCultivo = {}
+  ;[...new Set([...planesActivos.map(p => p.cultivo), ...cosechaActiva.map(c => c.cultivo)])].filter(Boolean).forEach(cultivo => {
+    const haSembradas = planesActivos.filter(p => p.cultivo === cultivo).reduce((s, p) => s + (parseFloat(p.superficie_ha) || 0), 0)
+    const kgCosechados = cosechaActiva.filter(c => c.cultivo === cultivo).reduce((s, c) => s + (parseFloat(c.kg_totales) || 0), 0)
+    if (haSembradas > 0 && kgCosechados > 0) rendimientoPorCultivo[cultivo] = (kgCosechados / 1000) / haSembradas
+  })
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
@@ -226,6 +239,19 @@ export default function Agricultura({ usuario, mobile, nav }) {
           </div>
         ))}
       </div>
+
+      {/* Rendimiento promedio por cultivo — cosechado / sembrado */}
+      {Object.keys(rendimientoPorCultivo).length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(Object.keys(rendimientoPorCultivo).length, 4)}, 1fr)`, gap: 10, marginBottom: '1.5rem' }}>
+          {Object.entries(rendimientoPorCultivo).map(([cultivo, rinde]) => (
+            <div key={cultivo} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>🌾 Rendimiento {cultivo}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>{rinde.toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn/ha</div>
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 2 }}>promedio de la campaña — cosechado / sembrado</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.5rem', overflowX: 'auto' }}>
