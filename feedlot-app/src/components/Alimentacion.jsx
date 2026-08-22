@@ -1738,9 +1738,15 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                         <div style={{ display: 'flex', gap: 4 }}>
                           {c.retirado === false && (
                             <button onClick={async () => {
-                              const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: c.cantidad })
-                              if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
-                              await supabase.from('compras_insumos').update({ retirado: true }).eq('id', c.id)
+                              // Si ya había un retiro parcial cargado antes, solo hay que
+                              // sumar al stock lo que FALTA (no la cantidad total) — sumar
+                              // todo de nuevo duplicaría lo que ya se había retirado y sumado.
+                              const faltante = Math.max(0, (c.cantidad || 0) - (c.cantidad_retirada || 0))
+                              if (faltante > 0) {
+                                const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: faltante })
+                                if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
+                              }
+                              await supabase.from('compras_insumos').update({ retirado: true, cantidad_retirada: c.cantidad }).eq('id', c.id)
                               onReload()
                             }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
                               📦 Marcar retirado
