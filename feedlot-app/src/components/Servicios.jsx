@@ -929,7 +929,7 @@ export default function Servicios({ usuario, mobile, nav }) {
               {registros.length === 0 && !showFormRegM && (
                 <div style={{ textAlign: 'center', color: CM.muted, padding: '2rem', fontSize: 14 }}>No hay registros. Creá uno con "+ Nuevo campo".</div>
               )}
-              {registros.filter(reg => !reg.archivado).map(reg => {
+              {registros.filter(reg => !reg.archivado && !reg.oculto_movil).map(reg => {
                 const desc = descargasReg[reg.id] || []
                 const kgCamion = desc.filter(d => d.tipo === 'camion').reduce((a, d) => a + (d.kg || 0), 0)
                 const kgBolsa = desc.filter(d => d.tipo === 'bolsa').reduce((a, d) => a + (d.kg || 0), 0)
@@ -2244,7 +2244,7 @@ export default function Servicios({ usuario, mobile, nav }) {
               <div key={reg.id} style={{ background: S.surface, border: `1px solid ${isActivo ? S.accent : S.border}`, borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
                 <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>{reg.campo}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{reg.campo}{reg.oculto_movil && <span style={{ fontSize: 11, fontWeight: 600, color: S.amber, marginLeft: 6 }}>🏁 Cosecha terminada — oculto en el celular</span>}</div>
                     <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                       {reg.cliente || '—'} · {reg.nro_lote || 'Sin lote'} · {reg.cultivo}
                       {reg.fecha ? ` · ${new Date(reg.fecha+'T12:00:00').toLocaleDateString('es-AR')}` : ''}

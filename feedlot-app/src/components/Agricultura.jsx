@@ -2213,7 +2213,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
   // desde Mercadería (Servicios) — sin tener que ir a esa pantalla, donde
   // el botón quedaba muy a mano y se podía tocar por error en el campo.
   useEffect(() => {
-    supabase.from('registros_mercaderia').select('id, campo, nro_lote, cosecha_id, cosecha_id_acopio, es_propio, archivado').eq('es_propio', true).then(({ data }) => setRegistrosMercaderia((data || []).filter(r => r.cosecha_id || r.cosecha_id_acopio)))
+    supabase.from('registros_mercaderia').select('id, campo, nro_lote, cosecha_id, cosecha_id_acopio, es_propio, archivado, oculto_movil').eq('es_propio', true).then(({ data }) => setRegistrosMercaderia((data || []).filter(r => r.cosecha_id || r.cosecha_id_acopio)))
   }, [cosechas])
 
   async function guardar() {
@@ -2395,14 +2395,14 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('cosechas').delete().eq('id', c.id); cargar() }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                   {(() => {
-                    const regVinculado = registrosMercaderia.find(r => (r.cosecha_id === c.id || r.cosecha_id_acopio === c.id) && !r.archivado)
+                    const regVinculado = registrosMercaderia.find(r => (r.cosecha_id === c.id || r.cosecha_id_acopio === c.id) && !r.oculto_movil && !r.archivado)
                     if (!regVinculado) return null
                     return (
                       <button onClick={async () => {
-                        if (!confirm(`¿Terminaste de cosechar "${c.campos?.nombre || regVinculado.campo}"? Se cierra el registro en Mercadería (deja de sumar descargas nuevas ahí) — la cosecha y el stock quedan igual.`)) return
-                        await supabase.from('registros_mercaderia').update({ archivado: true }).eq('id', regVinculado.id)
-                        setRegistrosMercaderia(prev => prev.map(r => r.id === regVinculado.id ? { ...r, archivado: true } : r))
-                      }} title="Cierra el registro en Mercadería — ya no suma descargas nuevas ahí"
+                        if (!confirm(`¿Terminaste de cosechar "${c.campos?.nombre || regVinculado.campo}"? Deja de aparecer en el celular (para que no se sigan cargando descargas nuevas ahí) — pero sigue disponible acá en la compu, con todos los viajes, para liquidar transporte y demás. La cosecha y el stock quedan igual.`)) return
+                        await supabase.from('registros_mercaderia').update({ oculto_movil: true }).eq('id', regVinculado.id)
+                        setRegistrosMercaderia(prev => prev.map(r => r.id === regVinculado.id ? { ...r, oculto_movil: true } : r))
+                      }} title="Deja de aparecer en el celular — sigue disponible acá en la compu"
                         style={{ padding: '3px 8px', fontSize: 11, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 5, cursor: 'pointer' }}>
                         🏁 Terminar cosecha
                       </button>
