@@ -479,6 +479,8 @@ export default function Insumos({ usuario }) {
                           const nuevaCantidadRetirada = yaRetirado + cant
                           const completo = nuevaCantidadRetirada >= (c.cantidad || 0) - 0.01
                           await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', c.id)
+                          const hoyRetiro2 = new Date()
+                          await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: c.id, fecha: `${hoyRetiro2.getFullYear()}-${String(hoyRetiro2.getMonth()+1).padStart(2,'0')}-${String(hoyRetiro2.getDate()).padStart(2,'0')}`, cantidad: cant, registrado_por: usuario?.id })
                           await cargar()
                         }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                           📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}

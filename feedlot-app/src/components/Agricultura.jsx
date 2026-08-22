@@ -4237,6 +4237,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                           // marca como retirado del todo; si no, sigue "en partes".
                           const completo = nuevaCantidadRetirada >= (i.cantidad || 0) - 0.01
                           await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', i.id)
+                          const hoyRetiro3 = new Date()
+                          await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: i.id, fecha: `${hoyRetiro3.getFullYear()}-${String(hoyRetiro3.getMonth()+1).padStart(2,'0')}-${String(hoyRetiro3.getDate()).padStart(2,'0')}`, cantidad: cant, registrado_por: usuario?.id })
                           await cargar()
                         }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
                           📦 {(i.cantidad_retirada || 0) > 0 ? `${(i.cantidad_retirada || 0).toLocaleString('es-AR')}/${(i.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}

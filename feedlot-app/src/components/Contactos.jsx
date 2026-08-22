@@ -24,6 +24,8 @@ export default function Contactos({ usuario }) {
   const [serviciosTerceros, setServiciosTerceros] = useState([])
   const [ordenesTrabajo, setOrdenesTrabajo] = useState([])
   const [fletes, setFletes] = useState([])
+  const [retirosInsumosLog, setRetirosInsumosLog] = useState([])
+  const [verHistorialRetiro, setVerHistorialRetiro] = useState(null)
   const [creditos, setCreditos] = useState([])
   const [retirosSocios, setRetirosSocios] = useState([])
   const [vencimientosArriendo, setVencimientosArriendo] = useState([])
@@ -68,6 +70,7 @@ export default function Contactos({ usuario }) {
       { data: pcr },
       { data: rs },
       { data: vencArr },
+      { data: retLog },
     ] = await Promise.all([
       supabase.from('contactos').select('*').order('nombre'),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -89,6 +92,7 @@ export default function Contactos({ usuario }) {
       supabase.from('pagos_creditos').select('*').order('fecha'),
       supabase.from('retiros_socios').select('*').not('tercero', 'is', null).order('fecha', { ascending: false }),
       supabase.from('vencimientos_arriendo').select('*, campos(nombre, propietario)').order('fecha_vencimiento', { ascending: false }),
+      supabase.from('retiros_insumos_log').select('*').order('fecha', { ascending: false }),
     ])
 
     setContactos(c || [])
@@ -102,6 +106,7 @@ export default function Contactos({ usuario }) {
     setServiciosTerceros(st || [])
     setOrdenesTrabajo(ot || [])
     setFletes(fl || [])
+    setRetirosInsumosLog(retLog || [])
     // Agrupar las cuotas de cada crédito por credito_id, para poder mostrar
     // el detalle dentro de la ficha del banco.
     const cuotasPorCredito = {}
@@ -954,13 +959,25 @@ export default function Contactos({ usuario }) {
                 </div>
                 {insumosPendRetiro.map((r, i) => {
                   const restante = (r.cant || 0) - (r.cantidadRetirada || 0)
+                  const historialEste = retirosInsumosLog.filter(rl => rl.compra_insumo_id === r.id)
+                  const expandido = verHistorialRetiro === r.id
                   return (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                  <div key={i} style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, marginBottom: 6, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', fontSize: 13 }}>
                     <div>
                       <div style={{ color: '#3D1A6B', fontWeight: 600 }}>{r.desc} · {r.cant?.toLocaleString('es-AR')}{r.unidad ? ' ' + r.unidad : ''}</div>
                       <div style={{ color: S.muted, fontSize: 11, marginTop: 2 }}>
                         {r.fecha ? new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{r.total ? ` · $${r.total.toLocaleString('es-AR')}` : ' · sin precio todavía'}
-                        {(r.cantidadRetirada || 0) > 0 ? ` · ya retirado: ${r.cantidadRetirada.toLocaleString('es-AR')}` : ''}
+                        {(r.cantidadRetirada || 0) > 0 && (
+                          <>
+                            {` · ya retirado: ${r.cantidadRetirada.toLocaleString('es-AR')}`}
+                            {historialEste.length > 0 && (
+                              <span onClick={() => setVerHistorialRetiro(expandido ? null : r.id)} style={{ marginLeft: 6, color: '#3D1A6B', textDecoration: 'underline', cursor: 'pointer' }}>
+                                ({historialEste.length} retiro{historialEste.length !== 1 ? 's' : ''} — {expandido ? 'ocultar' : 'ver detalle'})
+                              </span>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                     <button onClick={async () => {
@@ -977,10 +994,27 @@ export default function Contactos({ usuario }) {
                       const completo = nuevaCantidadRetirada >= (r.cant || 0) - 0.01
                       const { error: errCi } = await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', r.id)
                       if (errCi) { alert('El stock se actualizó, pero no se pudo guardar el retiro: ' + errCi.message); return }
+                      // Queda el registro de ESTE retiro puntual (fecha y cantidad) — antes
+                      // solo se actualizaba el acumulado, sin poder ver el historial de
+                      // cada retiro por separado.
+                      const hoyRetiro = new Date()
+                      const hoyRetiroStr = `${hoyRetiro.getFullYear()}-${String(hoyRetiro.getMonth()+1).padStart(2,'0')}-${String(hoyRetiro.getDate()).padStart(2,'0')}`
+                      await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: r.id, fecha: hoyRetiroStr, cantidad: cant, registrado_por: usuario?.id })
                       await cargar()
                     }} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       📦 {(r.cantidadRetirada || 0) > 0 ? 'Registrar más retiro' : 'Registrar retiro'}
                     </button>
+                  </div>
+                  {expandido && historialEste.length > 0 && (
+                    <div style={{ background: '#fff', borderTop: '1px solid #9F8ED4', padding: '8px 12px' }}>
+                      {historialEste.map(h => (
+                        <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: S.text, padding: '3px 0' }}>
+                          <span>{new Date(h.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</span>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{h.cantidad.toLocaleString('es-AR')} {r.unidad || ''}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   </div>
                 )})}
               </>
