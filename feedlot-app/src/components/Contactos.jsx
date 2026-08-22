@@ -329,7 +329,7 @@ export default function Contactos({ usuario }) {
     ;(data.ventasGranos || []).forEach(vg => {
       if (vg.estado === 'pactada') return
       if (esParalela) { if (vg.monto_negro > 0) movs.push({ fecha: vg.fecha, tipo: `Venta ${vg.cultivo || 'grano'} (Caja 2)`, credito: vg.monto_negro, debito: 0 }) }
-      else { if (vg.total > 0) movs.push({ fecha: vg.fecha, tipo: `Venta ${vg.cultivo || 'grano'}`, credito: vg.total, debito: 0 }) }
+      else { if (vg.monto_facturado > 0) movs.push({ fecha: vg.fecha, tipo: `Venta ${vg.cultivo || 'grano'}`, credito: vg.monto_facturado, debito: 0 }) }
       ;(vg.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
@@ -1262,11 +1262,11 @@ export default function Contactos({ usuario }) {
           // Ventas de granos — el comprador nos debe (sin desglose de pagos parciales).
           ;(ventasGranosCto || []).forEach(vg => {
             if (vg.estado === 'pactada') return
-            if (!esParalela && vg.total > 0) {
+            if (!esParalela && vg.monto_facturado > 0) {
               movimientos.push({
                 fecha: vg.fecha, fechaVto: null, tipo: 'GRANOS', nro: vg.id,
                 descripcion: `Venta ${vg.cultivo || 'grano'}`,
-                credito: vg.total, debito: 0,
+                credito: vg.monto_facturado, debito: 0,
               })
             }
             if (esParalela && vg.monto_negro > 0) {
