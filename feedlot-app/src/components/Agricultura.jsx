@@ -1294,9 +1294,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (form.es_propia && form.usa_maquinaria_servicios && costoNum > 0) {
       const campoNombre = camposSeleccionados.map(c => c.nombre).join(', ')
       const campanaNombre = campanas.find(c => c.id === parseInt(form.campana_id))?.nombre || ''
+      // Va como monto_negro/Caja 2, no facturado — no hay ninguna factura de
+      // por medio (es la misma empresa), así que no corresponde marcarlo
+      // como "Caja 1" (que implica algo facturado/oficial).
       const { error: errServ } = await supabase.from('servicios_terceros').insert({
         cliente: 'Ramonda Hnos SA', labor: form.tipo, fecha: form.fecha,
-        hectareas: superficie || null, precio_ha: costoHa, total: costoNum,
+        hectareas: superficie || null, precio_ha: costoHa, total: 0, monto_negro: costoNum,
         campo: campoNombre, nro_lote: lotesSeleccionados.length ? lotesSeleccionados.map(l => l.numero).join(', ') : null,
         cultivo: null, campania: campanaNombre, tipo_servicio: 'tercero',
         estado_pago: 'pagado', estado: 'completado',
@@ -2445,9 +2448,12 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
     if (form.esVentaInternaFeedlot) {
       // Venta interna a Feedlot: se sabe el monto al toque, no hace falta
       // esperar contrato — queda confirmada de una.
+      // Va como monto_negro/Caja 2, no facturado — no hay ninguna factura de
+      // por medio (es la misma empresa), así que no corresponde marcarlo
+      // como "Caja 1" (que implica algo facturado/oficial).
       const data = {
         campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
-        precio_tn: precioTn || null, total, monto_facturado: total, monto_negro: 0,
+        precio_tn: precioTn || null, total, monto_facturado: 0, monto_negro: total,
         comprador: 'Ramonda Hnos SA', numero_contrato: null, observaciones: `Traspaso interno Agricultura → Feedlot${form.observaciones ? ' — ' + form.observaciones : ''}`,
         estado: 'confirmado',
       }
@@ -2462,7 +2468,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ca
         insumo_id: parseInt(form.stock_insumo_id), insumo_tipo: 'alimentacion',
         insumo_nombre: stockItem?.insumo || form.cultivo, unidad: 'kg',
         cantidad: kg, precio_unitario: precioTn ? Math.round(precioTn / 1000 * 100) / 100 : null, total,
-        proveedor: 'Ramonda Hnos SA', fecha: form.fecha,
+        proveedor: 'Ramonda Hnos SA', fecha: form.fecha, es_paralelo: true,
         estado_pago: 'pagado', retirado: true, registrado_por: usuario?.id,
         observaciones: `Traspaso interno Agricultura → Feedlot — venta de granos #${vg?.id}`,
       })
