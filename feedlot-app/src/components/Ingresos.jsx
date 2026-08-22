@@ -2186,9 +2186,9 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                               El proveedor ya cobró (se lo pagó la tarjeta/financiera) — la deuda queda registrada en Créditos, vinculada a esta compra.
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                              <div><Label>Entidad (ej. Tarjeta Agronación)</Label><input type="text" value={formPago.credito_entidad || ''} onChange={e => setFormPago({...formPago, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Tarjeta Agronación" /></div>
-                              <div><Label>Cant. de cuotas</Label><input type="number" value={formPago.credito_cuotas || '1'} onChange={e => setFormPago({...formPago, credito_cuotas: e.target.value})} style={inputStyle} /></div>
-                              <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formPago.credito_vencimiento || ''} onChange={e => setFormPago({...formPago, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                              <div><Lbl>Entidad (ej. Tarjeta Agronación)</Lbl><input type="text" value={formPago.credito_entidad || ''} onChange={e => setFormPago({...formPago, credito_entidad: e.target.value})} style={inp} placeholder="ej. Tarjeta Agronación" /></div>
+                              <div><Lbl>Cant. de cuotas</Lbl><input type="number" value={formPago.credito_cuotas || '1'} onChange={e => setFormPago({...formPago, credito_cuotas: e.target.value})} style={inp} /></div>
+                              <div><Lbl>Vencimiento (1ra cuota)</Lbl><input type="date" value={formPago.credito_vencimiento || ''} onChange={e => setFormPago({...formPago, credito_vencimiento: e.target.value})} style={inp} /></div>
                             </div>
                             <div style={{ fontSize: 11, color: '#3D1A6B', marginTop: 6 }}>
                               Si todavía no sabés el monto exacto de cada cuota (varía con intereses, ej. tarjeta), cargá una estimación — se puede corregir cuota por cuota, desde Activos y socios → Créditos, cuando llegue el resumen real.
