@@ -2299,13 +2299,33 @@ export default function Servicios({ usuario, mobile, nav }) {
                       {isActivo ? '▲ Cerrar' : '📦 Ver / Registrar'}
                     </button>
                     <button onClick={async () => {
-                      if (!confirm(`¿Eliminar el registro de "${reg.campo}"? Se borrarán también todas las descargas${reg.cosecha_id ? ' y la cosecha cargada' : ''}.`)) return
+                      // Este NUNCA toca la cosecha ni el stock — solo saca el
+                      // registro logístico (viajes, patentes) cuando ya no hace
+                      // falta seguir el detalle, pero el grano cosechado sigue
+                      // siendo real y se mantiene en "Disponible para vender".
+                      if (!confirm(`¿Ocultar el registro de "${reg.campo}"? Se van a borrar los ${(descargasReg[reg.id]||[]).length} viajes cargados (patentes, fechas, kg) — pero la cosecha y el stock quedan intactos, no se tocan.`)) return
                       await supabase.from('descargas_mercaderia').delete().eq('registro_id', reg.id)
-                      if (reg.cosecha_id) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id)
                       await supabase.from('registros_mercaderia').delete().eq('id', reg.id)
                       setRegistros(prev => prev.filter(r => r.id !== reg.id))
                       if (registroActivo?.id === reg.id) setRegistroActivo(null)
-                    }} style={{ padding: '6px 10px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>
+                    }} title="Borra el registro y los viajes, pero deja la cosecha y el stock intactos"
+                      style={{ padding: '6px 10px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                      👁️ Ocultar
+                    </button>
+                    <button onClick={async () => {
+                      // Este SÍ borra todo, incluida la cosecha — para cuando algo
+                      // se cargó mal de entrada y hay que empezar de cero con un
+                      // registro nuevo, sin dejar el "Disponible para vender" con
+                      // un número que en realidad nunca correspondió.
+                      if (!confirm(`¿Eliminar TODO lo de "${reg.campo}"? Esto borra el registro, los ${(descargasReg[reg.id]||[]).length} viajes, Y la cosecha vinculada (baja el "Disponible para vender"). Usalo solo si algo se cargó mal y vas a volver a empezar — si la cosecha está bien y solo querés dejar de ver el detalle de viajes, usá "Ocultar" en vez de este.`)) return
+                      await supabase.from('descargas_mercaderia').delete().eq('registro_id', reg.id)
+                      if (reg.cosecha_id) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id)
+                      if (reg.cosecha_id_acopio) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id_acopio)
+                      await supabase.from('registros_mercaderia').delete().eq('id', reg.id)
+                      setRegistros(prev => prev.filter(r => r.id !== reg.id))
+                      if (registroActivo?.id === reg.id) setRegistroActivo(null)
+                    }} title="Borra todo, incluida la cosecha — para corregir algo cargado mal"
+                      style={{ padding: '6px 10px', fontSize: 12, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 6, cursor: 'pointer' }}>
                       🗑
                     </button>
                   </div>
