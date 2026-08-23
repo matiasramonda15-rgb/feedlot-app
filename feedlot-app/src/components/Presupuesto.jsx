@@ -80,7 +80,11 @@ async function cargarDatosActividad(actividad, fechaDesde, idsCredito) {
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
       supabase.from('gastos_generales').select('monto, fecha, categoria').gte('fecha', fechaDesde).eq('actividad', 'General'),
     ])
-    ;(ventasG || []).forEach(v => suma(ingresos, `Venta granos — ${v.comprador || 'sin comprador'}`, v.fecha, (v.total || 0) + (v.monto_negro || 0)))
+    // "total" en ventas_granos ya es el monto completo (facturado + negro
+    // incluidos, no aparte) — sumarle monto_negro de nuevo duplicaba
+    // cualquier venta con parte negro (la venta interna a Feedlot, por
+    // ejemplo, aparecía el doble).
+    ;(ventasG || []).forEach(v => suma(ingresos, `Venta granos — ${v.comprador || 'sin comprador'}`, v.fecha, v.total || 0))
     ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total) })
     ;(ordenes || []).forEach(o => suma(egresos, `${o.tipo || 'Orden de trabajo'} — ${o.proveedor || 'sin proveedor'}`, o.fecha, o.costo_total))
     ;(gastosAgro || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, g.monto))
