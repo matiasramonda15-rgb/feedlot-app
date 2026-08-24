@@ -381,6 +381,40 @@ export default function Insumos({ usuario }) {
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowPagosPend(false); setSeleccionadas([]); setFormPagoGrupal({...formPagoGrupal, contacto_id: ''}) }}
                     style={{ padding: '8px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                  {totalPagGrupal2 === 0 && (
+                    <button onClick={async () => {
+                      if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
+                      // Atajo directo para el caso de "solo quiero fijar el precio,
+                      // todavía no voy a pagar nada" — hace lo mismo que Confirmar
+                      // pago con $0, pero sin el paso extra del cartel de confirmación.
+                      setGuardandoPago(true)
+                      const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
+                      const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`
+                      const { error } = await pagarComprasPendientes(supabase, {
+                        seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal, modos: modosGrupal,
+                        pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha, descripcion: desc,
+                        contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
+                        creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
+                        actualizarPrecioReferencia: async (c, precioFinal) => {
+                          if (!c.insumo_id) return
+                          const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
+                          await supabase.from(tabla).update({ precio_referencia: precioFinal, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                        },
+                      })
+                      if (error) { alert('Error al guardar el precio: ' + error.message); setGuardandoPago(false); return }
+                      setSeleccionadas([])
+                      setPreciosGrupal({})
+                      setModosGrupal({})
+                      setFacturasGrupal({})
+                      setShowPagosPend(false)
+                      setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '', credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
+                      setGuardandoPago(false)
+                      await cargar()
+                    }} disabled={guardandoPago}
+                      style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 6, cursor: 'pointer' }}>
+                      {guardandoPago ? 'Guardando...' : '💾 Guardar precio, sin pagar todavía'}
+                    </button>
+                  )}
                   <button onClick={async () => {
                     if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
                     // Se permite dejar el pago en $0 — sirve para fijar el precio de una
