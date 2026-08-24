@@ -789,9 +789,9 @@ export default function Insumos({ usuario }) {
                 <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
               </div>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: S.text, cursor: 'pointer', width: 'fit-content' }}>
-              <input type="checkbox" checked={form.es_paralelo} onChange={e => setForm({...form, es_paralelo: e.target.checked})} />
-              Es Caja 2 — se ve en el resumen de cuenta del proveedor en la caja correcta, aunque todavía no se pague
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, fontWeight: 600, color: '#3D1A6B', cursor: 'pointer', width: 'fit-content', background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, padding: '8px 12px' }}>
+              <input type="checkbox" checked={form.es_paralelo} onChange={e => setForm({...form, es_paralelo: e.target.checked})} style={{ width: 16, height: 16 }} />
+              ⚠️ Es Caja 2 — revisá esto ANTES de guardar (se ve en el resumen de cuenta del proveedor en la caja correcta, aunque todavía no se pague)
             </label>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
@@ -856,9 +856,9 @@ export default function Insumos({ usuario }) {
                 <input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inp} />
               </div>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: S.text, cursor: 'pointer', width: 'fit-content' }}>
-              <input type="checkbox" checked={form.es_paralelo} onChange={e => setForm({...form, es_paralelo: e.target.checked})} />
-              Es Caja 2 — se ve en el resumen de cuenta del proveedor en la caja correcta, aunque todavía no se pague
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, fontWeight: 600, color: '#3D1A6B', cursor: 'pointer', width: 'fit-content', background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 6, padding: '8px 12px' }}>
+              <input type="checkbox" checked={form.es_paralelo} onChange={e => setForm({...form, es_paralelo: e.target.checked})} style={{ width: 16, height: 16 }} />
+              ⚠️ Es Caja 2 — revisá esto ANTES de guardar (se ve en el resumen de cuenta del proveedor en la caja correcta, aunque todavía no se pague)
             </label>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowForm(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
