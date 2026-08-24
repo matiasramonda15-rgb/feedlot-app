@@ -201,7 +201,7 @@ export default function Gastos({ usuario }) {
           fecha_cobro: form.fecha,
           fecha_vencimiento: pago.cheque_propio.fecha_vencimiento,
           monto, beneficiario: form.proveedor || null,
-          estado: 'entregado', caja_oficial_id: pagoCajaId,
+          estado: 'entregado', caja_oficial_id: pagoCajaId, es_electronico: pago.tipo === 'e-cheq',
           registrado_por: usuario?.id,
         }).select().single()
         // Antes esto no revisaba el error — si fallaba, la caja quedaba
@@ -494,14 +494,15 @@ export default function Gastos({ usuario }) {
 
             {form.pagos.map((pago, idx) => (
               <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: pago.tipo === 'e-cheq' ? 10 : 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: (pago.tipo === 'e-cheq' || pago.tipo === 'cheque') ? 10 : 0 }}>
                   <div>
                     <Label>Forma de pago</Label>
                     <select value={pago.tipo} onChange={e => setPago(idx, 'tipo', e.target.value)}
                       style={inputStyle}>
                       <option value="transferencia">Transferencia</option>
                       <option value="efectivo">Efectivo</option>
-                      <option value="e-cheq">E-cheq</option>
+                      <option value="cheque">📄 Cheque</option>
+                      <option value="e-cheq">💻 E-cheq</option>
                       <option value="cuenta_corriente">Cuenta corriente</option>
                       <option value="canje">🔄 Canje / Compensación (no mueve caja)</option>
                       <option value="credito">🏦 Crédito (tarjeta/financiera)</option>
@@ -537,8 +538,8 @@ export default function Gastos({ usuario }) {
                   </div>
                 </div>
 
-                {/* E-cheq */}
-                {pago.tipo === 'e-cheq' && (
+                {/* Cheque físico / E-cheq */}
+                {(pago.tipo === 'e-cheq' || pago.tipo === 'cheque') && (
                   <div style={{ marginTop: 8 }}>
                     <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 10 : 0 }}>
                       {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
@@ -558,7 +559,7 @@ export default function Gastos({ usuario }) {
                     {pago.subtipo_cheque === 'tercero' && (
                       <div style={{ marginTop: 8 }}>
                         {(() => {
-                          const lista = chequesCartera.filter(ch => pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo)
+                          const lista = chequesCartera.filter(ch => (pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo) && (ch.es_electronico === (pago.tipo === 'e-cheq') || ch.es_electronico == null))
                           return lista.length === 0
                             ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
                             : lista.map(ch => (
