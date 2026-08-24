@@ -735,8 +735,8 @@ export default function Insumos({ usuario }) {
                 </select>
               </div>
               <div>
-                <Lbl>Cantidad *</Lbl>
-                <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} />
+                <Lbl>Cantidad (en kg) *</Lbl>
+                <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} placeholder="ej. 101800 (= 101,8 toneladas)" />
               </div>
               <div>
                 <Lbl>Proveedor</Lbl>
