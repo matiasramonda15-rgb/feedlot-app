@@ -939,7 +939,7 @@ async function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro
 
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
-    if (p.es_paralelo) desc += ' (CAJA 2)'
+    if (p.es_paralelo) desc += ' (C2)'
     if (p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
       return [`<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
@@ -1035,7 +1035,7 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
-    if (p.es_paralelo) desc += ' (CAJA 2)'
+    if (p.es_paralelo) desc += ' (C2)'
     if (p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
       return [`<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
@@ -3151,7 +3151,7 @@ async function generarReciboArriendo(v, campo, pagos) {
   const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.tn_ha || ''} tn/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/tn` : ''}`
   const filasPago = pagos.flatMap(p => {
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
-    if (p.es_paralelo) desc += ' (CAJA 2)'
+    if (p.es_paralelo) desc += ' (C2)'
     if (p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
       return [`<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.cheque_propio.numero || ''} · ${p.cheque_propio.banco || ''}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${new Date(p.cheque_propio.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR')}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${parseFloat(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>`]
     }

@@ -448,7 +448,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       const precioHa = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s?.precio_ha
       const neto = precioHa && s?.hectareas ? Math.round(precioHa * s.hectareas) : (s?.total || 0)
       const conIva = Math.round(neto * (1 + ivaPct / 100))
-      return `<tr><td>${s?.fecha || ''}</td><td>${s?.campo || ''}${s?.nro_lote ? ' · ' + s.nro_lote : ''}</td><td>${s?.labor} ${s?.cultivo || ''}</td><td>${s?.hectareas} ha</td><td>$${(precioHa || 0).toLocaleString('es-AR')}</td><td>$${neto.toLocaleString('es-AR')}</td><td>$${conIva.toLocaleString('es-AR')}</td><td>${s?.caja_paralela_id ? '✓ Paralelo' : ''}</td></tr>`
+      return `<tr><td>${s?.fecha || ''}${s?.caja_paralela_id ? ' (C2)' : ''}</td><td>${s?.campo || ''}${s?.nro_lote ? ' · ' + s.nro_lote : ''}</td><td>${s?.labor} ${s?.cultivo || ''}</td><td>${s?.hectareas} ha</td><td>$${(precioHa || 0).toLocaleString('es-AR')}</td><td>$${neto.toLocaleString('es-AR')}</td><td>$${conIva.toLocaleString('es-AR')}</td></tr>`
     }).join('')
     const totalNeto = seleccionadas.reduce((a, id) => { const s = servicios.find(x => x.id === id); const p = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s?.precio_ha; return a + (p && s?.hectareas ? Math.round(p * s.hectareas) : (s?.total || 0)) }, 0)
     const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
@@ -456,7 +456,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       <h2>Resumen de Servicios — Ramonda Hnos S.A.</h2>
       <p style="color:#888">Para revisar antes de facturar — no es un comprobante de pago.</p>
       <p>Fecha: ${formPago.fecha} | Cliente: ${servicios.find(x => x.id === seleccionadas[0])?.cliente || ''}</p>
-      <table><thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Servicio/Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>Total c/IVA</th><th>Caja 2</th></tr></thead>
+      <table><thead><tr><th>Fecha</th><th>Campo/Lote</th><th>Servicio/Cultivo</th><th>Ha</th><th>$/Ha</th><th>Neto</th><th>Total c/IVA</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="5">TOTAL</td><td>$${totalNeto.toLocaleString('es-AR')}</td><td>$${totalConIva.toLocaleString('es-AR')}</td></tr></tfoot>
       </table>

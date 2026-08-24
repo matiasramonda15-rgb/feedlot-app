@@ -799,7 +799,7 @@ export default function Activos({ usuario }) {
                                 ['Socio', r.socio],
                                 ['Fecha', new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR')],
                                 ['Concepto', r.concepto || '—'],
-                                ['Forma de pago', `${r.forma_pago}${r.caja_paralela_id ? ' (Caja 2)' : ''}`],
+                                ['Forma de pago', `${r.forma_pago}${r.caja_paralela_id ? ' (C2)' : ''}`],
                                 ['Observaciones', r.observaciones || null],
                               ],
                               montoLabel: 'MONTO RETIRADO',

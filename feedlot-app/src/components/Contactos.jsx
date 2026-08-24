@@ -232,7 +232,7 @@ export default function Contactos({ usuario }) {
     if (data.fechaCorte && data.saldoAperturaCaja2 && esParalela) {
       movs.push({
         fecha: data.fechaCorte,
-        tipo: `Saldo de apertura al ${new Date(data.fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} (Caja 2)`,
+        tipo: `Saldo de apertura al ${new Date(data.fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} (C2)`,
         credito: data.saldoAperturaCaja2 < 0 ? -data.saldoAperturaCaja2 : 0,
         debito: data.saldoAperturaCaja2 > 0 ? data.saldoAperturaCaja2 : 0,
         esApertura: true,
@@ -247,7 +247,7 @@ export default function Contactos({ usuario }) {
       const sumCom = grupo.reduce((s, vv) => s + ((!vv.comision_es_paralela && vv.comision_monto) ? vv.comision_monto : 0), 0)
       const sumRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
       const sumNegro = grupo.reduce((s, vv) => s + (vv.monto_negro || 0), 0)
-      // Si ya se cargó como monto negro (Caja 2), no hay que "adivinar" el
+      // Si ya se cargó como monto negro (C2), no hay que "adivinar" el
       // facturado con el total — antes eso hacía que la misma venta apareciera
       // duplicada en las dos cajas. Solo se usa el total como respaldo cuando
       // ninguna de las dos cosas está definida todavía.
@@ -255,7 +255,7 @@ export default function Contactos({ usuario }) {
       const fecha = v.fecha || v.creado_en?.split('T')[0]
       const fechaCorta = fecha ? new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''
       const cantVenta = grupo.reduce((s, vv) => s + (vv.cantidad || 0), 0)
-      if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (Caja 2)', credito: sumNegro, debito: 0 }) }
+      if (esParalela) { if (sumNegro > 0) movs.push({ fecha, tipo: 'Venta (C2)', credito: sumNegro, debito: 0 }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Venta hacienda', credito: montoFact, debito: 0 }) }
       // Cobros ya registrados contra esta venta — bajan lo que nos deben.
       // Antes decía solo "Cobro", sin aclarar de cuál venta — con varias
@@ -280,7 +280,7 @@ export default function Contactos({ usuario }) {
         : total
       const montoParalelo = l.monto_negro || 0
       const fecha = l.created_at?.split('T')[0]
-      if (esParalela) { if (montoParalelo > 0) movs.push({ fecha, tipo: 'Compra hacienda (Caja 2)', credito: 0, debito: montoParalelo }) }
+      if (esParalela) { if (montoParalelo > 0) movs.push({ fecha, tipo: 'Compra hacienda (C2)', credito: 0, debito: montoParalelo }) }
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Compra hacienda', credito: 0, debito: montoFact }) }
       // Pagos ya realizados de esta compra — bajan lo que le debemos
       ;(pagosCompra[l.id] || []).forEach(p => {
@@ -328,7 +328,7 @@ export default function Contactos({ usuario }) {
     // Ventas de granos — el comprador nos debe (no hay desglose de pagos parciales).
     ;(data.ventasGranos || []).forEach(vg => {
       if (vg.estado === 'pactada') return
-      if (esParalela) { if (vg.monto_negro > 0) movs.push({ fecha: vg.fecha, tipo: `Venta ${vg.cultivo || 'grano'} (Caja 2)`, credito: vg.monto_negro, debito: 0 }) }
+      if (esParalela) { if (vg.monto_negro > 0) movs.push({ fecha: vg.fecha, tipo: `Venta ${vg.cultivo || 'grano'} (C2)`, credito: vg.monto_negro, debito: 0 }) }
       else { if (vg.monto_facturado > 0) movs.push({ fecha: vg.fecha, tipo: `Venta ${vg.cultivo || 'grano'}`, credito: vg.monto_facturado, debito: 0 }) }
       ;(vg.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
@@ -366,7 +366,7 @@ export default function Contactos({ usuario }) {
     ;(data.arriendos || []).forEach(v => {
       const monto = parseFloat(v.monto_total)
       if (!monto) return
-      if (esParalela) { if (v.caja_paralela_id) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''} (Caja 2)`, credito: 0, debito: monto }) }
+      if (esParalela) { if (v.caja_paralela_id) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: monto }) }
       else movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
       ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
@@ -391,13 +391,13 @@ export default function Contactos({ usuario }) {
       })
     } else {
       ;(data.ventasActivos || []).forEach(va => {
-        if (va.es_paralelo && va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'} (Caja 2)`, credito: va.monto, debito: 0 })
+        if (va.es_paralelo && va.monto > 0) movs.push({ fecha: va.fecha, tipo: `Venta ${va.activo_nombre || 'activo'} (C2)`, credito: va.monto, debito: 0 })
       })
     }
     // Servicios a terceros — el cliente nos debe hasta que se cobre.
     ;(data.serviciosTerceros || []).forEach(st => {
       const fecha = st.fecha || st.creado_en?.split('T')[0]
-      if (esParalela) { if (st.monto_negro > 0) movs.push({ fecha, tipo: `Servicio ${st.labor || ''} (Caja 2)`, credito: st.monto_negro, debito: 0 }) }
+      if (esParalela) { if (st.monto_negro > 0) movs.push({ fecha, tipo: `Servicio ${st.labor || ''} (C2)`, credito: st.monto_negro, debito: 0 }) }
       else { if (st.total > 0) movs.push({ fecha, tipo: `Servicio ${st.labor || ''}`, credito: st.total, debito: 0 }) }
       ;(st.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
@@ -1096,7 +1096,7 @@ export default function Contactos({ usuario }) {
                 const sumRet = grupo.reduce((s, vv) => s + (vv.retencion_monto || 0), 0)
                 return sumFact + sumIva - sumCom - sumRet
               }
-              // Si ya se cargó como monto negro (Caja 2), no hay que "adivinar" el
+              // Si ya se cargó como monto negro (C2), no hay que "adivinar" el
               // facturado con el total — antes eso hacía que la misma venta apareciera
               // duplicada en Caja 1 y Caja 2 al mismo tiempo. Solo se usa el total
               // como respaldo cuando ninguna de las dos cosas está definida todavía.
@@ -1272,7 +1272,7 @@ export default function Contactos({ usuario }) {
             if (esParalela && vg.monto_negro > 0) {
               movimientos.push({
                 fecha: vg.fecha, fechaVto: null, tipo: 'PAR', nro: vg.id,
-                descripcion: `Venta ${vg.cultivo || 'grano'} (Caja 2)`,
+                descripcion: `Venta ${vg.cultivo || 'grano'} (C2)`,
                 credito: vg.monto_negro, debito: 0,
               })
             }
@@ -1317,7 +1317,7 @@ export default function Contactos({ usuario }) {
             if (!esParalela) {
               movimientos.push({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
             } else if (esParaleloV) {
-              movimientos.push({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (Caja 2)`, credito: 0, debito: monto })
+              movimientos.push({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: monto })
             }
             ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               const esPagoParalelo = p.es_paralelo || false
@@ -1376,7 +1376,7 @@ export default function Contactos({ usuario }) {
             if (esParalela && st.monto_negro > 0) {
               movimientos.push({
                 fecha, fechaVto: null, tipo: 'PAR', nro: st.id,
-                descripcion: `${st.labor || 'Servicio'} (Caja 2)`,
+                descripcion: `${st.labor || 'Servicio'} (C2)`,
                 credito: st.monto_negro, debito: 0,
               })
             }

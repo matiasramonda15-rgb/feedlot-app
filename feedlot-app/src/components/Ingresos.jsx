@@ -1286,7 +1286,7 @@ async function generarReciboCompra(lote, pagos, corrales) {
     const esParalelo = p.es_paralelo || p.es_negro
     const medioCheque = tipo === 'cheque' ? 'CHEQUE' : 'E-CHEQ'
     let desc = tipo === 'transferencia' ? 'TRANSFERENCIA' : tipo === 'efectivo' ? 'EFECTIVO' : tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : subtipo === 'propio' ? `${medioCheque} PROPIO` : subtipo === 'tercero' ? `${medioCheque} TERCERO` : tipo.toUpperCase()
-    if (esParalelo) desc += ' (CAJA 2)'
+    if (esParalelo) desc += ' (C2)'
 
     // E-cheq propio — usa cheque_propio (nuevo) o campos legacy
     if (subtipo === 'propio') {
