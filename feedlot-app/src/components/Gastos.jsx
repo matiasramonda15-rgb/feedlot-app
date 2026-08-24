@@ -165,7 +165,11 @@ export default function Gastos({ usuario }) {
         pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null })
         continue
       }
-      const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      // Antes esto decía siempre "e-cheq" apenas hubiera un subtipo (propio/
+      // tercero) cargado, sin importar si en realidad se había elegido
+      // cheque físico — por eso el recibo salía mal. Ahora respeta el tipo
+      // que se eligió de verdad.
+      const formaPago = pago.tipo
       let desc = `${form.actividad} — ${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' (' + form.proveedor + ')' : ''}`
       if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         const detalleCheques = pago.cheque_tercero_ids.map(chId => {

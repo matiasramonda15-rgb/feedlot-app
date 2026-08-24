@@ -1360,7 +1360,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     for (const pago of formPagoGrupal.pagos) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
-      const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      const fp = pago.tipo
       if (pago.es_paralelo) {
         const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
         if (!caja_paralela_id) caja_paralela_id = cp?.id || null
@@ -3257,7 +3257,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     for (const pago of formPago.pagos) {
       const m = parseFloat(pago.monto) || 0
       if (!m) continue
-      const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      const fp = pago.tipo
       if (pago.es_paralelo) {
         const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto: m }).select().single()
         if (!caja_paralela_id) caja_paralela_id = cp?.id || null
@@ -3683,7 +3683,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
       if (pago.tipo === 'credito') continue  // no mueve caja — se registra en Créditos después de guardar la compra
-      const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      const formaPago = pago.tipo
       if (pago.es_paralelo) {
         const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formCompra.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
         if (!caja_paralela_id) caja_paralela_id = cp?.id || null

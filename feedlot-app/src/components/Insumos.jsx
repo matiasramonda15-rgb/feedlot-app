@@ -160,7 +160,7 @@ export default function Insumos({ usuario }) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
       if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
-      const formaPago = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+      const formaPago = pago.tipo
       if (pago.es_paralelo) {
         const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
         if (errCp) { alert('Error al registrar en Caja 2: ' + errCp.message); setGuardando(false); return }
@@ -665,7 +665,7 @@ export default function Insumos({ usuario }) {
                                 const monto = parseFloat(pago.monto) || 0
                                 if (!monto) continue
                                 if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
-                                const fp = pago.subtipo_cheque ? 'e-cheq' : pago.tipo
+                                const fp = pago.tipo
                                 if (pago.es_paralelo) {
                                   const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
                                   if (!caja_paralela_id) caja_paralela_id = cp?.id
