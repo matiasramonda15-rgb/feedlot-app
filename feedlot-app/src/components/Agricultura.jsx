@@ -1186,9 +1186,16 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // Si hay lotes elegidos, la superficie sale de sumarlos. Si no hay
   // ninguno (se va a trabajar "todo el campo" en cada campo elegido), sale
   // de sumar la superficie total de cada campo seleccionado.
-  const superficieBase = lotesSeleccionados.length > 0
-    ? lotesSeleccionados.reduce((s, l) => s + (parseFloat(l.superficie_ha) || 0), 0)
-    : camposSeleccionados.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0)
+  // Antes esto solo miraba "¿hay algún lote elegido?" para decidir entre
+  // sumar lotes O campos — pero si se mezcla (lotes específicos de un
+  // campo + el campo ENTERO de otro), esa cuenta ignoraba por completo la
+  // parte de "campo entero", y el reparto proporcional después salía mal
+  // (un campo terminaba con más hectáreas de las que tiene en total). Ahora
+  // se arma exactamente igual que lotesAProcesar: lotes elegidos + campos
+  // sin ningún lote propio marcado, cada uno con su superficie real.
+  const camposConLoteSel = new Set(lotesSeleccionados.map(l => l.campo_id))
+  const superficieBase = lotesSeleccionados.reduce((s, l) => s + (parseFloat(l.superficie_ha) || 0), 0)
+    + camposSeleccionados.filter(c => !camposConLoteSel.has(c.id)).reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0)
   const superficie = parseFloat(form.superficie_ha) || superficieBase || 0
 
   // Antes esto solo se mostraba como sugerencia gris (placeholder) cuando el
@@ -1276,7 +1283,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       // se prorratea usando el total real que se cargó arriba, mantiende
       // la misma proporción entre lotes si hay varios.
       const superficieContrato = lote ? (parseFloat(lote.superficie_ha) || 0) : (parseFloat(campoDeEsteItem?.superficie_ha) || 0)
-      const superficieItem = superficieBase > 0 ? (superficieContrato / superficieBase) * superficie : superficie
+      const superficieItem = superficieBase > 0 ? Math.round((superficieContrato / superficieBase) * superficie * 100) / 100 : superficie
       const costoItem = costoNum == null ? null : (superficie > 0 ? Math.round(costoNum * (superficieItem / superficie)) : costoNum)
       // La dosis es por hectárea (no cambia), pero el "total" de cada
       // producto sí tiene que recalcularse con la superficie DE ESTE lote —
