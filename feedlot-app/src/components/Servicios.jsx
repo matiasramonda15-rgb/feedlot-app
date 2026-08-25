@@ -131,6 +131,7 @@ export default function Servicios({ usuario, mobile, nav }) {
 
   // Descargas mercadería
   const [registroActivo, setRegistroActivo] = useState(null)
+  const [mostrarArchivadosM, setMostrarArchivadosM] = useState(false)
   const [showFormReg, setShowFormReg] = useState(false)
   const [filtroTransporte, setFiltroTransporte] = useState('')
   const [precioTonTransporte, setPrecioTonTransporte] = useState('')
@@ -2299,25 +2300,24 @@ export default function Servicios({ usuario, mobile, nav }) {
                       {isActivo ? '▲ Cerrar' : '📦 Ver / Registrar'}
                     </button>
                     <button onClick={async () => {
-                      // Este NUNCA toca la cosecha ni el stock — solo saca el
-                      // registro logístico (viajes, patentes) cuando ya no hace
-                      // falta seguir el detalle, pero el grano cosechado sigue
-                      // siendo real y se mantiene en "Disponible para vender".
-                      if (!confirm(`¿Ocultar el registro de "${reg.campo}"? Se van a borrar los ${(descargasReg[reg.id]||[]).length} viajes cargados (patentes, fechas, kg) — pero la cosecha y el stock quedan intactos, no se tocan.`)) return
-                      await supabase.from('descargas_mercaderia').delete().eq('registro_id', reg.id)
-                      await supabase.from('registros_mercaderia').delete().eq('id', reg.id)
-                      setRegistros(prev => prev.filter(r => r.id !== reg.id))
+                      // Antes esto borraba el registro y los viajes de la base —
+                      // ahora solo lo archiva (marca archivado=true), sin tocar
+                      // ningún dato. La cosecha y el stock tampoco se tocan.
+                      // Queda disponible en la carpeta de "Archivados" de abajo.
+                      if (!confirm(`¿Archivar el registro de "${reg.campo}"? Deja de verse en la lista principal — pero no se borra nada, lo vas a encontrar en "📁 Archivados" al final de la página.`)) return
+                      await supabase.from('registros_mercaderia').update({ archivado: true }).eq('id', reg.id)
+                      setRegistros(prev => prev.map(r => r.id === reg.id ? { ...r, archivado: true } : r))
                       if (registroActivo?.id === reg.id) setRegistroActivo(null)
-                    }} title="Borra el registro y los viajes, pero deja la cosecha y el stock intactos"
+                    }} title="Archiva el registro (no borra nada) — se puede recuperar desde Archivados"
                       style={{ padding: '6px 10px', fontSize: 12, background: S.bg, border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                      👁️ Ocultar
+                      📁 Archivar
                     </button>
                     <button onClick={async () => {
                       // Este SÍ borra todo, incluida la cosecha — para cuando algo
                       // se cargó mal de entrada y hay que empezar de cero con un
                       // registro nuevo, sin dejar el "Disponible para vender" con
                       // un número que en realidad nunca correspondió.
-                      if (!confirm(`¿Eliminar TODO lo de "${reg.campo}"? Esto borra el registro, los ${(descargasReg[reg.id]||[]).length} viajes, Y la cosecha vinculada (baja el "Disponible para vender"). Usalo solo si algo se cargó mal y vas a volver a empezar — si la cosecha está bien y solo querés dejar de ver el detalle de viajes, usá "Ocultar" en vez de este.`)) return
+                      if (!confirm(`¿Eliminar TODO lo de "${reg.campo}"? Esto borra el registro, los ${(descargasReg[reg.id]||[]).length} viajes, Y la cosecha vinculada (baja el "Disponible para vender"). Usalo solo si algo se cargó mal y vas a volver a empezar — si la cosecha está bien y solo querés dejar de ver el detalle de viajes, usá "Archivar" en vez de este.`)) return
                       await supabase.from('descargas_mercaderia').delete().eq('registro_id', reg.id)
                       if (reg.cosecha_id) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id)
                       if (reg.cosecha_id_acopio) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id_acopio)
@@ -2500,6 +2500,53 @@ export default function Servicios({ usuario, mobile, nav }) {
               </div>
             )
           })}
+
+          {/* Carpeta de archivados — no se borró nada, solo dejaron de verse
+              en la lista principal. Se pueden recuperar (Desarchivar) o
+              borrar del todo desde acá. */}
+          {registros.filter(reg => reg.archivado).length > 0 && (
+            <div style={{ marginTop: '1.5rem', border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+              <div onClick={() => setMostrarArchivadosM(!mostrarArchivadosM)}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: S.bg, cursor: 'pointer' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: S.muted }}>📁 Archivados ({registros.filter(reg => reg.archivado).length})</span>
+                <span style={{ fontSize: 12, color: S.hint }}>{mostrarArchivadosM ? '▲ ocultar' : '▼ ver'}</span>
+              </div>
+              {mostrarArchivadosM && (
+                <div>
+                  {registros.filter(reg => reg.archivado).map(reg => {
+                    const descArch = descargasReg[reg.id] || []
+                    const kgArch = descArch.reduce((a, d) => a + (d.kg || 0), 0)
+                    return (
+                      <div key={reg.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: `1px solid ${S.border}` }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{reg.campo}{reg.nro_lote ? ` · ${reg.nro_lote}` : ''} — {reg.cultivo || ''}</div>
+                          <div style={{ fontSize: 11, color: S.muted }}>{descArch.length} viaje{descArch.length !== 1 ? 's' : ''} · {(kgArch / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={async () => {
+                            await supabase.from('registros_mercaderia').update({ archivado: false }).eq('id', reg.id)
+                            setRegistros(prev => prev.map(r => r.id === reg.id ? { ...r, archivado: false } : r))
+                          }} style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
+                            ↩️ Desarchivar
+                          </button>
+                          <button onClick={async () => {
+                            if (!confirm(`¿Eliminar TODO lo de "${reg.campo}"? Esto borra el registro, los ${descArch.length} viajes, Y la cosecha vinculada (baja el "Disponible para vender"). No se puede deshacer.`)) return
+                            await supabase.from('descargas_mercaderia').delete().eq('registro_id', reg.id)
+                            if (reg.cosecha_id) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id)
+                            if (reg.cosecha_id_acopio) await supabase.from('cosechas').delete().eq('id', reg.cosecha_id_acopio)
+                            await supabase.from('registros_mercaderia').delete().eq('id', reg.id)
+                            setRegistros(prev => prev.filter(r => r.id !== reg.id))
+                          }} style={{ padding: '5px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>
+                            🗑
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
