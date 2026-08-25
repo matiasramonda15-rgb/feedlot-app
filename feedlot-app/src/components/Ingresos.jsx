@@ -2077,6 +2077,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                     <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                       <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                      <button onClick={() => generarReciboCompra(l, [p], corrales)} title="Recibo de solo este pago" style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 13 }}>🖨️</button>
                                       <button onClick={() => eliminarPago(p, l, pagos, total, 'error')} title="Deshacer (fue un error de carga)" style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
                                       {(p.forma_pago === 'cheque' || p.forma_pago === 'e-cheq') && (
                                         <button onClick={() => eliminarPago(p, l, pagos, total, 'rechazado')} title="El cheque fue rechazado por el banco (sin fondos)" style={{ background: 'none', border: 'none', color: S.amber, cursor: 'pointer', fontSize: 13 }}>⚠️</button>
@@ -2278,6 +2279,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                 <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                   <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                  <button onClick={() => generarReciboCompra(l, [p], corrales)} title="Recibo de solo este pago" style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 13 }}>🖨️</button>
                                   <button onClick={() => eliminarPago(p, l, pagosArch, totalArch, 'error')} title="Deshacer (fue un error de carga)" style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   {(p.forma_pago === 'cheque' || p.forma_pago === 'e-cheq') && (
                                     <button onClick={() => eliminarPago(p, l, pagosArch, totalArch, 'rechazado')} title="El cheque fue rechazado por el banco (sin fondos)" style={{ background: 'none', border: 'none', color: S.amber, cursor: 'pointer', fontSize: 13 }}>⚠️</button>
