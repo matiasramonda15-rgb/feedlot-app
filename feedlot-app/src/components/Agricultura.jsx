@@ -4384,6 +4384,24 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     if (!grupos[key]) grupos[key] = { campo_id: c.campo_id, lote_id: c.lote_id || null, cultivo: c.cultivo, kg: 0 }
     grupos[key].kg += c.kg_totales || 0
   })
+  // Órdenes de trabajo del lote — igual que planes y cosechas, arman fila
+  // propia si hace falta. Sin esto, un lote con solo una pulverización
+  // cargada (sin siembra ni cosecha todavía, ej. recién empieza la
+  // campaña) no aparecía para nada en el cuadro, y no había forma de ir
+  // viendo los gastos que se le iban cargando hasta que se cosechara.
+  ;(ordenes || []).filter(o =>
+    (!filtroCampana || o.campana_id === parseInt(filtroCampana)) &&
+    (!filtroCampo || o.campo_id === parseInt(filtroCampo))
+  ).forEach(o => {
+    const key = `${o.campo_id}_${o.lote_id || 'campo'}_sin_cultivo`
+    // Si ya hay una fila de este campo+lote por otro cultivo con siembra/
+    // cosecha, no se duplica — se deja que esa fila absorba el costo (pasa
+    // más abajo, al sumar ordenesRel por campo_id/lote_id sin filtrar por
+    // cultivo). Solo se crea una fila "sin cultivo" cuando el campo+lote no
+    // tiene NINGUNA fila todavía.
+    const yaExiste = Object.values(grupos).some(g => g.campo_id === o.campo_id && (g.lote_id || null) === (o.lote_id || null))
+    if (!yaExiste && !grupos[key]) grupos[key] = { campo_id: o.campo_id, lote_id: o.lote_id || null, cultivo: null, kg: 0 }
+  })
 
   const filas = Object.values(grupos).map(g => {
     const campo = campos.find(c => c.id === g.campo_id)
@@ -4519,7 +4537,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: 8 }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{f.campoNombre} · {f.loteNombre}</div>
-                <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{f.cultivo} · {numAR(f.ha, 1)} ha</div>
+                <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{f.cultivo || 'sin cultivo cargado aún'} · {numAR(f.ha, 1)} ha</div>
                 {f.sinCosechaAun && (
                   <div style={{ fontSize: 11, color: S.amber, background: S.amberLight, display: 'inline-block', padding: '2px 8px', borderRadius: 4, marginTop: 4, fontWeight: 600 }}>
                     🌱 Sembrado, sin cosechar todavía — los costos ya se van acumulando
