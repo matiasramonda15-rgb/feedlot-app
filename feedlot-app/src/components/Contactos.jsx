@@ -1619,9 +1619,15 @@ export default function Contactos({ usuario }) {
                         e.stopPropagation()
                         await supabase.from('contactos').update({ cuenta_verificada: !contactoData.cuenta_verificada }).eq('id', contactoData.id)
                         setContactos(prev => prev.map(c => c.id === contactoData.id ? { ...c, cuenta_verificada: !contactoData.cuenta_verificada } : c))
-                      }} title={contactoData.cuenta_verificada ? 'Cuenta corriente revisada — tocá para desmarcar' : 'Marcar como revisada'}
-                        style={{ cursor: 'pointer', fontSize: 13, color: contactoData.cuenta_verificada ? S.green : S.border, lineHeight: 1 }}>
-                        ✓
+                      }} title={contactoData.cuenta_verificada ? 'Cuenta corriente revisada — tocá para desmarcar' : 'Todavía no revisada — tocá para marcar'}
+                        style={{
+                          cursor: 'pointer', fontSize: 11, fontWeight: 700, lineHeight: 1,
+                          width: 18, height: 18, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: contactoData.cuenta_verificada ? S.green : 'transparent',
+                          border: `1.5px solid ${contactoData.cuenta_verificada ? S.green : S.muted}`,
+                          color: contactoData.cuenta_verificada ? '#fff' : S.muted,
+                        }}>
+                        {contactoData.cuenta_verificada ? '✓' : '?'}
                       </span>
                     )}
                   </div>
