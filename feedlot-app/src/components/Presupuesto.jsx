@@ -292,9 +292,17 @@ export default function Presupuesto({ usuario }) {
   // Devuelve { valor, estado } — estado: 'real' | 'corregido' | 'estimado' | 'vacio'
   function celda(actividad, tipo, categoria, m) {
     const clave = `${actividad}|${tipo}|${categoria}|${m.anio}|${m.mes}`
-    if (proyecciones[clave]) return { valor: proyecciones[clave].monto, estado: 'corregido' }
+    const proy = proyecciones[clave]
     const filas = datosPorActividad[actividad]?.[tipo === 'ingreso' ? 'ingresos' : 'egresos']?.[categoria] || {}
     const v = filas[m.key] || 0
+    // Si la corrección guardada era una ESTIMACIÓN hecha cuando este mes
+    // todavía era futuro (es_proyeccion=true en la base), y el mes ya pasó
+    // a ser real, esa estimación quedó vieja — no tiene sentido que siga
+    // tapando el dato real de la app para siempre. Se ignora automáticamente
+    // en ese caso. Una corrección hecha a propósito sobre un mes que YA era
+    // real al momento de guardarla (es_proyeccion=false) sigue respetándose,
+    // porque ahí la intención era corregir un dato puntual, no adivinar.
+    if (proy && !(proy.es_proyeccion && !m.esFuturo)) return { valor: proy.monto, estado: 'corregido' }
     if (!m.esFuturo) return { valor: v, estado: v ? 'real' : 'vacio' }
     // En meses futuros, si ya hay un dato real conocido para ese mes puntual
     // (ej. una cuota de crédito ya programada, con fecha y monto fijos), se
