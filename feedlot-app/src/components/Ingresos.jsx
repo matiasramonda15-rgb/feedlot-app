@@ -119,7 +119,8 @@ export default function Ingresos({ usuario, mobile, nav }) {
       const hace12MesesISO = hace12Meses.toISOString().split('T')[0]
 
       const [{ data: lotesGdp }, { data: ventasGdp }, { data: raciones }, { data: stock }, { data: formulasMixer },
-             { data: comprasAlim }, { data: comprasSanit }, { data: gastosGen }, { data: lotesIngresados }] = await Promise.all([
+             { data: comprasAlim }, { data: comprasSanit }, { data: gastosGen }, { data: lotesIngresados },
+             { data: fletesCompra }, { data: lotesConComision }, { data: ventasConComision }] = await Promise.all([
         supabase.from('lotes').select('cantidad, fecha_ingreso, kg_bascula'),
         supabase.from('ventas').select('cantidad, kg_vivo_total, creado_en, total'),
         supabase.from('raciones_app').select('kg_total, kg_rollo_extra, solo_rollo, mezclador, tipo_dieta, fecha'),
@@ -129,6 +130,9 @@ export default function Ingresos({ usuario, mobile, nav }) {
         supabase.from('compras_insumos').select('total, fecha').eq('insumo_tipo', 'sanitario').gte('fecha', hace12MesesISO),
         supabase.from('gastos_generales').select('monto, fecha, actividad').gte('fecha', hace6MesesISO).in('actividad', ['Feedlot', 'General']),
         supabase.from('lotes').select('cantidad').gte('fecha_ingreso', hace12MesesISO),
+        supabase.from('fletes').select('monto, kg_bruto, fecha').gte('fecha', hace6MesesISO),
+        supabase.from('lotes').select('comision_monto, monto_total_con_iva, fecha_ingreso').gte('fecha_ingreso', hace6MesesISO),
+        supabase.from('ventas').select('comision_pct, creado_en').gte('creado_en', hace6MesesISO),
       ])
       const indicadores = calcularIndicadoresFeedlot({ corrales, lotes: lotesGdp, ventas: ventasGdp, raciones, stock, formulasMixer })
       const prom6 = indicadores.prom6
@@ -163,6 +167,30 @@ export default function Ingresos({ usuario, mobile, nav }) {
       const gastoFijo = (gastosGen || []).reduce((s, g) => s + (g.actividad === 'General' ? (parseFloat(g.monto) || 0) / 3 : (parseFloat(g.monto) || 0)), 0)
       const gastosFijosMesReal = existenciaGlobal > 0 ? gastoFijo / (existenciaGlobal * 6) : null
 
+      // Flete de compra $/kg — lo gastado en fletes de ingreso de hacienda
+      // (últimos 6 meses) dividido los kg brutos transportados en esos
+      // mismos fletes. El flete de VENTA no tiene una fuente de datos
+      // separada en el sistema hoy (no se carga como registro propio),
+      // así que ese sigue siendo manual.
+      const gastoFleteCompra = (fletesCompra || []).reduce((s, f) => s + (parseFloat(f.monto) || 0), 0)
+      const kgFleteCompra = (fletesCompra || []).reduce((s, f) => s + (parseFloat(f.kg_bruto) || 0), 0)
+      const fleteCompraReal = kgFleteCompra > 0 ? gastoFleteCompra / kgFleteCompra : null
+
+      // Comisión de compra % — promedio de comisión pagada / monto total de
+      // cada lote comprado en los últimos 6 meses (donde hay comisión
+      // cargada).
+      const lotesConComisionValida = (lotesConComision || []).filter(l => l.comision_monto > 0 && l.monto_total_con_iva > 0)
+      const comisionCompraReal = lotesConComisionValida.length > 0
+        ? (lotesConComisionValida.reduce((s, l) => s + (l.comision_monto / l.monto_total_con_iva * 100), 0) / lotesConComisionValida.length)
+        : null
+
+      // Comisión de venta % — promedio directo del % ya cargado en cada
+      // venta de los últimos 6 meses.
+      const ventasConComisionValida = (ventasConComision || []).filter(v => v.comision_pct > 0)
+      const comisionVentaReal = ventasConComisionValida.length > 0
+        ? (ventasConComisionValida.reduce((s, v) => s + v.comision_pct, 0) / ventasConComisionValida.length)
+        : null
+
       setCalc(prev => ({
         ...prev,
         aumento_diario: prom6?.gdp ? prom6.gdp.toFixed(2) : prev.aumento_diario,
@@ -172,6 +200,9 @@ export default function Ingresos({ usuario, mobile, nav }) {
         costo_dieta: costoDietaReal ? Math.round(costoDietaReal).toString() : prev.costo_dieta,
         sanidad_animal: sanidadAnimalReal ? Math.round(sanidadAnimalReal).toString() : prev.sanidad_animal,
         gastos_fijos_mes: gastosFijosMesReal ? Math.round(gastosFijosMesReal).toString() : prev.gastos_fijos_mes,
+        flete_compra: fleteCompraReal ? fleteCompraReal.toFixed(1) : prev.flete_compra,
+        comision_compra_pct: comisionCompraReal ? comisionCompraReal.toFixed(1) : prev.comision_compra_pct,
+        comision_venta_pct: comisionVentaReal ? comisionVentaReal.toFixed(1) : prev.comision_venta_pct,
       }))
     })()
   }, [tab, calcPrecargado, corrales])
@@ -1061,7 +1092,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
       {tab === 'calculadora' && (
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Calculadora de precio máximo de compra</div>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>Ingresá los parámetros estimados y el sistema calcula el precio máximo a pagar por kg en la compra. El peso/precio de venta, la conversión, el aumento de peso diario, el costo de la dieta, sanidad y gastos fijos ya vienen precargados con el promedio real de tu feedlot (últimos 6-12 meses) — corregilos si te parece que van a cambiar.</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>Ingresá los parámetros estimados y el sistema calcula el precio máximo a pagar por kg en la compra. El peso/precio de venta, conversión, aumento de peso diario, costo de dieta, sanidad, gastos fijos, flete de compra y comisiones ya vienen precargados con el promedio real de tu feedlot (últimos 6-12 meses) — corregilos si te parece que van a cambiar. Solo el flete de venta queda a cargo tuyo, no hay una fuente de datos propia para eso en el sistema todavía.</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
