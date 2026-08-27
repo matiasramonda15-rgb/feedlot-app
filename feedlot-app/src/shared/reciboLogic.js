@@ -224,13 +224,18 @@ export async function generarOrdenDePago(supabase, { destinatario, domicilio, lo
 </head>
 <body>
   <div style="text-align:right;margin-bottom:10px;" class="no-print">
-    <button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;">🖨️ Imprimir / Guardar PDF</button>
+    <button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#1A3D6B;color:#fff;border:none;border-radius:6px;margin-right:8px;">🖨️ Imprimir / Guardar PDF</button>
+    <button id="btnDescargarPdf" style="padding:8px 20px;font-size:14px;cursor:pointer;background:#2E7D46;color:#fff;border:none;border-radius:6px;">⬇️ Descargar PDF (para WhatsApp)</button>
   </div>
   <div id="contenedor" style="transform-origin: top left;">
     <div class="recibo">${bloqueRecibo}</div>
     <div class="corte">✂ &nbsp;&nbsp; CORTAR AQUÍ &nbsp;&nbsp; ✂</div>
     <div class="recibo">${bloqueRecibo}</div>
   </div>
+  <!-- Una sola copia, fuera de pantalla — es la que se captura para el PDF
+       de WhatsApp (no tiene sentido mandar la doble copia pensada para
+       cortar en papel). -->
+  <div id="soloParaPdf" style="position:absolute;left:-9999px;top:0;width:190mm;">${bloqueRecibo}</div>
   <script>
     window.onload = function() {
       var el = document.getElementById('contenedor');
@@ -240,6 +245,33 @@ export async function generarOrdenDePago(supabase, { destinatario, domicilio, lo
         var scale = maxHeight / actualHeight;
         el.style.zoom = scale;
       }
+    };
+    function cargarScript(src) {
+      return new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = src; s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    document.getElementById('btnDescargarPdf').onclick = async function() {
+      var btn = this;
+      var textoOriginal = btn.textContent;
+      btn.textContent = 'Generando...'; btn.disabled = true;
+      try {
+        if (!window.html2canvas) await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+        if (!window.jspdf) await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        var nodo = document.getElementById('soloParaPdf');
+        var canvas = await html2canvas(nodo, { scale: 2, backgroundColor: '#ffffff' });
+        var { jsPDF } = window.jspdf;
+        var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        var imgWidth = 190;
+        var imgHeight = canvas.height * imgWidth / canvas.width;
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 10, 10, imgWidth, imgHeight);
+        pdf.save('Recibo${numero ? ' ' + String(numero).padStart(6, '0') : ''}.pdf');
+      } catch (e) {
+        alert('No se pudo generar el PDF: ' + e.message);
+      }
+      btn.textContent = textoOriginal; btn.disabled = false;
     };
   </script>
 </body>
