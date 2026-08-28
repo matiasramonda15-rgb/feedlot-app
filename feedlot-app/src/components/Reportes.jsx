@@ -356,6 +356,58 @@ export default function Reportes({ usuario }) {
   rentabilidadAnual.resultado -= costoCreditosPorActividad.feedlot
   const indiceAnual = rentabilidadAnual.costoTotal > 0 ? (rentabilidadAnual.resultado / rentabilidadAnual.costoTotal * 100) : null
 
+  // ── Ganancia neta por animal, ciclo completo (compra → venta) ──
+  // No hay trazabilidad de animal individual (los corrales mezclan animales
+  // de distintos lotes con el tiempo), así que se usa el mismo criterio que
+  // se usa en la industria para esto: FIFO — el lote más viejo se considera
+  // el primero en venderse. Es una estimación razonable, no una traza exacta
+  // cabeza por cabeza.
+  const costoOperativoHistorico = mesesDelAnio.length > 0
+    ? rentabilidadMensual.reduce((s, m) => s + m.costoAlim + m.costoSanidad + m.costoManoObra + m.costoGastos, 0)
+    : 0
+  const animalDiasHistorico = mesesGDP.reduce((s, m) => s + ((m.existenciaPromedio || 0) * (m.dias || 0)), 0)
+  const costoPorAnimalDia = animalDiasHistorico > 0 ? costoOperativoHistorico / animalDiasHistorico : 0
+
+  const ventasOrdenadas = [...ventas].filter(v => v.cantidad > 0).sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en))
+    .map(v => ({ cantidadRestante: v.cantidad, totalRestante: v.total || 0, fecha: v.creado_en }))
+  let punteroVenta = 0
+
+  const gananciaPorLote = [...lotes].filter(l => l.cantidad > 0).sort((a, b) => new Date(a.fecha_ingreso) - new Date(b.fecha_ingreso)).map(l => {
+    const costoCompra = (l.monto_total_con_iva || 0) > 0 ? l.monto_total_con_iva : (l.kg_bascula || 0) * (l.precio_compra || 0)
+    let faltante = l.cantidad
+    let ingresoVenta = 0
+    let ultimaFechaVenta = null
+    while (faltante > 0 && punteroVenta < ventasOrdenadas.length) {
+      const v = ventasOrdenadas[punteroVenta]
+      const tomar = Math.min(faltante, v.cantidadRestante)
+      if (tomar > 0) {
+        const montoTomado = v.cantidadRestante > 0 ? (v.totalRestante * tomar / v.cantidadRestante) : 0
+        ingresoVenta += montoTomado
+        v.totalRestante -= montoTomado
+        v.cantidadRestante -= tomar
+        faltante -= tomar
+        ultimaFechaVenta = v.fecha
+      }
+      if (v.cantidadRestante <= 0) punteroVenta++
+    }
+    const cicloCompleto = faltante === 0
+    const cantidadVendida = l.cantidad - faltante
+    const fechaFin = cicloCompleto ? ultimaFechaVenta : hoy.toISOString()
+    const dias = Math.max(1, Math.round((new Date(fechaFin) - new Date(l.fecha_ingreso)) / 86400000))
+    const costoOperativo = costoPorAnimalDia * l.cantidad * dias
+    const gananciaNeta = ingresoVenta - costoCompra - costoOperativo
+    return {
+      id: l.id, cantidad: l.cantidad, cantidadVendida, fechaIngreso: l.fecha_ingreso, fechaFin, dias,
+      costoCompra, ingresoVenta, costoOperativo, gananciaNeta,
+      gananciaPorAnimal: cantidadVendida > 0 ? gananciaNeta / cantidadVendida : null,
+      cicloCompleto,
+    }
+  })
+  const lotesCompletos = gananciaPorLote.filter(l => l.cicloCompleto)
+  const gananciaPromedioPorAnimal = lotesCompletos.length > 0
+    ? lotesCompletos.reduce((s, l) => s + l.gananciaPorAnimal * l.cantidad, 0) / lotesCompletos.reduce((s, l) => s + l.cantidad, 0)
+    : null
+
   // ── Rentabilidad Agricultura (ingreso = ventas de granos; costo = agroquímicos + gastos generales + mano de obra) ──
   const rentabilidadPorMesAgro = {}
   const asegurarMesAgro = key => { if (!rentabilidadPorMesAgro[key]) rentabilidadPorMesAgro[key] = { ingreso: 0, costoInsumos: 0, costoManoObra: 0, costoGastos: 0 } }
@@ -963,6 +1015,56 @@ export default function Reportes({ usuario }) {
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{m.costoTotal > 0 ? `$${(m.costoTotal / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: m.resultado >= 0 ? S.green : S.red }}>{m.costoTotal > 0 || m.ingreso > 0 ? `$${(m.resultado / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.indice !== null ? (m.indice >= 0 ? S.green : S.red) : S.hint }}>{m.indice !== null ? `${m.indice.toFixed(1)}%` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Ganancia neta por animal — ciclo completo (compra → venta) */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+              💰 Ganancia neta por animal — ciclo completo
+            </div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
+              Lo que deja cada lote comprado, de punta a punta: precio de venta menos precio de compra menos todos los
+              costos operativos (alimentación, sanidad, mano de obra, gastos generales) durante el tiempo real que
+              pasó en el feedlot. No hay forma de rastrear animal por animal (los corrales mezclan lotes con el
+              tiempo), así que se usa el criterio FIFO — el lote más viejo se considera el primero en venderse —
+              igual que se usa habitualmente para este tipo de cálculo.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: '1.25rem' }}>
+              <Stat label="Ganancia promedio por animal" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'}
+                sub={`${lotesCompletos.length} lote${lotesCompletos.length !== 1 ? 's' : ''} con ciclo completo`} color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
+              <Stat label="Costo operativo / animal / día" val={costoPorAnimalDia > 0 ? `$${Math.round(costoPorAnimalDia).toLocaleString('es-AR')}` : '—'}
+                sub="alimentación + sanidad + mano de obra + gastos, promedio histórico" />
+            </div>
+            {gananciaPorLote.length === 0 ? (
+              <div style={{ padding: '1.5rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin lotes de compra cargados todavía.</div>
+            ) : (
+              <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Ingreso', 'Cab.', 'Días', 'Compra', 'Costo oper.', 'Venta', 'Ganancia neta', '$/animal', 'Estado'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Ingreso' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gananciaPorLote.map(l => (
+                      <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: l.cicloCompleto ? 1 : 0.6 }}>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(l.fechaIngreso + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{l.cantidad}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{l.dias}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>${(l.costoCompra / 1000000).toFixed(2)}M</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>${(l.costoOperativo / 1000000).toFixed(2)}M</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{l.ingresoVenta > 0 ? `$${(l.ingresoVenta / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: l.gananciaNeta >= 0 ? S.green : S.red }}>{l.cicloCompleto ? `$${(l.gananciaNeta / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: l.gananciaPorAnimal >= 0 ? S.green : S.red }}>{l.cicloCompleto && l.gananciaPorAnimal !== null ? `$${Math.round(l.gananciaPorAnimal).toLocaleString('es-AR')}` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11 }}>{l.cicloCompleto ? '✓ Completo' : `${l.cantidadVendida}/${l.cantidad} vendidos`}</td>
                       </tr>
                     ))}
                   </tbody>
