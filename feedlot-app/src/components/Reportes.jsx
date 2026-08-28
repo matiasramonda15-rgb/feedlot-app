@@ -368,7 +368,13 @@ export default function Reportes({ usuario }) {
   const animalDiasHistorico = mesesGDP.reduce((s, m) => s + ((m.existenciaPromedio || 0) * (m.dias || 0)), 0)
   const costoPorAnimalDia = animalDiasHistorico > 0 ? costoOperativoHistorico / animalDiasHistorico : 0
 
-  const ventasOrdenadas = [...ventas].filter(v => v.cantidad > 0).sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en))
+  // Las ventas de ANTES del primer lote registrado son de animales que ya
+  // estaban en el feedlot cuando empezó a cargarse el sistema (stock previo,
+  // sin ninguna compra rastreada) — si se dejaran en la cola, el FIFO las
+  // emparejaría igual contra el primer lote nuevo, corrompiendo el cálculo
+  // de ese lote y de todos los que siguen. Se excluyen del todo.
+  const primerLoteFecha = lotes.filter(l => l.cantidad > 0).reduce((min, l) => !min || l.fecha_ingreso < min ? l.fecha_ingreso : min, null)
+  const ventasOrdenadas = [...ventas].filter(v => v.cantidad > 0 && (!primerLoteFecha || v.creado_en >= primerLoteFecha)).sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en))
     .map(v => ({ cantidadRestante: v.cantidad, totalRestante: v.total || 0, fecha: v.creado_en }))
   let punteroVenta = 0
 
@@ -1103,21 +1109,27 @@ export default function Reportes({ usuario }) {
             )
           })()}
 
-          {/* Historial de ventas con rentabilidad */}
+          {/* Historial de ventas */}
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Detalle por venta</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 4 }}>Detalle por venta</div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
+              No muestra costo de compra ni margen por venta individual — no hay forma confiable de saber de qué lote
+              de compra viene cada venta puntual (los corrales mezclan animales de distintos lotes con el tiempo).
+              Para ver la ganancia real, con el costo de compra correspondiente, mirá el cuadro de "Ganancia neta por
+              animal — ciclo completo" más arriba.
+            </div>
             <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: S.bg }}>
-                    {['Fecha', 'Corral', 'Animales', 'Kg netos', 'Precio venta', 'Total venta', 'Costo compra est.', 'Margen bruto', '%'].map(h => (
+                    {['Fecha', 'Corral', 'Animales', 'Kg netos', 'Precio venta', 'Total venta'].map(h => (
                       <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {ventas.length === 0 && (
-                    <tr><td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ventas registradas.</td></tr>
+                    <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ventas registradas.</td></tr>
                   )}
                   {rentabilidadVentas.map(v => (
                     <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
@@ -1132,13 +1144,6 @@ export default function Reportes({ usuario }) {
                         return v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>
                       })()}</td>
                       <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(2)}M` : '—'}</td>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: S.muted }}>{v.costoCompra ? `$${(v.costoCompra / 1000000).toFixed(2)}M` : '—'}</td>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.margen !== null ? (v.margen > 0 ? S.green : S.red) : S.hint }}>
-                        {v.margen !== null ? `$${(v.margen / 1000000).toFixed(2)}M` : '—'}
-                      </td>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: v.margenPct !== null ? (v.margenPct > 0 ? S.green : S.red) : S.hint }}>
-                        {v.margenPct !== null ? `${v.margenPct.toFixed(1)}%` : '—'}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
