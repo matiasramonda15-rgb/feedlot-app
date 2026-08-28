@@ -557,7 +557,15 @@ export default function Gastos({ usuario }) {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
                         <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => setPagoChequePropio(idx, 'numero', e.target.value)} style={inputStyle} /></div>
                         <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => setPagoChequePropio(idx, 'banco', e.target.value)} style={inputStyle} /></div>
-                        <div><Label>Vencimiento *</Label><input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => setPagoChequePropio(idx, 'fecha_vencimiento', e.target.value)} style={{ ...inputStyle, borderColor: S.amber }} /></div>
+                        <div>
+                          <Label>Fecha de pago (cuándo se cobra) *</Label>
+                          <input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => setPagoChequePropio(idx, 'fecha_vencimiento', e.target.value)} style={{ ...inputStyle, borderColor: S.amber }} />
+                          {pago.cheque_propio.fecha_vencimiento && (
+                            <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>
+                              Vence (30 días después): {(() => { const d = new Date(pago.cheque_propio.fecha_vencimiento + 'T12:00:00'); d.setDate(d.getDate() + 30); return d.toLocaleDateString('es-AR') })()}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                     {pago.subtipo_cheque === 'tercero' && (

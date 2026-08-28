@@ -167,8 +167,17 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
                 <input type="text" value={pago.cheque_propio?.banco || ''} onChange={e => setChequePropio('banco', e.target.value)} style={inp} />
               </div>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 4 }}>Vencimiento *</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 4 }}>Fecha de pago (cuándo se cobra) *</div>
                 <input type="date" value={pago.cheque_propio?.fecha_vencimiento || ''} onChange={e => setChequePropio('fecha_vencimiento', e.target.value)} style={{ ...inp, border: `1px solid ${S.amber}` }} />
+                {pago.cheque_propio?.fecha_vencimiento && (
+                  <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>
+                    Vence (30 días después): {(() => {
+                      const d = new Date(pago.cheque_propio.fecha_vencimiento + 'T12:00:00')
+                      d.setDate(d.getDate() + 30)
+                      return d.toLocaleDateString('es-AR')
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           )}

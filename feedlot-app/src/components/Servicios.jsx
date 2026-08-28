@@ -1685,7 +1685,15 @@ export default function Servicios({ usuario, mobile, nav }) {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
                           <div><Lbl>N° Cheque</Lbl><input type="text" value={p.cheque_propio?.numero || ''} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, numero: e.target.value } } : x); setFormPago({ ...formPago, pagos }) }} style={inpMono} /></div>
                           <div><Lbl>Banco</Lbl><input type="text" value={p.cheque_propio?.banco || ''} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, banco: e.target.value } } : x); setFormPago({ ...formPago, pagos }) }} style={inp} /></div>
-                          <div><Lbl>Vencimiento</Lbl><input type="date" value={p.cheque_propio?.fecha_vencimiento || ''} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, fecha_vencimiento: e.target.value } } : x); setFormPago({ ...formPago, pagos }) }} style={inp} /></div>
+                          <div>
+                            <Lbl>Fecha de pago (cuándo se cobra)</Lbl>
+                            <input type="date" value={p.cheque_propio?.fecha_vencimiento || ''} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, fecha_vencimiento: e.target.value } } : x); setFormPago({ ...formPago, pagos }) }} style={inp} />
+                            {p.cheque_propio?.fecha_vencimiento && (
+                              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>
+                                Vence (30 días después): {(() => { const d = new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00'); d.setDate(d.getDate() + 30); return d.toLocaleDateString('es-AR') })()}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

@@ -645,7 +645,15 @@ export default function Activos({ usuario }) {
                   <>
                     <div><Label>N° Cheque</Label><input type="text" value={formRetiro.cheque_numero || ''} onChange={e => setFormRetiro({...formRetiro, cheque_numero: e.target.value})} style={inputStyle} /></div>
                     <div><Label>Banco</Label><input type="text" value={formRetiro.cheque_banco || ''} onChange={e => setFormRetiro({...formRetiro, cheque_banco: e.target.value})} style={inputStyle} /></div>
-                    <div><Label>Vencimiento</Label><input type="date" value={formRetiro.cheque_vencimiento || ''} onChange={e => setFormRetiro({...formRetiro, cheque_vencimiento: e.target.value})} style={inputStyle} /></div>
+                    <div>
+                      <Label>Fecha de pago (cuándo se cobra)</Label>
+                      <input type="date" value={formRetiro.cheque_vencimiento || ''} onChange={e => setFormRetiro({...formRetiro, cheque_vencimiento: e.target.value})} style={inputStyle} />
+                      {formRetiro.cheque_vencimiento && (
+                        <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>
+                          Vence (30 días después): {(() => { const d = new Date(formRetiro.cheque_vencimiento + 'T12:00:00'); d.setDate(d.getDate() + 30); return d.toLocaleDateString('es-AR') })()}
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
                 {!formRetiro.no_afecta_caja && (
