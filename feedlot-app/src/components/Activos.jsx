@@ -153,7 +153,13 @@ export default function Activos({ usuario }) {
         }
       }
     }
-    const { error } = await supabase.from('retiros_socios').insert({ ...formRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
+    // Los campos de cheque (número, banco, vencimiento) son solo del
+    // formulario, para guardarlos en la cartera de cheques (arriba) — la
+    // tabla retiros_socios no tiene esas columnas, así que hay que sacarlos
+    // antes de guardar el retiro en sí, o siempre falla (con cualquier
+    // forma de pago, no solo con cheque).
+    const { cheque_numero, cheque_banco, cheque_vencimiento, ...datosRetiro } = formRetiro
+    const { error } = await supabase.from('retiros_socios').insert({ ...datosRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
     if (error) { alert('Error al guardar el retiro: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormRetiro(false)
