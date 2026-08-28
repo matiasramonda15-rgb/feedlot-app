@@ -90,11 +90,33 @@ export async function procesarEnfermosCorral(supabase, { corralId, enfermos, cor
     const productosValidos = (enf.productos || []).filter(p => p.prod)
     const observaciones = `${enf.diag}${enf.desc ? ' — ' + enf.desc : ''}${cant > 1 ? ` (${cant} animales)` : ''}`
 
+    // Si corresponde mover a enfermería, se crea el movimiento de corral ANTES
+    // que los eventos sanitarios (no después) — así se puede guardar su id en
+    // cada evento que se genere a continuación. Con ese vínculo, "deshacer" un
+    // evento más adelante puede revertir también el traslado de corral, en vez
+    // de solo el stock (antes había que corregir el corral a mano aparte).
+    const corrEnfDestino = enf.mover_enfermeria ? corralEnfermeriaId : null
+    let movimientoId = null
+    if (corrEnfDestino) {
+      const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', corralId).single()
+      const { error: errOrigen } = await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', corralId)
+      if (errOrigen) return { error: errOrigen }
+      const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfDestino).single()
+      const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfDestino)
+      if (errDestino) return { error: errDestino }
+      const { data: mov, error: errMov } = await supabase.from('movimientos').insert({
+        tipo: 'traslado', corral_origen_id: corralId, corral_destino_id: corrEnfDestino,
+        cantidad: cant, motivo: motivoOrigen || `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
+      }).select().single()
+      if (errMov) return { error: errMov }
+      movimientoId = mov?.id || null
+    }
+
     if (productosValidos.length === 0) {
       // Novedad sin ningún producto aplicado — igual queda registrada.
       const { error } = await supabase.from('eventos_sanitarios').insert({
         tipo: 'revision', corral_id: corralId, producto: null, cantidad_animales: cant,
-        observaciones, enviado_enfermeria: enf.mover_enfermeria || false, registrado_por: usuario?.id,
+        observaciones, enviado_enfermeria: enf.mover_enfermeria || false, registrado_por: usuario?.id, movimiento_id: movimientoId,
       })
       if (error) return { error }
     } else {
@@ -110,7 +132,7 @@ export async function procesarEnfermosCorral(supabase, { corralId, enfermos, cor
         }
         const { error } = await supabase.from('eventos_sanitarios').insert({
           tipo: 'revision', corral_id: corralId, producto: p.prod, cantidad_ml: mlTotal || null,
-          cantidad_animales: cant, observaciones, enviado_enfermeria: enf.mover_enfermeria || false, registrado_por: usuario?.id,
+          cantidad_animales: cant, observaciones, enviado_enfermeria: enf.mover_enfermeria || false, registrado_por: usuario?.id, movimiento_id: movimientoId,
         })
         if (error) return { error }
       }
@@ -119,7 +141,6 @@ export async function procesarEnfermosCorral(supabase, { corralId, enfermos, cor
     // Un registro de enfermería POR ANIMAL, aunque se hayan cargado juntos —
     // así cada uno se puede dar de alta por separado más adelante, aunque
     // hayan arrancado el tratamiento el mismo día.
-    const corrEnfDestino = enf.mover_enfermeria ? corralEnfermeriaId : null
     const mlPorAnimalTotal = productosValidos.reduce((s, p) => s + (parseFloat(p.ml) || 0), 0) || null
     for (let a = 0; a < cant; a++) {
       const { error: errEnf } = await supabase.from('animales_enfermeria').insert({
@@ -128,23 +149,6 @@ export async function procesarEnfermosCorral(supabase, { corralId, enfermos, cor
         cantidad_ml: mlPorAnimalTotal, estado: enf.mover_enfermeria ? 'en_enfermeria' : 'en tratamiento', registrado_por: usuario?.id,
       })
       if (errEnf) return { error: errEnf }
-    }
-
-    // Si se marcó "mover a enfermería", los animales tienen que salir
-    // físicamente del corral de origen y sumarse al de enfermería — y que
-    // quede en el mismo historial de movimientos que se ve en Corrales y
-    // tropas, para tener todo junto en un solo lugar.
-    if (corrEnfDestino) {
-      const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', corralId).single()
-      const { error: errOrigen } = await supabase.from('corrales').update({ animales: Math.max(0, (origenFresh?.animales || 0) - cant) }).eq('id', corralId)
-      if (errOrigen) return { error: errOrigen }
-      const { data: enfFresh } = await supabase.from('corrales').select('animales').eq('id', corrEnfDestino).single()
-      const { error: errDestino } = await supabase.from('corrales').update({ animales: (enfFresh?.animales || 0) + cant }).eq('id', corrEnfDestino)
-      if (errDestino) return { error: errDestino }
-      await supabase.from('movimientos').insert({
-        tipo: 'traslado', corral_origen_id: corralId, corral_destino_id: corrEnfDestino,
-        cantidad: cant, motivo: motivoOrigen || `Sanidad — ${enf.diag}${enf.desc ? ' · ' + enf.desc : ''}`, registrado_por: usuario?.id,
-      })
     }
   }
   return { error: null }

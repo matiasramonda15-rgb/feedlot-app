@@ -952,10 +952,31 @@ export default function Sanidad({ usuario, mobile, nav }) {
             const eventosM = eventos.filter(e => e.producto !== 'Sin novedad').slice(0, 30)
             const hace48hs = new Date(); hace48hs.setHours(hace48hs.getHours() - 48)
             async function deshacerEvento(e) {
-              if (!confirm(`¿Deshacer este evento? "${e.producto || TIPO_LABELS_M[e.tipo]}" en ${e.corrales?.numero ? 'C-' + e.corrales.numero : 'todos'}.\n\nSi tenía dosis, se devuelve al stock. Esto NO deshace un movimiento a enfermería — si el animal se movió, avisá para corregirlo aparte.`)) return
+              const avisoMovimiento = e.movimiento_id
+                ? 'Como este evento movió animales a enfermería, también se va a revertir ese traslado (vuelven al corral de origen).'
+                : 'Este evento no movió animales de corral, así que no hay ningún traslado que revertir.'
+              if (!confirm(`¿Deshacer este evento? "${e.producto || TIPO_LABELS_M[e.tipo]}" en ${e.corrales?.numero ? 'C-' + e.corrales.numero : 'todos'}.\n\nSi tenía dosis, se devuelve al stock. ${avisoMovimiento}`)) return
               if (e.producto && e.cantidad_ml) {
                 const { data: item } = await supabase.from('stock_sanitario').select('id, cantidad_ml').ilike('producto', e.producto).limit(1).maybeSingle()
                 if (item) await supabase.from('stock_sanitario').update({ cantidad_ml: (item.cantidad_ml || 0) + parseFloat(e.cantidad_ml) }).eq('id', item.id)
+              }
+              // Si este evento movió animales a enfermería, revertir también
+              // el traslado de corral — antes esto quedaba siempre pendiente
+              // de corregir a mano, y era fácil que se olvidara (como pasó
+              // acá: 2 animales quedaron de más en el corral equivocado).
+              // Se verifica que el movimiento siga existiendo antes de
+              // revertirlo — si otro evento hermano (mismo movimiento, por
+              // ejemplo por tener varios productos aplicados juntos) ya lo
+              // deshizo antes, no se vuelve a revertir dos veces.
+              if (e.movimiento_id) {
+                const { data: mov } = await supabase.from('movimientos').select('*').eq('id', e.movimiento_id).maybeSingle()
+                if (mov) {
+                  const { data: destinoFresh } = await supabase.from('corrales').select('animales').eq('id', mov.corral_destino_id).single()
+                  await supabase.from('corrales').update({ animales: Math.max(0, (destinoFresh?.animales || 0) - mov.cantidad) }).eq('id', mov.corral_destino_id)
+                  const { data: origenFresh } = await supabase.from('corrales').select('animales').eq('id', mov.corral_origen_id).single()
+                  await supabase.from('corrales').update({ animales: (origenFresh?.animales || 0) + mov.cantidad }).eq('id', mov.corral_origen_id)
+                  await supabase.from('movimientos').delete().eq('id', e.movimiento_id)
+                }
               }
               const { error } = await supabase.from('eventos_sanitarios').delete().eq('id', e.id)
               if (error) { alert('Error al deshacer: ' + error.message); return }
