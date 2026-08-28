@@ -96,7 +96,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
   const [verArchivoSan, setVerArchivoSan] = useState(false)
   const [confirmadosM, setConfirmadosM] = useState({})
   const [revStateM, setRevStateM] = useState([])
-  const [formEventoM, setFormEventoM] = useState({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
+  const [formEventoM, setFormEventoM] = useState({ corral_id: '', productos: [{ prod_id: '', producto: '', dosis_ml: '5' }], cantidad: '', observaciones: '' })
   const [guardandoM, setGuardandoM] = useState(false)
   const [stockSanitarioM, setStockSanitarioM] = useState([])
   const [proximaPesadaM, setProximaPesadaM] = useState(null)
@@ -367,24 +367,32 @@ export default function Sanidad({ usuario, mobile, nav }) {
 
     async function registrarEventoM() {
       if (!formEventoM.corral_id) { alert('Selecciona un corral'); return }
-      if (!formEventoM.prod_id) { alert('Selecciona un producto'); return }
+      const productosValidos = formEventoM.productos.filter(p => p.prod_id)
+      if (!productosValidos.length) { alert('Selecciona al menos un producto'); return }
       if (!formEventoM.cantidad) { alert('Ingresa la cantidad de animales'); return }
       setGuardandoM(true)
       const cantAnimales = parseInt(formEventoM.cantidad)
-      const dosisMl = parseFloat(formEventoM.dosis_ml) || 0
-      const mlTotal = dosisMl > 0 ? Math.round(cantAnimales * dosisMl) : null
-      const prod = stockSanitarioM.find(p => String(p.id) === String(formEventoM.prod_id))
-      const { error } = await registrarTratamientoSanitario(supabase, {
-        tipo: 'tratamiento', corralId: parseInt(formEventoM.corral_id),
-        productoId: prod?.id || null, productoNombre: formEventoM.producto,
-        cantidadMl: mlTotal, cantidadAnimales: cantAnimales,
-        observaciones: formEventoM.observaciones, usuario,
-      })
-      if (error) { alert('Error al registrar el evento: ' + error.message); setGuardandoM(false); return }
+      // Un evento por cada producto aplicado — mismo criterio que en
+      // "Revisión", así el historial muestra cada vacuna/producto por su
+      // nombre real en vez de mezclarlos en un solo registro genérico.
+      let mlTotalGeneral = 0
+      for (const p of productosValidos) {
+        const dosisMl = parseFloat(p.dosis_ml) || 0
+        const mlTotal = dosisMl > 0 ? Math.round(cantAnimales * dosisMl) : null
+        const prod = stockSanitarioM.find(x => String(x.id) === String(p.prod_id))
+        const { error } = await registrarTratamientoSanitario(supabase, {
+          tipo: 'tratamiento', corralId: parseInt(formEventoM.corral_id),
+          productoId: prod?.id || null, productoNombre: p.producto,
+          cantidadMl: mlTotal, cantidadAnimales: cantAnimales,
+          observaciones: formEventoM.observaciones, usuario,
+        })
+        if (error) { alert(`Error al registrar ${p.producto}: ` + error.message); setGuardandoM(false); return }
+        mlTotalGeneral += mlTotal || 0
+      }
       await cargarDatos()
-      alert(`Evento registrado.${mlTotal ? ` Se descontaron ${mlTotal.toLocaleString('es-AR')} ml de ${formEventoM.producto}.` : ''}`)
+      alert(`Evento registrado.${productosValidos.length > 1 ? ` ${productosValidos.length} productos aplicados.` : mlTotalGeneral ? ` Se descontaron ${mlTotalGeneral.toLocaleString('es-AR')} ml.` : ''}`)
       setPantSan('alertas')
-      setFormEventoM({ corral_id: '', prod_id: '', producto: '', dosis_ml: '5', cantidad: '', observaciones: '' })
+      setFormEventoM({ corral_id: '', productos: [{ prod_id: '', producto: '', dosis_ml: '5' }], cantidad: '', observaciones: '' })
       setGuardandoM(false)
     }
 
@@ -827,27 +835,37 @@ export default function Sanidad({ usuario, mobile, nav }) {
                 </select>
               </div>
               <div style={{ marginBottom: '.85rem' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Producto</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Productos aplicados</div>
                 {stockSanitarioM.length === 0
                   ? <div style={{ padding: '11px 12px', background: CM.surface2, borderRadius: 8, fontSize: 13, color: CM.muted }}>No hay productos en stock sanitario.</div>
-                  : <select value={formEventoM.prod_id}
-                      onChange={e => {
-                        const prod = stockSanitarioM.find(p => String(p.id) === e.target.value)
-                        setFormEventoM({...formEventoM, prod_id: e.target.value, producto: prod?.producto || ''})
-                      }}
-                      style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
-                      <option value="">— Seleccioná un producto —</option>
-                      {stockSanitarioM.map(p => (
-                        <option key={p.id} value={p.id}>{p.producto} · {(p.cantidad_ml || 0).toLocaleString('es-AR')} {p.unidad || 'ml'} en stock</option>
-                      ))}
-                    </select>
+                  : formEventoM.productos.map((p, pi) => (
+                    <div key={pi} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                      <select value={p.prod_id}
+                        onChange={e => {
+                          const prod = stockSanitarioM.find(x => String(x.id) === e.target.value)
+                          const n = { ...formEventoM, productos: formEventoM.productos.map((x, i) => i === pi ? { ...x, prod_id: e.target.value, producto: prod?.producto || '' } : x) }
+                          setFormEventoM(n)
+                        }}
+                        style={{ flex: 1, background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
+                        <option value="">— Producto —</option>
+                        {stockSanitarioM.map(x => <option key={x.id} value={x.id}>{x.producto} · {(x.cantidad_ml || 0).toLocaleString('es-AR')} {x.unidad || 'ml'}</option>)}
+                      </select>
+                      <input type="number" inputMode="decimal" placeholder="ml" value={p.dosis_ml}
+                        onChange={e => { const n = { ...formEventoM, productos: formEventoM.productos.map((x, i) => i === pi ? { ...x, dosis_ml: e.target.value } : x) }; setFormEventoM(n) }}
+                        style={{ width: 60, background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 6px', fontSize: 14, fontFamily: CM.mono, color: CM.amber, textAlign: 'center' }} />
+                      {formEventoM.productos.length > 1 && (
+                        <button onClick={() => { const n = { ...formEventoM, productos: formEventoM.productos.filter((_, i) => i !== pi) }; setFormEventoM(n) }}
+                          style={{ background: 'transparent', border: 'none', color: CM.muted, cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>
+                      )}
+                    </div>
+                  ))
                 }
-              </div>
-              <div style={{ marginBottom: '.85rem' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Dosis ml/animal</div>
-                <input type="number" inputMode="decimal" placeholder="5" value={formEventoM.dosis_ml}
-                  onChange={e => setFormEventoM({...formEventoM, dosis_ml: e.target.value})}
-                  style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
+                {stockSanitarioM.length > 0 && (
+                  <button onClick={() => setFormEventoM({ ...formEventoM, productos: [...formEventoM.productos, { prod_id: '', producto: '', dosis_ml: '5' }] })}
+                    style={{ padding: '6px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.amber}`, color: CM.amber, borderRadius: 6, cursor: 'pointer' }}>
+                    + Otro producto
+                  </button>
+                )}
               </div>
               <div style={{ marginBottom: '.85rem' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Cantidad de animales</div>
@@ -855,22 +873,26 @@ export default function Sanidad({ usuario, mobile, nav }) {
                   onChange={e => setFormEventoM({...formEventoM, cantidad: e.target.value})}
                   style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
               </div>
-              {formEventoM.prod_id && formEventoM.dosis_ml && formEventoM.cantidad && (() => {
-                const mlTotal = Math.round(parseInt(formEventoM.cantidad) * parseFloat(formEventoM.dosis_ml))
-                const prod = stockSanitarioM.find(p => String(p.id) === String(formEventoM.prod_id))
-                const stockActual = prod?.cantidad_ml || 0
-                const alcanza = stockActual >= mlTotal
-                return (
-                  <div style={{ background: alcanza ? '#1A2E1A' : '#2E1A1A', border: `1px solid ${alcanza ? CM.green : CM.red}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: alcanza ? CM.green : CM.red }}>
-                      {mlTotal.toLocaleString('es-AR')} ml totales ({formEventoM.cantidad} animales × {formEventoM.dosis_ml} ml)
-                    </div>
-                    <div style={{ fontSize: 11, color: CM.muted, marginTop: 3 }}>
-                      Stock actual: {stockActual.toLocaleString('es-AR')} ml · {alcanza ? `Quedan ${(stockActual - mlTotal).toLocaleString('es-AR')} ml` : `⚠ Faltan ${(mlTotal - stockActual).toLocaleString('es-AR')} ml`}
-                    </div>
-                  </div>
-                )
-              })()}
+              {formEventoM.productos.some(p => p.prod_id && p.dosis_ml) && formEventoM.cantidad && (
+                <div style={{ marginBottom: '.85rem' }}>
+                  {formEventoM.productos.filter(p => p.prod_id && p.dosis_ml).map((p, pi) => {
+                    const mlTotal = Math.round(parseInt(formEventoM.cantidad) * parseFloat(p.dosis_ml))
+                    const prod = stockSanitarioM.find(x => String(x.id) === String(p.prod_id))
+                    const stockActual = prod?.cantidad_ml || 0
+                    const alcanza = stockActual >= mlTotal
+                    return (
+                      <div key={pi} style={{ background: alcanza ? '#1A2E1A' : '#2E1A1A', border: `1px solid ${alcanza ? CM.green : CM.red}`, borderRadius: 8, padding: '10px 12px', marginBottom: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: alcanza ? CM.green : CM.red }}>
+                          {p.producto}: {mlTotal.toLocaleString('es-AR')} ml totales ({formEventoM.cantidad} animales × {p.dosis_ml} ml)
+                        </div>
+                        <div style={{ fontSize: 11, color: CM.muted, marginTop: 3 }}>
+                          Stock actual: {stockActual.toLocaleString('es-AR')} ml · {alcanza ? `Quedan ${(stockActual - mlTotal).toLocaleString('es-AR')} ml` : `⚠ Faltan ${(mlTotal - stockActual).toLocaleString('es-AR')} ml`}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               <div style={{ marginBottom: '1rem' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
                 <input type="text" placeholder="descripcion, diagnostico, etc." value={formEventoM.observaciones}
