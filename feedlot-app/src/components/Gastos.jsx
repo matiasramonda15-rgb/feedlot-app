@@ -462,7 +462,7 @@ export default function Gastos({ usuario }) {
                 setForm({...form, proveedor: e.target.value, domicilio: ct?.banco || '', localidad: ct?.localidad || '', cuit: ct?.cuit || '', iva: ct?.iva || '', cbu: ct?.cbu || ''})
               }} style={inputStyle}>
                 <option value="">— Seleccionar contacto —</option>
-                {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes(form.actividad)).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
               </select>
               <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
             </div>

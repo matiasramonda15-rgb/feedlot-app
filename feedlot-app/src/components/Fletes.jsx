@@ -41,7 +41,7 @@ export default function Fletes({ usuario }) {
   async function cargar() {
     const [{ data: f }, { data: ct }, { data: ch }] = await Promise.all([
       supabase.from('fletes').select('*, lotes(codigo, procedencia, fecha_ingreso)').order('fecha', { ascending: false }),
-      supabase.from('contactos').select('id, nombre, localidad').order('nombre'),
+      supabase.from('contactos').select('id, nombre, localidad, actividades').order('nombre'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento'),
     ])
     setFletes(f || [])
@@ -255,7 +255,7 @@ export default function Fletes({ usuario }) {
                           <Label>Transportista</Label>
                           <select value={formEdit.transportista} onChange={e => setFormEdit({...formEdit, transportista: e.target.value})} style={inp()}>
                             <option value="">— Seleccioná —</option>
-                            {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                            {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                           </select>
                         </div>
                         <div><Label>Fecha</Label><input type="date" value={formEdit.fecha} onChange={e => setFormEdit({...formEdit, fecha: e.target.value})} style={inp()} /></div>

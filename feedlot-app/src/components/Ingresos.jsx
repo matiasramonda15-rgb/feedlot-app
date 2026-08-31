@@ -212,7 +212,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     const [{ data: lotesDB }, { data: corralesDB }, { data: ctDB }] = await Promise.all([
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('corrales').select('id, numero, rol, sub, animales').order('numero'),
-      supabase.from('contactos').select('id, nombre, cuit, tipo, localidad, iva, cbu').eq('activo', true).order('nombre'),
+      supabase.from('contactos').select('id, nombre, cuit, tipo, localidad, iva, cbu, actividades').eq('activo', true).order('nombre'),
     ])
     setLotes(lotesDB || [])
     setCorrales(corralesDB || [])
@@ -421,10 +421,13 @@ export default function Ingresos({ usuario, mobile, nav }) {
           )}
           {prom && <div style={{ background: CM.surface2, borderRadius: 8, padding: '.75rem', marginBottom: '.85rem', fontSize: 13, color: CM.green, fontFamily: CM.mono }}>Peso prom: <strong>{prom} kg/animal</strong></div>}
           <div style={{ marginBottom: '.85rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Transportista</div>
-            <input type="text" placeholder="Nombre del transportista (opcional)" value={form.transportista}
-              onChange={e => setForm({...form, transportista: e.target.value})}
-              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }} />
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Transportista (opcional)</div>
+            <select value={form.transportista} onChange={e => setForm({...form, transportista: e.target.value})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }}>
+              <option value="">— Seleccioná —</option>
+              {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+            </select>
+            <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
           </div>
           <div style={{ marginBottom: '1rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>

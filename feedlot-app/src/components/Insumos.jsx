@@ -776,7 +776,7 @@ export default function Insumos({ usuario }) {
                 <Lbl>Proveedor</Lbl>
                 <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
                   <option value="">— Seleccioná —</option>
-                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                  {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
                 </select>
                 <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               </div>
@@ -843,7 +843,7 @@ export default function Insumos({ usuario }) {
                 <Lbl>Proveedor</Lbl>
                 <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
                   <option value="">— Seleccioná —</option>
-                  {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
+                  {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
                 </select>
                 <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               </div>
@@ -1148,7 +1148,7 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngres
                                     <select value={formIng.proveedor} onChange={e => setFormIng({ ...formIng, proveedor: e.target.value })}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }}>
                                       <option value="">— Sin proveedor —</option>
-                                      {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                                      {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                                     </select>
                                   </div>
                                   <button onClick={async () => {
