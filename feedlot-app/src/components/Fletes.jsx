@@ -27,11 +27,14 @@ export default function Fletes({ usuario }) {
   const [fletes, setFletes] = useState([])
   const [contactos, setContactos] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
+  const [lotesRecientes, setLotesRecientes] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroEstado, setFiltroEstado] = useState('')
   const [filtroTransportista, setFiltroTransportista] = useState('')
   const [editandoId, setEditandoId] = useState(null)
   const [formEdit, setFormEdit] = useState({})
+  const [showNuevo, setShowNuevo] = useState(false)
+  const [formNuevo, setFormNuevo] = useState({ lote_id: '', transportista: '', fecha: hoyLocal(), cantidad: '', kg_bruto: '', monto: '', numero_factura: '', observaciones: '' })
   const [pagandoId, setPagandoId] = useState(null)
   const [formPago, setFormPago] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardando, setGuardando] = useState(false)
@@ -39,15 +42,41 @@ export default function Fletes({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: f }, { data: ct }, { data: ch }] = await Promise.all([
+    const [{ data: f }, { data: ct }, { data: ch }, { data: lt }] = await Promise.all([
       supabase.from('fletes').select('*, lotes(codigo, procedencia, fecha_ingreso)').order('fecha', { ascending: false }),
       supabase.from('contactos').select('id, nombre, localidad, actividades').order('nombre'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento'),
+      // Últimos ingresos de hacienda, para poder cargarle un flete después
+      // si en su momento se dejó vacío (ej. porque el transportista todavía
+      // no estaba cargado en Contactos) — antes no había forma de agregarlo
+      // más tarde, esto lo resuelve.
+      supabase.from('lotes').select('id, codigo, procedencia, fecha_ingreso, cantidad').order('fecha_ingreso', { ascending: false }).limit(40),
     ])
     setFletes(f || [])
     setContactos(ct || [])
     setChequesCartera(ch || [])
+    setLotesRecientes(lt || [])
     setLoading(false)
+  }
+
+  async function guardarNuevoFlete() {
+    if (!formNuevo.lote_id) { alert('Elegí a qué ingreso corresponde este flete'); return }
+    if (!formNuevo.transportista) { alert('Elegí el transportista'); return }
+    setGuardando(true)
+    const { error } = await supabase.from('fletes').insert({
+      lote_id: parseInt(formNuevo.lote_id), transportista: formNuevo.transportista, fecha: formNuevo.fecha,
+      cantidad: formNuevo.cantidad ? parseInt(formNuevo.cantidad) : null,
+      kg_bruto: formNuevo.kg_bruto ? parseFloat(formNuevo.kg_bruto) : null,
+      monto: formNuevo.monto ? parseFloat(formNuevo.monto) : null,
+      numero_factura: formNuevo.numero_factura || null,
+      observaciones: formNuevo.observaciones || null,
+      registrado_por: usuario?.id,
+    })
+    if (error) { alert('Error al guardar el flete: ' + error.message); setGuardando(false); return }
+    setShowNuevo(false)
+    setFormNuevo({ lote_id: '', transportista: '', fecha: hoyLocal(), cantidad: '', kg_bruto: '', monto: '', numero_factura: '', observaciones: '' })
+    setGuardando(false)
+    await cargar()
   }
 
   async function guardarEdit() {
@@ -157,13 +186,70 @@ export default function Fletes({ usuario }) {
           <div style={{ fontSize: 22, fontWeight: 700 }}>Fletes</div>
           <div style={{ fontSize: 13, color: S.muted, marginTop: 2 }}>Registro de transporte de animales</div>
         </div>
-        {totalPend > 0 && (
-          <div style={{ background: S.amberLight, border: `1px solid ${S.amber}`, borderRadius: 8, padding: '10px 16px', textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: S.amber, fontWeight: 600, textTransform: 'uppercase' }}>Pendientes de pago</div>
-            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: S.amber }}>${totalPend.toLocaleString('es-AR')}</div>
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <button onClick={() => setShowNuevo(!showNuevo)}
+            style={{ padding: '9px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            + Nuevo flete
+          </button>
+          {totalPend > 0 && (
+            <div style={{ background: S.amberLight, border: `1px solid ${S.amber}`, borderRadius: 8, padding: '10px 16px', textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: S.amber, fontWeight: 600, textTransform: 'uppercase' }}>Pendientes de pago</div>
+              <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: S.amber }}>${totalPend.toLocaleString('es-AR')}</div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Nuevo flete — para cuando el ingreso ya se cargó sin transportista
+          (ej. porque el transportista todavía no estaba en Contactos) y hay
+          que agregarlo después. */}
+      {showNuevo && (
+        <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>+ Nuevo flete</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1rem' }}>Para cargar el flete de un ingreso que ya se registró sin transportista (por ejemplo, porque todavía no estaba cargado en Contactos).</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+            <div style={{ gridColumn: 'span 2' }}>
+              <Label>¿A qué ingreso corresponde? *</Label>
+              <select value={formNuevo.lote_id} onChange={e => setFormNuevo({...formNuevo, lote_id: e.target.value})} style={inp()}>
+                <option value="">— Seleccioná —</option>
+                {lotesRecientes.map(l => (
+                  <option key={l.id} value={l.id}>
+                    {l.codigo || `Lote #${l.id}`} · {l.procedencia || '—'} · {l.cantidad} cab · {l.fecha_ingreso ? new Date(l.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Solo lista los últimos 40 ingresos — si es más viejo, avisá para agregarlo a mano.</div>
+            </div>
+            <div>
+              <Label>Transportista *</Label>
+              <select value={formNuevo.transportista} onChange={e => setFormNuevo({...formNuevo, transportista: e.target.value})} style={inp()}>
+                <option value="">— Seleccioná —</option>
+                {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+              </select>
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
+            </div>
+            <div><Label>Fecha</Label><input type="date" value={formNuevo.fecha} onChange={e => setFormNuevo({...formNuevo, fecha: e.target.value})} style={inp()} /></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+            <div><Label>Cantidad</Label><input type="number" value={formNuevo.cantidad} onChange={e => setFormNuevo({...formNuevo, cantidad: e.target.value})} style={inp()} /></div>
+            <div><Label>Kg bruto</Label><input type="number" value={formNuevo.kg_bruto} onChange={e => setFormNuevo({...formNuevo, kg_bruto: e.target.value})} style={inp()} /></div>
+            <div><Label>Monto $</Label><input type="number" value={formNuevo.monto} onChange={e => setFormNuevo({...formNuevo, monto: e.target.value})} style={inp({ fontFamily: 'monospace' })} /></div>
+            <div><Label>N° Factura</Label><input value={formNuevo.numero_factura} onChange={e => setFormNuevo({...formNuevo, numero_factura: e.target.value})} style={inp()} /></div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <Label>Observaciones</Label>
+            <input value={formNuevo.observaciones} onChange={e => setFormNuevo({...formNuevo, observaciones: e.target.value})} style={inp()} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={guardarNuevoFlete} disabled={guardando} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              {guardando ? 'Guardando...' : 'Guardar'}
+            </button>
+            <button onClick={() => setShowNuevo(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 10, marginBottom: '1.25rem' }}>
