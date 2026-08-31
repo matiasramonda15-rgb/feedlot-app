@@ -32,7 +32,7 @@ function Card({ children, titulo, style = {} }) {
 }
 
 const CULTIVOS = ['Soja', 'Maiz', 'Trigo', 'Alfalfa', 'Girasol', 'Sorgo', 'Otro']
-const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'Labranza', 'Otro']
+const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'Labranza', 'Volteo', 'Rastrillado', 'Confeccion de rollo', 'Otro']
 
 export default function Agricultura({ usuario, mobile, nav }) {
   const [pantAgroM, setPantAgroM] = useState('home')
