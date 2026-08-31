@@ -16,6 +16,7 @@ const MENU = [
     section: 'NOVEDADES',
     items: [
       { id: 'novedades',    label: '📋 Novedades',         roles: ['dueno', 'secretaria', 'encargado'] },
+      { id: 'asistente',    label: '🤖 Asistente',         roles: ['dueno', 'secretaria'] },
     ]
   },
   {
@@ -36,6 +37,7 @@ const MENU = [
     section: 'AGRICULTURA',
     items: [
       { id: 'agricultura',  label: 'Agricultura',         roles: ['dueno', 'secretaria'] },
+      { id: 'alfalfa',      label: 'Alfalfa',             roles: ['dueno', 'secretaria'] },
     ]
   },
   {

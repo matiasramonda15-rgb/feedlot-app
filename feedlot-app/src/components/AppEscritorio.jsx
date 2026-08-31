@@ -24,17 +24,19 @@ var Fletes       = lazy(() => import('./Fletes'))
 var CuentasPagar = lazy(() => import('./CuentasPagar'))
 var Presupuesto  = lazy(() => import('./Presupuesto'))
 var Diagnostico  = lazy(() => import('./Diagnostico'))
+var Asistente    = lazy(() => import('./Asistente'))
 var Novedades    = lazy(() => import('./Novedades'))
 
 const MODULOS = {
   tablero: Tablero, corrales: Corrales, ingresos: Ingresos, pesada: Pesada,
   ventas: Ventas, alimentacion: Alimentacion, sanidad: Sanidad, reportes: Reportes,
-  agricultura: Agricultura, servicios: Servicios, personal: Personal, creditos: Creditos, gastos: Gastos,
+  agricultura: Agricultura, alfalfa: Agricultura, servicios: Servicios, personal: Personal, creditos: Creditos, gastos: Gastos,
   comercial: Comercial, contactos: Contactos, activos: Activos, socios: Activos, insumos: Insumos, fletes: Fletes,
   cuentas_pagar: CuentasPagar,
   presupuesto: Presupuesto,
   diagnostico: Diagnostico,
   novedades: Novedades,
+  asistente: Asistente,
 }
 
 function LoadingModulo() {
@@ -281,7 +283,7 @@ export default function AppEscritorio({ usuario, onLogout }) {
           <PantallaInicio usuario={usuario} setModulo={setModulo} />
         ) : Componente ? (
           <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', color: '#9E9A94', fontSize: 13 }}>Cargando...</div>}>
-            <Componente usuario={usuario} setModulo={setModulo} />
+            <Componente usuario={usuario} setModulo={setModulo} soloAlfalfa={modulo === 'alfalfa'} />
           </Suspense>
         ) : (
           <PantallaInicio usuario={usuario} setModulo={setModulo} />
