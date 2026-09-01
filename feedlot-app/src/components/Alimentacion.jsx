@@ -104,7 +104,9 @@ function generarArchivoRaciones(porFecha, titulo) {
     const filas = items
       .sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99))
       .map(h => {
-        const rango = h.corrales?.rol === 'clasificado' && h.corrales?.sub ? `Rango ${h.corrales.sub}` : '—'
+        const rolMostrar = h.corral_rol_registrado || h.corrales?.rol
+        const subMostrar = h.corral_sub_registrado || h.corrales?.sub
+        const rango = rolMostrar === 'clasificado' && subMostrar ? `Rango ${subMostrar}` : '—'
         return `<tr>
         <td style="padding:7px 12px;border-bottom:1px solid #eee;font-weight:600;">C-${h.corrales?.numero || '—'}</td>
         <td style="padding:7px 12px;border-bottom:1px solid #eee;color:#666;">${rango}</td>
@@ -579,7 +581,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       const corralesConKg = corralesParaRollo
         .filter(c => (kgsRolloExtraM[c.id] || 0) > 0)
         .map(c => ({ corralId: c.id, kg: parseInt(kgsRolloExtraM[c.id]) || 0, animales: c.animales || 0 }))
-      const kgRolloTotal = await agregarRolloExtra(supabase, { fecha: hoy, corralesConKg, dieta })
+      const kgRolloTotal = await agregarRolloExtra(supabase, { fecha: hoy, corralesConKg, dieta, corrales })
       setKgsRolloExtraM({})
       setMostrarAgregarRolloM(false)
       setGuardandoRolloM(false)
@@ -591,7 +593,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       setGuardandoM(true)
       const formulasPorEtapa = { acostumbramiento: FRML.acostumbramiento || [], recria: FRML.recria || [], terminacion: FRML.terminacion || [] }
       const corralesConEtapaYKg = corralesAlim.map(c => ({ corralId: c.id, etapa: getEtapaM(c), kg: kgsM[c.id] || 0, animales: c.animales || 0 }))
-      await confirmarRacionesDia(supabase, { fecha: hoy, corralesConEtapaYKg, dieta, formulasPorEtapa, reemplazarExistente: true })
+      await confirmarRacionesDia(supabase, { fecha: hoy, corralesConEtapaYKg, dieta, formulasPorEtapa, reemplazarExistente: true, corrales })
       await cargarDatos()
       alert(`Raciones confirmadas. ${totalM.toLocaleString('es-AR')} kg totales.`)
       nav && nav('home')
@@ -1336,16 +1338,25 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                         {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => {
                           const animalesFila = h.cantidad_animales ?? h.corrales?.animales ?? null
                           const consumoAnimal = animalesFila > 0 ? (h.kg_total || 0) / animalesFila : null
+                          // "Categoría" usa lo que quedó CONGELADO al cargar la
+                          // ración (corral_rol/sub_registrado) — antes usaba
+                          // siempre el corral en vivo, así que si un corral se
+                          // reclasificaba después, el historial viejo cambiaba
+                          // con él. Solo cae al valor en vivo para registros
+                          // de antes de este arreglo (que no tienen el dato
+                          // guardado todavía).
+                          const rolMostrar = h.corral_rol_registrado || h.corrales?.rol
+                          const subMostrar = h.corral_sub_registrado || h.corrales?.sub
                           return (
                           <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                             <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
                             <td style={{ padding: '8px 12px' }}>
-                              {h.corrales?.rol === 'clasificado' && h.corrales?.sub ? (
+                              {rolMostrar === 'clasificado' && subMostrar ? (
                                 <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>
-                                  Rango {h.corrales.sub}
+                                  Rango {subMostrar}
                                 </span>
-                              ) : h.corrales?.rol ? (
-                                <span style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize' }}>{h.corrales.rol}</span>
+                              ) : rolMostrar ? (
+                                <span style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize' }}>{rolMostrar}</span>
                               ) : '—'}
                             </td>
                             <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
@@ -1455,16 +1466,18 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                                 {items.sort((a, b) => parseInt(a.corrales?.numero || 99) - parseInt(b.corrales?.numero || 99)).map(h => {
                                   const animalesFila = h.cantidad_animales ?? h.corrales?.animales ?? null
                                   const consumoAnimal = animalesFila > 0 ? (h.kg_total || 0) / animalesFila : null
+                                  const rolMostrar = h.corral_rol_registrado || h.corrales?.rol
+                                  const subMostrar = h.corral_sub_registrado || h.corrales?.sub
                                   return (
                                   <tr key={h.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                                     <td style={{ padding: '8px 12px', fontWeight: 600 }}>C-{h.corrales?.numero || '—'}</td>
                                     <td style={{ padding: '8px 12px' }}>
-                                      {h.corrales?.rol === 'clasificado' && h.corrales?.sub ? (
+                                      {rolMostrar === 'clasificado' && subMostrar ? (
                                         <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>
-                                          Rango {h.corrales.sub}
+                                          Rango {subMostrar}
                                         </span>
-                                      ) : h.corrales?.rol ? (
-                                        <span style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize' }}>{h.corrales.rol}</span>
+                                      ) : rolMostrar ? (
+                                        <span style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize' }}>{rolMostrar}</span>
                                       ) : '—'}
                                     </td>
                                     <td style={{ padding: '8px 12px', color: S.muted }}>{h.mezclador || h.mixer || '—'}</td>
