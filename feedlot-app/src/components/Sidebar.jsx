@@ -67,7 +67,7 @@ const MENU = [
     section: 'REPORTES',
     items: [
       { id: 'reportes',     label: 'Reportes',            roles: ['dueno'] },
-      { id: 'presupuesto',  label: 'Presupuesto',         roles: ['dueno'] },
+      { id: 'presupuesto',  label: 'Presupuesto',         roles: ['dueno', 'secretaria'] },
       { id: 'diagnostico',  label: '🩺 Diagnóstico',       roles: ['dueno', 'secretaria'] },
     ]
   },
@@ -195,4 +195,4 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
       </div>
     </div>
   )
-} 
+}
