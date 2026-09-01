@@ -195,4 +195,4 @@ export default function Sidebar({ modulo, setModulo, usuario, onLogout }) {
       </div>
     </div>
   )
-}
+} 
