@@ -742,10 +742,12 @@ export default function Insumos({ usuario }) {
                                 if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
                                 const fp = pago.tipo
                                 if (pago.es_paralelo) {
-                                  const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+                                  const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
+                                  if (errCp || !cp) { alert(`No se pudo registrar la salida de $${monto.toLocaleString('es-AR')} en Caja 2 (${errCp?.message || 'sin datos de respuesta'}). El pago NO quedó guardado — intentá de nuevo.`); setGuardandoPagoInline(false); return }
                                   if (!caja_paralela_id) caja_paralela_id = cp?.id
                                 } else {
-                                  const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).select().single()
+                                  const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).select().single()
+                                  if (errCo || !co) { alert(`No se pudo registrar la salida de $${monto.toLocaleString('es-AR')} en Caja 1 (${errCo?.message || 'sin datos de respuesta'}). El pago NO quedó guardado — intentá de nuevo.`); setGuardandoPagoInline(false); return }
                                   if (!caja_oficial_id) caja_oficial_id = co?.id
                                 }
                                 if (pago.tipo === 'e-cheq' && pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
