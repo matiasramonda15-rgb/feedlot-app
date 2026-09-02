@@ -374,7 +374,7 @@ export default function Contactos({ usuario }) {
       if (f.estado_pago === 'pagado') {
         if (esParalela !== esParaleloF) return
         movs.push({ fecha: f.fecha, tipo: `Flete · ${f.transportista || ''}`, credito: 0, debito: f.monto })
-        movs.push({ fecha: f.fecha, tipo: 'Pago', credito: f.monto, debito: 0 })
+        movs.push({ fecha: f.fecha, tipo: `Pago${f.pagos_detalle?.length === 1 && descMedioPago(f.pagos_detalle[0]) ? ' · ' + descMedioPago(f.pagos_detalle[0]) : (f.forma_pago ? ' · ' + f.forma_pago : '')}`, credito: f.monto, debito: 0 })
       } else if (!esParalela) {
         movs.push({ fecha: f.fecha, tipo: `Flete · ${f.transportista || ''}`, credito: 0, debito: f.monto })
       }
