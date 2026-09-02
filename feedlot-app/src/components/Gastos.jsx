@@ -40,10 +40,17 @@ const ACTIVIDAD_COLORS = {
 
 const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
 
+// Contacto genérico para gastos puntuales de una sola vez (ej: le compraste
+// algo chico a alguien que probablemente no vuelvas a tratar). Se elige del
+// mismo selector estricto de siempre — no se puede tipear cualquier cosa —
+// pero al elegirlo aparece un campo aparte para aclarar a quién fue, que
+// queda como nota en la descripción sin crear un contacto nuevo.
+const NOMBRE_OCASIONAL = 'Proveedor / Cliente ocasional'
+
 const FORM_INIT = {
   actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', activo_id: '',
   fecha: hoyLocal(),
-  proveedor: '', comprobante: '',
+  proveedor: '', comprobante: '', detalleOcasional: '',
   // Datos proveedor para recibo
   domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
   pagos: [{ ...PAGO_INIT }],
@@ -128,6 +135,14 @@ export default function Gastos({ usuario }) {
     if (pagarAhora && Math.abs(diferencia) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${montoTotal.toLocaleString('es-AR')})`); return }
     setGuardando(true)
 
+    // Si es un proveedor ocasional, la aclaración de a quién fue se suma a
+    // la descripción — así queda visible en la caja y en el recibo, pero
+    // el "proveedor" en sí sigue siendo el contacto genérico (no crea uno
+    // nuevo ni se puede confundir con un contacto habitual real).
+    const descripcionFinal = (form.proveedor === NOMBRE_OCASIONAL && form.detalleOcasional.trim())
+      ? `${form.descripcion ? form.descripcion + ' — ' : ''}A: ${form.detalleOcasional.trim()}`
+      : form.descripcion
+
     let caja_oficial_id = null
     let caja_paralela_id = null
     const cajaOficialIds = []
@@ -144,7 +159,7 @@ export default function Gastos({ usuario }) {
         const { data: cred, error: errCred } = await supabase.from('creditos').insert({
           activo_id: form.activo_id ? parseInt(form.activo_id) : null,
           entidad: form.credito_entidad || null,
-          descripcion: `${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' — ' + form.proveedor : ''}`,
+          descripcion: `${form.categoria}${descripcionFinal ? ': ' + descripcionFinal : ''}${form.proveedor ? ' — ' + form.proveedor : ''}`,
           monto_total: monto, cant_cuotas: cuotas, monto_cuota: Math.round(monto / cuotas),
           fecha_inicio: form.fecha, fecha_vencimiento: form.credito_vencimiento || null,
           cuotas_pagadas: 0, saldo_pendiente: monto, estado: 'activo', registrado_por: usuario?.id,
@@ -170,7 +185,7 @@ export default function Gastos({ usuario }) {
       // cheque físico — por eso el recibo salía mal. Ahora respeta el tipo
       // que se eligió de verdad.
       const formaPago = pago.tipo
-      let desc = `${form.actividad} — ${form.categoria}${form.descripcion ? ': ' + form.descripcion : ''}${form.proveedor ? ' (' + form.proveedor + ')' : ''}`
+      let desc = `${form.actividad} — ${form.categoria}${descripcionFinal ? ': ' + descripcionFinal : ''}${form.proveedor ? ' (' + form.proveedor + ')' : ''}`
       if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         const detalleCheques = pago.cheque_tercero_ids.map(chId => {
           const ch = chequesCartera.find(c => String(c.id) === chId)
@@ -226,7 +241,7 @@ export default function Gastos({ usuario }) {
       actividad: form.actividad,
       activo_id: form.activo_id ? parseInt(form.activo_id) : null,
       categoria: form.categoria,
-      descripcion: form.descripcion || null,
+      descripcion: descripcionFinal || null,
       monto: form.monto ? montoTotal : null,
       fecha: form.fecha,
       proveedor: form.proveedor || null,
@@ -459,12 +474,20 @@ export default function Gastos({ usuario }) {
               <Label>Proveedor</Label>
               <select value={form.proveedor} onChange={e => {
                 const ct = contactos.find(c => c.nombre === e.target.value)
-                setForm({...form, proveedor: e.target.value, domicilio: ct?.banco || '', localidad: ct?.localidad || '', cuit: ct?.cuit || '', iva: ct?.iva || '', cbu: ct?.cbu || ''})
+                setForm({...form, proveedor: e.target.value, domicilio: ct?.banco || '', localidad: ct?.localidad || '', cuit: ct?.cuit || '', iva: ct?.iva || '', cbu: ct?.cbu || '', detalleOcasional: e.target.value === NOMBRE_OCASIONAL ? form.detalleOcasional : ''})
               }} style={inputStyle}>
                 <option value="">— Seleccionar contacto —</option>
                 {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes(form.actividad)).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
               </select>
               <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
+              {form.proveedor === NOMBRE_OCASIONAL && (
+                <div style={{ marginTop: 10 }}>
+                  <Label>¿A quién exactamente? (queda como nota, no crea un contacto nuevo)</Label>
+                  <input type="text" value={form.detalleOcasional} onChange={e => setForm({...form, detalleOcasional: e.target.value})}
+                    placeholder="ej. Juan, el de la ferretería de la ruta" style={{ ...inputStyle, border: `1px solid ${S.amber}` }} />
+                  {!form.detalleOcasional.trim() && <div style={{ fontSize: 11, color: S.amber, marginTop: 4 }}>Si ya lo aclaraste antes (estás editando este gasto), podés dejarlo en blanco.</div>}
+                </div>
+              )}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               <div><Label>Domicilio</Label><input type="text" value={form.domicilio} onChange={e => setForm({...form, domicilio: e.target.value})} style={inputStyle} /></div>
