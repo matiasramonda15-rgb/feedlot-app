@@ -85,7 +85,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   // Nuevo ingreso form
   const [form, setForm] = useState({
     procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años',
-    cantidad: '', cantidad_sin_guia: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '',
+    cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '',
   })
 
   // Completar datos (precio, kg factura, comercial)
@@ -225,13 +225,11 @@ export default function Ingresos({ usuario, mobile, nav }) {
 
   async function guardarIngreso() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completá cantidad y kg báscula'); return }
-    if (parseInt(form.cantidad_sin_guia) > parseInt(form.cantidad)) { alert('La cantidad sin guía no puede ser mayor a la cantidad total'); return }
     setGuardando(true)
     const { error, lote } = await registrarIngresoLote(supabase, {
       procedencia: form.procedencia,
       categoria: form.categoria,
       cantidad: form.cantidad,
-      cantidadSinGuia: form.cantidad_sin_guia,
       kgBascula: form.kg_bascula,
       observaciones: form.observaciones,
       corralId: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
@@ -239,7 +237,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     }, usuario)
     if (error) { alert('Error al guardar el ingreso: ' + error.message); setGuardando(false); return }
     await cargarDatos()
-    setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', cantidad_sin_guia: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '' })
+    setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '' })
     setGuardando(false)
     if (mobile) { alert(`Lote ${lote?.codigo || ''} registrado.`); nav('home') }
     else setVista('lista')
@@ -251,7 +249,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     const procFinal = form.procedencia || null
     const { error } = await supabase.from('lotes').update({
       procedencia: procFinal || null, categoria: form.categoria,
-      cantidad: parseInt(form.cantidad) || null, cantidad_sin_guia: Math.max(0, Math.min(parseInt(form.cantidad) || 0, parseInt(form.cantidad_sin_guia) || 0)), kg_bascula: parseFloat(form.kg_bascula) || null,
+      cantidad: parseInt(form.cantidad) || null, kg_bascula: parseFloat(form.kg_bascula) || null,
       observaciones: form.observaciones || null,
       corral_cuarentena_id: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
     }).eq('id', editandoLote.id)
@@ -344,6 +342,9 @@ export default function Ingresos({ usuario, mobile, nav }) {
       precio_compra: precio,
       monto_total_con_iva: montoTotal,
       monto_negro: montoNegro,
+      cantidad_sin_guia: editandoPrecio.cantidad_sin_guia !== undefined && editandoPrecio.cantidad_sin_guia !== ''
+        ? Math.max(0, Math.min(lote.cantidad || 0, parseInt(editandoPrecio.cantidad_sin_guia) || 0))
+        : (lote.cantidad_sin_guia || 0),
       plazo_dias: editandoPrecio.plazo_dias || null,
       fecha_vencimiento_pago: editandoPrecio.fecha_vencimiento_pago || null,
       comision_monto: comMonto || null,
@@ -414,12 +415,6 @@ export default function Ingresos({ usuario, mobile, nav }) {
                 style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
             </div>
           ))}
-          <div style={{ marginBottom: '.85rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: CM.amber, textTransform: 'uppercase', marginBottom: 4 }}>De esos, ¿cuántos sin guía? (en negro)</div>
-            <input type="number" inputMode="numeric" placeholder="0" value={form.cantidad_sin_guia}
-              onChange={e => setForm({...form, cantidad_sin_guia: e.target.value})}
-              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.amber}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
-          </div>
           {corralesCuarentena.length > 0 && (
             <div style={{ marginBottom: '.85rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral de cuarentena</div>
@@ -436,9 +431,9 @@ export default function Ingresos({ usuario, mobile, nav }) {
             <select value={form.transportista} onChange={e => setForm({...form, transportista: e.target.value})}
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }}>
               <option value="">— Seleccioná —</option>
-              {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+              {contactos.filter(c => c.tipo === 'transportista').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
             </select>
-            <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
+            <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Cargalo en Contactos con tipo "Transportista".</div>
           </div>
           <div style={{ marginBottom: '1rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
@@ -539,10 +534,6 @@ export default function Ingresos({ usuario, mobile, nav }) {
               <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} />
             </div>
             <div>
-              <Lbl>De esos, ¿cuántos sin guía? (en negro)</Lbl>
-              <input type="number" min="0" value={form.cantidad_sin_guia} onChange={e => setForm({...form, cantidad_sin_guia: e.target.value})} placeholder="0" style={{ ...inpMono, border: `1px solid ${S.amber}` }} />
-            </div>
-            <div>
               <Lbl>Kg báscula (control)</Lbl>
               <input type="number" value={form.kg_bascula} onChange={e => setForm({...form, kg_bascula: e.target.value})} style={inpMono} />
             </div>
@@ -580,7 +571,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
         {esDueno && (
           <Btn onClick={() => {
             setVista('nuevo')
-            setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', cantidad_sin_guia: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
+            setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
           }}>+ Nuevo ingreso</Btn>
         )}
       </div>
@@ -962,6 +953,14 @@ export default function Ingresos({ usuario, mobile, nav }) {
                     </div>
                     <div style={{ fontSize: 11, color: S.hint, marginBottom: 12 }}>
                       El N° de factura, la feria, las retenciones/cargos y las cuotas de pago se cargan después, en la pestaña "Gestión comercial", cuando llega la factura.
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <Lbl c={S.amber}>De los {l.cantidad} animales, ¿cuántos vinieron sin guía? (en negro)</Lbl>
+                      <input type="number" min="0" max={l.cantidad} value={editandoPrecio.cantidad_sin_guia ?? (l.cantidad_sin_guia || '')}
+                        onChange={e => setEditandoPrecio({...editandoPrecio, cantidad_sin_guia: e.target.value})}
+                        placeholder="0" style={{ ...inpMono, maxWidth: 280, border: `1px solid ${S.amber}` }} />
+                      <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Esto lo sabés vos, no quien carga el ingreso desde el celular — se completa acá.</div>
                     </div>
 
                                         <div style={{ display: 'flex', gap: 8 }}>

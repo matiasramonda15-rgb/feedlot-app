@@ -224,9 +224,9 @@ export default function Fletes({ usuario }) {
               <Label>Transportista *</Label>
               <select value={formNuevo.transportista} onChange={e => setFormNuevo({...formNuevo, transportista: e.target.value})} style={inp()}>
                 <option value="">— Seleccioná —</option>
-                {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                {contactos.filter(c => c.tipo === 'transportista').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
               </select>
-              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo en Contactos con tipo "Transportista".</div>
             </div>
             <div><Label>Fecha</Label><input type="date" value={formNuevo.fecha} onChange={e => setFormNuevo({...formNuevo, fecha: e.target.value})} style={inp()} /></div>
           </div>
@@ -341,7 +341,7 @@ export default function Fletes({ usuario }) {
                           <Label>Transportista</Label>
                           <select value={formEdit.transportista} onChange={e => setFormEdit({...formEdit, transportista: e.target.value})} style={inp()}>
                             <option value="">— Seleccioná —</option>
-                            {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                            {contactos.filter(c => c.tipo === 'transportista').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                           </select>
                         </div>
                         <div><Label>Fecha</Label><input type="date" value={formEdit.fecha} onChange={e => setFormEdit({...formEdit, fecha: e.target.value})} style={inp()} /></div>

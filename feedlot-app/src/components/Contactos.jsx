@@ -46,7 +46,7 @@ export default function Contactos({ usuario }) {
   const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
-  const TIPOS = ['comprador_hacienda', 'vendedor_hacienda', 'ambos', 'servicio', 'otro']
+  const TIPOS = ['comprador_hacienda', 'vendedor_hacienda', 'ambos', 'servicio', 'transportista', 'cliente_servicios', 'otro']
 
   useEffect(() => { cargar() }, [])
 
