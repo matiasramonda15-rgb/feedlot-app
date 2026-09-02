@@ -29,7 +29,7 @@ async function generarRecibo(datos, pagos) {
     iva: datos.iva,
     cbu: datos.cbu,
     fecha: datos.fecha,
-    concepto: `${datos.insumo_nombre || 'Insumo'} · ${(datos.cantidad || 0).toLocaleString('es-AR')} ${datos.unidad || ''}${datos.proveedor ? ' · ' + datos.proveedor : ''}`,
+    concepto: `${datos.insumo_nombre || 'Insumo'}${datos.cantidad ? ' · ' + datos.cantidad.toLocaleString('es-AR') + ' ' + (datos.unidad || '') : ''}${datos.proveedor ? ' · ' + datos.proveedor : ''}`,
     pagos,
   })
 }
@@ -446,6 +446,29 @@ export default function Insumos({ usuario }) {
                       },
                     })
                     if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
+                    // Un solo recibo combinado con todos los remitos pagados juntos —
+                    // antes esto no generaba ningún recibo acá, así que había que
+                    // tocar "Recibo" compra por compra después (por eso a Paula le
+                    // salía uno por producto en vez de uno solo).
+                    if (totalPagGrupal2 > 0) {
+                      const comprasPagadas = compras.filter(c => seleccionadas.includes(c.id))
+                      const contactoSel = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)
+                      const primerConDatos = comprasPagadas.find(c => c.domicilio) || comprasPagadas[0]
+                      const concepto = comprasPagadas
+                        .map(c => `${c.insumo_nombre || 'Insumo'} · ${(c.cantidad || 0).toLocaleString('es-AR')} ${c.unidad || ''}`)
+                        .join(' + ')
+                      generarRecibo({
+                        proveedor: contactoNombre || primerConDatos?.proveedor || '',
+                        domicilio: primerConDatos?.domicilio || '',
+                        localidad: contactoSel?.localidad || primerConDatos?.localidad || '',
+                        cuit: contactoSel?.cuit || primerConDatos?.cuit || '',
+                        iva: contactoSel?.iva || primerConDatos?.iva || '',
+                        cbu: contactoSel?.cbu || primerConDatos?.cbu || '',
+                        fecha: formPagoGrupal.fecha,
+                        insumo_nombre: concepto,
+                        cantidad: null, unidad: '',
+                      }, formPagoGrupal.pagos)
+                    }
                     setSeleccionadas([])
                     setPreciosGrupal({})
                     setModosGrupal({})
