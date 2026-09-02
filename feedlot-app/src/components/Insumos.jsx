@@ -257,13 +257,17 @@ export default function Insumos({ usuario }) {
               que ya tienen precio pero siguen sin pagarse del todo. */}
           {(() => {
             const sinPrecioLista = compras.filter(c => c.estado_pago === 'pendiente' && !c.total && !c.precio_unitario)
-            const conPrecioLista = compras.filter(c => c.estado_pago === 'pendiente' && (c.total || c.precio_unitario))
+            const conPrecioLista = compras.filter(c => (c.estado_pago === 'pendiente' || c.estado_pago === 'parcial') && (c.total || c.precio_unitario))
             const pendientes = [...sinPrecioLista, ...conPrecioLista]
             if (pendientes.length === 0) return null
+            const saldoPendienteDe = c => {
+              const pagado = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+              return Math.max(0, (c.total || 0) - pagado)
+            }
             const totalSel = seleccionadas.reduce((s, id) => {
               const c = pendientes.find(x => x.id === id)
               if (!c) return s
-              if (c.total) return s + c.total
+              if (c.total) return s + saldoPendienteDe(c)
               if (!preciosGrupal[id]) return s
               const valor = parseFloat(preciosGrupal[id])
               return s + (modosGrupal[id] === 'total' ? Math.round(valor) : Math.round((c.cantidad || 0) * valor))
@@ -283,7 +287,7 @@ export default function Insumos({ usuario }) {
                 <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: S.text }}>
-                      ⏳ {conPrecioLista.length} compra{conPrecioLista.length !== 1 ? 's' : ''} pendiente{conPrecioLista.length !== 1 ? 's' : ''} de pago · ${conPrecioLista.reduce((s,c)=>s+(c.total||0),0).toLocaleString('es-AR')}
+                      ⏳ {conPrecioLista.length} compra{conPrecioLista.length !== 1 ? 's' : ''} pendiente{conPrecioLista.length !== 1 ? 's' : ''} de pago · ${conPrecioLista.reduce((s,c)=>s+(c.total?saldoPendienteDe(c):0),0).toLocaleString('es-AR')}
                     </div>
                   </div>
                   <ChecklistComprasPendientes pendientes={conPrecioLista} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
@@ -492,6 +496,8 @@ export default function Insumos({ usuario }) {
                     <td style={{ padding: '9px 12px' }}>
                       {c.estado_pago === 'pagado'
                         ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Pagado</span>
+                        : c.estado_pago === 'parcial'
+                        ? <span title={`Saldo pendiente: $${Math.max(0, (c.total||0) - (c.pagos_detalle||[]).reduce((s,p)=>s+(parseFloat(p.monto)||0),0)).toLocaleString('es-AR')}`} style={{ padding: '2px 8px', borderRadius: 4, background: S.purpleLight, color: S.purple, fontSize: 11, fontWeight: 600 }}>◐ Parcial</span>
                         : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.amberLight, color: S.amber, fontSize: 11, fontWeight: 600 }}>⏳ Pendiente</span>}
                     </td>
                     <td style={{ padding: '9px 12px' }}>
@@ -534,10 +540,16 @@ export default function Insumos({ usuario }) {
                               // que coincide por nombre y se precarga solo — no tiene sentido
                               // volver a preguntarlo si ya está clarísimo de quién es la deuda.
                               const contactoMatch = c.proveedor ? contactos.find(ct => ct.nombre === c.proveedor) : null
-                              setFormPagoInline({ fecha: hoyLocal(), tipo: 'transferencia', monto: c.total ? String(c.total) : '', precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: contactoMatch?.cuit || c.cuit || '', iva: contactoMatch?.iva || c.iva || '', cbu: contactoMatch?.cbu || c.cbu || '', contacto_id: contactoMatch ? String(contactoMatch.id) : '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: c.total ? String(c.total) : '' }] })
+                              // Precargar el SALDO PENDIENTE (total menos lo ya pagado), no el
+                              // total completo — si no, un pago parcial se confunde con el total
+                              // y la compra queda mal marcada como "pagada" (bug real, 18/03).
+                              const sumaPagosPrevios = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+                              const saldoPendiente = c.total ? Math.max(0, c.total - sumaPagosPrevios) : null
+                              const montoPrecarga = saldoPendiente != null ? String(saldoPendiente) : (c.total ? String(c.total) : '')
+                              setFormPagoInline({ fecha: hoyLocal(), tipo: 'transferencia', monto: montoPrecarga, precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: contactoMatch?.cuit || c.cuit || '', iva: contactoMatch?.iva || c.iva || '', cbu: contactoMatch?.cbu || c.cbu || '', contacto_id: contactoMatch ? String(contactoMatch.id) : '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: montoPrecarga }] })
                             }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
-                              💳 Pagar
+                              💳 {c.estado_pago === 'parcial' ? 'Pagar saldo' : 'Pagar'}
                             </button>
                         }
                         <button onClick={async () => {
@@ -669,13 +681,16 @@ export default function Insumos({ usuario }) {
                           {(() => {
                             const totalPagos = formPagoInline.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
                             const montoTotal = c.total || 0
-                            const diferencia = montoTotal - totalPagos
+                            const sumaPagosPrevios = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+                            const saldoRestante = montoTotal - sumaPagosPrevios - totalPagos
                             return montoTotal > 0 ? (
-                              <div style={{ background: Math.abs(diferencia) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(diferencia) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: '1rem' }}>
-                                <span style={{ color: S.muted }}>Total gasto: <strong>${montoTotal.toLocaleString('es-AR')}</strong></span>
-                                <span style={{ margin: '0 12px', color: S.muted }}>|</span>
-                                <span style={{ color: S.muted }}>Total pagos: <strong>${totalPagos.toLocaleString('es-AR')}</strong></span>
-                                {Math.abs(diferencia) >= 0.5 && <span style={{ marginLeft: 12, color: S.amber, fontWeight: 600 }}>Diferencia: ${Math.abs(diferencia).toLocaleString('es-AR')}</span>}
+                              <div style={{ background: Math.abs(saldoRestante) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(saldoRestante) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: '1rem' }}>
+                                <div style={{ color: S.muted, marginBottom: sumaPagosPrevios > 0 ? 4 : 0 }}>Total de la compra: <strong>${montoTotal.toLocaleString('es-AR')}</strong></div>
+                                {sumaPagosPrevios > 0 && <div style={{ color: S.muted, marginBottom: 4 }}>Ya pagado antes: <strong>${sumaPagosPrevios.toLocaleString('es-AR')}</strong></div>}
+                                <div style={{ color: S.muted }}>Pagando ahora: <strong>${totalPagos.toLocaleString('es-AR')}</strong></div>
+                                <div style={{ marginTop: 4, fontWeight: 700, color: saldoRestante > 0.5 ? S.amber : S.green }}>
+                                  {saldoRestante > 0.5 ? `Queda pendiente: $${saldoRestante.toLocaleString('es-AR')}` : '✓ Con esto queda saldado'}
+                                </div>
                               </div>
                             ) : null
                           })()}
@@ -717,9 +732,26 @@ export default function Insumos({ usuario }) {
                                   if (eCheqInline) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqInline.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); setGuardandoPagoInline(false); return }
                                 }
                               }
-                              const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : c.precio_unitario || (c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
+                              // FIX (bug real 18/03): antes esto siempre pisaba el total de la
+                              // compra con lo pagado en esta pantalla y marcaba "pagado" sin
+                              // importar si era parcial — un pago parcial de $9M sobre una
+                              // compra de $36M quedaba registrado como cancelación total.
+                              // Ahora: el total real de la compra (ya cargado, o cantidad×precio
+                              // si todavía no tenía) NUNCA se pisa con el monto pagado; los pagos
+                              // se acumulan en vez de reemplazarse; y el estado se calcula
+                              // comparando lo pagado en total contra el total real.
+                              const pagosPrevios = c.pagos_detalle || []
+                              const sumaPagosPrevios = pagosPrevios.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+                              const sumaAcumulada = sumaPagosPrevios + totalPagos
+                              const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : c.precio_unitario || (!c.total && c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
+                              // Total real: el que ya tenía la compra > el que sale de cantidad×precio > si no hay ninguno de los dos, recién ahí se toma lo pagado como el total (compra sin precio cargado todavía).
+                              let totalReal = c.total || null
+                              if (!totalReal && precioUnit && c.cantidad) totalReal = Math.round(c.cantidad * precioUnit)
+                              if (!totalReal) totalReal = sumaAcumulada
+                              const nuevoEstado = sumaAcumulada >= totalReal - 0.5 ? 'pagado' : 'parcial'
+                              const pagosAcumulados = [...pagosPrevios, ...pagos]
                               const formaDesc = pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+')
-                              await supabase.from('compras_insumos').update({ estado_pago: 'pagado', total: totalPagos, precio_unitario: precioUnit, numero_factura: formPagoInline.numero_factura || null, proveedor: formPagoInline.proveedor || c.proveedor || null, cuit: formPagoInline.cuit || null, iva: formPagoInline.iva || null, cbu: formPagoInline.cbu || null, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagos, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).eq('id', c.id)
+                              await supabase.from('compras_insumos').update({ estado_pago: nuevoEstado, total: totalReal, precio_unitario: precioUnit, numero_factura: formPagoInline.numero_factura || null, proveedor: formPagoInline.proveedor || c.proveedor || null, cuit: formPagoInline.cuit || null, iva: formPagoInline.iva || null, cbu: formPagoInline.cbu || null, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagosAcumulados, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).eq('id', c.id)
                               if (precioUnit) {
                                 const tabla = c.insumo_tipo === 'sanitario' ? 'stock_sanitario' : 'stock_insumos'
                                 await supabase.from(tabla).update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
@@ -727,7 +759,7 @@ export default function Insumos({ usuario }) {
                               setPagarInline(null)
                               setGuardandoPagoInline(false)
                               await cargar()
-                              generarRecibo({ ...c, fecha: formPagoInline.fecha, precio_unitario: precioUnit, total: totalPagos }, pagos)
+                              generarRecibo({ ...c, fecha: formPagoInline.fecha, precio_unitario: precioUnit, total: totalReal }, pagos)
                             }} disabled={guardandoPagoInline} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: guardandoPagoInline ? 0.6 : 1 }}>
                               {guardandoPagoInline ? 'Guardando...' : '💾 Confirmar y emitir recibo'}
                             </button>
