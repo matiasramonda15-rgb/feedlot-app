@@ -158,7 +158,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [showDetallePrecio, setShowDetallePrecio] = useState(false)
   const [editandoComercial, setEditandoComercial] = useState(null)
   const [gcVersion, setGcVersion] = useState(0)
-  const [formComercial, setFormComercial] = useState({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
+  const [formComercial, setFormComercial] = useState({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '', sinGuia: {} })
   const [formPagoVto, setFormPagoVto] = useState('')
   const [formPagos, setFormPagos] = useState([])
   const [chequesParalelos, setChequesParalelos] = useState([])
@@ -510,12 +510,6 @@ export default function Ventas({ usuario, mobile, nav }) {
                       style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
                   </div>
                 </div>
-                <div style={{ marginTop: '.65rem' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: CM.amber, textTransform: 'uppercase', marginBottom: 4 }}>De esos, ¿cuántos sin guía? (en negro)</div>
-                  <input type="number" inputMode="numeric" placeholder="0" value={cv.cantidad_sin_guia || ''}
-                    onChange={e => { const n = [...corralesVenta]; n[i].cantidad_sin_guia = e.target.value; setCorralesVenta(n) }}
-                    style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.amber}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
-                </div>
                 {kgVivoCv > 0 && (
                   <div style={{ fontSize: 12, fontFamily: CM.mono, color: CM.blue }}>
                     Peso prom: <strong>{Math.round(kgVivoCv / (parseInt(cv.cantidad) || 1)).toLocaleString('es-AR')} kg/cabeza</strong>
@@ -763,6 +757,19 @@ export default function Ventas({ usuario, mobile, nav }) {
             </div>
           </div>
         )}
+        <div style={{ border: `1px solid ${S.amber}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10, background: S.amberLight }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 8 }}>De estos animales, ¿cuántos salieron sin guía? (en negro)</div>
+          {(grupo || []).map(gv => (
+            <div key={gv.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: S.muted }}>C-{gv.corrales?.numero || gv.corral_id} · {gv.cantidad} animales</div>
+              <input type="number" min="0" max={gv.cantidad} placeholder="0"
+                value={formComercial.sinGuia[gv.id] ?? (gv.cantidad_sin_guia || '')}
+                onChange={e => setFormComercial({...formComercial, sinGuia: {...formComercial.sinGuia, [gv.id]: e.target.value}})}
+                style={{ ...inp, border: `1px solid ${S.amber}`, fontFamily: 'monospace' }} />
+            </div>
+          ))}
+          <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Esto lo sabés vos, no quien carga la venta desde el celular — se completa acá.</div>
+        </div>
         <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Descuentos varios (opcional)</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
@@ -821,13 +828,19 @@ export default function Ventas({ usuario, mobile, nav }) {
                 const descV = descuentoVal ? Math.round(descuentoVal * prop) : 0
                 const paraleloV = montoTotal ? Math.max(0, Math.round(montoTotal * prop) - ((netoV || 0) + ivaMV - descV)) : 0
                 const retV = retMontoVal ? Math.round(retMontoVal * prop) : 0
-                await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null, retencion_monto: retV || null }).eq('id', gv.id)
+                const sinGuiaV = formComercial.sinGuia[gv.id] !== undefined && formComercial.sinGuia[gv.id] !== ''
+                  ? Math.max(0, Math.min(gv.cantidad || 0, parseInt(formComercial.sinGuia[gv.id]) || 0))
+                  : (gv.cantidad_sin_guia || 0)
+                await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null, retencion_monto: retV || null, cantidad_sin_guia: sinGuiaV }).eq('id', gv.id)
               }
             } else {
-              await _supabase.from('ventas').update(updateData).eq('id', gcKey)
+              const sinGuiaSolo = formComercial.sinGuia[gcKey] !== undefined && formComercial.sinGuia[gcKey] !== ''
+                ? Math.max(0, Math.min(v?.cantidad || 0, parseInt(formComercial.sinGuia[gcKey]) || 0))
+                : (v?.cantidad_sin_guia || 0)
+              await _supabase.from('ventas').update({ ...updateData, cantidad_sin_guia: sinGuiaSolo }).eq('id', gcKey)
             }
             setEditandoComercial(null)
-            setFormComercial({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '' })
+            setFormComercial({ monto_facturado: '', iva_pct: '10.5', descuento_monto: '', descuento_descripcion: '', tiene_retencion: false, plazo_dias: '', fecha_vencimiento: '', sinGuia: {} })
             await _cargar()
             setGcVersion(v => v + 1)
           }} style={{ flex: 1, padding: '8px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Guardar</button>
@@ -1596,7 +1609,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 style={{ background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>Quitar</button>
                             )}
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                             <div>
                               <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Corral</label>
                               <select value={cv.corral_id} onChange={e => { const n = [...corralesVenta]; n[i].corral_id = e.target.value; setCorralesVenta(n) }} style={inputStyle}>
@@ -1617,11 +1630,6 @@ export default function Ventas({ usuario, mobile, nav }) {
                               <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Kg báscula</label>
                               <input type="number" value={cv.kg_vivo} placeholder="ej. 19800"
                                 onChange={e => { const n = [...corralesVenta]; n[i].kg_vivo = e.target.value; setCorralesVenta(n) }} style={inputStyle} />
-                            </div>
-                            <div>
-                              <label style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Sin guía (en negro)</label>
-                              <input type="number" value={cv.cantidad_sin_guia || ''} placeholder="0"
-                                onChange={e => { const n = [...corralesVenta]; n[i].cantidad_sin_guia = e.target.value; setCorralesVenta(n) }} style={{ ...inputStyle, border: `1px solid ${S.amber}` }} />
                             </div>
                           </div>
                           {cSel && g && (
