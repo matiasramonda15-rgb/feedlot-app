@@ -213,7 +213,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     const [{ data: lotesDB }, { data: corralesDB }, { data: ctDB }, { data: ventasSinGuiaDB }] = await Promise.all([
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('corrales').select('id, numero, rol, sub, animales').order('numero'),
-      supabase.from('contactos').select('id, nombre, cuit, tipo, localidad, iva, cbu, actividades').eq('activo', true).order('nombre'),
+      supabase.from('contactos').select('id, nombre, cuit, tipo, tipos, localidad, iva, cbu, actividades').eq('activo', true).order('nombre'),
       supabase.from('ventas').select('cantidad_sin_guia'),
     ])
     setLotes(lotesDB || [])

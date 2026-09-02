@@ -44,7 +44,7 @@ export default function Fletes({ usuario }) {
   async function cargar() {
     const [{ data: f }, { data: ct }, { data: ch }, { data: lt }] = await Promise.all([
       supabase.from('fletes').select('*, lotes(codigo, procedencia, fecha_ingreso)').order('fecha', { ascending: false }),
-      supabase.from('contactos').select('id, nombre, localidad, actividades').order('nombre'),
+      supabase.from('contactos').select('id, nombre, localidad, actividades, tipos, tipo').order('nombre'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento'),
       // Últimos ingresos de hacienda, para poder cargarle un flete después
       // si en su momento se dejó vacío (ej. porque el transportista todavía

@@ -171,7 +171,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     setEmpleados(emps || [])
     const [{ data: s }, { data: ct }, { data: ch }, { data: regs }, { data: cps }, { data: sa }] = await Promise.all([
       supabase.from('servicios_terceros').select('*').order('fecha', { ascending: false }),
-      supabase.from('contactos').select('id, nombre').order('nombre'),
+      supabase.from('contactos').select('id, nombre, actividades, tipos, tipo').order('nombre'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera'),
       supabase.from('registros_mercaderia').select('*').order('created_at', { ascending: false }),
       supabase.from('campos').select('*, lotes_agricolas(id, numero, superficie_ha)').eq('activo', true).order('nombre'),
