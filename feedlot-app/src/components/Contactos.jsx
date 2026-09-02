@@ -14,6 +14,31 @@ function Loader() {
   return <div style={{ padding: '3rem', textAlign: 'center', color: S.muted }}>Cargando...</div>
 }
 
+// Arma una descripción corta del medio de pago para mostrar en el resumen de
+// cuenta y el PDF — antes solo decía "Pago" a secas, sin aclarar si fue
+// transferencia, efectivo, cheque propio (con nº/banco) o de tercero.
+// Sirve tanto para el formato { tipo, subtipo_cheque, cheque_propio, cheque_tercero_ids }
+// (pagos_detalle jsonb) como para el formato de columnas sueltas
+// { forma_pago, numero_cheque, banco, subtipo_cheque } (tablas pagos_compras/pagos_ventas).
+function descMedioPago(p) {
+  if (!p) return ''
+  if (p.tipo === 'canje' || p.forma_pago === 'canje') return `Canje${p.canje_detalle ? ': ' + p.canje_detalle : ''}`
+  const sub = p.subtipo_cheque
+  if (sub === 'propio') {
+    const numero = p.cheque_propio?.numero || p.numero_cheque
+    const banco = p.cheque_propio?.banco || p.banco
+    return `Cheque propio${numero ? ' #' + numero : ''}${banco ? ' (' + banco + ')' : ''}`
+  }
+  if (sub === 'tercero') {
+    const cant = p.cheque_tercero_ids?.length || p.cheque_tercero_detalle?.length || 0
+    return `Cheque de tercero${cant > 1 ? ` x${cant}` : (p.numero_cheque ? ' #' + p.numero_cheque : '')}`
+  }
+  const base = p.tipo || p.forma_pago
+  if (!base) return ''
+  if (base === 'e-cheq') return 'e-cheq'
+  return base.charAt(0).toUpperCase() + base.slice(1)
+}
+
 export default function Contactos({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [contactos, setContactos] = useState([])
@@ -266,7 +291,7 @@ export default function Contactos({ usuario }) {
         (pagosVenta[vv.id] || []).forEach(p => {
           const esPagoParalelo = p.es_paralelo || false
           if (esParalela !== esPagoParalelo) return
-          if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: `Cobro — venta ${fechaCorta}${cantVenta ? ` (${cantVenta} cab)` : ''}`, credito: 0, debito: p.monto })
+          if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: `Cobro — venta ${fechaCorta}${cantVenta ? ` (${cantVenta} cab)` : ''}${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: 0, debito: p.monto })
         })
       })
     })
@@ -288,7 +313,7 @@ export default function Contactos({ usuario }) {
       ;(pagosCompra[l.id] || []).forEach(p => {
         const esPagoParalelo = p.es_paralelo || p.es_negro || false
         if (esParalela !== esPagoParalelo) return
-        if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
+        if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: `Pago${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: p.monto, debito: 0 })
       })
     })
     ;(data.comprasInsumos || []).forEach(ci => {
@@ -296,7 +321,7 @@ export default function Contactos({ usuario }) {
       if (esParalela !== esParaleloCi) return
       if (ci.total > 0) movs.push({ fecha: ci.fecha, tipo: ci.insumo_nombre || 'Insumo', credito: 0, debito: ci.total })
       ;(ci.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
-        movs.push({ fecha: p.fecha, tipo: 'Pago', credito: p.monto, debito: 0 })
+        movs.push({ fecha: p.fecha, tipo: `Pago${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: p.monto, debito: 0 })
       })
     })
     // Gastos generales (silobolsa, flete, taller, etc.) — le debemos al proveedor.
@@ -316,7 +341,7 @@ export default function Contactos({ usuario }) {
       // gasto (es_paralelo) — ahí es donde se va a terminar de pagar.
       const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
       if (debitoEnEstaCaja > 0) movs.push({ fecha: g.fecha, tipo: g.descripcion || g.categoria || 'Gasto', credito: 0, debito: debitoEnEstaCaja })
-      if (pagadoEnEstaCaja > 0) movs.push({ fecha: g.fecha, tipo: 'Pago', credito: pagadoEnEstaCaja, debito: 0 })
+      if (pagadoEnEstaCaja > 0) movs.push({ fecha: g.fecha, tipo: `Pago${pagosEnEstaCaja.length === 1 && descMedioPago(pagosEnEstaCaja[0]) ? ' · ' + descMedioPago(pagosEnEstaCaja[0]) : ''}`, credito: pagadoEnEstaCaja, debito: 0 })
     })
     // Órdenes de trabajo con contratista — le debemos al proveedor.
     ;(data.ordenesTrabajo || []).forEach(ot => {
@@ -324,7 +349,7 @@ export default function Contactos({ usuario }) {
       if (esParalela !== esParaleloOt) return
       if (ot.costo_total > 0) movs.push({ fecha: ot.fecha, tipo: `${ot.tipo || 'Orden'}${ot.descripcion ? ' · ' + ot.descripcion : ''}`, credito: 0, debito: ot.costo_total })
       ;(ot.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
-        movs.push({ fecha: ot.fecha, tipo: 'Pago', credito: parseFloat(p.monto) || 0, debito: 0 })
+        movs.push({ fecha: ot.fecha, tipo: `Pago${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: parseFloat(p.monto) || 0, debito: 0 })
       })
     })
     // Ventas de granos — el comprador nos debe (no hay desglose de pagos parciales).
@@ -336,7 +361,7 @@ export default function Contactos({ usuario }) {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
         const fechaVgCorta = vg.fecha ? new Date(vg.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''
-        movs.push({ fecha: vg.fecha, tipo: `Cobro — venta ${vg.cultivo || 'grano'} ${fechaVgCorta}`, credito: 0, debito: parseFloat(p.monto) || 0 })
+        movs.push({ fecha: vg.fecha, tipo: `Cobro — venta ${vg.cultivo || 'grano'} ${fechaVgCorta}${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: 0, debito: parseFloat(p.monto) || 0 })
       })
     })
     // Fletes — le debemos al transportista. Se pagan de una sola vez (sin
@@ -362,7 +387,7 @@ export default function Contactos({ usuario }) {
       if (!r.monto) return
       if (esParalela !== !!r.es_paralelo) return
       movs.push({ fecha: r.fecha, tipo: `Retiro socio ${r.socio || ''}${r.concepto ? ' · ' + r.concepto : ''}`, credito: 0, debito: r.monto })
-      movs.push({ fecha: r.fecha, tipo: 'Pago', credito: r.monto, debito: 0 })
+      movs.push({ fecha: r.fecha, tipo: `Pago${descMedioPago({ forma_pago: r.forma_pago }) ? ' · ' + descMedioPago({ forma_pago: r.forma_pago }) : ''}`, credito: r.monto, debito: 0 })
     })
     // Arriendos de campos — le debemos al propietario.
     ;(data.arriendos || []).forEach(v => {
@@ -373,7 +398,7 @@ export default function Contactos({ usuario }) {
       ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
-        movs.push({ fecha: v.pagado_en || v.fecha_vencimiento, tipo: 'Pago', credito: parseFloat(p.monto) || 0, debito: 0 })
+        movs.push({ fecha: v.pagado_en || v.fecha_vencimiento, tipo: `Pago${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: parseFloat(p.monto) || 0, debito: 0 })
       })
     })
     // Créditos (bancos/financieras) — cada cuota pagada es un pago; las
@@ -405,7 +430,7 @@ export default function Contactos({ usuario }) {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
         const fechaStCorta = fecha ? new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''
-        movs.push({ fecha, tipo: `Cobro — ${st.labor || 'servicio'} ${fechaStCorta}`, credito: 0, debito: parseFloat(p.monto) || 0 })
+        movs.push({ fecha, tipo: `Cobro — ${st.labor || 'servicio'} ${fechaStCorta}${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: 0, debito: parseFloat(p.monto) || 0 })
       })
     })
     // (Acá vivía un resto de la lógica vieja que todavía cortaba el
