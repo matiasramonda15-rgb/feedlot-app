@@ -43,13 +43,13 @@ export default function CuentasPagar({ usuario, setModulo }) {
       { data: lo },
     ] = await Promise.all([
       // Compras de insumos: Alimentación, Sanidad y Agricultura comparten esta tabla
-      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').order('fecha', { ascending: true }),
-      supabase.from('gastos_generales').select('*').eq('estado_pago', 'pendiente').order('fecha', { ascending: true }),
+      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
+      supabase.from('gastos_generales').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
       // Cuotas de créditos pendientes, con los datos del crédito
-      supabase.from('pagos_creditos').select('*, creditos(descripcion, entidad, es_dolares, activo_id, activos(nombre))').eq('estado', 'pendiente').order('fecha', { ascending: true }),
-      supabase.from('fletes').select('*, lotes(codigo, procedencia)').eq('estado_pago', 'pendiente').order('fecha', { ascending: true }),
+      supabase.from('pagos_creditos').select('*, creditos(descripcion, entidad, es_dolares, activo_id, activos(nombre))').eq('estado', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
+      supabase.from('fletes').select('*, lotes(codigo, procedencia)').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
       // Compras de hacienda con saldo pendiente (no pagadas del todo)
-      supabase.from('lotes').select('*').neq('estado_pago', 'pagado').order('fecha_ingreso', { ascending: true }),
+      supabase.from('lotes').select('*').neq('estado_pago', 'pagado').eq('marcado_resuelto', false).order('fecha_ingreso', { ascending: true }),
     ])
 
     const filas = []
@@ -116,6 +116,18 @@ export default function CuentasPagar({ usuario, setModulo }) {
     filas.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
     setPendientes(filas)
     setLoading(false)
+  }
+
+  const TABLA_POR_PREFIJO = { ci: 'compras_insumos', gg: 'gastos_generales', pc: 'pagos_creditos', fl: 'fletes', lo: 'lotes' }
+
+  async function marcarResuelto(p) {
+    if (!confirm(`¿Marcar como ya resuelto "${p.descripcion}" (${p.proveedor})? Esto no registra ningún pago ni movimiento de caja — solo lo saca de esta lista porque ya se pagó antes de estar en el sistema.`)) return
+    const [prefijo, idReal] = p.id.split('-')
+    const tabla = TABLA_POR_PREFIJO[prefijo]
+    if (!tabla) return
+    const { error } = await supabase.from(tabla).update({ marcado_resuelto: true }).eq('id', parseInt(idReal))
+    if (error) { alert('Error al marcar como resuelto: ' + error.message); return }
+    setPendientes(prev => prev.filter(x => x.id !== p.id))
   }
 
   if (loading) return <Loader />
@@ -207,12 +219,20 @@ export default function CuentasPagar({ usuario, setModulo }) {
                       {p.montoUsd ? `US$ ${p.montoUsd.toLocaleString('es-AR')}` : p.monto != null ? `$${p.monto.toLocaleString('es-AR')}` : <span style={{ color: S.hint, fontWeight: 400, fontStyle: 'italic' }}>a definir</span>}
                     </td>
                     <td style={{ padding: '9px 12px' }}>
-                      {setModulo && info.modulo && (
-                        <button onClick={() => setModulo(info.modulo)}
-                          style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                          Ir a resolver →
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {setModulo && info.modulo && (
+                          <button onClick={() => setModulo(info.modulo)}
+                            style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            Ir a resolver →
+                          </button>
+                        )}
+                        {usuario?.rol === 'dueno' && (
+                          <button onClick={() => marcarResuelto(p)} title="Ya está pagado en la realidad — de antes del sistema. Esto no genera ningún pago ni movimiento, solo lo saca de esta lista."
+                            style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, background: S.greenLight, border: `1px solid #97C459`, color: S.green, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            ✅ Ya resuelto
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
