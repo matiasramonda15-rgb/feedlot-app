@@ -41,7 +41,14 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
                 {c.proveedor && <span style={{ color: S.muted, marginLeft: 8 }}>· {c.proveedor}</span>}
               </div>
               {c.total || c.precio_unitario
-                ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${(c.total || 0).toLocaleString('es-AR')}</span>
+                ? (() => {
+                    const totalReal = c.total || Math.round((c.cantidad || 0) * c.precio_unitario)
+                    const yaPagado = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+                    const saldo = Math.max(0, totalReal - yaPagado)
+                    return yaPagado > 0
+                      ? <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${saldo.toLocaleString('es-AR')} <span style={{ fontSize: 10, color: S.muted, fontWeight: 400 }}>(saldo de ${totalReal.toLocaleString('es-AR')})</span></span>
+                      : <span style={{ fontFamily: 'monospace', fontWeight: 600, color: S.red }}>${totalReal.toLocaleString('es-AR')}</span>
+                  })()
                 : null}
             </label>
             {sel && !(c.total || c.precio_unitario) && (
@@ -185,7 +192,16 @@ export async function pagarComprasPendientes(supabase, {
   for (const id of seleccionadas) {
     const c = pendientes.find(x => x.id === id)
     if (!c) continue
-    if (c.total || c.precio_unitario) { totalesFinales[id] = c.total || Math.round((c.cantidad || 0) * c.precio_unitario); continue }
+    if (c.total || c.precio_unitario) {
+      const totalReal = c.total || Math.round((c.cantidad || 0) * c.precio_unitario)
+      // Si ya tenía algo pagado antes (compra "parcial"), el reparto del
+      // pago combinado se hace sobre lo que REALMENTE falta, no sobre el
+      // total completo — si no, una compra ya cubierta en un 70% se lleva
+      // una porción del pago como si no se hubiera tocado todavía.
+      const yaPagado = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+      totalesFinales[id] = Math.max(0, totalReal - yaPagado)
+      continue
+    }
     if (!precios[id]) { totalesFinales[id] = 0; continue }
     const valorIngresado = parseFloat(precios[id])
     const esUsd = monedas?.[id] === 'USD' && cotizacionDolar
@@ -239,13 +255,15 @@ export async function pagarComprasPendientes(supabase, {
       if (actualizarPrecioReferencia) await actualizarPrecioReferencia(c, precioFinal)
     }
     // Si lo que se pagó ahora (más lo ya pagado antes, si venía de una
-    // compra ya con algo abonado) alcanza el total, queda pagado. Si no,
-    // sigue pendiente por la diferencia — así se puede fijar el precio de
-    // una compra grande y pagarla de a poco con el tiempo, sin que quede
-    // marcada como "pagada" de entrada.
+    // compra ya con algo abonado) alcanza el total, queda pagado. Si quedó
+    // algo pero no todo, queda "parcial" (no "pendiente" — si no, el pago
+    // ya guardado en pagos_detalle no se ve reflejado en el estado y parece
+    // que no se pagó nada). Si literalmente no se pagó nada, sigue pendiente.
     const pagadoPrevio = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     const pagadoTotalAcumulado = pagadoPrevio + montoPagadoAhora
-    upd.estado_pago = totalDeEstaCompra && pagadoTotalAcumulado >= totalDeEstaCompra - 1000 ? 'pagado' : 'pendiente'
+    upd.estado_pago = totalDeEstaCompra && pagadoTotalAcumulado >= totalDeEstaCompra - 1000
+      ? 'pagado'
+      : (pagadoTotalAcumulado > 0 ? 'parcial' : 'pendiente')
     const { error } = await supabase.from('compras_insumos').update(upd).eq('id', id)
     if (error) return { error }
   }

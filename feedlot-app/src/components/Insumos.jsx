@@ -325,7 +325,10 @@ export default function Insumos({ usuario }) {
           {/* Formulario pago grupal */}
           {showPagosPend && seleccionadas.length > 0 && (() => {
             const montoItem = c => {
-              if (c.total) return c.total
+              if (c.total) {
+                const yaPagado = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+                return Math.max(0, c.total - yaPagado)
+              }
               if (!preciosGrupal[c.id]) return 0
               const valor = parseFloat(preciosGrupal[c.id])
               if (modosGrupal[c.id] === 'total') return Math.round(valor)
