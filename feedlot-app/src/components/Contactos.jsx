@@ -43,7 +43,7 @@ export default function Contactos({ usuario }) {
   const [tabFicha, setTabFicha] = useState('oficial')
   const puedeVerParalelo = usuario?.rol === 'dueno' || usuario?.rol === 'secretaria'
   const [showForm, setShowForm] = useState(false)
-  const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
+  const [formContacto, setFormContacto] = useState({ nombre: '', tipos: [], tipo_otro: '', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
 
   const TIPOS = ['comprador_hacienda', 'vendedor_hacienda', 'ambos', 'servicio', 'transportista', 'cliente_servicios', 'otro']
@@ -142,9 +142,11 @@ export default function Contactos({ usuario }) {
   async function guardarContacto() {
     if (!formContacto.nombre) { alert('Ingresá el nombre'); return }
     setGuardando(true)
+    const tiposFinal = [...(formContacto.tipos || []), ...(formContacto.tipo_otro?.trim() ? [formContacto.tipo_otro.trim()] : [])]
     const datos = {
       nombre: formContacto.nombre,
-      tipo: formContacto.tipo || 'otro',
+      tipos: tiposFinal,
+      tipo: tiposFinal[0] || 'otro', // se mantiene para compatibilidad con lo que ya muestra el tipo principal
       telefono: formContacto.telefono || null,
       email: formContacto.email || null,
       cuit: formContacto.cuit || null,
@@ -201,7 +203,7 @@ export default function Contactos({ usuario }) {
     }
     await cargar()
     setShowForm(false)
-    setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
+    setFormContacto({ nombre: '', tipos: [], tipo_otro: '', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' })
     setGuardando(false)
   }
 
@@ -804,7 +806,7 @@ export default function Contactos({ usuario }) {
           </button>
           <div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{nombre}</div>
-            {contactoData?.tipo && <div style={{ fontSize: 12, color: S.muted, textTransform: 'capitalize' }}>{contactoData.tipo.replace('_', ' ')}</div>}
+            {(contactoData?.tipos?.length > 0 || contactoData?.tipo) && <div style={{ fontSize: 12, color: S.muted, textTransform: 'capitalize' }}>{(contactoData.tipos?.length > 0 ? contactoData.tipos : [contactoData.tipo]).map(t => t.replace(/_/g, ' ')).join(' · ')}</div>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
             <button onClick={() => generarResumenCuenta(nombre)}
@@ -823,7 +825,7 @@ export default function Contactos({ usuario }) {
                 }} style={{ padding: '7px 14px', fontSize: 12, background: contactoData.cuenta_verificada ? S.greenLight : 'transparent', border: `1px solid ${contactoData.cuenta_verificada ? S.green : S.border}`, color: contactoData.cuenta_verificada ? S.green : S.muted, borderRadius: 6, cursor: 'pointer' }}>
                   {contactoData.cuenta_verificada ? '✓ Cuenta revisada' : '○ Marcar como revisada'}
                 </button>
-                <button onClick={() => { setFormContacto({...contactoData}); setContactoSeleccionado(null); setShowForm(true) }}
+                <button onClick={() => { const tiposDelContacto = contactoData.tipos && contactoData.tipos.length > 0 ? contactoData.tipos : (contactoData.tipo ? [contactoData.tipo] : []); const conocidos = tiposDelContacto.filter(t => TIPOS.includes(t)); const custom = tiposDelContacto.find(t => !TIPOS.includes(t)) || ''; setFormContacto({...contactoData, tipos: conocidos, tipo_otro: custom}); setContactoSeleccionado(null); setShowForm(true) }}
                   style={{ padding: '7px 14px', fontSize: 12, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
                   Editar contacto
                 </button>
@@ -1500,7 +1502,7 @@ export default function Contactos({ usuario }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <input type="text" placeholder="Buscar contacto..." value={filtro} onChange={e => setFiltro(e.target.value)}
           style={{ width: 280, padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, fontFamily: "'IBM Plex Sans', sans-serif" }} />
-        <button onClick={() => { setFormContacto({ nombre: '', tipo: 'otro', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' }); setShowForm(!showForm) }}
+        <button onClick={() => { setFormContacto({ nombre: '', tipos: [], tipo_otro: '', telefono: '', email: '', cuit: '', banco: '', localidad: '', iva: '', cbu: '', observaciones: '' }); setShowForm(!showForm) }}
           style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Nuevo contacto
         </button>
@@ -1526,19 +1528,26 @@ export default function Contactos({ usuario }) {
                   style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
               </div>
             ))}
-            <div>
-              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Tipo</div>
-              <select value={TIPOS.includes(formContacto.tipo) ? formContacto.tipo : (formContacto.tipo ? 'personalizado' : 'otro')}
-                onChange={e => setFormContacto({...formContacto, tipo: e.target.value === 'personalizado' ? '' : e.target.value})}
-                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface }}>
-                {TIPOS.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-                <option value="personalizado">✏️ Otro (escribir)</option>
-              </select>
-              {(!TIPOS.includes(formContacto.tipo)) && (
-                <input type="text" value={formContacto.tipo || ''} onChange={e => setFormContacto({...formContacto, tipo: e.target.value})}
-                  placeholder="Escribí el tipo — ej. Corredor, Veterinario, Banco..."
-                  style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box', marginTop: 6 }} />
-              )}
+            <div style={{ gridColumn: '1/-1' }}>
+              <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 5 }}>Tipo (podés tildar más de uno — ej. vendedor de hacienda y transportista a la vez)</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                {TIPOS.map(t => {
+                  const activo = (formContacto.tipos || []).includes(t)
+                  return (
+                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '5px 10px', borderRadius: 6, border: `1px solid ${activo ? S.accent : S.border}`, background: activo ? S.accentLight : S.surface, color: activo ? S.accent : S.text, fontWeight: activo ? 600 : 400, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={activo} onChange={e => {
+                        const actuales = formContacto.tipos || []
+                        const nuevos = e.target.checked ? [...actuales, t] : actuales.filter(x => x !== t)
+                        setFormContacto({...formContacto, tipos: nuevos})
+                      }} style={{ margin: 0 }} />
+                      {t.replace(/_/g, ' ')}
+                    </label>
+                  )
+                })}
+              </div>
+              <input type="text" value={formContacto.tipo_otro || ''} onChange={e => setFormContacto({...formContacto, tipo_otro: e.target.value})}
+                placeholder="Otra categoría (opcional) — ej. Corredor, Veterinario, Banco..."
+                style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface, boxSizing: 'border-box' }} />
             </div>
             <div style={{ gridColumn: '1/-1' }}>
               <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 5 }}>Asociado a (para que aparezca solo en las listas relevantes — si no marcás nada, aparece en todas)</div>
@@ -1631,7 +1640,7 @@ export default function Contactos({ usuario }) {
                       </span>
                     )}
                   </div>
-                  {contactoData?.tipo && <div style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize', marginTop: 2 }}>{contactoData.tipo.replace(/_/g, ' ')}</div>}
+                  {(contactoData?.tipos?.length > 0 || contactoData?.tipo) && <div style={{ fontSize: 11, color: S.muted, textTransform: 'capitalize', marginTop: 2 }}>{(contactoData.tipos?.length > 0 ? contactoData.tipos : [contactoData.tipo]).map(t => t.replace(/_/g, ' ')).join(' · ')}</div>}
                 </div>
                 {tieneTransacciones && (
                   <div style={{ textAlign: 'right' }}>
@@ -1648,7 +1657,7 @@ export default function Contactos({ usuario }) {
                 {contactoData?.telefono && <span style={{ fontSize: 11, color: S.muted }}>📞 {contactoData.telefono}</span>}
               </div>
               {!contactoData && (
-                <button onClick={e => { e.stopPropagation(); setFormContacto({ nombre, tipo: 'otro', telefono: '', email: '', cuit: '', direccion: '', observaciones: '' }); setShowForm(true) }}
+                <button onClick={e => { e.stopPropagation(); setFormContacto({ nombre, tipos: [], tipo_otro: '', telefono: '', email: '', cuit: '', direccion: '', observaciones: '' }); setShowForm(true) }}
                   style={{ marginTop: 8, width: '100%', padding: '4px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer' }}>
                   + Agregar datos
                 </button>

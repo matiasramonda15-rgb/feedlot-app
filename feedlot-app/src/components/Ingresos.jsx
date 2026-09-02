@@ -431,7 +431,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
             <select value={form.transportista} onChange={e => setForm({...form, transportista: e.target.value})}
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }}>
               <option value="">— Seleccioná —</option>
-              {contactos.filter(c => c.tipo === 'transportista').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+              {contactos.filter(c => c.tipos?.includes('transportista')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
             </select>
             <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Cargalo en Contactos con tipo "Transportista".</div>
           </div>
