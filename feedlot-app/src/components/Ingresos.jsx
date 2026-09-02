@@ -75,6 +75,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   const [lotes, setLotes] = useState([])
   const [corrales, setCorrales] = useState([])
   const [contactos, setContactos] = useState([])
+  const [ventasSinGuia, setVentasSinGuia] = useState([])
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('lista') // 'lista' | 'nuevo' | 'editar'
   const [filtroListaIngresos, setFiltroListaIngresos] = useState('')
@@ -84,7 +85,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   // Nuevo ingreso form
   const [form, setForm] = useState({
     procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años',
-    cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '',
+    cantidad: '', cantidad_sin_guia: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '',
   })
 
   // Completar datos (precio, kg factura, comercial)
@@ -209,24 +210,28 @@ export default function Ingresos({ usuario, mobile, nav }) {
 
   async function cargarDatos() {
     setLoading(true)
-    const [{ data: lotesDB }, { data: corralesDB }, { data: ctDB }] = await Promise.all([
+    const [{ data: lotesDB }, { data: corralesDB }, { data: ctDB }, { data: ventasSinGuiaDB }] = await Promise.all([
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('corrales').select('id, numero, rol, sub, animales').order('numero'),
       supabase.from('contactos').select('id, nombre, cuit, tipo, localidad, iva, cbu, actividades').eq('activo', true).order('nombre'),
+      supabase.from('ventas').select('cantidad_sin_guia'),
     ])
     setLotes(lotesDB || [])
     setCorrales(corralesDB || [])
     setContactos(ctDB || [])
+    setVentasSinGuia(ventasSinGuiaDB || [])
     setLoading(false)
   }
 
   async function guardarIngreso() {
     if (!form.cantidad || !form.kg_bascula) { alert('Completá cantidad y kg báscula'); return }
+    if (parseInt(form.cantidad_sin_guia) > parseInt(form.cantidad)) { alert('La cantidad sin guía no puede ser mayor a la cantidad total'); return }
     setGuardando(true)
     const { error, lote } = await registrarIngresoLote(supabase, {
       procedencia: form.procedencia,
       categoria: form.categoria,
       cantidad: form.cantidad,
+      cantidadSinGuia: form.cantidad_sin_guia,
       kgBascula: form.kg_bascula,
       observaciones: form.observaciones,
       corralId: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
@@ -234,7 +239,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     }, usuario)
     if (error) { alert('Error al guardar el ingreso: ' + error.message); setGuardando(false); return }
     await cargarDatos()
-    setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '' })
+    setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', cantidad_sin_guia: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '' })
     setGuardando(false)
     if (mobile) { alert(`Lote ${lote?.codigo || ''} registrado.`); nav('home') }
     else setVista('lista')
@@ -246,7 +251,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     const procFinal = form.procedencia || null
     const { error } = await supabase.from('lotes').update({
       procedencia: procFinal || null, categoria: form.categoria,
-      cantidad: parseInt(form.cantidad) || null, kg_bascula: parseFloat(form.kg_bascula) || null,
+      cantidad: parseInt(form.cantidad) || null, cantidad_sin_guia: Math.max(0, Math.min(parseInt(form.cantidad) || 0, parseInt(form.cantidad_sin_guia) || 0)), kg_bascula: parseFloat(form.kg_bascula) || null,
       observaciones: form.observaciones || null,
       corral_cuarentena_id: form.corral_cuarentena_id ? parseInt(form.corral_cuarentena_id) : null,
     }).eq('id', editandoLote.id)
@@ -409,6 +414,12 @@ export default function Ingresos({ usuario, mobile, nav }) {
                 style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
             </div>
           ))}
+          <div style={{ marginBottom: '.85rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.amber, textTransform: 'uppercase', marginBottom: 4 }}>De esos, ¿cuántos sin guía? (en negro)</div>
+            <input type="number" inputMode="numeric" placeholder="0" value={form.cantidad_sin_guia}
+              onChange={e => setForm({...form, cantidad_sin_guia: e.target.value})}
+              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.amber}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
+          </div>
           {corralesCuarentena.length > 0 && (
             <div style={{ marginBottom: '.85rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Corral de cuarentena</div>
@@ -528,6 +539,10 @@ export default function Ingresos({ usuario, mobile, nav }) {
               <input type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} style={inpMono} />
             </div>
             <div>
+              <Lbl>De esos, ¿cuántos sin guía? (en negro)</Lbl>
+              <input type="number" min="0" value={form.cantidad_sin_guia} onChange={e => setForm({...form, cantidad_sin_guia: e.target.value})} placeholder="0" style={{ ...inpMono, border: `1px solid ${S.amber}` }} />
+            </div>
+            <div>
               <Lbl>Kg báscula (control)</Lbl>
               <input type="number" value={form.kg_bascula} onChange={e => setForm({...form, kg_bascula: e.target.value})} style={inpMono} />
             </div>
@@ -565,7 +580,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
         {esDueno && (
           <Btn onClick={() => {
             setVista('nuevo')
-            setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
+            setForm({ procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años', cantidad: '', cantidad_sin_guia: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '' })
           }}>+ Nuevo ingreso</Btn>
         )}
       </div>
@@ -974,6 +989,17 @@ export default function Ingresos({ usuario, mobile, nav }) {
       {/* ── TAB INGRESOS ── */}
       {tab === 'lista' && (
         <div>
+          {(() => {
+            const negroIngresado = lotes.reduce((s, l) => s + (l.cantidad_sin_guia || 0), 0)
+            const negroVendido = ventasSinGuia.reduce((s, v) => s + (v.cantidad_sin_guia || 0), 0)
+            const negroActual = Math.max(0, negroIngresado - negroVendido)
+            return negroIngresado > 0 || negroVendido > 0 ? (
+              <div style={{ background: S.amberLight, border: `1px solid #EF9F27`, borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: S.amber, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <span>🐂 <strong>{negroActual}</strong> animales sin guía actualmente en el stock (aprox.)</span>
+                <span style={{ color: S.muted }}>Entraron sin guía: {negroIngresado} · Salieron sin guía: {negroVendido}</span>
+              </div>
+            ) : null
+          })()}
           <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
             <select value={filtroListaIngresos} onChange={e => setFiltroListaIngresos(e.target.value)}
               style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroListaIngresos ? S.accent : S.muted, fontWeight: filtroListaIngresos ? 600 : 400 }}>

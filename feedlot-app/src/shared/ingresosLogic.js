@@ -12,13 +12,16 @@ function generarCodigoLote() {
   return `L-${year}-${sufijo}`
 }
 
-// datos: { procedencia, categoria, cantidad, kgBascula, observaciones, corralId, transportista }
+// datos: { procedencia, categoria, cantidad, kgBascula, observaciones, corralId, transportista, cantidadSinGuia }
 // Nota: la procedencia se guarda tal cual como texto en el lote — esta función
 // NUNCA crea un contacto nuevo en la tabla `contactos`. Los contactos solo se
 // crean desde el módulo Contactos, para evitar que un typo o un espacio de más
 // tipeado rápido desde el celular termine generando un contacto duplicado.
 // Si el nombre no coincide con ningún contacto real, se puede asociar más
 // adelante a mano desde Gestión Comercial o Contactos.
+// cantidadSinGuia: de los animales que ingresan en este lote, cuántos vienen
+// sin guía (en negro) — por ejemplo, una jaula de 85 terneros donde 4 o 5 no
+// tienen documentación. El resto de la cantidad se asume en blanco.
 // Devuelve { error, lote }
 export async function registrarIngresoLote(supabase, datos, usuario) {
   if (!datos.cantidad || !datos.kgBascula) {
@@ -28,6 +31,7 @@ export async function registrarIngresoLote(supabase, datos, usuario) {
   const procFinal = (datos.procedencia || '').trim() || null
   const cantidad = parseInt(datos.cantidad)
   const kgBascula = parseFloat(datos.kgBascula)
+  const cantidadSinGuia = Math.max(0, Math.min(cantidad, parseInt(datos.cantidadSinGuia) || 0))
   const hoy = new Date().toISOString().split('T')[0]
 
   const { data: lote, error } = await supabase.from('lotes').insert({
@@ -36,6 +40,7 @@ export async function registrarIngresoLote(supabase, datos, usuario) {
     procedencia: procFinal,
     categoria: datos.categoria,
     cantidad,
+    cantidad_sin_guia: cantidadSinGuia,
     kg_bascula: kgBascula,
     peso_prom_ingreso: Math.round((kgBascula / cantidad) * 100) / 100,
     observaciones: datos.observaciones || null,

@@ -510,6 +510,12 @@ export default function Ventas({ usuario, mobile, nav }) {
                       style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
                   </div>
                 </div>
+                <div style={{ marginTop: '.65rem' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: CM.amber, textTransform: 'uppercase', marginBottom: 4 }}>De esos, ¿cuántos sin guía? (en negro)</div>
+                  <input type="number" inputMode="numeric" placeholder="0" value={cv.cantidad_sin_guia || ''}
+                    onChange={e => { const n = [...corralesVenta]; n[i].cantidad_sin_guia = e.target.value; setCorralesVenta(n) }}
+                    style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.amber}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.amber, boxSizing: 'border-box' }} />
+                </div>
                 {kgVivoCv > 0 && (
                   <div style={{ fontSize: 12, fontFamily: CM.mono, color: CM.blue }}>
                     Peso prom: <strong>{Math.round(kgVivoCv / (parseInt(cv.cantidad) || 1)).toLocaleString('es-AR')} kg/cabeza</strong>
@@ -1590,7 +1596,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 style={{ background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer' }}>Quitar</button>
                             )}
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem' }}>
                             <div>
                               <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Corral</label>
                               <select value={cv.corral_id} onChange={e => { const n = [...corralesVenta]; n[i].corral_id = e.target.value; setCorralesVenta(n) }} style={inputStyle}>
@@ -1611,6 +1617,11 @@ export default function Ventas({ usuario, mobile, nav }) {
                               <label style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Kg báscula</label>
                               <input type="number" value={cv.kg_vivo} placeholder="ej. 19800"
                                 onChange={e => { const n = [...corralesVenta]; n[i].kg_vivo = e.target.value; setCorralesVenta(n) }} style={inputStyle} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 4 }}>Sin guía (en negro)</label>
+                              <input type="number" value={cv.cantidad_sin_guia || ''} placeholder="0"
+                                onChange={e => { const n = [...corralesVenta]; n[i].cantidad_sin_guia = e.target.value; setCorralesVenta(n) }} style={{ ...inputStyle, border: `1px solid ${S.amber}` }} />
                             </div>
                           </div>
                           {cSel && g && (

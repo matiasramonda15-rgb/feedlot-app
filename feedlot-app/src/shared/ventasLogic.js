@@ -6,11 +6,13 @@
 // Crear contactos de verdad es exclusivo del módulo Contactos, para evitar
 // duplicados por typos.
 
-// corralesVenta: [{ corral_id, cantidad, kg_vivo, desbaste_pct?, precio_kg? }]
+// corralesVenta: [{ corral_id, cantidad, kg_vivo, desbaste_pct?, precio_kg?, cantidad_sin_guia? }]
 // desbaste_pct/precio_kg en cada fila son opcionales — si una fila no los trae,
 // usa el desbaste/precio general de la venta. Así se puede vender la misma
 // tropa al mismo comprador, pero unos pocos animales (una fila aparte) a otro
 // precio o con otro desbaste.
+// cantidad_sin_guia (por fila): de esos animales, cuántos salen sin guía (en
+// negro). El resto de la cantidad de esa fila se asume en blanco.
 // precioKg, montoFacturado, plazoDias son opcionales — si no se pasan, la
 // venta queda "pendiente" de precio (para completarse después, ej. desde PC).
 // Devuelve { error, cantidadVentas, totalKgNeto, montoTotal }
@@ -47,6 +49,7 @@ export async function registrarVenta(supabase, {
     const { error } = await supabase.from('ventas').insert({
       corral_id: parseInt(cv.corral_id),
       cantidad: parseInt(cv.cantidad),
+      cantidad_sin_guia: Math.max(0, Math.min(parseInt(cv.cantidad) || 0, parseInt(cv.cantidad_sin_guia) || 0)),
       kg_vivo_total: parseFloat(cv.kg_vivo),
       desbaste_pct: desbCv,
       kg_neto: kgNetoCv,
