@@ -1751,18 +1751,23 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                         <div style={{ display: 'flex', gap: 4 }}>
                           {c.retirado === false && (
                             <button onClick={async () => {
-                              // Si ya había un retiro parcial cargado antes, solo hay que
-                              // sumar al stock lo que FALTA (no la cantidad total) — sumar
-                              // todo de nuevo duplicaría lo que ya se había retirado y sumado.
-                              const faltante = Math.max(0, (c.cantidad || 0) - (c.cantidad_retirada || 0))
-                              if (faltante > 0) {
-                                const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: faltante })
-                                if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
-                              }
-                              await supabase.from('compras_insumos').update({ retirado: true, cantidad_retirada: c.cantidad }).eq('id', c.id)
+                              const yaRetirado = c.cantidad_retirada || 0
+                              const restante = Math.max(0, (c.cantidad || 0) - yaRetirado)
+                              const respuesta = prompt(`¿Cuánto ${c.insumo_nombre || 'del insumo'} se retiró ahora?\n\nQueda pendiente: ${restante.toLocaleString('es-AR')} kg\n\nEscribí la cantidad (podés retirar menos que el total, o todo):`, '')
+                              if (respuesta === null) return // canceló el prompt
+                              const cant = parseFloat(respuesta.replace(',', '.'))
+                              if (!cant || cant <= 0) { alert('No se registró nada — hay que escribir un número mayor a 0.'); return }
+                              if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} kg por retirar — no se puede retirar más de eso.`); return }
+                              if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} kg de ${c.insumo_nombre || 'insumo'} al stock.\n\n¿Es correcto?`)) return
+                              const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: cant })
+                              if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
+                              const nuevaCantidadRetirada = yaRetirado + cant
+                              const completo = nuevaCantidadRetirada >= (c.cantidad || 0) - 0.01
+                              await supabase.from('compras_insumos').update({ retirado: completo, cantidad_retirada: nuevaCantidadRetirada }).eq('id', c.id)
+                              await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: c.id, fecha: hoyLocal(), cantidad: cant })
                               onReload()
                             }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
-                              📦 Marcar retirado
+                              📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}
                             </button>
                           )}
                           <button onClick={async () => {
