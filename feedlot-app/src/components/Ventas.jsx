@@ -6,6 +6,17 @@ import { Loader } from './UI'
 import { registrarVenta } from '../shared/ventasLogic'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
+
+// Suma días corridos a una fecha (YYYY-MM-DD) y devuelve el resultado en el
+// mismo formato — usado para calcular solo el vencimiento a partir del
+// plazo en días, sin tener que escribirlo a mano por separado.
+function calcularVencimiento(fechaBase, plazoDias) {
+  if (!fechaBase || !plazoDias) return null
+  const d = new Date(fechaBase + 'T12:00:00')
+  d.setDate(d.getDate() + parseInt(plazoDias))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function MobileTopbar({ titulo, sub, onBack }) {
   return (
     <div style={{ background: CM.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CM.border}` }}>
@@ -785,6 +796,26 @@ export default function Ventas({ usuario, mobile, nav }) {
           {descuento > 0 && <div style={{ fontSize: 12, color: S.red, marginTop: 6, fontFamily: 'monospace' }}>Neto final: ${(totalFact - descuento).toLocaleString('es-AR')} (descuento: -${descuento.toLocaleString('es-AR')})</div>}
         </div>
         <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Plazo de cobro (opcional)</div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ fontSize: 11, color: S.muted, display: 'block', marginBottom: 4 }}>Días</label>
+              <input type="number" min="0" placeholder="0 = contado" value={formComercial.plazo_dias || ''}
+                onChange={e => setFormComercial({...formComercial, plazo_dias: e.target.value})}
+                style={{ ...inp, width: 100, fontFamily: 'monospace' }} />
+            </div>
+            {parseInt(formComercial.plazo_dias) > 0 && (() => {
+              const fechaBase = v.fecha || v.creado_en?.split('T')[0]
+              const vto = fechaBase ? calcularVencimiento(fechaBase, parseInt(formComercial.plazo_dias)) : null
+              return vto ? (
+                <div style={{ fontSize: 12, color: S.amber, fontWeight: 600 }}>
+                  Vence el {new Date(vto + 'T12:00:00').toLocaleDateString('es-AR')}
+                </div>
+              ) : null
+            })()}
+          </div>
+        </div>
+        <div style={{ border: `1px solid ${S.border}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
             <input type="checkbox" checked={formComercial.tiene_retencion || false} onChange={e => setFormComercial({...formComercial, tiene_retencion: e.target.checked})} />
             Retención de Ganancias
@@ -808,6 +839,8 @@ export default function Ventas({ usuario, mobile, nav }) {
             const netoFinalVal = netoVal + ivaMVal
             const paraleloVal = montoTotal > 0 ? Math.max(0, montoTotal - netoFinalVal) : 0
             const retMontoVal = formComercial.tiene_retencion && netoVal ? Math.max(0, Math.round((netoVal - 224000) * 0.02)) : 0
+            const plazoVal = formComercial.plazo_dias ? parseInt(formComercial.plazo_dias) : 0
+            const fechaBaseVto = v.fecha || v.creado_en?.split('T')[0]
             const updateData = {
               monto_facturado: netoVal || null, monto_negro: paraleloVal,
               iva_pct: ivaVal, iva_monto: ivaMVal,
@@ -816,8 +849,10 @@ export default function Ventas({ usuario, mobile, nav }) {
               estado_comercial: 'facturado',
               tiene_retencion: formComercial.tiene_retencion || false,
               retencion_monto: retMontoVal || null,
-              plazo_dias: formComercial.plazo_dias ? parseInt(formComercial.plazo_dias) : null,
-              fecha_vencimiento_cobro: formComercial.fecha_vencimiento || null,
+              plazo_dias: plazoVal || null,
+              // Se calcula sola a partir del plazo — antes había que escribir la
+              // fecha a mano por separado, y quedaba desalineada del plazo.
+              fecha_vencimiento_cobro: plazoVal > 0 && fechaBaseVto ? calcularVencimiento(fechaBaseVto, plazoVal) : null,
             }
             if (isGroup) {
               const totalKgNet = (grupo || []).reduce((s, gv) => s + (gv.kg_neto || 0), 0)
@@ -1162,6 +1197,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                               <button onClick={async () => {
                                 const fecha = new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
                                 const total = v.monto_total_con_iva || v.total || 0
+                                const vto = v.fecha_vencimiento_cobro || calcularVencimiento(v.fecha || v.creado_en?.split('T')[0], v.plazo_dias)
                                 await generarPdfVenta(
                                   `Venta C-${v.corrales?.numero || v.corral_id}`,
                                   [
@@ -1175,6 +1211,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                     ['Kg netos', `${(v.kg_neto || 0).toLocaleString('es-AR')} kg`],
                                     ['$/kg', v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : '—'],
                                     ['Total', `$${total.toLocaleString('es-AR')}`],
+                                    ...(vto ? [['Vencimiento', new Date(vto + 'T12:00:00').toLocaleDateString('es-AR')]] : []),
                                     ...(v.observaciones ? [['Observaciones', v.observaciones]] : []),
                                   ],
                                   [
@@ -1294,6 +1331,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                               <button onClick={async () => {
                                 const fecha = new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
                                 const corralesStr = (g || []).map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
+                                const vto0 = v0.fecha_vencimiento_cobro || calcularVencimiento(v0.fecha || v0.creado_en?.split('T')[0], v0.plazo_dias)
                                 await generarPdfVenta(
                                   `Venta ${corralesStr}`,
                                   [
@@ -1311,6 +1349,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                           ['$/kg', v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'],
                                         ]),
                                     ['Total', `$${totalMonto.toLocaleString('es-AR')}`],
+                                    ...(vto0 ? [['Vencimiento', new Date(vto0 + 'T12:00:00').toLocaleDateString('es-AR')]] : []),
                                     ...(v0.observaciones ? [['Observaciones', v0.observaciones]] : []),
                                   ],
                                   [
