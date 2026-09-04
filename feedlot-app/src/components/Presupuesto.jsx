@@ -15,6 +15,18 @@ const S = {
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 const ACTIVIDADES = ['Feedlot', 'Agricultura', 'Servicios']
 
+// La plata de un cheque (propio o de tercero) recién se mueve de verdad
+// cuando el cheque se hace efectivo, no el día que se entregó/recibió el
+// recibo — un cheque a 60 días entregado hoy no sale de la cuenta hoy.
+// Para todo lo demás (efectivo, transferencia) la fecha del pago ya es la
+// fecha real, así que se usa tal cual.
+function fechaRealPago(p) {
+  if (!p) return null
+  const fechaCheque = p.cheque_propio?.fecha_vencimiento || p.fecha_vencimiento_cheque || p.cheque_tercero_detalle?.[0]?.fecha_vencimiento
+  if (fechaCheque) return fechaCheque
+  return p.fecha
+}
+
 function fmt(n) {
   if (n == null || n === 0) return ''
   return Math.round(n).toLocaleString('es-AR')
@@ -50,75 +62,107 @@ async function cargarDatosActividad(actividad, fechaDesde, idsCredito) {
   // está en Personal, acá solo interesa el total mensual por actividad.
   const MANO_DE_OBRA = 'Mano de obra'
 
+  // Para compras/gastos/ventas que se pagan o cobran en cuotas (insumos a
+  // 30/60 días, ventas de granos, servicios): cada pago dentro de
+  // pagos_detalle cuenta en el mes de SU PROPIA fecha, no en el mes del
+  // registro original. Si un registro pendiente todavía no tiene ningún
+  // pago cargado, no suma nada todavía — es correcto, esa plata no se
+  // movió. Los pagos viejos que no tengan fecha propia (de antes de este
+  // cambio) usan la fecha del registro como respaldo.
+  const sumaPorPagos = (obj, categoria, pagosDetalle, fechaFallback) => {
+    ;(pagosDetalle || []).forEach(p => {
+      const monto = parseFloat(p.monto) || 0
+      if (!monto) return
+      suma(obj, categoria, fechaRealPago(p) || fechaFallback, monto)
+    })
+  }
+
   if (actividad === 'Feedlot') {
-    const [{ data: pagosVentasHacienda }, { data: comprasVentas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }] = await Promise.all([
+    const [{ data: pagosVentasHacienda }, { data: comprasVentas }, { data: pagosCompraHacienda }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }] = await Promise.all([
       // Se cuenta la plata cuando se COBRA (fecha real del pago), no cuando
       // se hizo la venta — hasta que no se cobra, esa plata no entró a la
       // cuenta de verdad, así que no puede figurar como ingreso del mes de
       // la venta.
-      supabase.from('pagos_ventas').select('venta_id, fecha, monto').gte('fecha', fechaDesde),
+      supabase.from('pagos_ventas').select('venta_id, fecha, monto, subtipo_cheque, fecha_vencimiento_cheque').gte('fecha', fechaDesde),
       supabase.from('ventas').select('id, comprador'),
-      supabase.from('lotes').select('monto_facturado, iva_monto, monto_negro, fecha_ingreso, procedencia').gte('fecha_ingreso', fechaDesde),
-      supabase.from('compras_insumos').select('id, total, fecha, proveedor, insumo_tipo').gte('fecha', fechaDesde).in('insumo_tipo', ['alimentacion', 'sanitario']),
+      // Igual del otro lado: una invernada comprada hoy pero pactada a
+      // 30/60 días recién sale de la cuenta cuando se paga esa cuota, no
+      // cuando se hizo la compra.
+      supabase.from('pagos_compras').select('lote_id, fecha, monto, subtipo_cheque, cheque_propio, cheque_tercero_detalle').not('lote_id', 'is', null).gte('fecha', fechaDesde),
+      supabase.from('compras_insumos').select('id, total, fecha, proveedor, insumo_tipo, pagos_detalle').gte('fecha', fechaDesde).in('insumo_tipo', ['alimentacion', 'sanitario']),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
-      supabase.from('gastos_generales').select('monto, fecha, categoria, actividad').gte('fecha', fechaDesde).in('actividad', ['Feedlot', 'General']),
+      supabase.from('gastos_generales').select('monto, fecha, categoria, actividad, pagos_detalle').gte('fecha', fechaDesde).in('actividad', ['Feedlot', 'General']),
       supabase.from('fletes').select('monto, fecha, transportista, estado_pago').gte('fecha', fechaDesde).eq('estado_pago', 'pagado'),
     ])
+    const { data: procedenciaPorLote } = await supabase.from('lotes').select('id, procedencia')
+    const procPorLote = {}
+    ;(procedenciaPorLote || []).forEach(l => { procPorLote[l.id] = l.procedencia })
     const compradorPorVenta = {}
     ;(comprasVentas || []).forEach(v => { compradorPorVenta[v.id] = v.comprador })
-    ;(pagosVentasHacienda || []).forEach(p => suma(ingresos, `Venta hacienda — ${compradorPorVenta[p.venta_id] || 'sin comprador'}`, p.fecha, p.monto))
-    ;(lotes || []).forEach(l => suma(egresos, `Compra hacienda — ${l.procedencia || 'sin procedencia'}`, l.fecha_ingreso, (l.monto_facturado || 0) + (l.iva_monto || 0) + (l.monto_negro || 0)))
-    ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total) })
+    ;(pagosVentasHacienda || []).forEach(p => suma(ingresos, `Venta hacienda — ${compradorPorVenta[p.venta_id] || 'sin comprador'}`, fechaRealPago(p), p.monto))
+    ;(pagosCompraHacienda || []).forEach(p => suma(egresos, `Compra hacienda — ${procPorLote[p.lote_id] || 'sin procedencia'}`, fechaRealPago(p), p.monto))
+    ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; sumaPorPagos(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.pagos_detalle, c.fecha) })
     ;(pagosEmp || []).forEach(p => {
       const act = p.empleados?.actividad
       if (act !== 'Feedlot' && act !== 'General') return
       suma(egresos, MANO_DE_OBRA, p.fecha || p.creado_en?.split('T')[0], act === 'General' ? (p.monto || 0) / 3 : (p.monto || 0))
     })
-    ;(gastos || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, g.actividad === 'General' ? (g.monto || 0) / 3 : (g.monto || 0)))
+    ;(gastos || []).forEach(g => {
+      const divisor = g.actividad === 'General' ? 3 : 1
+      const pagosAjustados = (g.pagos_detalle || []).map(p => ({ ...p, monto: (parseFloat(p.monto) || 0) / divisor }))
+      sumaPorPagos(egresos, `Gastos generales — ${g.categoria || 'otro'}`, pagosAjustados, g.fecha)
+    })
     // Fletes: no tienen actividad propia — por ahora se asumen todos de
     // Feedlot (transporte de hacienda), que es el caso más común.
     ;(fletes || []).forEach(f => suma(egresos, `Fletes — ${f.transportista || 'sin transportista'}`, f.fecha, f.monto))
   } else if (actividad === 'Agricultura') {
     const [{ data: ventasG }, { data: compras }, { data: ordenes }, { data: gastosAgro }, { data: pagosEmp }, { data: gastosGen }] = await Promise.all([
-      supabase.from('ventas_granos').select('total, monto_negro, fecha, comprador, estado').gte('fecha', fechaDesde).neq('estado', 'pactada'),
-      supabase.from('compras_insumos').select('id, total, fecha, proveedor').gte('fecha', fechaDesde).eq('insumo_tipo', 'agro'),
-      supabase.from('ordenes_trabajo').select('costo_total, fecha, proveedor, tipo').gte('fecha', fechaDesde).eq('es_propia', false),
-      supabase.from('gastos_generales').select('monto, fecha, categoria').gte('fecha', fechaDesde).eq('actividad', 'Agricultura'),
+      supabase.from('ventas_granos').select('total, monto_negro, fecha, comprador, estado, pagos_detalle').gte('fecha', fechaDesde).neq('estado', 'pactada'),
+      supabase.from('compras_insumos').select('id, total, fecha, proveedor, pagos_detalle').gte('fecha', fechaDesde).eq('insumo_tipo', 'agro'),
+      supabase.from('ordenes_trabajo').select('costo_total, fecha, proveedor, tipo, pagos_detalle').gte('fecha', fechaDesde).eq('es_propia', false),
+      supabase.from('gastos_generales').select('monto, fecha, categoria, pagos_detalle').gte('fecha', fechaDesde).eq('actividad', 'Agricultura'),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
-      supabase.from('gastos_generales').select('monto, fecha, categoria').gte('fecha', fechaDesde).eq('actividad', 'General'),
+      supabase.from('gastos_generales').select('monto, fecha, categoria, pagos_detalle').gte('fecha', fechaDesde).eq('actividad', 'General'),
     ])
     // "total" en ventas_granos ya es el monto completo (facturado + negro
     // incluidos, no aparte) — sumarle monto_negro de nuevo duplicaba
     // cualquier venta con parte negro (la venta interna a Feedlot, por
-    // ejemplo, aparecía el doble).
-    ;(ventasG || []).forEach(v => suma(ingresos, `Venta granos — ${v.comprador || 'sin comprador'}`, v.fecha, v.total || 0))
-    ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total) })
-    ;(ordenes || []).forEach(o => suma(egresos, `${o.tipo || 'Orden de trabajo'} — ${o.proveedor || 'sin proveedor'}`, o.fecha, o.costo_total))
-    ;(gastosAgro || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, g.monto))
+    // ejemplo, aparecía el doble). Al sumar por pago individual esto ya no
+    // aplica: cada pago (blanco o negro) ya viene por separado en el array.
+    ;(ventasG || []).forEach(v => sumaPorPagos(ingresos, `Venta granos — ${v.comprador || 'sin comprador'}`, v.pagos_detalle, v.fecha))
+    ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; sumaPorPagos(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.pagos_detalle, c.fecha) })
+    ;(ordenes || []).forEach(o => sumaPorPagos(egresos, `${o.tipo || 'Orden de trabajo'} — ${o.proveedor || 'sin proveedor'}`, o.pagos_detalle, o.fecha))
+    ;(gastosAgro || []).forEach(g => sumaPorPagos(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.pagos_detalle, g.fecha))
     ;(pagosEmp || []).forEach(p => {
       const act = p.empleados?.actividad
       if (act !== 'Agricultura' && act !== 'General') return
       suma(egresos, MANO_DE_OBRA, p.fecha || p.creado_en?.split('T')[0], act === 'General' ? (p.monto || 0) / 3 : (p.monto || 0))
     })
-    ;(gastosGen || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, (g.monto || 0) / 3))
+    ;(gastosGen || []).forEach(g => {
+      const pagosAjustados = (g.pagos_detalle || []).map(p => ({ ...p, monto: (parseFloat(p.monto) || 0) / 3 }))
+      sumaPorPagos(egresos, `Gastos generales — ${g.categoria || 'otro'}`, pagosAjustados, g.fecha)
+    })
   } else if (actividad === 'Servicios') {
     const [{ data: servicios }, { data: pagosEmp }, { data: gastosServ }, { data: gastosGen }] = await Promise.all([
-      supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, cliente, tipo_servicio, orden_trabajo_id, labor').gte('fecha', fechaDesde),
+      supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, cliente, tipo_servicio, orden_trabajo_id, labor, pagos_detalle').gte('fecha', fechaDesde),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
-      supabase.from('gastos_generales').select('monto, fecha, categoria').gte('fecha', fechaDesde).eq('actividad', 'Servicios'),
-      supabase.from('gastos_generales').select('monto, fecha, categoria').gte('fecha', fechaDesde).eq('actividad', 'General'),
+      supabase.from('gastos_generales').select('monto, fecha, categoria, pagos_detalle').gte('fecha', fechaDesde).eq('actividad', 'Servicios'),
+      supabase.from('gastos_generales').select('monto, fecha, categoria, pagos_detalle').gte('fecha', fechaDesde).eq('actividad', 'General'),
     ])
     ;(servicios || []).forEach(s => {
       if (s.tipo_servicio === 'propio' && !s.orden_trabajo_id) return
-      suma(ingresos, `${s.labor || 'Servicio'} — ${s.cliente || 'sin cliente'}`, s.fecha || s.creado_en?.split('T')[0], (s.total || 0) + (s.monto_negro || 0))
+      sumaPorPagos(ingresos, `${s.labor || 'Servicio'} — ${s.cliente || 'sin cliente'}`, s.pagos_detalle, s.fecha || s.creado_en?.split('T')[0])
     })
-    ;(gastosServ || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, g.monto))
+    ;(gastosServ || []).forEach(g => sumaPorPagos(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.pagos_detalle, g.fecha))
     ;(pagosEmp || []).forEach(p => {
       const act = p.empleados?.actividad
       if (act !== 'Servicios' && act !== 'General') return
       suma(egresos, MANO_DE_OBRA, p.fecha || p.creado_en?.split('T')[0], act === 'General' ? (p.monto || 0) / 3 : (p.monto || 0))
     })
-    ;(gastosGen || []).forEach(g => suma(egresos, `Gastos generales — ${g.categoria || 'otro'}`, g.fecha, (g.monto || 0) / 3))
+    ;(gastosGen || []).forEach(g => {
+      const pagosAjustados = (g.pagos_detalle || []).map(p => ({ ...p, monto: (parseFloat(p.monto) || 0) / 3 }))
+      sumaPorPagos(egresos, `Gastos generales — ${g.categoria || 'otro'}`, pagosAjustados, g.fecha)
+    })
   }
   return { ingresos, egresos }
 }

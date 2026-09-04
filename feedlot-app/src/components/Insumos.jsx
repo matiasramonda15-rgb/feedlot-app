@@ -191,7 +191,7 @@ export default function Insumos({ usuario }) {
       // al pagar, así que una compra pendiente siempre quedaba en Caja 1
       // por defecto, aunque en realidad correspondiera a la otra caja.
       es_paralelo: form.es_paralelo || form.pagos.some(p => p.es_paralelo),
-      pagos_detalle: pagarAhora && total ? form.pagos : null,
+      pagos_detalle: pagarAhora && total ? form.pagos.map(p => ({ ...p, fecha: p.fecha || form.fecha })) : null,
       observaciones: form.observaciones || null,
       registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id,
       estado_pago: pagarAhora && total ? 'pagado' : 'pendiente',
@@ -730,7 +730,11 @@ export default function Insumos({ usuario }) {
                               // Sin esto, un doble clic dispara todo el guardado dos veces y
                               // duplica cheques y movimientos de caja (nos pasó con un pago real).
                               if (guardandoPagoInline) return
-                              const pagos = formPagoInline.pagos
+                              // Cada pago guarda su propia fecha (no solo la compra) — así el
+                              // Presupuesto puede contar la plata en el mes en que realmente
+                              // se pagó, no en el mes de la compra (importa con proveedores
+                              // a 30/60 días).
+                              const pagos = formPagoInline.pagos.map(p => ({ ...p, fecha: p.fecha || formPagoInline.fecha }))
                               const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
                               if (!totalPagos) { alert('Ingresá el monto'); return }
                               setGuardandoPagoInline(true)

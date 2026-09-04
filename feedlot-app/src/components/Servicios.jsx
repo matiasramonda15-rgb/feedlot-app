@@ -423,7 +423,7 @@ export default function Servicios({ usuario, mobile, nav }) {
           caja_oficial_id,
           caja_paralela_id,
           monto_negro: sinFactura > 0 ? sinFactura : null,
-          pagos_detalle: formPago.pagos,
+          pagos_detalle: formPago.pagos.map(p => ({ ...p, fecha: p.fecha || formPago.fecha })),
         }
         if (precioHa) updateData.precio_ha = precioHa
         if (totalConIva > 0) updateData.total = totalConIva

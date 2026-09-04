@@ -1404,7 +1404,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const o = pendientes.find(x => x.id === id)
       const totalOrden = o ? montoOrden(o) : 0
       const proporcion = totalSel > 0 ? totalOrden / totalSel : (1 / seleccionadas.length)
-      const pagosProporcionales = formPagoGrupal.pagos.map(p => ({ ...p, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
+      const pagosProporcionales = formPagoGrupal.pagos.map(p => ({ ...p, fecha: p.fecha || formPagoGrupal.fecha, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
       const montoPagadoAhora = pagosProporcionales.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       const pagadoPrevio = (o?.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       const upd = { caja_oficial_id, caja_paralela_id, pagos_detalle: [...(o?.pagos_detalle || []), ...pagosProporcionales], domicilio: formPagoGrupal.domicilio || null, localidad: formPagoGrupal.localidad || null, cuit: formPagoGrupal.cuit || null, iva: formPagoGrupal.iva || null, cbu: formPagoGrupal.cbu || null }
@@ -2731,7 +2731,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
           for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
         }
       }
-      pagosDetalle.push({ ...pago, monto })
+      pagosDetalle.push({ ...pago, monto, fecha: pago.fecha || formCobro.fecha })
     }
     const { error } = await supabase.from('ventas_granos').update({ pagos_detalle: pagosDetalle }).eq('id', venta.id)
     if (error) { alert('El cobro se registró en caja, pero no se pudo guardar el detalle: ' + error.message); setGuardando(false); return }
@@ -3447,7 +3447,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
       tn_ha: tnPagado || null,
       monto_total: montoCalc || totalPagos,
       caja_oficial_id, caja_paralela_id,
-      pagos_detalle: formPago.pagos,
+      pagos_detalle: formPago.pagos.map(p => ({ ...p, fecha: p.fecha || formPago.fecha })),
       forma_pago: formPago.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
     }).eq('id', v.id)
 
@@ -3879,7 +3879,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       // (eso hacía aparecer una fila de $0 sin descripción en Contactos).
       forma_pago: pagarAhora ? formCompra.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
       es_paralelo: pagarAhora ? formCompra.pagos.some(p => p.es_paralelo) : false,
-      pagos_detalle: pagarAhora ? formCompra.pagos : null,
+      pagos_detalle: pagarAhora ? formCompra.pagos.map(p => ({ ...p, fecha: p.fecha || formCompra.fecha })) : null,
       fecha: formCompra.fecha,
       caja_oficial_id, caja_paralela_id, registrado_por: usuario?.id,
       estado_pago: pagarAhora ? 'pagado' : 'pendiente',

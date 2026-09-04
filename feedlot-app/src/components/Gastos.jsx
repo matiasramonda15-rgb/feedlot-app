@@ -251,13 +251,15 @@ export default function Gastos({ usuario }) {
       cuit: form.cuit || null,
       iva: form.iva || null,
       cbu: form.cbu || null,
-      pagos_detalle: pagosConIds.map(p => p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0
-        ? { ...p, cheque_tercero_detalle: p.cheque_tercero_ids.map(id => {
-            const ch = chequesCartera.find(c => String(c.id) === id)
-            return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
-          }).filter(Boolean) }
-        : p
-      ),
+      pagos_detalle: pagosConIds.map(p => {
+        const base = { ...p, fecha: p.fecha || form.fecha }
+        return p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0
+          ? { ...base, cheque_tercero_detalle: p.cheque_tercero_ids.map(id => {
+              const ch = chequesCartera.find(c => String(c.id) === id)
+              return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
+            }).filter(Boolean) }
+          : base
+      }),
       forma_pago: pagarAhora ? form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
       es_paralelo: pagarAhora ? form.pagos.some(p => p.es_paralelo) : false,
       estado_pago: pagarAhora ? 'pagado' : 'pendiente',
