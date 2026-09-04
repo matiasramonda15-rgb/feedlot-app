@@ -774,8 +774,8 @@ export default function Ventas({ usuario, mobile, nav }) {
             <div key={gv.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8, alignItems: 'center', marginBottom: 6 }}>
               <div style={{ fontSize: 12, color: S.muted }}>C-{gv.corrales?.numero || gv.corral_id} · {gv.cantidad} animales</div>
               <input type="number" min="0" max={gv.cantidad} placeholder="0"
-                value={formComercial.sinGuia[gv.id] ?? (gv.cantidad_sin_guia || '')}
-                onChange={e => setFormComercial({...formComercial, sinGuia: {...formComercial.sinGuia, [gv.id]: e.target.value}})}
+                value={(formComercial.sinGuia || {})[gv.id] ?? (gv.cantidad_sin_guia || '')}
+                onChange={e => setFormComercial({...formComercial, sinGuia: {...(formComercial.sinGuia || {}), [gv.id]: e.target.value}})}
                 style={{ ...inp, border: `1px solid ${S.amber}`, fontFamily: 'monospace' }} />
             </div>
           ))}
@@ -863,13 +863,13 @@ export default function Ventas({ usuario, mobile, nav }) {
                 const descV = descuentoVal ? Math.round(descuentoVal * prop) : 0
                 const paraleloV = montoTotal ? Math.max(0, Math.round(montoTotal * prop) - ((netoV || 0) + ivaMV - descV)) : 0
                 const retV = retMontoVal ? Math.round(retMontoVal * prop) : 0
-                const sinGuiaV = formComercial.sinGuia[gv.id] !== undefined && formComercial.sinGuia[gv.id] !== ''
+                const sinGuiaV = (formComercial.sinGuia || {})[gv.id] !== undefined && (formComercial.sinGuia || {})[gv.id] !== ''
                   ? Math.max(0, Math.min(gv.cantidad || 0, parseInt(formComercial.sinGuia[gv.id]) || 0))
                   : (gv.cantidad_sin_guia || 0)
                 await _supabase.from('ventas').update({ ...updateData, monto_facturado: netoV, iva_monto: ivaMV, monto_negro: paraleloV, descuento_monto: descV || null, retencion_monto: retV || null, cantidad_sin_guia: sinGuiaV }).eq('id', gv.id)
               }
             } else {
-              const sinGuiaSolo = formComercial.sinGuia[gcKey] !== undefined && formComercial.sinGuia[gcKey] !== ''
+              const sinGuiaSolo = (formComercial.sinGuia || {})[gcKey] !== undefined && (formComercial.sinGuia || {})[gcKey] !== ''
                 ? Math.max(0, Math.min(v?.cantidad || 0, parseInt(formComercial.sinGuia[gcKey]) || 0))
                 : (v?.cantidad_sin_guia || 0)
               await _supabase.from('ventas').update({ ...updateData, cantidad_sin_guia: sinGuiaSolo }).eq('id', gcKey)
@@ -1983,6 +1983,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                               tiene_retencion: v.tiene_retencion || false,
                               plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '',
                               fecha_vencimiento: v.fecha_vencimiento_cobro || '',
+                              sinGuia: {},
                             })
                           }}
                             style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
@@ -2111,6 +2112,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                               tiene_retencion: v.tiene_retencion || false,
                               plazo_dias: v.plazo_dias ? String(v.plazo_dias) : '',
                               fecha_vencimiento: v.fecha_vencimiento_cobro || '',
+                              sinGuia: {},
                             })
                           }}
                             style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
