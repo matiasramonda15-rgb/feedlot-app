@@ -51,15 +51,22 @@ async function cargarDatosActividad(actividad, fechaDesde, idsCredito) {
   const MANO_DE_OBRA = 'Mano de obra'
 
   if (actividad === 'Feedlot') {
-    const [{ data: ventas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }] = await Promise.all([
-      supabase.from('ventas').select('total, creado_en, comprador').gte('creado_en', fechaDesde),
+    const [{ data: pagosVentasHacienda }, { data: comprasVentas }, { data: lotes }, { data: compras }, { data: pagosEmp }, { data: gastos }, { data: fletes }] = await Promise.all([
+      // Se cuenta la plata cuando se COBRA (fecha real del pago), no cuando
+      // se hizo la venta — hasta que no se cobra, esa plata no entró a la
+      // cuenta de verdad, así que no puede figurar como ingreso del mes de
+      // la venta.
+      supabase.from('pagos_ventas').select('venta_id, fecha, monto').gte('fecha', fechaDesde),
+      supabase.from('ventas').select('id, comprador'),
       supabase.from('lotes').select('monto_facturado, iva_monto, monto_negro, fecha_ingreso, procedencia').gte('fecha_ingreso', fechaDesde),
       supabase.from('compras_insumos').select('id, total, fecha, proveedor, insumo_tipo').gte('fecha', fechaDesde).in('insumo_tipo', ['alimentacion', 'sanitario']),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
       supabase.from('gastos_generales').select('monto, fecha, categoria, actividad').gte('fecha', fechaDesde).in('actividad', ['Feedlot', 'General']),
       supabase.from('fletes').select('monto, fecha, transportista, estado_pago').gte('fecha', fechaDesde).eq('estado_pago', 'pagado'),
     ])
-    ;(ventas || []).forEach(v => suma(ingresos, `Venta hacienda — ${v.comprador || 'sin comprador'}`, v.creado_en?.split('T')[0], v.total))
+    const compradorPorVenta = {}
+    ;(comprasVentas || []).forEach(v => { compradorPorVenta[v.id] = v.comprador })
+    ;(pagosVentasHacienda || []).forEach(p => suma(ingresos, `Venta hacienda — ${compradorPorVenta[p.venta_id] || 'sin comprador'}`, p.fecha, p.monto))
     ;(lotes || []).forEach(l => suma(egresos, `Compra hacienda — ${l.procedencia || 'sin procedencia'}`, l.fecha_ingreso, (l.monto_facturado || 0) + (l.iva_monto || 0) + (l.monto_negro || 0)))
     ;(compras || []).forEach(c => { if (idsCredito.has(c.id)) return; suma(egresos, `Insumos — ${c.proveedor || 'sin proveedor'}`, c.fecha, c.total) })
     ;(pagosEmp || []).forEach(p => {
