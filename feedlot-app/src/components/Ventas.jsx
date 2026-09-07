@@ -2149,6 +2149,17 @@ export default function Ventas({ usuario, mobile, nav }) {
                                           await supabase.from('caja_oficial').delete().eq('pago_venta_id', p.id)
                                           await supabase.from('caja_paralela').delete().eq('pago_venta_id', p.id)
                                           await supabase.from('pagos_ventas').delete().eq('id', p.id)
+                                          // Si la venta había quedado marcada "cobrado" porque este pago
+                                          // completaba el total, hay que destildarla — si no, queda
+                                          // "cobrada" en el sistema sin tener ningún pago real adentro,
+                                          // y no se puede volver a cargar un pago bien (por eso Paula no
+                                          // podía cargar los pagos de nuevo después de borrar el viejo).
+                                          const idsGrupoDeshacer = grupo.map(vv => vv.id)
+                                          const { data: pagosRestantes } = await supabase.from('pagos_ventas').select('monto').in('venta_id', idsGrupoDeshacer)
+                                          const totalRestante = (pagosRestantes || []).reduce((s, pp) => s + (pp.monto || 0), 0)
+                                          if (totalRestante < totalRealGrupo - 1000) {
+                                            for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: vv.monto_facturado != null ? 'facturado' : 'pendiente' }).eq('id', vv.id)
+                                          }
                                           await cargar()
                                         }} style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                       </div>
