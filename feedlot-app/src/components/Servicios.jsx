@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { registrarServicioTercero } from '../shared/serviciosLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { generarReciboDeCobro } from '../shared/reciboLogic'
 
 const CM = { bg: '#0D1B2A', surface: '#1A2D3D', surface2: '#243447', border: '#2D4357', text: '#E8F0F8', muted: '#7A9AB8', accent: '#5BB8F5', green: '#4CAF82', greenLight: '#1A3D2E', amber: '#F5A623', amberLight: '#3D2E1A', red: '#F55B5B', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -171,7 +172,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     setEmpleados(emps || [])
     const [{ data: s }, { data: ct }, { data: ch }, { data: regs }, { data: cps }, { data: sa }] = await Promise.all([
       supabase.from('servicios_terceros').select('*').order('fecha', { ascending: false }),
-      supabase.from('contactos').select('id, nombre, actividades, tipos, tipo').order('nombre'),
+      supabase.from('contactos').select('id, nombre, actividades, tipos, tipo, cuit, iva, cbu, localidad, banco').order('nombre'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera'),
       supabase.from('registros_mercaderia').select('*').order('created_at', { ascending: false }),
       supabase.from('campos').select('*, lotes_agricolas(id, numero, superficie_ha)').eq('activo', true).order('nombre'),
@@ -432,6 +433,25 @@ export default function Servicios({ usuario, mobile, nav }) {
       }
       setSeleccionadas([])
       setShowPago(false)
+      // Recibo de cobro real (antes esto no existía — solo había un
+      // "resumen para revisar antes de facturar" que aclaraba explícitamente
+      // que no era un comprobante de pago).
+      const clienteNombre = servicios.find(x => x.id === seleccionadas[0])?.cliente || ''
+      const contactoCliente = contactos.find(c => c.nombre === clienteNombre)
+      const conceptoCobro = seleccionadas
+        .map(id => { const s = servicios.find(x => x.id === id); return s ? `${s.labor}${s.cultivo ? ' ' + s.cultivo : ''} · ${s.hectareas} ha${s.campo ? ' · ' + s.campo : ''}` : null })
+        .filter(Boolean).join(' + ')
+      generarReciboDeCobro(supabase, {
+        cliente: clienteNombre,
+        domicilio: contactoCliente?.banco || '',
+        localidad: contactoCliente?.localidad || '',
+        cuit: contactoCliente?.cuit || '',
+        iva: contactoCliente?.iva || '',
+        cbu: contactoCliente?.cbu || '',
+        fecha: formPago.fecha,
+        concepto: conceptoCobro,
+        pagos: formPago.pagos.filter(p => parseFloat(p.monto) > 0),
+      })
       setFormPago({ fecha: hoyLocal(), iva_pct: '10.5', precio_ha: '', sin_factura: '', pagos: [{ ...PAGO_INIT }] })
       await cargar()
     } catch(e) {
