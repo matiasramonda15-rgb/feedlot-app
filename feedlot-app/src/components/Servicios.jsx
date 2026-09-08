@@ -1549,7 +1549,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr>
-                      {['Fecha cobro', 'Cliente', 'Campo/Lote', 'Servicio', 'Cultivo', 'Ha', '$/Ha', 'Neto', 'IVA %', 'Total'].map(h => (
+                      {['Fecha cobro', 'Cliente', 'Campo/Lote', 'Servicio', 'Cultivo', 'Ha', '$/Ha', 'Neto', 'IVA %', 'Total', ''].map(h => (
                         <th key={h} style={th}>{h}</th>
                       ))}
                     </tr>
@@ -1573,6 +1573,24 @@ export default function Servicios({ usuario, mobile, nav }) {
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right' }}>{neto ? `$${neto.toLocaleString('es-AR')}` : '—'}</td>
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: S.muted }}>{ivaPct ? `${ivaPct}%` : '—'}</td>
                           <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.green }}>{totalConIva ? `$${totalConIva.toLocaleString('es-AR')}` : '—'}</td>
+                          <td style={td_}>
+                            <button onClick={() => {
+                              const contactoCliente = contactos.find(c => c.nombre === s.cliente)
+                              generarReciboDeCobro(supabase, {
+                                cliente: s.cliente || '',
+                                domicilio: contactoCliente?.banco || '',
+                                localidad: contactoCliente?.localidad || '',
+                                cuit: contactoCliente?.cuit || '',
+                                iva: contactoCliente?.iva || '',
+                                cbu: contactoCliente?.cbu || '',
+                                fecha: s.fecha_cobro || s.fecha,
+                                concepto: `${s.labor}${s.cultivo ? ' ' + s.cultivo : ''} · ${s.hectareas} ha${s.campo ? ' · ' + s.campo : ''}`,
+                                pagos: s.pagos_detalle?.length > 0 ? s.pagos_detalle : [{ tipo: s.forma_pago || 'transferencia', monto: totalConIva || 0 }],
+                              })
+                            }} style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                              🖨️ Recibo
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}
