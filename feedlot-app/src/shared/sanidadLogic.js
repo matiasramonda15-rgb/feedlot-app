@@ -19,25 +19,32 @@ export async function incrementarStockSanitario(supabase, productoId, delta) {
 // Confirma la vacunación de día 0 de un lote recién ingresado.
 // lote: { id, codigo, cantidad, corral_cuarentena_id }
 // vacunas: [{ productoId, nombre, dosisMlPorAnimal }]
+// cantidadAnimales: opcional — cuántos animales del lote se vacunaron en
+// realidad (por defecto, todo el lote). Sirve para lotes grandes o pesados
+// donde no tiene sentido vacunar a todos con el mismo protocolo, y solo se
+// les puso a una parte.
 // Devuelve { error, resumen } — resumen: [{ nombre, dosis, mlTotal }]
-export async function confirmarVacunacionIngreso(supabase, { lote, vacunas, usuario }) {
+export async function confirmarVacunacionIngreso(supabase, { lote, vacunas, usuario, cantidadAnimales }) {
+  const cantidad = cantidadAnimales != null && cantidadAnimales !== '' ? Math.max(0, Math.min(lote.cantidad || 0, parseInt(cantidadAnimales))) : (lote.cantidad || 0)
   const resumen = []
   for (const v of vacunas) {
-    const mlTotal = Math.round((lote.cantidad || 0) * v.dosisMlPorAnimal)
+    const mlTotal = Math.round(cantidad * v.dosisMlPorAnimal)
     const { error: errStock } = await incrementarStockSanitario(supabase, v.productoId, -mlTotal)
     if (errStock) return { error: errStock, resumen }
     const { error: errEvento } = await supabase.from('eventos_sanitarios').insert({
       tipo: 'vacunacion', corral_id: lote.corral_cuarentena_id, lote_id: lote.id,
-      producto: v.nombre, cantidad_ml: mlTotal, cantidad_animales: lote.cantidad,
-      observaciones: `Ingreso ${lote.codigo} — ${v.dosisMlPorAnimal} ml/animal`,
+      producto: v.nombre, cantidad_ml: mlTotal, cantidad_animales: cantidad,
+      observaciones: `Ingreso ${lote.codigo} — ${v.dosisMlPorAnimal} ml/animal${cantidad !== lote.cantidad ? ` (${cantidad} de ${lote.cantidad} animales)` : ''}`,
       registrado_por: usuario?.id,
     })
     if (errEvento) return { error: errEvento, resumen }
-    resumen.push({ nombre: v.nombre, dosis: v.dosisMlPorAnimal, mlTotal })
+    resumen.push({ nombre: v.nombre, dosis: v.dosisMlPorAnimal, mlTotal, cantidad })
   }
   // Este es el paso que faltaba en una de las dos apps y causaba que la
   // vacunación pareciera "no guardarse": sin este flag, ninguna pantalla
-  // puede saber después que este lote ya fue vacunado al ingreso.
+  // puede saber después que este lote ya fue vacunado al ingreso. Se marca
+  // igual aunque haya sido a una parte del lote nomás — el protocolo de
+  // ingreso ya se atendió para este lote, no hace falta que vuelva a alertar.
   const { error: errLote } = await supabase.from('lotes').update({ vacunado_ingreso: true }).eq('id', lote.id)
   if (errLote) return { error: errLote, resumen }
   return { error: null, resumen }
