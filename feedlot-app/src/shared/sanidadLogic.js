@@ -18,16 +18,16 @@ export async function incrementarStockSanitario(supabase, productoId, delta) {
 
 // Confirma la vacunación de día 0 de un lote recién ingresado.
 // lote: { id, codigo, cantidad, corral_cuarentena_id }
-// vacunas: [{ productoId, nombre, dosisMlPorAnimal }]
-// cantidadAnimales: opcional — cuántos animales del lote se vacunaron en
-// realidad (por defecto, todo el lote). Sirve para lotes grandes o pesados
-// donde no tiene sentido vacunar a todos con el mismo protocolo, y solo se
-// les puso a una parte.
-// Devuelve { error, resumen } — resumen: [{ nombre, dosis, mlTotal }]
-export async function confirmarVacunacionIngreso(supabase, { lote, vacunas, usuario, cantidadAnimales }) {
-  const cantidad = cantidadAnimales != null && cantidadAnimales !== '' ? Math.max(0, Math.min(lote.cantidad || 0, parseInt(cantidadAnimales))) : (lote.cantidad || 0)
+// vacunas: [{ productoId, nombre, dosisMlPorAnimal, cantidadAnimales }] — cada
+// vacuna puede tener su propia cantidad de animales (por defecto, todo el
+// lote). Sirve para lotes grandes o pesados donde no todas las vacunas del
+// protocolo se les ponen a todos — por ejemplo, una sí a los 85, y otras dos
+// solo a 4 terneros en particular.
+// Devuelve { error, resumen } — resumen: [{ nombre, dosis, mlTotal, cantidad }]
+export async function confirmarVacunacionIngreso(supabase, { lote, vacunas, usuario }) {
   const resumen = []
   for (const v of vacunas) {
+    const cantidad = v.cantidadAnimales != null && v.cantidadAnimales !== '' ? Math.max(0, Math.min(lote.cantidad || 0, parseInt(v.cantidadAnimales))) : (lote.cantidad || 0)
     const mlTotal = Math.round(cantidad * v.dosisMlPorAnimal)
     const { error: errStock } = await incrementarStockSanitario(supabase, v.productoId, -mlTotal)
     if (errStock) return { error: errStock, resumen }
