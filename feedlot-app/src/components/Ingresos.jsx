@@ -2087,6 +2087,9 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                         {saldo > 0 ? `Saldo $${Math.round(saldo).toLocaleString('es-AR')}` : pagos.length > 0 ? '✓ Pagado' : '— Sin pagos —'}
                         <span style={{ fontSize: 9 }}>{pagosExpandidos[l.id] ? '▲' : '▼'}</span>
                       </button>
+                      {l.observaciones_pago && (
+                        <div style={{ fontSize: 10, color: S.amber, marginTop: 3, lineHeight: 1.3 }}>⚠ {l.observaciones_pago}</div>
+                      )}
                     </td>
                   </tr>
 
