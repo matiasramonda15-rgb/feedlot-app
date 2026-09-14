@@ -432,6 +432,34 @@ export default function Reportes({ usuario }) {
     ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
     : null
 
+  // ── Ganancia promedio por animal, mes a mes (mismo método de arriba, pero
+  // por mes calendario en vez de ventana móvil de 30/60 días) ──
+  const ingresoNetoPorMes = {}
+  ventas.forEach(v => {
+    const key = mesKey(v.creado_en)
+    if (!key || !(v.cantidad > 0)) return
+    ingresoNetoPorMes[key] = (ingresoNetoPorMes[key] || 0) + (v.total || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+  })
+  const costoCompraPorMes = {}
+  lotes.forEach(l => {
+    const key = mesKey(l.fecha_ingreso || l.created_at)
+    if (!key || !(l.cantidad > 0)) return
+    costoCompraPorMes[key] = (costoCompraPorMes[key] || 0) + totalLoteReal(l)
+  })
+  const gananciaMensual = mesesGDP.map(m => {
+    const ingresoProm = m.cabVendidas > 0 ? (ingresoNetoPorMes[m.mes] || 0) / m.cabVendidas : null
+    const compraProm = m.cabIngresadas > 0 ? (costoCompraPorMes[m.mes] || 0) / m.cabIngresadas : null
+    const rp = rentabilidadPorMes[m.mes]
+    const costoOpTotalMes = rp ? (rp.costoAlim + rp.costoSanidad + rp.costoManoObra + rp.costoGastos) : 0
+    const costoOpDiarioMes = (m.existenciaPromedio > 0 && m.dias > 0) ? costoOpTotalMes / m.existenciaPromedio / m.dias : null
+    // Se usa la permanencia de ESE mes si hay dato — si no, la permanencia
+    // general actual como respaldo.
+    const permanenciaMes = m.permanencia || permanenciaPromedio
+    const costoOpCicloMes = (costoOpDiarioMes != null && permanenciaMes) ? costoOpDiarioMes * permanenciaMes : null
+    const ganancia = (ingresoProm != null && compraProm != null && costoOpCicloMes != null) ? ingresoProm - compraProm - costoOpCicloMes : null
+    return { mes: m.mes, ganancia }
+  }).filter(m => m.ganancia !== null)
+
   // ── Ganancia neta por animal, ciclo completo (compra → venta) — se
   // mantiene el detalle por lote (FIFO) solo como referencia informativa
   // en la tabla de abajo, ya no como la métrica principal de arriba. ──
@@ -1136,6 +1164,28 @@ export default function Reportes({ usuario }) {
               <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Gastos (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoGastos30).toLocaleString('es-AR')}</div></div>
               <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Existencia prom.</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>{existenciaProm30 !== null ? Math.round(existenciaProm30) : '—'} anim.</div></div>
             </div>
+            {gananciaMensual.length > 1 && (() => {
+              const maxAbs = Math.max(...gananciaMensual.map(m => Math.abs(m.ganancia)), 1)
+              return (
+                <div style={{ marginTop: '.5rem' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '.75rem' }}>Ganancia promedio por animal — mes a mes</div>
+                  {gananciaMensual.map(m => {
+                    const pct = Math.round(Math.abs(m.ganancia) / maxAbs * 100)
+                    const esNeg = m.ganancia < 0
+                    return (
+                      <div key={m.mes} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, color: S.muted, minWidth: 60, textAlign: 'right', fontFamily: 'monospace' }}>{m.mes}</div>
+                        <div style={{ flex: 1, height: 10, background: S.bg, borderRadius: 5, overflow: 'hidden', border: `1px solid ${S.border}` }}>
+                          <div style={{ width: `${pct}%`, height: '100%', borderRadius: 4, background: esNeg ? S.red : S.green, transition: 'width .5s ease' }} />
+                        </div>
+                        <div style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: esNeg ? S.red : S.green, minWidth: 100, textAlign: 'right' }}>${Math.round(m.ganancia).toLocaleString('es-AR')}</div>
+                      </div>
+                    )
+                  })}
+                  <div style={{ fontSize: 10, color: S.hint, marginTop: 6 }}>Mismo método que la tarjeta de arriba, calculado mes a mes en vez de con la ventana móvil de 30/60 días.</div>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Ganancia neta por animal — ciclo completo (compra → venta), FIFO — referencia */}
@@ -1150,11 +1200,9 @@ export default function Reportes({ usuario }) {
               engordando a la vez y se vende del que está más terminado, no necesariamente del más viejo. Se deja acá
               solo para ver el detalle de cada compra, no como medida de ganancia real (para eso, mirá la tarjeta de arriba).
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: '1.25rem' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
               <Stat label="Ganancia promedio por animal (FIFO)" val={gananciaPromedioPorAnimalFIFO !== null ? `$${Math.round(gananciaPromedioPorAnimalFIFO).toLocaleString('es-AR')}` : '—'}
                 sub={`${lotesCompletos.length} lote${lotesCompletos.length !== 1 ? 's' : ''} con ciclo completo — no confiable, ver nota arriba`} color={S.hint} />
-              <Stat label="Costo operativo / animal / día" val={costoPorAnimalDia > 0 ? `$${Math.round(costoPorAnimalDia).toLocaleString('es-AR')}` : '—'}
-                sub="alimentación + sanidad + mano de obra + gastos, promedio histórico" />
             </div>
             {gananciaPorLote.length === 0 ? (
               <div style={{ padding: '1.5rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin lotes de compra cargados todavía.</div>
