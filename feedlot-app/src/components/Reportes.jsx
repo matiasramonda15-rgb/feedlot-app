@@ -851,19 +851,7 @@ export default function Reportes({ usuario }) {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
-            <Stat label="GDP global ponderado" val={gdpGlobal ? gdpGlobal.toFixed(2) + ' kg/d' : '—'} sub={`${corralesConGDP.length} corrales con datos (pesadas)`} color={gdpGlobal ? (gdpGlobal >= 1.1 ? S.green : gdpGlobal >= 0.9 ? S.amber : S.red) : S.hint} />
-            <Stat label="Animales activos" val={totalAnimales} sub={`${corralesActivos.length} corrales activos`} />
-            <Stat label="Animales ≥ 400 kg" val={corralesActivos.filter(c => gdpPorCorral[c.numero]?.pesoActual >= 400).reduce((s, c) => s + (c.animales || 0), 0)} sub="listos para venta" color={S.green} />
-            <Stat label="Pesadas registradas" val={pesadas.length} sub="en el historial" />
-          </div>
-
-          {corralesConGDP.length === 0 ? (
-            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '3rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>
-              No hay suficientes pesadas para calcular GDP.<br />
-              <span style={{ fontSize: 11 }}>Se necesitan al menos 2 pesadas por corral.</span>
-            </div>
-          ) : (
+          {corralesConGDP.length === 0 ? null : (
             <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Detalle por corral</div>
               <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
