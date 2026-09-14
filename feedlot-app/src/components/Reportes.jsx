@@ -40,7 +40,8 @@ export default function Reportes({ usuario }) {
   const [raciones, setRaciones] = useState([])
   const [stock, setStock] = useState([])
   const [gastosGenerales, setGastosGenerales] = useState([])
-  const [comprasSanitario, setComprasSanitario] = useState([])
+  const [eventosSanitarios, setEventosSanitarios] = useState([])
+  const [stockSanitario, setStockSanitario] = useState([])
   const [pagosEmpleados, setPagosEmpleados] = useState([])
   const [comprasAgro, setComprasAgro] = useState([])
   const [serviciosTerceros, setServiciosTerceros] = useState([])
@@ -57,7 +58,7 @@ export default function Reportes({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: cs }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(2000),
@@ -67,7 +68,6 @@ export default function Reportes({ usuario }) {
       supabase.from('formulas_mixer').select('*'),
       supabase.from('mortalidad').select('*').order('fecha', { ascending: false }),
       supabase.from('gastos_generales').select('*'),
-      supabase.from('compras_insumos').select('total, insumo_tipo, fecha, creado_en').eq('insumo_tipo', 'sanitario'),
       supabase.from('pagos_empleados').select('*, empleados(nombre, actividad)'),
       supabase.from('compras_insumos').select('total, fecha, creado_en').eq('insumo_tipo', 'agro'),
       supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, tipo_servicio, orden_trabajo_id').or('tipo_servicio.eq.tercero,orden_trabajo_id.not.is.null'),
@@ -75,6 +75,8 @@ export default function Reportes({ usuario }) {
       supabase.from('ventas_granos').select('total, fecha, creado_en'),
       supabase.from('activos').select('id, valor_compra, vida_util_anios, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa, estado, fecha_compra'),
       supabase.from('pagos_creditos').select('monto, fecha_pago, estado, creditos(activo_id, compras_insumos(insumo_tipo))').eq('estado', 'pagado'),
+      supabase.from('eventos_sanitarios').select('producto, cantidad_ml, creado_en').order('creado_en', { ascending: false }).limit(3000),
+      supabase.from('stock_sanitario').select('producto, precio_referencia'),
     ])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
@@ -85,7 +87,8 @@ export default function Reportes({ usuario }) {
     setFormulasMixer(fm || [])
     setMortalidad(m || [])
     setGastosGenerales(gg || [])
-    setComprasSanitario(cs || [])
+    setEventosSanitarios(es || [])
+    setStockSanitario(ss || [])
     setPagosEmpleados(pe || [])
     setComprasAgro(iag || [])
     setServiciosTerceros(st || [])
@@ -229,6 +232,14 @@ export default function Reportes({ usuario }) {
     return { ...v, costoCompra, ingreso, margen, margenPct }
   })
 
+  // El costo de sanidad se calcula por CONSUMO real (evento sanitario ×
+  // precio del producto), no por fecha de factura — si se compra sanidad
+  // para varios meses de una sola vez, la fecha de compra no representa
+  // cuándo se usó de verdad.
+  const precioSanitarioPorProducto = {}
+  stockSanitario.forEach(p => { precioSanitarioPorProducto[p.producto] = p.precio_referencia || 0 })
+  const costoEventoSanitario = e => (e.cantidad_ml > 0 ? e.cantidad_ml * (precioSanitarioPorProducto[e.producto] || 0) : 0)
+
   // ── Rentabilidad mensual/anual — toda la inversión del feedlot (compra de
   // hacienda + alimentación + gastos generales) contra todo el ingreso (ventas) ──
   const mesKey = f => f ? String(f).slice(0, 7) : null
@@ -260,11 +271,12 @@ export default function Reportes({ usuario }) {
     const precioRolloUsado = precioRollo ?? precioPromAlim ?? 0
     rentabilidadPorMes[key].costoAlim += kgRollo * precioRolloUsado + kgMixer * precioMixer
   })
-  comprasSanitario.forEach(cs => {
-    const key = mesKey(cs.fecha || cs.creado_en)
-    if (!key || !cs.total) return
+  eventosSanitarios.forEach(e => {
+    const key = mesKey(e.creado_en)
+    const costo = costoEventoSanitario(e)
+    if (!key || !costo) return
     asegurarMes(key)
-    rentabilidadPorMes[key].costoSanidad += cs.total || 0
+    rentabilidadPorMes[key].costoSanidad += costo
   })
   pagosEmpleados.forEach(pe => {
     const key = mesKey(pe.fecha || pe.creado_en)
@@ -403,7 +415,15 @@ export default function Reportes({ usuario }) {
   const costoPromedioPorAnimalComprado = totalAnimComprados60 > 0 ? totalCostoCompra60 / totalAnimComprados60 : null
 
   const totalCostoAlim30 = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalCosto, 0)
-  const costoSanidad30 = comprasSanitario.filter(cs => new Date(cs.fecha || cs.creado_en) >= hace30d).reduce((s, cs) => s + (cs.total || 0), 0)
+  // Antes esto sumaba las FACTURAS de compra de sanidad de los últimos 30
+  // días — si comprás vacunas para 3 meses de una sola vez, ese mes queda
+  // inflado y los siguientes 2 sin nada, aunque el producto se esté usando
+  // todos los días. Ahora se calcula por CONSUMO real, igual que la
+  // alimentación: cada evento sanitario (vacunación, tratamiento) aplicado
+  // en los últimos 30 días × el precio de referencia de ese producto.
+  const costoSanidad30 = eventosSanitarios
+    .filter(e => new Date(e.creado_en) >= hace30d)
+    .reduce((s, e) => s + costoEventoSanitario(e), 0)
   const costoManoObra30 = pagosEmpleados.filter(pe => new Date(pe.fecha || pe.creado_en) >= hace30d).reduce((s, pe) => {
     const act = pe.empleados?.actividad
     if (act === 'Feedlot') return s + (pe.monto || 0)
