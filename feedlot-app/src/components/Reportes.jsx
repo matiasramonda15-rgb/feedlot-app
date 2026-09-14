@@ -363,9 +363,13 @@ export default function Reportes({ usuario }) {
   // factura de feria), lo que infla artificialmente la ganancia calculada.
   const totalLoteReal = l => {
     const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
+    // Cuando hay facturas de feria cargadas, los gastos y la comisión de esa
+    // operación ya están adentro de cada "total_factura" — no hay que
+    // sumarlos de nuevo. Si no hay factura de feria, recién ahí se suma la
+    // comisión suelta (si la hay) al total facturado+IVA+negro.
     if (totalFacturasReal > 0) return totalFacturasReal + (l.monto_negro || 0)
     const ivaMontoCalc = l.monto_facturado != null ? (l.iva_monto ?? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100)) : 0
-    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
+    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) + (l.comision_monto || 0) : null
     const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
     return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
   }
@@ -387,7 +391,10 @@ export default function Reportes({ usuario }) {
 
   const ventas30 = ventas.filter(v => v.cantidad > 0 && new Date(v.creado_en) >= hace30d)
   const totalAnimVendidos30 = ventas30.reduce((s, v) => s + v.cantidad, 0)
-  const totalIngreso30 = ventas30.reduce((s, v) => s + (v.total || 0), 0)
+  // "total" es el bruto (facturado + IVA + negro) — retención, comisión y
+  // descuento se guardan aparte y NO están restados ahí, así que hay que
+  // descontarlos acá para que el ingreso refleje lo que realmente entra.
+  const totalIngreso30 = ventas30.reduce((s, v) => s + (v.total || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0), 0)
   const ingresoPromedioPorAnimalVendido = totalAnimVendidos30 > 0 ? totalIngreso30 / totalAnimVendidos30 : null
 
   const lotes60 = lotes.filter(l => l.cantidad > 0 && new Date(l.fecha_ingreso) >= hace60d)
