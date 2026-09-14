@@ -356,12 +356,6 @@ export default function Reportes({ usuario }) {
   rentabilidadAnual.resultado -= costoCreditosPorActividad.feedlot
   const indiceAnual = rentabilidadAnual.costoTotal > 0 ? (rentabilidadAnual.resultado / rentabilidadAnual.costoTotal * 100) : null
 
-  // ── Ganancia neta por animal, ciclo completo (compra → venta) ──
-  // No hay trazabilidad de animal individual (los corrales mezclan animales
-  // de distintos lotes con el tiempo), así que se usa el mismo criterio que
-  // se usa en la industria para esto: FIFO — el lote más viejo se considera
-  // el primero en venderse. Es una estimación razonable, no una traza exacta
-  // cabeza por cabeza.
   // El costo real de compra de un lote se recalcula acá con la misma lógica
   // que usa Gestión Comercial (Ingresos), en vez de leer el campo guardado
   // monto_total_con_iva directo — ese campo puede haber quedado
@@ -375,6 +369,58 @@ export default function Reportes({ usuario }) {
     const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
     return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
   }
+
+  // ── Ganancia promedio por animal — últimos 30 días (compra-venta, sin FIFO) ──
+  // El método anterior (FIFO por lote) daba ciclos de compra→venta de apenas
+  // 5 a 38 días — imposible para un engorde real — porque en este feedlot
+  // hay varios lotes engordando a la vez y se vende del que está más
+  // terminado, no necesariamente del más viejo. Sin trazabilidad animal por
+  // animal, tratar de emparejar "este lote con esta venta" no funciona bien acá.
+  // En cambio, se compara el negocio como flujo continuo — precio de
+  // reposición vs. precio de venta, como se mide habitualmente un feedlot: 
+  // ingreso promedio por animal vendido (últimos 30 días) menos costo
+  // promedio por animal comprado (últimos 60 días, más margen porque las
+  // compras no son todos los meses) menos costo operativo promedio por
+  // animal en el feedlot (últimos 30 días).
+  const hace30d = new Date(); hace30d.setDate(hace30d.getDate() - 30)
+  const hace60d = new Date(); hace60d.setDate(hace60d.getDate() - 60)
+
+  const ventas30 = ventas.filter(v => v.cantidad > 0 && new Date(v.creado_en) >= hace30d)
+  const totalAnimVendidos30 = ventas30.reduce((s, v) => s + v.cantidad, 0)
+  const totalIngreso30 = ventas30.reduce((s, v) => s + (v.total || 0), 0)
+  const ingresoPromedioPorAnimalVendido = totalAnimVendidos30 > 0 ? totalIngreso30 / totalAnimVendidos30 : null
+
+  const lotes60 = lotes.filter(l => l.cantidad > 0 && new Date(l.fecha_ingreso) >= hace60d)
+  const totalAnimComprados60 = lotes60.reduce((s, l) => s + l.cantidad, 0)
+  const totalCostoCompra60 = lotes60.reduce((s, l) => s + totalLoteReal(l), 0)
+  const costoPromedioPorAnimalComprado = totalAnimComprados60 > 0 ? totalCostoCompra60 / totalAnimComprados60 : null
+
+  const totalCostoAlim30 = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalCosto, 0)
+  const costoSanidad30 = comprasSanitario.filter(cs => new Date(cs.fecha || cs.creado_en) >= hace30d).reduce((s, cs) => s + (cs.total || 0), 0)
+  const costoManoObra30 = pagosEmpleados.filter(pe => new Date(pe.fecha || pe.creado_en) >= hace30d).reduce((s, pe) => {
+    const act = pe.empleados?.actividad
+    if (act === 'Feedlot') return s + (pe.monto || 0)
+    if (act === 'General') return s + (pe.monto || 0) / 3
+    return s
+  }, 0)
+  const costoGastos30 = gastosGenerales.filter(g => new Date(g.fecha) >= hace30d).reduce((s, g) => {
+    if (g.actividad === 'Feedlot') return s + (g.monto || 0)
+    if (g.actividad === 'General') return s + (g.monto || 0) / 3
+    return s
+  }, 0)
+  const costoOperativoTotal30 = totalCostoAlim30 + costoSanidad30 + costoManoObra30 + costoGastos30
+  const existenciaProm30 = diasConDatos30.length > 0
+    ? diasConDatos30.reduce((s, d) => s + d.animales, 0) / diasConDatos30.length
+    : null
+  const costoOperativoPromedioPorAnimal30 = existenciaProm30 > 0 ? costoOperativoTotal30 / existenciaProm30 : null
+
+  const gananciaPromedioPorAnimal = (ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoPromedioPorAnimal30 != null)
+    ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoPromedioPorAnimal30
+    : null
+
+  // ── Ganancia neta por animal, ciclo completo (compra → venta) — se
+  // mantiene el detalle por lote (FIFO) solo como referencia informativa
+  // en la tabla de abajo, ya no como la métrica principal de arriba. ──
   const costoOperativoHistorico = mesesDelAnio.length > 0
     ? rentabilidadMensual.reduce((s, m) => s + m.costoAlim + m.costoSanidad + m.costoManoObra + m.costoGastos, 0)
     : 0
@@ -423,7 +469,11 @@ export default function Reportes({ usuario }) {
     }
   })
   const lotesCompletos = gananciaPorLote.filter(l => l.cicloCompleto)
-  const gananciaPromedioPorAnimal = lotesCompletos.length > 0
+  // Este promedio por FIFO queda solo como referencia secundaria — no es la
+  // métrica principal (ver gananciaPromedioPorAnimal, arriba, calculada por
+  // flujo de 30/60 días) porque el FIFO da ciclos de compra→venta
+  // irrealmente cortos en un feedlot con varios lotes engordando a la vez.
+  const gananciaPromedioPorAnimalFIFO = lotesCompletos.length > 0
     ? lotesCompletos.reduce((s, l) => s + l.gananciaPorAnimal * l.cantidad, 0) / lotesCompletos.reduce((s, l) => s + l.cantidad, 0)
     : null
 
@@ -1042,21 +1092,45 @@ export default function Reportes({ usuario }) {
             )}
           </div>
 
-          {/* Ganancia neta por animal — ciclo completo (compra → venta) */}
+          {/* Ganancia promedio por animal — flujo 30/60 días */}
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
-              💰 Ganancia neta por animal — ciclo completo
+              💰 Ganancia promedio por animal
             </div>
             <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
-              Lo que deja cada lote comprado, de punta a punta: precio de venta menos precio de compra menos todos los
-              costos operativos (alimentación, sanidad, mano de obra, gastos generales) durante el tiempo real que
-              pasó en el feedlot. No hay forma de rastrear animal por animal (los corrales mezclan lotes con el
-              tiempo), así que se usa el criterio FIFO — el lote más viejo se considera el primero en venderse —
-              igual que se usa habitualmente para este tipo de cálculo.
+              Se mide como flujo continuo, comparando precio de reposición contra precio de venta — no lote por lote,
+              porque en un feedlot con varios lotes engordando a la vez, tratar de emparejar "esta compra con esta
+              venta" no refleja bien la realidad (ver la tabla de abajo, que muestra por qué). Ingreso promedio por
+              animal vendido (últimos 30 días) menos costo promedio por animal comprado (últimos 60 días) menos costo
+              operativo promedio por animal (alimentación + sanidad + mano de obra + gastos, últimos 30 días).
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
+              <Stat label="Ganancia promedio por animal" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'}
+                sub="ingreso − compra − operativo" color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
+              <Stat label="Ingreso / animal vendido" val={ingresoPromedioPorAnimalVendido !== null ? `$${Math.round(ingresoPromedioPorAnimalVendido).toLocaleString('es-AR')}` : '—'}
+                sub={`${totalAnimVendidos30} animales · últimos 30 días`} color={S.green} />
+              <Stat label="Costo / animal comprado" val={costoPromedioPorAnimalComprado !== null ? `$${Math.round(costoPromedioPorAnimalComprado).toLocaleString('es-AR')}` : '—'}
+                sub={`${totalAnimComprados60} animales · últimos 60 días`} />
+              <Stat label="Costo operativo / animal" val={costoOperativoPromedioPorAnimal30 !== null ? `$${Math.round(costoOperativoPromedioPorAnimal30).toLocaleString('es-AR')}` : '—'}
+                sub="alim. + sanidad + M.O. + gastos, 30 días" />
+            </div>
+          </div>
+
+          {/* Ganancia neta por animal — ciclo completo (compra → venta), FIFO — referencia */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+              📋 Detalle por lote (FIFO) — referencia, no usar como ganancia real
+            </div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
+              Lo que deja cada lote comprado, de punta a punta, emparejando cada compra con las ventas más cercanas en
+              el tiempo (FIFO — el lote más viejo se considera el primero en venderse). En este feedlot da ciclos de
+              compra→venta de apenas días o pocas semanas — imposible para un engorde real — porque hay varios lotes
+              engordando a la vez y se vende del que está más terminado, no necesariamente del más viejo. Se deja acá
+              solo para ver el detalle de cada compra, no como medida de ganancia real (para eso, mirá la tarjeta de arriba).
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: '1.25rem' }}>
-              <Stat label="Ganancia promedio por animal" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'}
-                sub={`${lotesCompletos.length} lote${lotesCompletos.length !== 1 ? 's' : ''} con ciclo completo`} color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
+              <Stat label="Ganancia promedio por animal (FIFO)" val={gananciaPromedioPorAnimalFIFO !== null ? `$${Math.round(gananciaPromedioPorAnimalFIFO).toLocaleString('es-AR')}` : '—'}
+                sub={`${lotesCompletos.length} lote${lotesCompletos.length !== 1 ? 's' : ''} con ciclo completo — no confiable, ver nota arriba`} color={S.hint} />
               <Stat label="Costo operativo / animal / día" val={costoPorAnimalDia > 0 ? `$${Math.round(costoPorAnimalDia).toLocaleString('es-AR')}` : '—'}
                 sub="alimentación + sanidad + mano de obra + gastos, promedio histórico" />
             </div>
