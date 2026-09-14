@@ -1114,6 +1114,13 @@ export default function Reportes({ usuario }) {
               <Stat label="Costo operativo / animal" val={costoOperativoPromedioPorAnimal30 !== null ? `$${Math.round(costoOperativoPromedioPorAnimal30).toLocaleString('es-AR')}` : '—'}
                 sub="alim. + sanidad + M.O. + gastos, 30 días" />
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: '1.25rem', padding: '10px 12px', background: S.bg, borderRadius: 8, fontSize: 11 }}>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Alimentación (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(totalCostoAlim30).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Sanidad (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoSanidad30).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Mano de obra (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoManoObra30).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Gastos (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoGastos30).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Existencia prom.</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>{existenciaProm30 !== null ? Math.round(existenciaProm30) : '—'} anim.</div></div>
+            </div>
           </div>
 
           {/* Ganancia neta por animal — ciclo completo (compra → venta), FIFO — referencia */}
