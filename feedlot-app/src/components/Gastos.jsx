@@ -49,7 +49,7 @@ const NOMBRE_OCASIONAL = 'Proveedor / Cliente ocasional'
 
 const FORM_INIT = {
   actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', activo_id: '',
-  fecha: hoyLocal(),
+  fecha: hoyLocal(), no_recurrente: false,
   proveedor: '', comprobante: '', detalleOcasional: '',
   // Datos proveedor para recibo
   domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
@@ -244,6 +244,7 @@ export default function Gastos({ usuario }) {
       descripcion: descripcionFinal || null,
       monto: form.monto ? montoTotal : null,
       fecha: form.fecha,
+      no_recurrente: form.no_recurrente || false,
       proveedor: form.proveedor || null,
       comprobante: form.comprobante || null,
       domicilio: form.domicilio || null,
@@ -408,6 +409,12 @@ export default function Gastos({ usuario }) {
             <div>
               <Label>Monto total $</Label>
               <input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} />
+            </div>
+            <div style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" id="no_recurrente" checked={form.no_recurrente || false} onChange={e => setForm({...form, no_recurrente: e.target.checked})} />
+              <label htmlFor="no_recurrente" style={{ fontSize: 12, cursor: 'pointer' }}>
+                Es una inversión o gasto puntual (hormigón, obra, flete de cosecha, etc.) — <strong>no</strong> algo que se repite todos los meses
+              </label>
             </div>
             <div style={{ gridColumn: '1/-1' }}>
               <Label>Activo relacionado (opcional)</Label>

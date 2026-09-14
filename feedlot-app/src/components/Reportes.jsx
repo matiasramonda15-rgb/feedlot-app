@@ -289,7 +289,7 @@ export default function Reportes({ usuario }) {
     if (actividad === 'Feedlot') rentabilidadPorMes[key].costoManoObra += pe.monto || 0
     else if (actividad === 'General') rentabilidadPorMes[key].costoManoObra += (pe.monto || 0) / 3
   })
-  gastosGenerales.filter(g => g.actividad === 'Feedlot').forEach(g => {
+  gastosGenerales.filter(g => g.actividad === 'Feedlot' && !g.no_recurrente).forEach(g => {
     const key = mesKey(g.fecha)
     if (!key) return
     asegurarMes(key)
@@ -297,8 +297,10 @@ export default function Reportes({ usuario }) {
   })
   // Los gastos marcados como "General" (ej. un proveedor que no es de una
   // actividad puntual) se reparten en tres partes iguales, igual que los
-  // sueldos del personal "General".
-  gastosGenerales.filter(g => g.actividad === 'General').forEach(g => {
+  // sueldos del personal "General". Los marcados "no recurrente" (una
+  // inversión puntual, un flete de cosecha una vez al año, etc.) quedan
+  // afuera de este promedio — no reflejan un costo del mes a mes.
+  gastosGenerales.filter(g => g.actividad === 'General' && !g.no_recurrente).forEach(g => {
     const key = mesKey(g.fecha)
     if (!key) return
     asegurarMes(key)
@@ -430,7 +432,10 @@ export default function Reportes({ usuario }) {
     if (act === 'General') return s + (pe.monto || 0) / 3
     return s
   }, 0)
-  const costoGastos30 = gastosGenerales.filter(g => new Date(g.fecha) >= hace30d).reduce((s, g) => {
+  // Los gastos marcados como "no recurrente" (inversión puntual, flete de
+  // cosecha una vez al año, etc.) quedan afuera — no son parte del costo
+  // típico de mantener un animal un día en el feedlot.
+  const costoGastos30 = gastosGenerales.filter(g => new Date(g.fecha) >= hace30d && !g.no_recurrente).reduce((s, g) => {
     if (g.actividad === 'Feedlot') return s + (g.monto || 0)
     if (g.actividad === 'General') return s + (g.monto || 0) / 3
     return s
