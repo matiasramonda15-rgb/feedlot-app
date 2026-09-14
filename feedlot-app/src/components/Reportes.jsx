@@ -412,10 +412,17 @@ export default function Reportes({ usuario }) {
   const existenciaProm30 = diasConDatos30.length > 0
     ? diasConDatos30.reduce((s, d) => s + d.animales, 0) / diasConDatos30.length
     : null
+  // Esto es el costo de los últimos 30 días nomás — hay que llevarlo a "por
+  // día" y multiplicarlo por cuánto tiempo REAL pasa un animal en el feedlot
+  // (129 días en promedio, no 30) para tener el costo operativo real del
+  // ciclo completo. Usar directamente el de 30 días como si fuera el ciclo
+  // entero lo subestimaba fuerte (por un factor de ~4).
   const costoOperativoPromedioPorAnimal30 = existenciaProm30 > 0 ? costoOperativoTotal30 / existenciaProm30 : null
+  const costoOperativoDiarioPorAnimal = costoOperativoPromedioPorAnimal30 !== null ? costoOperativoPromedioPorAnimal30 / 30 : null
+  const costoOperativoCicloCompleto = (costoOperativoDiarioPorAnimal !== null && permanenciaPromedio) ? costoOperativoDiarioPorAnimal * permanenciaPromedio : null
 
-  const gananciaPromedioPorAnimal = (ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoPromedioPorAnimal30 != null)
-    ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoPromedioPorAnimal30
+  const gananciaPromedioPorAnimal = (ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoCicloCompleto != null)
+    ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
     : null
 
   // ── Ganancia neta por animal, ciclo completo (compra → venta) — se
@@ -1102,7 +1109,8 @@ export default function Reportes({ usuario }) {
               porque en un feedlot con varios lotes engordando a la vez, tratar de emparejar "esta compra con esta
               venta" no refleja bien la realidad (ver la tabla de abajo, que muestra por qué). Ingreso promedio por
               animal vendido (últimos 30 días) menos costo promedio por animal comprado (últimos 60 días) menos costo
-              operativo promedio por animal (alimentación + sanidad + mano de obra + gastos, últimos 30 días).
+              operativo por animal del ciclo completo (alimentación + sanidad + mano de obra + gastos de los últimos
+              30 días, llevado a costo por día y multiplicado por la permanencia promedio real en el feedlot).
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
               <Stat label="Ganancia promedio por animal" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'}
@@ -1111,8 +1119,8 @@ export default function Reportes({ usuario }) {
                 sub={`${totalAnimVendidos30} animales · últimos 30 días`} color={S.green} />
               <Stat label="Costo / animal comprado" val={costoPromedioPorAnimalComprado !== null ? `$${Math.round(costoPromedioPorAnimalComprado).toLocaleString('es-AR')}` : '—'}
                 sub={`${totalAnimComprados60} animales · últimos 60 días`} />
-              <Stat label="Costo operativo / animal" val={costoOperativoPromedioPorAnimal30 !== null ? `$${Math.round(costoOperativoPromedioPorAnimal30).toLocaleString('es-AR')}` : '—'}
-                sub="alim. + sanidad + M.O. + gastos, 30 días" />
+              <Stat label="Costo operativo / animal" val={costoOperativoCicloCompleto !== null ? `$${Math.round(costoOperativoCicloCompleto).toLocaleString('es-AR')}` : '—'}
+                sub={permanenciaPromedio ? `${Math.round(permanenciaPromedio)} días promedio en el feedlot × $${costoOperativoDiarioPorAnimal ? Math.round(costoOperativoDiarioPorAnimal).toLocaleString('es-AR') : '—'}/día` : 'falta permanencia promedio'} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: '1.25rem', padding: '10px 12px', background: S.bg, borderRadius: 8, fontSize: 11 }}>
               <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Alimentación (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(totalCostoAlim30).toLocaleString('es-AR')}</div></div>
