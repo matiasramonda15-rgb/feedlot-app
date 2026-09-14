@@ -362,6 +362,19 @@ export default function Reportes({ usuario }) {
   // se usa en la industria para esto: FIFO — el lote más viejo se considera
   // el primero en venderse. Es una estimación razonable, no una traza exacta
   // cabeza por cabeza.
+  // El costo real de compra de un lote se recalcula acá con la misma lógica
+  // que usa Gestión Comercial (Ingresos), en vez de leer el campo guardado
+  // monto_total_con_iva directo — ese campo puede haber quedado
+  // desactualizado en varios lotes (les falta sumar el IVA o el ajuste de
+  // factura de feria), lo que infla artificialmente la ganancia calculada.
+  const totalLoteReal = l => {
+    const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
+    if (totalFacturasReal > 0) return totalFacturasReal + (l.monto_negro || 0)
+    const ivaMontoCalc = l.monto_facturado != null ? (l.iva_monto ?? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100)) : 0
+    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
+    const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
+    return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
+  }
   const costoOperativoHistorico = mesesDelAnio.length > 0
     ? rentabilidadMensual.reduce((s, m) => s + m.costoAlim + m.costoSanidad + m.costoManoObra + m.costoGastos, 0)
     : 0
@@ -379,7 +392,7 @@ export default function Reportes({ usuario }) {
   let punteroVenta = 0
 
   const gananciaPorLote = [...lotes].filter(l => l.cantidad > 0).sort((a, b) => new Date(a.fecha_ingreso) - new Date(b.fecha_ingreso)).map(l => {
-    const costoCompra = (l.monto_total_con_iva || 0) > 0 ? l.monto_total_con_iva : (l.kg_bascula || 0) * (l.precio_compra || 0)
+    const costoCompra = totalLoteReal(l)
     let faltante = l.cantidad
     let ingresoVenta = 0
     let ultimaFechaVenta = null
