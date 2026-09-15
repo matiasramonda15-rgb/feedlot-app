@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble, generarOrdenDePago } from '../shared/reciboLogic'
+import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -53,19 +54,22 @@ export default function Activos({ usuario }) {
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
 
   const [formActivo, setFormActivo] = useState({ nombre: '', tipo: 'tractor', marca: '', modelo: '', anio: '', fecha_compra: '', valor_compra: '', valor_actual: '', estado: 'activo', observaciones: '', pct_feedlot: 0, pct_agricultura: 0, pct_servicios: 0, pct_alfalfa: 0, vida_util_anios: 10 })
-  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, es_adelanto: false, tercero: '' })
+  const [formRetiro, setFormRetiro] = useState({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', observaciones: '', no_afecta_caja: false, es_adelanto: false, tercero: '', pagos: [{ ...PAGO_INIT }] })
+  const [chequesCartera, setChequesCartera] = useState([])
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: a }, { data: r }, { data: ct }] = await Promise.all([
+    const [{ data: a }, { data: r }, { data: ct }, { data: chc }] = await Promise.all([
       supabase.from('activos').select('*').order('fecha_compra', { ascending: false }),
       supabase.from('retiros_socios').select('*').order('fecha', { ascending: false }),
       supabase.from('contactos').select('id, nombre').order('nombre'),
+      supabase.from('cheques').select('*').eq('estado', 'en_cartera').order('fecha_vencimiento'),
     ])
     setActivos(a || [])
     setRetiros(r || [])
     setContactos(ct || [])
+    setChequesCartera(chc || [])
     setLoading(false)
   }
 
@@ -113,60 +117,83 @@ export default function Activos({ usuario }) {
   }
 
   async function guardarRetiro() {
-    if (!formRetiro.socio || !formRetiro.monto) { alert('Completá socio y monto'); return }
+    if (!formRetiro.socio) { alert('Completá el socio'); return }
     if (formRetiro.no_afecta_caja && !formRetiro.tercero) { alert('Ingresá a quién le pagó el socio'); return }
+    const montoNoAfectaCaja = parseFloat(formRetiro.monto) || 0
+    const montoPagos = formRetiro.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+    if (formRetiro.no_afecta_caja && montoNoAfectaCaja <= 0) { alert('Completá el monto'); return }
+    if (!formRetiro.no_afecta_caja && montoPagos <= 0) { alert('Completá al menos un monto'); return }
     setGuardando(true)
-    const monto = parseFloat(formRetiro.monto)
+    const monto = formRetiro.no_afecta_caja ? montoNoAfectaCaja : montoPagos
     const desc = formRetiro.no_afecta_caja
       ? `Retiro socio — ${formRetiro.socio} · pagó a ${formRetiro.tercero}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
       : formRetiro.es_adelanto
       ? `Retiro socio — ${formRetiro.socio} · adelanto para pagarle a ${formRetiro.tercero || 'un tercero'}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
       : `Retiro socio — ${formRetiro.socio}${formRetiro.concepto ? ' · ' + formRetiro.concepto : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
-    // Si la plata la puso el socio directamente, o si el retiro se saldó con un
-    // canje/trueque (no plata), no se toca ninguna caja — solo se descuenta del
-    // retiro del socio.
-    const esCanje = formRetiro.forma_pago === 'canje'
-    if (!formRetiro.no_afecta_caja && !esCanje) {
-      if (formRetiro.es_paralelo) {
-        const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-        if (errCp) { alert('Error al registrar en caja: ' + errCp.message); setGuardando(false); return }
-        caja_paralela_id = cp?.id
-      } else {
-        const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto, forma_pago: formRetiro.forma_pago }).select().single()
-        if (errCo) { alert('Error al registrar en caja: ' + errCo.message); setGuardando(false); return }
-        caja_oficial_id = co?.id
-        // Si el retiro se pagó con un cheque nuestro, se guarda en la cartera
-        // para poder hacerle seguimiento (antes esto no se guardaba en ningún
-        // lado, aunque el formulario ya ofrecía "cheque" como forma de pago).
-        if (formRetiro.forma_pago === 'cheque' && formRetiro.cheque_vencimiento) {
-          const { error: errCheq } = await supabase.from('cheques').insert({
-            tipo: 'emitido', numero: formRetiro.cheque_numero || null, banco: formRetiro.cheque_banco || null,
-            monto, fecha_cobro: formRetiro.fecha, fecha_vencimiento: formRetiro.cheque_vencimiento,
-            beneficiario: formRetiro.socio || null, estado: 'entregado', caja_oficial_id,
-          })
-          if (errCheq) {
-            alert(`El cheque N° ${formRetiro.cheque_numero || '(sin número)'} no se pudo guardar en la cartera (${errCheq.message}). El retiro NO se terminó de guardar — revisá e intentá de nuevo.`)
-            setGuardando(false)
-            return
+    // Si la plata la puso el socio directamente, no se toca ninguna caja —
+    // solo se descuenta del retiro del socio. Si sí afecta caja, ahora se
+    // puede pagar con VARIAS formas combinadas en un solo retiro (antes era
+    // una sola forma de pago para todo el monto) — efectivo + cheque +
+    // transferencia, por ejemplo. Cada cheque propio queda en la cartera, y
+    // si se paga con un cheque de tercero que ya teníamos, ese cheque se
+    // marca como entregado para que se descuente de ahí.
+    if (!formRetiro.no_afecta_caja) {
+      for (const pago of formRetiro.pagos) {
+        const montoPago = parseFloat(pago.monto) || 0
+        if (montoPago <= 0) continue
+        if (pago.tipo === 'canje') continue
+        if (pago.es_paralelo) {
+          const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formRetiro.fecha, tipo: 'egreso', descripcion: desc, monto: montoPago }).select().single()
+          if (errCp) { alert('Error al registrar en Caja 2: ' + errCp.message); setGuardando(false); return }
+          if (!caja_paralela_id) caja_paralela_id = cp?.id
+        } else {
+          const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formRetiro.fecha, tipo: 'egreso', categoria: 'Retiro socios', descripcion: desc, monto: montoPago, forma_pago: pago.subtipo_cheque || pago.tipo }).select().single()
+          if (errCo) { alert('Error al registrar en Caja 1: ' + errCo.message); setGuardando(false); return }
+          if (!caja_oficial_id) caja_oficial_id = co?.id
+          if (pago.tipo === 'cheque' || pago.tipo === 'e-cheq') {
+            if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
+              const { error: errCheq } = await supabase.from('cheques').insert({
+                tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null,
+                monto: montoPago, fecha_cobro: formRetiro.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento,
+                beneficiario: formRetiro.socio || null, estado: 'entregado', es_electronico: pago.tipo === 'e-cheq', caja_oficial_id: co?.id,
+              })
+              if (errCheq) {
+                alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${errCheq.message}). El retiro NO se terminó de guardar — revisá e intentá de nuevo.`)
+                setGuardando(false)
+                return
+              }
+            } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+              for (const chId of pago.cheque_tercero_ids) {
+                const { error: errUpd } = await supabase.from('cheques').update({ estado: 'entregado', caja_oficial_id: co?.id }).eq('id', parseInt(chId))
+                if (errUpd) {
+                  alert(`No se pudo marcar como entregado uno de los cheques de tercero (${errUpd.message}). El retiro NO se terminó de guardar — revisá e intentá de nuevo.`)
+                  setGuardando(false)
+                  return
+                }
+              }
+            }
           }
         }
       }
     }
-    // Los campos de cheque (número, banco, vencimiento) son solo del
-    // formulario, para guardarlos en la cartera de cheques (arriba) — la
-    // tabla retiros_socios no tiene esas columnas, así que hay que sacarlos
-    // antes de guardar el retiro en sí, o siempre falla (con cualquier
-    // forma de pago, no solo con cheque).
-    const { cheque_numero, cheque_banco, cheque_vencimiento, ...datosRetiro } = formRetiro
-    const { error } = await supabase.from('retiros_socios').insert({ ...datosRetiro, monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id })
+    const datosRetiro = {
+      socio: formRetiro.socio, fecha: formRetiro.fecha, concepto: formRetiro.concepto || null,
+      observaciones: formRetiro.observaciones || null, no_afecta_caja: formRetiro.no_afecta_caja,
+      es_adelanto: formRetiro.es_adelanto, tercero: formRetiro.tercero || null,
+      monto, registrado_por: usuario?.id, caja_oficial_id, caja_paralela_id,
+      es_paralelo: !formRetiro.no_afecta_caja && formRetiro.pagos.some(p => p.es_paralelo),
+      forma_pago: formRetiro.no_afecta_caja ? null : formRetiro.pagos.filter(p => parseFloat(p.monto) > 0).map(p => p.subtipo_cheque || p.tipo).join('+'),
+      pagos_detalle: formRetiro.no_afecta_caja ? null : formRetiro.pagos.filter(p => parseFloat(p.monto) > 0),
+    }
+    const { error } = await supabase.from('retiros_socios').insert(datosRetiro)
     if (error) { alert('Error al guardar el retiro: ' + error.message); setGuardando(false); return }
     await cargar()
     setShowFormRetiro(false)
     if (formRetiro.no_afecta_caja) {
       generarReciboRetiro({ ...formRetiro, monto, fecha: formRetiro.fecha })
     }
-    setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', forma_pago: 'transferencia', observaciones: '', es_paralelo: false, no_afecta_caja: false, es_adelanto: false, tercero: '', cheque_numero: '', cheque_banco: '', cheque_vencimiento: '' })
+    setFormRetiro({ socio: '', fecha: hoyLocal(), monto: '', concepto: '', observaciones: '', no_afecta_caja: false, es_adelanto: false, tercero: '', pagos: [{ ...PAGO_INIT }] })
     setGuardando(false)
   }
 
@@ -629,40 +656,23 @@ export default function Activos({ usuario }) {
                     {SOCIOS_DEFAULT.map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
-                <div><Label>Monto $</Label><input type="number" value={formRetiro.monto} onChange={e => setFormRetiro({...formRetiro, monto: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Fecha</Label><input type="date" value={formRetiro.fecha} onChange={e => setFormRetiro({...formRetiro, fecha: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Concepto</Label><input type="text" value={formRetiro.concepto} onChange={e => setFormRetiro({...formRetiro, concepto: e.target.value})} style={inputStyle} placeholder="ej. Retiro mensual, anticipo..." /></div>
-                <div><Label>Forma de pago</Label>
-                  <select value={formRetiro.forma_pago} onChange={e => setFormRetiro({...formRetiro, forma_pago: e.target.value})} style={inputStyle}>
-                    {FORMAS_PAGO.map(f => <option key={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div><Label>Observaciones</Label><input type="text" value={formRetiro.observaciones} onChange={e => setFormRetiro({...formRetiro, observaciones: e.target.value})} style={inputStyle} /></div>
-                {formRetiro.forma_pago === 'canje' && (
-                  <div><Label>A cambio de</Label><input type="text" value={formRetiro.canje_detalle || ''} onChange={e => setFormRetiro({...formRetiro, canje_detalle: e.target.value})} style={inputStyle} placeholder="ej. mercadería entregada el 3/7" /></div>
-                )}
-                {formRetiro.forma_pago === 'cheque' && (
-                  <>
-                    <div><Label>N° Cheque</Label><input type="text" value={formRetiro.cheque_numero || ''} onChange={e => setFormRetiro({...formRetiro, cheque_numero: e.target.value})} style={inputStyle} /></div>
-                    <div><Label>Banco</Label><input type="text" value={formRetiro.cheque_banco || ''} onChange={e => setFormRetiro({...formRetiro, cheque_banco: e.target.value})} style={inputStyle} /></div>
-                    <div>
-                      <Label>Fecha de pago (cuándo se cobra)</Label>
-                      <input type="date" value={formRetiro.cheque_vencimiento || ''} onChange={e => setFormRetiro({...formRetiro, cheque_vencimiento: e.target.value})} style={inputStyle} />
-                      {formRetiro.cheque_vencimiento && (
-                        <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>
-                          Vence (30 días después): {(() => { const d = new Date(formRetiro.cheque_vencimiento + 'T12:00:00'); d.setDate(d.getDate() + 30); return d.toLocaleDateString('es-AR') })()}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-                {!formRetiro.no_afecta_caja && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input type="checkbox" id="paralelo_retiro" checked={formRetiro.es_paralelo} onChange={e => setFormRetiro({...formRetiro, es_paralelo: e.target.checked})} />
-                    <label htmlFor="paralelo_retiro" style={{ fontSize: 13, cursor: 'pointer' }}>Caja 2</label>
-                  </div>
-                )}
+                <div style={{ gridColumn: '1 / -1' }}><Label>Observaciones</Label><input type="text" value={formRetiro.observaciones} onChange={e => setFormRetiro({...formRetiro, observaciones: e.target.value})} style={inputStyle} /></div>
               </div>
+              {formRetiro.no_afecta_caja ? (
+                <div style={{ marginBottom: '.75rem', maxWidth: 260 }}>
+                  <Label>Monto $</Label>
+                  <input type="number" value={formRetiro.monto} onChange={e => setFormRetiro({...formRetiro, monto: e.target.value})} style={inputStyle} />
+                </div>
+              ) : (
+                <div style={{ marginBottom: '.75rem' }}>
+                  <Label>Forma de pago — se puede combinar más de una (ej. parte efectivo, parte cheque)</Label>
+                  <ListaPagos pagos={formRetiro.pagos} onChangePagos={pagos => setFormRetiro({...formRetiro, pagos})}
+                    montoObjetivo={null} chequesCartera={chequesCartera} S={S} />
+                </div>
+              )}
+
               {!formRetiro.no_afecta_caja && (
                 <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem', marginBottom: '.75rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: formRetiro.es_adelanto ? 10 : 0 }}>
