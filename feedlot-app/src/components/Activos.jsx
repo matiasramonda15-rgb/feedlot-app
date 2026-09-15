@@ -200,18 +200,22 @@ export default function Activos({ usuario }) {
   // Recibo imprimible de un pago a tercero hecho con la plata del socio (factura a
   // nombre de la sociedad para descargar IVA, pero la plata no sale de la caja).
   async function generarReciboRetiro(r) {
-    const pago = {
-      tipo: r.forma_pago,
-      monto: r.monto,
-      es_paralelo: r.es_paralelo,
-      subtipo_cheque: r.forma_pago === 'cheque' ? 'propio' : '',
-      cheque_propio: r.forma_pago === 'cheque' ? { numero: r.cheque_numero, banco: r.cheque_banco, fecha_vencimiento: r.cheque_vencimiento } : null,
-    }
+    // Antes esto armaba UN solo "pago" a partir de forma_pago/cheque_numero
+    // sueltos — campos viejos, de cuando un retiro solo se podía pagar con
+    // una forma a la vez. Ahora que se puede combinar (efectivo + cheque +
+    // transferencia), forma_pago puede venir como texto combinado (ej.
+    // "efectivo+cheque"), que no coincide con ningún tipo válido y el
+    // generador de recibos lo mostraba como "E-CHEQ" por defecto, sin
+    // importar la forma real. Ahora se arma un pago por cada uno de los que
+    // realmente se usaron, tal cual quedaron guardados en pagos_detalle.
+    const pagos = r.pagos_detalle?.length > 0
+      ? r.pagos_detalle
+      : [{ tipo: r.forma_pago || 'efectivo', monto: r.monto, es_paralelo: r.es_paralelo }]
     await generarOrdenDePago(supabase, {
       destinatario: r.tercero,
       fecha: r.fecha,
       concepto: `${r.concepto || 'Pago por cuenta y orden de Ramonda Hnos S.A.'} · ${r.tercero || ''}`,
-      pagos: [pago],
+      pagos,
       notaPie: `Pago realizado por cuenta y orden de Ramonda Hnos S.A., aportado directamente por el socio ${r.socio}.`,
     })
   }
