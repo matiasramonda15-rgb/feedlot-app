@@ -545,34 +545,39 @@ export default function Alimentacion({ usuario, mobile, nav }) {
       { nombre: 'Mixer 3 - Terminacion', etapa: 'terminacion', corrales: corralesAlim.filter(c => getEtapaM(c) === 'terminacion'), cap: capTerm },
     ].filter(m => m.corrales.length > 0)
 
-    // Reparte los corrales de un mixer en la MÍNIMA cantidad de cargas posible.
-    // Prioridad total: menos cargas preparadas, aunque el mixer tenga que
-    // recorrer corrales no consecutivos dentro de una misma carga. Se arma con
-    // "First Fit Decreasing": primero los corrales más pesados (así entran
-    // los que menos margen dejan), y cada uno va a la primera carga donde
-    // todavía entre; si no entra en ninguna, recién ahí se abre una carga nueva.
+    // Reparte los corrales de un mixer en cargas BALANCEADAS — antes esto
+    // llenaba la primera carga casi al tope y dejaba el resto como sobra
+    // (ej. una de 2.450 kg y otra de 100 kg), algo que en la práctica no
+    // rinde para preparar. Ahora primero calcula cuántas cargas hacen falta
+    // en total, y reparte los corrales entre esa cantidad fija de cargas,
+    // siempre sumando al que menos lleva hasta ahora — así las cargas
+    // terminan parejas entre sí (ej. 1.250 y 1.300 en vez de 2.450 y 100).
     function repartirCorralesEnCargas(corralesConKg, cap) {
+      const total = corralesConKg.reduce((s, c) => s + c.kg, 0)
+      const numCargas = Math.max(1, Math.ceil(total / cap))
       const ordenados = [...corralesConKg].sort((a, b) => b.kg - a.kg)
-      const cargas = []
-      const sumas = []
+      const cargas = Array.from({ length: numCargas }, () => [])
+      const sumas = Array(numCargas).fill(0)
       for (const c of ordenados) {
-        let colocado = false
+        // Entre las cargas donde todavía entra sin pasarse de la capacidad,
+        // va a la que menos lleva acumulado — así se van emparejando.
+        let mejorIdx = -1
         for (let i = 0; i < cargas.length; i++) {
-          if (sumas[i] + c.kg <= cap) {
-            cargas[i].push(c)
-            sumas[i] += c.kg
-            colocado = true
-            break
-          }
+          if (sumas[i] + c.kg <= cap && (mejorIdx === -1 || sumas[i] < sumas[mejorIdx])) mejorIdx = i
         }
-        if (!colocado) {
+        if (mejorIdx === -1) {
+          // Un corral solo ya casi llena una carga entera — no entra en
+          // ninguna de las que hay sin pasarse, así que abre una más.
           cargas.push([c])
           sumas.push(c.kg)
+          continue
         }
+        cargas[mejorIdx].push(c)
+        sumas[mejorIdx] += c.kg
       }
       // Dentro de cada carga, ordenar por número de corral para que al menos
       // la recorrida DENTRO de esa carga sea lo más prolija posible.
-      return cargas.map(carga => [...carga].sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
+      return cargas.filter(carga => carga.length > 0).map(carga => [...carga].sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     }
 
     async function agregarRolloHoyM() {
