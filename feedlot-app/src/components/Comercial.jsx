@@ -62,19 +62,6 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
           </div>
         )}
 
-        {chVence7.length > 0 && (
-          <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>
-              ⚠ {chVence7.length} cheque{chVence7.length !== 1 ? 's' : ''} vence{chVence7.length === 1 ? '' : 'n'} en los próximos 7 días — total ${chVence7.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0).toLocaleString('es-AR')}
-            </div>
-            {chVence7.map(c => (
-              <div key={c.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>
-                {c.tipo === 'recibido' ? '📥' : '📤'} {c.tipo} #{c.numero || 'sin número'} · ${c.monto?.toLocaleString('es-AR')} · vence {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')} {c.banco ? `· ${c.banco}` : ''}
-              </div>
-            ))}
-          </div>
-        )}
-
         <Card>
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
