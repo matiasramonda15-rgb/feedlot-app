@@ -370,52 +370,70 @@ export default function Servicios({ usuario, mobile, nav }) {
     try {
       const ivaPct = parseFloat(formPago.iva_pct) || 0
       const sinFactura = parseFloat(formPago.sin_factura) || 0
-      for (const id of seleccionadas) {
+      // Primero se calcula el total real de CADA servicio seleccionado (con
+      // el precio/ha nuevo si se cargó), para poder repartir el cobro
+      // combinado proporcionalmente entre todos — recién después se registra
+      // la caja y los cheques.
+      const serviciosSel = seleccionadas.map(id => {
         const s = servicios.find(x => x.id === id)
-        if (!s) continue
+        if (!s) return null
         const precioHa = formPago.precio_ha ? parseFloat(formPago.precio_ha) : s.precio_ha
         const totalNeto = precioHa && s.hectareas ? Math.round(precioHa * s.hectareas) : s.total || 0
         const totalConIva = Math.round(totalNeto * (1 + ivaPct / 100))
-        const desc = `Servicio ${s.labor} ${s.cultivo ? `(${s.cultivo})` : ''} — ${s.cliente} · ${s.campo || ''} · ${s.hectareas} ha`
-        let caja_oficial_id = null, caja_paralela_id = null
-        for (const p of formPago.pagos.filter(p => p.monto)) {
-          const monto = parseFloat(p.monto) || 0
-          if (!monto) continue
-          if (p.tipo === 'canje') continue  // canje: no toca caja, se compensa solo en Contactos
-          let pagoCajaId = null
-          if (p.es_paralelo) {
-            const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
-            if (ep) { alert('Error al registrar Caja 2: ' + ep.message); setGuardandoPago(false); return }
-            caja_paralela_id = cp?.id
-            pagoCajaId = cp?.id
-          } else {
-            const { data: co, error: eo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: desc, monto, forma_pago: p.subtipo_cheque || p.tipo }).select().single()
-            if (eo) { alert('Error al registrar caja oficial: ' + eo.message); setGuardandoPago(false); return }
-            caja_oficial_id = co?.id
-            pagoCajaId = co?.id
-          }
-          // En un cobro, cualquier cheque que se recibe es siempre "de otro"
-          // (no tiene sentido "propio/tercero" cuando estamos cobrando) — se
-          // registra directo en cartera con sus datos.
-          if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.cheque_propio?.fecha_vencimiento) {
-            const { error: eCheq } = await supabase.from('cheques').insert({
-              tipo: 'recibido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null,
-              monto, fecha_emision: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento,
-              librador: s.cliente || null, estado: 'en_cartera', es_paralelo: p.es_paralelo || false,
-              es_electronico: p.tipo === 'e-cheq', caja_oficial_id, caja_paralela_id,
-            })
-            // Antes esto solo avisaba y seguía — el cobro quedaba confirmado
-            // igual, con la caja cargada pero el cheque perdido (pasó dos
-            // veces). Ahora se corta acá: mejor que quede sin confirmar y
-            // haya que reintentar, a que quede una plata en caja sin su
-            // cheque en la cartera.
-            if (eCheq) {
-              alert(`El cheque N° ${p.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheq.message}). El cobro NO se terminó de confirmar — revisá e intentá de nuevo.`)
-              setGuardandoPago(false)
-              return
-            }
+        return { s, precioHa, totalConIva }
+      }).filter(Boolean)
+      const totalGrupo = serviciosSel.reduce((sum, x) => sum + x.totalConIva, 0) || 1
+      const descGrupo = serviciosSel.length > 1
+        ? `Servicios a terceros — ${serviciosSel[0].s.cliente} (${serviciosSel.length} labores)`
+        : `Servicio ${serviciosSel[0].s.labor} ${serviciosSel[0].s.cultivo ? `(${serviciosSel[0].s.cultivo})` : ''} — ${serviciosSel[0].s.cliente} · ${serviciosSel[0].s.campo || ''} · ${serviciosSel[0].s.hectareas} ha`
+      // La caja y los cheques del cobro combinado se registran UNA sola vez acá
+      // — antes este bloque estaba adentro del "for" de abajo y se repetía una
+      // vez por cada servicio seleccionado, duplicando la plata en caja y los
+      // cheques tantas veces como servicios hubiera en el cobro.
+      let caja_oficial_id = null, caja_paralela_id = null
+      for (const p of formPago.pagos.filter(p => p.monto)) {
+        const monto = parseFloat(p.monto) || 0
+        if (!monto) continue
+        if (p.tipo === 'canje') continue  // canje: no toca caja, se compensa solo en Contactos
+        if (p.es_paralelo) {
+          const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'ingreso', descripcion: descGrupo, monto }).select().single()
+          if (ep) { alert('Error al registrar Caja 2: ' + ep.message); setGuardandoPago(false); return }
+          if (!caja_paralela_id) caja_paralela_id = cp?.id
+        } else {
+          const { data: co, error: eo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'ingreso', categoria: 'Servicios a terceros', descripcion: descGrupo, monto, forma_pago: p.subtipo_cheque || p.tipo }).select().single()
+          if (eo) { alert('Error al registrar caja oficial: ' + eo.message); setGuardandoPago(false); return }
+          if (!caja_oficial_id) caja_oficial_id = co?.id
+        }
+        // En un cobro, cualquier cheque que se recibe es siempre "de otro"
+        // (no tiene sentido "propio/tercero" cuando estamos cobrando) — se
+        // registra directo en cartera con sus datos.
+        if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.cheque_propio?.fecha_vencimiento) {
+          const { error: eCheq } = await supabase.from('cheques').insert({
+            tipo: 'recibido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null,
+            monto, fecha_emision: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento,
+            librador: serviciosSel[0].s.cliente || null, estado: 'en_cartera', es_paralelo: p.es_paralelo || false,
+            es_electronico: p.tipo === 'e-cheq', caja_oficial_id, caja_paralela_id,
+          })
+          // Antes esto solo avisaba y seguía — el cobro quedaba confirmado
+          // igual, con la caja cargada pero el cheque perdido (pasó dos
+          // veces). Ahora se corta acá: mejor que quede sin confirmar y
+          // haya que reintentar, a que quede una plata en caja sin su
+          // cheque en la cartera.
+          if (eCheq) {
+            alert(`El cheque N° ${p.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheq.message}). El cobro NO se terminó de confirmar — revisá e intentá de nuevo.`)
+            setGuardandoPago(false)
+            return
           }
         }
+      }
+      // Ahora sí, un update por servicio — cada uno con su parte proporcional
+      // del cobro combinado (no el cobro completo repetido en cada uno).
+      for (const { s, precioHa, totalConIva } of serviciosSel) {
+        const proporcion = totalConIva / totalGrupo
+        const pagosProporcionales = formPago.pagos.filter(p => p.monto).map(p => ({
+          ...p, fecha: p.fecha || formPago.fecha,
+          monto: Math.round((parseFloat(p.monto) || 0) * proporcion),
+        }))
         const updateData = {
           iva_pct: ivaPct || null,
           estado: 'cobrado',
@@ -423,12 +441,12 @@ export default function Servicios({ usuario, mobile, nav }) {
           fecha_cobro: formPago.fecha,
           caja_oficial_id,
           caja_paralela_id,
-          monto_negro: sinFactura > 0 ? sinFactura : null,
-          pagos_detalle: formPago.pagos.map(p => ({ ...p, fecha: p.fecha || formPago.fecha })),
+          monto_negro: sinFactura > 0 ? Math.round(sinFactura * proporcion) : null,
+          pagos_detalle: pagosProporcionales,
         }
         if (precioHa) updateData.precio_ha = precioHa
         if (totalConIva > 0) updateData.total = totalConIva
-        const { error: eu } = await supabase.from('servicios_terceros').update(updateData).eq('id', id)
+        const { error: eu } = await supabase.from('servicios_terceros').update(updateData).eq('id', s.id)
         if (eu) { alert('Error al actualizar servicio: ' + eu.message); setGuardandoPago(false); return }
       }
       setSeleccionadas([])
