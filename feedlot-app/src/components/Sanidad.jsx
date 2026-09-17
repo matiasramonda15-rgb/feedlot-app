@@ -303,6 +303,25 @@ export default function Sanidad({ usuario, mobile, nav }) {
     alert('Revision confirmada correctamente.')
   }
 
+  // Busca el lote de un corral — si el corral no tiene uno propio (puede
+  // pasar después de un movimiento PARCIAL entre corrales, donde a
+  // propósito no se mueve el registro del lote porque no se sabe con
+  // certeza a cuál de los dos grupos pertenece), se rastrea de qué corral
+  // vinieron esos animales en el último traslado, y se usa el lote de ESE
+  // corral de origen como respaldo — mismo estado de vacunación, misma
+  // fecha real de ingreso, en vez de tratarlos como recién llegados.
+  function buscarLoteDeCorral(corralId) {
+    const directo = (lotes || []).find(l => l.corral_cuarentena_id === corralId)
+    if (directo) return directo
+    const ultimoTraslado = (movimientosM || [])
+      .filter(m => m.tipo === 'traslado' && m.corral_destino_id === corralId)
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))[0]
+    if (ultimoTraslado?.corral_origen_id) {
+      return (lotes || []).find(l => l.corral_cuarentena_id === ultimoTraslado.corral_origen_id) || null
+    }
+    return null
+  }
+
   function setRevOk(i) {
     const n = [...revState]; n[i] = { ok: true, enfermos: [] }; setRevState(n)
   }
@@ -437,7 +456,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
               )}
               {alertas.length === 0 && corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0).length === 0 && <div style={{ textAlign: 'center', padding: '1rem', color: CM.muted, fontSize: 13 }}>Sin alertas pendientes.</div>}
               {corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0).map(c => {
-                const ultimoLote = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
+                const ultimoLote = buscarLoteDeCorral(c.id)
                 const ultimaFecha = ultimoLote?.fecha_ingreso || (movimientosM || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0] || null
                 const dias = ultimaFecha ? (() => {
                   const hoy = new Date()
@@ -452,7 +471,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                       {c.animales} animales · último ingreso {ultimaFecha ? new Date(ultimaFecha + 'T12:00:00').toLocaleDateString('es-AR') : '?'}
                     </div>
                     {(() => {
-                      const loteC = (lotes || []).find(l => l.corral_cuarentena_id === c.id)
+                      const loteC = buscarLoteDeCorral(c.id)
                       const vacunas = stockSanitarioM.filter(p => p.tipo === 'Vacuna')
                       const vacKey = loteC?.id || c.id
                       const vac = vacunacionLote[vacKey] || {}
@@ -586,7 +605,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
               })}
               {alertas.map(a => {
                 const isProtocolo = a.tipo === 'protocolo_ingreso'
-                const loteAlerta = isProtocolo ? (lotes || []).find(l => l.corral_cuarentena_id === a.corral_id) : null
+                const loteAlerta = isProtocolo ? buscarLoteDeCorral(a.corral_id) : null
                 const vac = loteAlerta ? (vacunacionLote[loteAlerta.id] || {}) : {}
                 const vacunas = stockSanitarioM.filter(p => p.tipo === 'Vacuna')
                 const vacSeleccionadas = vac.vacunas || [{ prod_id: '', dosis: '5' }]
