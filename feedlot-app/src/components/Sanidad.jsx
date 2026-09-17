@@ -310,14 +310,20 @@ export default function Sanidad({ usuario, mobile, nav }) {
   // vinieron esos animales en el último traslado, y se usa el lote de ESE
   // corral de origen como respaldo — mismo estado de vacunación, misma
   // fecha real de ingreso, en vez de tratarlos como recién llegados.
-  function buscarLoteDeCorral(corralId) {
+  // Sigue la cadena hacia atrás las veces que haga falta (ej. corral 1 →
+  // manga → corral 11: si el primer paso también fue parcial, el lote real
+  // puede estar dos o más pasos atrás, no solo uno) — con un límite para no
+  // dar vueltas en círculo si el historial tuviera algo raro.
+  function buscarLoteDeCorral(corralId, vistos = new Set()) {
+    if (vistos.has(corralId) || vistos.size > 10) return null
+    vistos.add(corralId)
     const directo = (lotes || []).find(l => l.corral_cuarentena_id === corralId)
     if (directo) return directo
     const ultimoTraslado = (movimientosM || [])
       .filter(m => m.tipo === 'traslado' && m.corral_destino_id === corralId)
       .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))[0]
     if (ultimoTraslado?.corral_origen_id) {
-      return (lotes || []).find(l => l.corral_cuarentena_id === ultimoTraslado.corral_origen_id) || null
+      return buscarLoteDeCorral(ultimoTraslado.corral_origen_id, vistos)
     }
     return null
   }
