@@ -175,10 +175,31 @@ function Home({ usuario, nav, onLogout, datos }) {
   }
 
   // Corrales en cuarentena próximos a vencer (ingresados hace más de 8 días)
+  // Busca el lote de un corral seleccionado — si no hay uno directo (puede
+  // pasar tras un movimiento PARCIAL entre corrales, donde a propósito no
+  // se mueve el registro del lote porque no se sabe con certeza a cuál de
+  // los dos grupos pertenece), sigue el historial de traslados hacia atrás
+  // — las veces que haga falta — hasta encontrar el lote real, en vez de
+  // tratar a esos animales como recién llegados. Misma lógica que ya se
+  // usa en Sanidad, duplicada acá porque esta pantalla arma sus tareas por
+  // separado.
+  function buscarLoteDeCorralM(corralId, vistos = new Set()) {
+    if (vistos.has(corralId) || vistos.size > 10) return null
+    vistos.add(corralId)
+    const directo = (datos.lotes || []).find(l => l.corral_cuarentena_id === corralId)
+    if (directo) return directo
+    const ultimoTraslado = (datos.movimientos || [])
+      .filter(m => m.tipo === 'traslado' && m.corral_destino_id === corralId)
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))[0]
+    if (ultimoTraslado?.corral_origen_id) {
+      return buscarLoteDeCorralM(ultimoTraslado.corral_origen_id, vistos)
+    }
+    return null
+  }
   const corralesCuarentena = corrales.filter(c => c.rol === 'cuarentena' && (c.animales || 0) > 0)
   corralesCuarentena.forEach(c => {
     // Usar fecha del último lote en ese corral (más reciente primero)
-    const ultimoLote = (datos.lotes || []).find(l => l.corral_cuarentena_id === c.id)
+    const ultimoLote = buscarLoteDeCorralM(c.id)
     const ultimaFecha = ultimoLote?.fecha_ingreso || ((datos.movimientos || []).find(m => m.corral_destino_id === c.id)?.fecha?.split('T')[0]) || null
     const diasDesde = ultimaFecha
       ? (() => {
