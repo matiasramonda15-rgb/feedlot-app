@@ -457,6 +457,32 @@ export default function Reportes({ usuario }) {
     ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
     : null
 
+  // ── Costo de producir un kilo vs precio de venta, por rango de peso ──
+  // Sirve para ver hasta qué peso conviene seguir engordando: mientras el
+  // precio de venta de ese rango esté por encima del costo de producir el
+  // kilo, cada kilo extra deja margen positivo.
+  const costoPorKgProducido = (costoOperativoDiarioPorAnimal != null && gdpEstimado) ? costoOperativoDiarioPorAnimal / gdpEstimado : null
+  const BANDAS_PESO = [
+    { desde: 0, hasta: 380, label: '< 380 kg' },
+    { desde: 380, hasta: 410, label: '380-410 kg' },
+    { desde: 410, hasta: 430, label: '410-430 kg' },
+    { desde: 430, hasta: 450, label: '430-450 kg' },
+    { desde: 450, hasta: 9999, label: '> 450 kg' },
+  ]
+  const hace30dBandas = new Date(); hace30dBandas.setDate(hace30dBandas.getDate() - 30)
+  const preciosPorBanda = BANDAS_PESO.map(b => {
+    let kgTot = 0, ingresoTot = 0, cabTot = 0
+    ventas.filter(v => v.cantidad > 0 && v.kg_vivo_total > 0 && new Date(v.creado_en) >= hace30dBandas).forEach(v => {
+      const pesoProm = v.kg_vivo_total / v.cantidad
+      if (pesoProm < b.desde || pesoProm >= b.hasta) return
+      kgTot += v.kg_vivo_total
+      cabTot += v.cantidad
+      ingresoTot += (v.total || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+    })
+    const precioKg = kgTot > 0 ? ingresoTot / kgTot : null
+    return { ...b, precioKg, cabTot, margenKg: (precioKg != null && costoPorKgProducido != null) ? precioKg - costoPorKgProducido : null }
+  })
+
   // ── Ganancia promedio por animal, mes a mes (mismo método de arriba, pero
   // por mes calendario en vez de ventana móvil de 30/60 días) ──
   const ingresoNetoPorMes = {}
@@ -1194,6 +1220,48 @@ export default function Reportes({ usuario }) {
                 </div>
               )
             })()}
+          </div>
+
+          {/* Costo de producir un kilo vs precio de venta, por rango de peso */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+              ⚖️ Costo de producir un kilo vs precio de venta, por peso
+            </div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
+              Para ver hasta qué peso conviene seguir engordando un animal: mientras el precio de venta de ese rango
+              esté por encima del costo de producir el kilo, cada kilo extra todavía deja margen. Costo de producir
+              un kilo: ${costoPorKgProducido !== null ? Math.round(costoPorKgProducido).toLocaleString('es-AR') : '—'}
+              (costo operativo diario ÷ ganancia diaria de peso actual).
+            </div>
+            {preciosPorBanda.every(b => b.cabTot === 0) ? (
+              <div style={{ padding: '1rem', textAlign: 'center', color: S.hint, fontSize: 12 }}>Sin ventas en los últimos 30 días para comparar por rango de peso.</div>
+            ) : (
+              <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Rango de peso', 'Animales', '$/kg venta (real)', 'Costo de producir 1 kg', 'Margen por kg'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Rango de peso' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preciosPorBanda.filter(b => b.cabTot > 0).map(b => (
+                      <tr key={b.label} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '9px 12px', fontWeight: 600 }}>{b.label}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{b.cabTot}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>${Math.round(b.precioKg).toLocaleString('es-AR')}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{costoPorKgProducido !== null ? `$${Math.round(costoPorKgProducido).toLocaleString('es-AR')}` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: b.margenKg >= 0 ? S.green : S.red }}>{b.margenKg !== null ? `${b.margenKg >= 0 ? '+' : ''}$${Math.round(b.margenKg).toLocaleString('es-AR')}` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ padding: '8px 12px', fontSize: 10, color: S.hint, borderTop: `1px solid ${S.border}` }}>
+                  Con pocas ventas en un rango, el $/kg de esa fila puede no ser representativo — mirá también la cantidad de animales antes de sacar conclusiones.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Ganancia neta por animal — ciclo completo (compra → venta), FIFO — referencia */}
