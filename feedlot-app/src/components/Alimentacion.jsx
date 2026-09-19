@@ -973,6 +973,15 @@ export default function Alimentacion({ usuario, mobile, nav }) {
               return a + x.kg * ms / 100
             }, 0)
             const pctMSDieta = total > 0 ? (kgMSDieta / total * 100) : 0
+            // Precio real de la dieta completa: cada ingrediente aporta su
+            // % de la mezcla × su precio de referencia — la misma cuenta
+            // que se usa para calcular el costo de alimentación real en
+            // Reportes, mostrada acá directamente en la fórmula.
+            const precioTotalDieta = ings.reduce((a, x) => {
+              const ingLower = x.n.toLowerCase()
+              const stockItem = stockDB.find(s => s.insumo.toLowerCase() === ingLower) || stockDB.find(s => s.insumo.toLowerCase().includes(ingLower.split(' ')[0]))
+              return a + x.kg * (stockItem?.precio_referencia || 0)
+            }, 0) / (total || 100)
             let acum = 0
             return (
               <div key={key} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
@@ -980,6 +989,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{e.label}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span style={{ fontSize: 12, color: S.accent, fontWeight: 600, padding: '3px 9px', background: S.accentLight, borderRadius: 5 }}>% Materia seca: {pctMSDieta.toFixed(1)}%</span>
+                    <span style={{ fontSize: 12, color: S.green, fontWeight: 600, padding: '3px 9px', background: S.greenLight, borderRadius: 5 }}>${precioTotalDieta.toLocaleString('es-AR', { maximumFractionDigits: 0 })}/kg de comida</span>
                     <span style={{ fontSize: 12, color: totalOk ? S.green : S.red, fontWeight: 600 }}>Total: {total.toFixed(1)} / 100 kg {!totalOk && '⚠'}</span>
                     {!modoEdit
                       ? <button onClick={() => setEditando({ ...editando, [key]: true })}
@@ -1063,7 +1073,8 @@ export default function Alimentacion({ usuario, mobile, nav }) {
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: totalOk ? S.green : S.red }}>100%</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{kgMSDieta.toFixed(2)}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>100%</td>
-                        <td /><td />
+                        <td />
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>${precioTotalDieta.toLocaleString('es-AR', { maximumFractionDigits: 1 })}/kg</td>
                       </tr>
                     </tbody>
                   </table>
