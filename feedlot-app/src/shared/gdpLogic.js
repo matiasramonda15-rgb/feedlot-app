@@ -173,7 +173,12 @@ export function calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, 
   const mesesGDP = []
   for (let i = 0; i < 12; i++) {
     const inicio = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)
-    const fin = i === 0 ? hoy : new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 1)
+    // Para el mes actual, el límite de arriba tiene que ser el inicio de
+    // MAÑANA, no el momento exacto de ahora — si no, un ingreso cargado hoy
+    // mismo queda afuera del cálculo cuando se mira la pantalla antes del
+    // mediodía (los lotes se comparan al mediodía de su fecha, así que
+    // "ahora" a las 10 de la mañana es "antes" que "hoy a las 12").
+    const fin = i === 0 ? new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1) : new Date(hoy.getFullYear(), hoy.getMonth() - i + 1, 1)
     const resultado = calcMesGDP(lotes || [], ventas || [], raciones || [], inicio, fin, existenciaActualGlobal, lookups)
     if (resultado) mesesGDP.unshift({ mes: inicio.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' }), fechaInicio: inicio, ...resultado })
   }
