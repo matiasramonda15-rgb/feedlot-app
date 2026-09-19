@@ -466,8 +466,13 @@ export default function Ingresos({ usuario, mobile, nav }) {
   const ahora = new Date()
   const anioActual = ahora.getFullYear()
   const mesActual = ahora.getMonth()
-  const lotesAnio = lotes.filter(l => l.created_at && new Date(l.created_at).getFullYear() === anioActual)
-  const lotesMes = lotes.filter(l => l.created_at && new Date(l.created_at).getFullYear() === anioActual && new Date(l.created_at).getMonth() === mesActual)
+  // Se agrupa por fecha_ingreso (cuándo llegaron de verdad los animales),
+  // no por created_at (cuándo se tipeó el registro en el sistema) — antes
+  // usaba created_at acá, y como a veces se carga un ingreso unos días
+  // después de que pasó, "este mes" no coincidía con lo que se ve en
+  // Reportes (que sí usa fecha_ingreso), ni con la fecha real.
+  const lotesAnio = lotes.filter(l => l.fecha_ingreso && new Date(l.fecha_ingreso + 'T12:00:00').getFullYear() === anioActual)
+  const lotesMes = lotes.filter(l => l.fecha_ingreso && new Date(l.fecha_ingreso + 'T12:00:00').getFullYear() === anioActual && new Date(l.fecha_ingreso + 'T12:00:00').getMonth() === mesActual)
   const totalAnimAnio = lotesAnio.reduce((s, l) => s + (l.cantidad || 0), 0)
   const totalAnimMes = lotesMes.reduce((s, l) => s + (l.cantidad || 0), 0)
   const lotesConPrecio = lotes.filter(l => l.precio_compra)
@@ -488,7 +493,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
   // Detalle por mes
   const ingresosPorMes = {}
   lotes.forEach(l => {
-    const fecha = l.created_at ? new Date(l.created_at) : new Date((l.fecha_ingreso || hoyLocal()) + 'T12:00:00')
+    const fecha = l.fecha_ingreso ? new Date(l.fecha_ingreso + 'T12:00:00') : new Date(l.created_at || hoyLocal())
     const key = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
     if (!ingresosPorMes[key]) ingresosPorMes[key] = { cantidad: 0, ingresos: 0, kgTotal: 0, precioSum: 0, precioCount: 0 }
     ingresosPorMes[key].cantidad += l.cantidad || 0
