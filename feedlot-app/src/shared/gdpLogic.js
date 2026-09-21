@@ -99,15 +99,23 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
   const porDia = {}
   racionesPeriodo.forEach(r => {
     const dia = r.creado_en.split('T')[0]
-    if (!porDia[dia]) porDia[dia] = { kgTotal: 0, animales: 0, corralesVistos: new Set() }
+    if (!porDia[dia]) porDia[dia] = { kgTotal: 0, animales: 0, animalesReal: 0, corralesVistos: new Set() }
     porDia[dia].kgTotal += r.kg_total || 0
     if (r.corral_id && !porDia[dia].corralesVistos.has(r.corral_id)) {
+      // "animales" (con respaldo del conteo actual del corral) sirve para
+      // estimar el consumo diario, donde no importa tanto si ese día puntual
+      // no tenía el dato cargado. "animalesReal" es SOLO el valor cargado
+      // ese mismo día — nunca el conteo de HOY — porque se usa para
+      // reconstruir la existencia histórica, y ahí meter el número de hoy
+      // en una fecha vieja da un salto falso (pasó con julio: los primeros
+      // días de ese mes no tenían el dato cargado todavía).
       porDia[dia].animales += (r.cantidad_animales ?? r.corrales?.animales) || 0
+      if (r.cantidad_animales != null) porDia[dia].animalesReal += r.cantidad_animales
       porDia[dia].corralesVistos.add(r.corral_id)
     }
   })
   const diasConDatos = Object.values(porDia).filter(d => d.animales > 0 && d.kgTotal > 0)
-  const diasOrdenados = Object.entries(porDia).filter(([, d]) => d.animales > 0).sort((a, b) => a[0].localeCompare(b[0]))
+  const diasOrdenados = Object.entries(porDia).filter(([, d]) => d.animalesReal > 0).sort((a, b) => a[0].localeCompare(b[0]))
   const consumoDiario = diasConDatos.length > 0
     ? diasConDatos.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatos.length
     : null
@@ -122,11 +130,21 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
   // rato — eso es lo que se veía saltar de un día para el otro. Si no hay
   // datos de Alimentación para ese mes (meses muy viejos, antes de que se
   // empezara a cargar), se usa el método viejo como respaldo.
-  const stockInicial = diasOrdenados.length > 0 ? diasOrdenados[0][1].animales : existenciaEn(fechaInicio)
-  const stockFinalReal = diasOrdenados.length > 0 ? diasOrdenados[diasOrdenados.length - 1][1].animales : Math.max(0, existenciaEn(fechaInicio) + cabIngresadas - cabVendidas)
+  // Se promedian los primeros/últimos 3 días con datos (no un solo día
+  // suelto) — si justo el primer o el último día tiene una carga
+  // incompleta (ej. faltó cargar un corral ese día en particular), un solo
+  // día pinchado no distorsiona todo el "inicio → fin" del mes.
+  const promedioExtremos = (entradas) => entradas.length > 0 ? entradas.reduce((s, [, d]) => s + d.animalesReal, 0) / entradas.length : null
+  const stockInicial = diasOrdenados.length > 0 ? promedioExtremos(diasOrdenados.slice(0, 3)) : existenciaEn(fechaInicio)
+  const stockFinalReal = diasOrdenados.length > 0 ? promedioExtremos(diasOrdenados.slice(-3)) : Math.max(0, existenciaEn(fechaInicio) + cabIngresadas - cabVendidas)
   const stockFinal = Math.max(0, stockFinalReal)
-  const existenciaPromedio = diasConDatos.length > 0
-    ? diasConDatos.reduce((s, d) => s + d.animales, 0) / diasConDatos.length
+  // Mismo criterio acá: solo días con el dato realmente cargado ese día,
+  // nunca el respaldo del conteo de hoy — este es el número que alimenta
+  // GDP, permanencia y la ganancia por animal, así que tiene que ser
+  // igual de confiable que el de arriba.
+  const diasConDatosReal = Object.values(porDia).filter(d => d.animalesReal > 0 && d.kgTotal > 0)
+  const existenciaPromedio = diasConDatosReal.length > 0
+    ? diasConDatosReal.reduce((s, d) => s + d.animalesReal, 0) / diasConDatosReal.length
     : (stockInicial + stockFinal) / 2
   if (existenciaPromedio <= 0) return null
 
