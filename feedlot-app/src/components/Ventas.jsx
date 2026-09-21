@@ -392,6 +392,9 @@ export default function Ventas({ usuario, mobile, nav }) {
         const montoV = ep.monto_total_con_iva && totalKgNetoGrupo > 0
           ? Math.round(montoTotalGrupo * kgNetoCv / totalKgNetoGrupo)
           : montoCv
+        const sinGuiaV = (ep.sinGuia || {})[gv.id] !== undefined && (ep.sinGuia || {})[gv.id] !== ''
+          ? Math.max(0, Math.min(gv.cantidad || 0, parseInt(ep.sinGuia[gv.id]) || 0))
+          : (gv.cantidad_sin_guia || null)
         const { error } = await supabase.from('ventas').update({
           precio_kg: precioCv || null,
           desbaste_pct: desbCv,
@@ -404,12 +407,16 @@ export default function Ventas({ usuario, mobile, nav }) {
           estado_comercial: 'pendiente_factura',
           comprador: compradorFinal,
           observaciones: ep.observaciones || venta.observaciones || null,
+          cantidad_sin_guia: sinGuiaV,
         }).eq('id', gv.id)
         if (error) { alert('Error al guardar los datos de la venta: ' + error.message); return }
       }
     } else {
       const kgNeto = Math.round((venta.kg_vivo_total || 0) * (1 - desbastePct / 100) * 10) / 10
       const montoTotal = ep.monto_total_con_iva ? parseFloat(ep.monto_total_con_iva) : (precioKg ? Math.round(kgNeto * precioKg * 100) / 100 : null)
+      const sinGuiaSolo = (ep.sinGuia || {})[venta.id] !== undefined && (ep.sinGuia || {})[venta.id] !== ''
+        ? Math.max(0, Math.min(venta.cantidad || 0, parseInt(ep.sinGuia[venta.id]) || 0))
+        : (venta.cantidad_sin_guia || null)
       const { error } = await supabase.from('ventas').update({
         precio_kg: precioKg,
         desbaste_pct: desbastePct,
@@ -421,6 +428,7 @@ export default function Ventas({ usuario, mobile, nav }) {
         estado_comercial: 'pendiente_factura',
         comprador: compradorFinal,
         observaciones: ep.observaciones || venta.observaciones || null,
+        cantidad_sin_guia: sinGuiaSolo,
       }).eq('id', venta.id)
       if (error) { alert('Error al guardar los datos de la venta: ' + error.message); return }
     }
@@ -678,6 +686,19 @@ export default function Ventas({ usuario, mobile, nav }) {
             })}
           </div>
         )}
+
+        <div style={{ border: `1px solid ${S.amber}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10, background: S.amberLight }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 8 }}>De estos animales, ¿cuántos salieron sin guía? (en negro)</div>
+          {grupo.map(gv => (
+            <div key={gv.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: S.muted }}>C-{gv.corrales?.numero || gv.corral_id} · {gv.cantidad} animales</div>
+              <input type="number" min="0" max={gv.cantidad} placeholder="0"
+                value={(editandoVenta?.sinGuia || {})[gv.id] ?? (gv.cantidad_sin_guia || '')}
+                onChange={e => setEditandoVenta({...editandoVenta, sinGuia: {...(editandoVenta?.sinGuia || {}), [gv.id]: e.target.value}})}
+                style={{ ...inp, border: `1px solid ${S.amber}` }} />
+            </div>
+          ))}
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
           <div>
