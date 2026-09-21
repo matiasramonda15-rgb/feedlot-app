@@ -1478,6 +1478,23 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
   const [editandoCaravanas, setEditandoCaravanas] = useState(null)
   const [textoCaravanas, setTextoCaravanas] = useState('')
   const [caravanasGuardando, setCaravanasGuardando] = useState(false)
+  const [caravanasGuardadas, setCaravanasGuardadas] = useState({}) // { [loteId]: [...lecturas] }
+  const [caravanasCargando, setCaravanasCargando] = useState(false)
+
+  async function cargarCaravanasDeLote(loteId) {
+    setCaravanasCargando(true)
+    const { data, error } = await supabase.from('caravanas_lecturas').select('*').eq('lote_id', loteId).eq('tipo', 'ingreso').order('numero_caravana')
+    setCaravanasCargando(false)
+    if (error) { alert('Error al cargar las caravanas guardadas: ' + error.message); return }
+    setCaravanasGuardadas(prev => ({ ...prev, [loteId]: data || [] }))
+  }
+
+  async function borrarCaravana(id, loteId) {
+    if (!confirm('¿Borrar esta lectura de caravana?')) return
+    const { error } = await supabase.from('caravanas_lecturas').delete().eq('id', id)
+    if (error) { alert('Error al borrar: ' + error.message); return }
+    await cargarCaravanasDeLote(loteId)
+  }
   const [pagosMap, setPagosMap] = useState({})
   const [chequesCartera, setChequesCartera] = useState([])
   // (PAGO_INIT ahora viene del módulo compartido ./PagoFormulario)
@@ -2089,9 +2106,9 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                         style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap', marginRight: 4 }}>
                         ✏️ Editar
                       </button>
-                      <button onClick={() => { setEditandoCaravanas(editandoCaravanas === l.id ? null : l.id); setTextoCaravanas('') }}
+                      <button onClick={() => { const abrir = editandoCaravanas !== l.id; setEditandoCaravanas(abrir ? l.id : null); setTextoCaravanas(''); if (abrir) cargarCaravanasDeLote(l.id) }}
                         style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        📡 Caravanas
+                        📡 Caravanas{caravanasGuardadas[l.id]?.length > 0 ? ` (${caravanasGuardadas[l.id].length})` : ''}
                       </button>
                     </td>
                     <td style={{ padding: '7px 10px', minWidth: 180 }}>
@@ -2288,18 +2305,47 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                     <tr>
                       <td colSpan={11} style={{ padding: '1.25rem', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
                         <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>📡 Cargar lecturas de caravana electrónica — ingreso de C-{corralNum}</div>
+                        {caravanasCargando ? (
+                          <div style={{ fontSize: 11, color: S.hint, marginBottom: 10 }}>Cargando lecturas guardadas...</div>
+                        ) : (caravanasGuardadas[l.id]?.length > 0) && (
+                          <div style={{ marginBottom: 12, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
+                            <div style={{ padding: '6px 10px', background: S.greenLight, fontSize: 11, fontWeight: 600, color: S.green }}>
+                              ✓ {caravanasGuardadas[l.id].length} caravanas ya guardadas para este lote
+                            </div>
+                            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                                <tbody>
+                                  {caravanasGuardadas[l.id].map(c => (
+                                    <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                      <td style={{ padding: '4px 10px', fontFamily: 'monospace' }}>...{c.numero_caravana.slice(-6)}</td>
+                                      <td style={{ padding: '4px 10px', fontFamily: 'monospace', textAlign: 'right' }}>{c.peso} kg</td>
+                                      <td style={{ padding: '4px 10px', color: S.hint, textAlign: 'right' }}>{c.hora || '—'}</td>
+                                      <td style={{ padding: '4px 10px', textAlign: 'right' }}>
+                                        <button onClick={() => borrarCaravana(c.id, l.id)} style={{ padding: '2px 7px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Borrar</button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
                         <div style={{ fontSize: 11, color: S.hint, marginBottom: 8 }}>
-                          Pegá acá el texto del reporte de pesaje (caravana, peso y hora, una línea por animal). El resto del reporte (encabezado, estadísticas) se ignora solo.
+                          Pegá acá el texto del reporte de pesaje (caravana, peso y hora, una línea por animal) para agregar más. El resto del reporte (encabezado, estadísticas) se ignora solo.
                         </div>
                         <textarea value={textoCaravanas} onChange={e => setTextoCaravanas(e.target.value)} rows={8}
                           placeholder={'032010031451655 161 17:44\n032010031451658 190 17:45\n...'}
                           style={{ width: '100%', fontFamily: 'monospace', fontSize: 11, padding: 10, border: `1px solid ${S.border}`, borderRadius: 6, marginBottom: 8, boxSizing: 'border-box' }} />
                         {(() => {
-                          const preview = parsearReporteCaravanas(textoCaravanas)
+                          const yaGuardadas = new Set((caravanasGuardadas[l.id] || []).map(c => c.numero_caravana))
+                          const parseadas = parsearReporteCaravanas(textoCaravanas)
+                          const duplicadas = parseadas.filter(p => yaGuardadas.has(p.numero_caravana)).length
+                          const preview = parseadas.filter(p => !yaGuardadas.has(p.numero_caravana))
                           return (
                             <>
                               <div style={{ fontSize: 12, marginBottom: 8, color: preview.length > 0 ? S.green : S.hint }}>
-                                {preview.length > 0 ? `✓ ${preview.length} caravanas detectadas` : 'Pegá el texto del reporte para ver la vista previa'}
+                                {preview.length > 0 ? `✓ ${preview.length} caravanas nuevas detectadas` : parseadas.length > 0 ? 'Todas las caravanas de este texto ya estaban guardadas' : 'Pegá el texto del reporte para ver la vista previa'}
+                                {duplicadas > 0 && <span style={{ color: S.hint }}> ({duplicadas} ya estaban cargadas, se omiten)</span>}
                               </div>
                               <div style={{ display: 'flex', gap: 8 }}>
                                 <button disabled={preview.length === 0 || caravanasGuardando}
@@ -2309,8 +2355,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                                       const { error, cantidad } = await guardarLecturasCaravana(supabase, { lecturas: preview, tipo: 'ingreso', fecha: l.fecha_ingreso || hoyLocal(), loteId: l.id, corralId: l.corral_cuarentena_id, usuario })
                                       if (error) { alert('Error al guardar las caravanas: ' + error.message); return }
                                       alert(`Se guardaron ${cantidad} lecturas de caravana para este lote.`)
-                                      setEditandoCaravanas(null)
                                       setTextoCaravanas('')
+                                      await cargarCaravanasDeLote(l.id)
                                     } catch (e) {
                                       alert('Error inesperado al guardar las caravanas: ' + (e?.message || String(e)))
                                     } finally {
