@@ -6,6 +6,7 @@ import { Loader } from './UI'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
 import { siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
+import { parsearReporteCaravanas, guardarLecturasCaravana } from '../shared/caravanasLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
 // Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
@@ -1474,6 +1475,9 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
   const IVA_PCT = 10.5
   const [editandoFactura, setEditandoFactura] = useState(null)
   const [formFactura, setFormFactura] = useState({ fecha_factura: '', observaciones_pago: '', facturas: [] })
+  const [editandoCaravanas, setEditandoCaravanas] = useState(null)
+  const [textoCaravanas, setTextoCaravanas] = useState('')
+  const [caravanasGuardando, setCaravanasGuardando] = useState(false)
   const [pagosMap, setPagosMap] = useState({})
   const [chequesCartera, setChequesCartera] = useState([])
   // (PAGO_INIT ahora viene del módulo compartido ./PagoFormulario)
@@ -2082,8 +2086,12 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                     </td>
                     <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                       <button onClick={() => { setEditandoFactura(l.id); setFormFactura({ fecha_factura: l.fecha_factura || '', observaciones_pago: l.observaciones_pago || '', facturas: normalizarFacturas(l) }) }}
-                        style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap', marginRight: 4 }}>
                         ✏️ Editar
+                      </button>
+                      <button onClick={() => { setEditandoCaravanas(editandoCaravanas === l.id ? null : l.id); setTextoCaravanas('') }}
+                        style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        📡 Caravanas
                       </button>
                     </td>
                     <td style={{ padding: '7px 10px', minWidth: 180 }}>
@@ -2273,6 +2281,45 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                           <button onClick={() => registrarPago(l)} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Registrar pago'}</button>
                           <button onClick={() => setRegistrandoPago(null)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                         </div>
+                      </td>
+                    </tr>
+                  )}
+                  {editandoCaravanas === l.id && (
+                    <tr>
+                      <td colSpan={11} style={{ padding: '1.25rem', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>📡 Cargar lecturas de caravana electrónica — ingreso de C-{corralNum}</div>
+                        <div style={{ fontSize: 11, color: S.hint, marginBottom: 8 }}>
+                          Pegá acá el texto del reporte de pesaje (caravana, peso y hora, una línea por animal). El resto del reporte (encabezado, estadísticas) se ignora solo.
+                        </div>
+                        <textarea value={textoCaravanas} onChange={e => setTextoCaravanas(e.target.value)} rows={8}
+                          placeholder={'032010031451655 161 17:44\n032010031451658 190 17:45\n...'}
+                          style={{ width: '100%', fontFamily: 'monospace', fontSize: 11, padding: 10, border: `1px solid ${S.border}`, borderRadius: 6, marginBottom: 8, boxSizing: 'border-box' }} />
+                        {(() => {
+                          const preview = parsearReporteCaravanas(textoCaravanas)
+                          return (
+                            <>
+                              <div style={{ fontSize: 12, marginBottom: 8, color: preview.length > 0 ? S.green : S.hint }}>
+                                {preview.length > 0 ? `✓ ${preview.length} caravanas detectadas` : 'Pegá el texto del reporte para ver la vista previa'}
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button disabled={preview.length === 0 || caravanasGuardando}
+                                  onClick={async () => {
+                                    setCaravanasGuardando(true)
+                                    const { error, cantidad } = await guardarLecturasCaravana(supabase, { lecturas: preview, tipo: 'ingreso', fecha: l.fecha_ingreso || hoyLocal(), loteId: l.id, corralId: l.corral_cuarentena_id, usuario })
+                                    setCaravanasGuardando(false)
+                                    if (error) { alert('Error al guardar las caravanas: ' + error.message); return }
+                                    alert(`Se guardaron ${cantidad} lecturas de caravana para este lote.`)
+                                    setEditandoCaravanas(null)
+                                    setTextoCaravanas('')
+                                  }}
+                                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: preview.length > 0 ? S.green : S.bg, border: `1px solid ${preview.length > 0 ? S.green : S.border}`, color: preview.length > 0 ? '#fff' : S.muted, borderRadius: 6, cursor: preview.length > 0 ? 'pointer' : 'default' }}>
+                                  {caravanasGuardando ? 'Guardando...' : `Guardar ${preview.length} lecturas`}
+                                </button>
+                                <button onClick={() => { setEditandoCaravanas(null); setTextoCaravanas('') }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                              </div>
+                            </>
+                          )
+                        })()}
                       </td>
                     </tr>
                   )}

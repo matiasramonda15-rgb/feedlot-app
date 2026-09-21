@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { registrarVenta } from '../shared/ventasLogic'
+import { parsearReporteCaravanas, guardarLecturasCaravana } from '../shared/caravanasLogic'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 
@@ -369,8 +370,10 @@ export default function Ventas({ usuario, mobile, nav }) {
     const compradorFinal = ep.comprador || venta.comprador || null
 
     const grupoId = venta.grupo_venta_id
+    let corralIdParaCaravana = venta.corral_id || null
     if (grupoId) {
       const { data: grupo } = await supabase.from('ventas').select('*').eq('grupo_venta_id', grupoId)
+      corralIdParaCaravana = grupo?.[0]?.corral_id || corralIdParaCaravana
       // Kg netos y monto de cada fila, respetando su propio override si lo tiene
       const filas = (grupo || []).map(gv => {
         const ov = overrides[gv.id] || {}
@@ -431,6 +434,17 @@ export default function Ventas({ usuario, mobile, nav }) {
         cantidad_sin_guia: sinGuiaSolo,
       }).eq('id', venta.id)
       if (error) { alert('Error al guardar los datos de la venta: ' + error.message); return }
+    }
+    // Si se pegó un reporte de caravanas, se guarda vinculado a esta venta
+    // (o al grupo, si es multi-corral) — no bloquea el guardado del resto
+    // si algo falla acá, solo avisa.
+    const preview = parsearReporteCaravanas(ep?.textoCaravanas || '')
+    if (preview.length > 0) {
+      const { error: errCarav } = await guardarLecturasCaravana(supabase, {
+        lecturas: preview, tipo: 'venta', fecha: venta.creado_en ? venta.creado_en.split('T')[0] : hoyLocal(),
+        ventaId: venta.id, corralId: corralIdParaCaravana, usuario,
+      })
+      if (errCarav) alert('Los datos de la venta se guardaron bien, pero las caravanas no: ' + errCarav.message)
     }
     setEditandoBanner(null)
     setEditandoVenta(null)
@@ -698,6 +712,21 @@ export default function Ventas({ usuario, mobile, nav }) {
                 style={{ ...inp, border: `1px solid ${S.amber}` }} />
             </div>
           ))}
+        </div>
+
+        <div style={{ border: `1px solid ${S.green}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10, background: S.greenLight }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.green, textTransform: 'uppercase', marginBottom: 8 }}>📡 Caravanas electrónicas (opcional) — pegá el reporte de pesaje de salida</div>
+          <textarea value={editandoVenta?.textoCaravanas || ''} onChange={e => setEditandoVenta({...editandoVenta, textoCaravanas: e.target.value})} rows={5}
+            placeholder={'032010031451655 245 17:44\n032010031451658 268 17:45\n...'}
+            style={{ width: '100%', fontFamily: 'monospace', fontSize: 11, padding: 10, border: `1px solid ${S.border}`, borderRadius: 6, boxSizing: 'border-box' }} />
+          {(() => {
+            const preview = parsearReporteCaravanas(editandoVenta?.textoCaravanas || '')
+            return preview.length > 0 ? (
+              <div style={{ fontSize: 11, color: S.green, marginTop: 6 }}>✓ {preview.length} caravanas detectadas — se guardan al tocar "Guardar" abajo</div>
+            ) : (
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 6 }}>Si no tenés el reporte a mano, dejalo vacío y guardá igual — lo podés cargar después.</div>
+            )
+          })()}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
