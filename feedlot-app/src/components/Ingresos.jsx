@@ -2305,12 +2305,17 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) 
                                 <button disabled={preview.length === 0 || caravanasGuardando}
                                   onClick={async () => {
                                     setCaravanasGuardando(true)
-                                    const { error, cantidad } = await guardarLecturasCaravana(supabase, { lecturas: preview, tipo: 'ingreso', fecha: l.fecha_ingreso || hoyLocal(), loteId: l.id, corralId: l.corral_cuarentena_id, usuario })
-                                    setCaravanasGuardando(false)
-                                    if (error) { alert('Error al guardar las caravanas: ' + error.message); return }
-                                    alert(`Se guardaron ${cantidad} lecturas de caravana para este lote.`)
-                                    setEditandoCaravanas(null)
-                                    setTextoCaravanas('')
+                                    try {
+                                      const { error, cantidad } = await guardarLecturasCaravana(supabase, { lecturas: preview, tipo: 'ingreso', fecha: l.fecha_ingreso || hoyLocal(), loteId: l.id, corralId: l.corral_cuarentena_id, usuario })
+                                      if (error) { alert('Error al guardar las caravanas: ' + error.message); return }
+                                      alert(`Se guardaron ${cantidad} lecturas de caravana para este lote.`)
+                                      setEditandoCaravanas(null)
+                                      setTextoCaravanas('')
+                                    } catch (e) {
+                                      alert('Error inesperado al guardar las caravanas: ' + (e?.message || String(e)))
+                                    } finally {
+                                      setCaravanasGuardando(false)
+                                    }
                                   }}
                                   style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: preview.length > 0 ? S.green : S.bg, border: `1px solid ${preview.length > 0 ? S.green : S.border}`, color: preview.length > 0 ? '#fff' : S.muted, borderRadius: 6, cursor: preview.length > 0 ? 'pointer' : 'default' }}>
                                   {caravanasGuardando ? 'Guardando...' : `Guardar ${preview.length} lecturas`}
