@@ -72,8 +72,6 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
     return Math.max(0, existenciaActualGlobal - ingresosDespues + ventasDespues)
   }
 
-  const stockInicial = existenciaEn(fechaInicio)
-
   const lotesPeriodo = lotesData.filter(l => {
     const f = new Date(l.fecha_ingreso + 'T12:00:00')
     return f >= fechaInicio && f < fechaFin
@@ -88,23 +86,10 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
   const cabVendidas = ventasPeriodo.reduce((s, v) => s + (v.cantidad || 0), 0)
   const kgVendidos = ventasPeriodo.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
 
-  const stockFinal = Math.max(0, stockInicial + cabIngresadas - cabVendidas)
-
   if (cabIngresadas === 0 || cabVendidas === 0 || kgIngresados === 0 || kgVendidos === 0) return null
 
   const pesoProm_ingreso = kgIngresados / cabIngresadas
   const pesoProm_venta = kgVendidos / cabVendidas
-
-  const existenciaPromedio = (stockInicial + stockFinal) / 2
-  if (existenciaPromedio <= 0) return null
-
-  const permanencia = (existenciaPromedio * dias) / cabVendidas
-  const variacionStock = stockInicial > 0 ? ((stockFinal - stockInicial) / stockInicial) * 100 : 0
-  const existenciaCorregida = Math.max(stockInicial, stockFinal)
-  const permanenciaCorregida = existenciaCorregida > 0 ? (existenciaCorregida * dias) / cabVendidas : permanencia
-
-  const gdp = permanencia > 0 ? (pesoProm_venta - pesoProm_ingreso) / permanencia : null
-  const gdpCorregido = permanenciaCorregida > 0 ? (pesoProm_venta - pesoProm_ingreso) / permanenciaCorregida : null
 
   // Consumo diario por animal (promedio de kg_dia/animales_ese_dia, por cada día con raciones)
   const racionesPeriodo = (racionesData || []).filter(r => {
@@ -122,10 +107,36 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
     }
   })
   const diasConDatos = Object.values(porDia).filter(d => d.animales > 0 && d.kgTotal > 0)
+  const diasOrdenados = Object.entries(porDia).filter(([, d]) => d.animales > 0).sort((a, b) => a[0].localeCompare(b[0]))
   const consumoDiario = diasConDatos.length > 0
     ? diasConDatos.reduce((s, d) => s + d.kgTotal / d.animales, 0) / diasConDatos.length
     : null
   const consumoDiarioCalc = consumoDiario && consumoDiario <= 30 ? consumoDiario : null
+
+  // La existencia se calcula con el conteo diario REAL que ya se carga en
+  // Alimentación (cuántos animales había ese día en cada corral) — no
+  // reconstruyendo "hacia atrás" desde el total de HOY. Un mes ya cerrado
+  // tiene que quedar fijo: antes, cualquier venta o ingreso de HOY corría
+  // el número de existencia (y con él, GDP, permanencia y conversión) de
+  // TODOS los meses pasados por igual, aunque ya estuvieran cerrados hace
+  // rato — eso es lo que se veía saltar de un día para el otro. Si no hay
+  // datos de Alimentación para ese mes (meses muy viejos, antes de que se
+  // empezara a cargar), se usa el método viejo como respaldo.
+  const stockInicial = diasOrdenados.length > 0 ? diasOrdenados[0][1].animales : existenciaEn(fechaInicio)
+  const stockFinalReal = diasOrdenados.length > 0 ? diasOrdenados[diasOrdenados.length - 1][1].animales : Math.max(0, existenciaEn(fechaInicio) + cabIngresadas - cabVendidas)
+  const stockFinal = Math.max(0, stockFinalReal)
+  const existenciaPromedio = diasConDatos.length > 0
+    ? diasConDatos.reduce((s, d) => s + d.animales, 0) / diasConDatos.length
+    : (stockInicial + stockFinal) / 2
+  if (existenciaPromedio <= 0) return null
+
+  const permanencia = (existenciaPromedio * dias) / cabVendidas
+  const variacionStock = stockInicial > 0 ? ((stockFinal - stockInicial) / stockInicial) * 100 : 0
+  const existenciaCorregida = Math.max(stockInicial, stockFinal)
+  const permanenciaCorregida = existenciaCorregida > 0 ? (existenciaCorregida * dias) / cabVendidas : permanencia
+
+  const gdp = permanencia > 0 ? (pesoProm_venta - pesoProm_ingreso) / permanencia : null
+  const gdpCorregido = permanenciaCorregida > 0 ? (pesoProm_venta - pesoProm_ingreso) / permanenciaCorregida : null
 
   const kgAlimento = racionesPeriodo.reduce((s, r) => s + (r.kg_total || 0), 0)
   const kgAlimentoMS = lookups ? racionesPeriodo.reduce((s, r) => s + kgMSDeRacion(r, lookups), 0) : null
