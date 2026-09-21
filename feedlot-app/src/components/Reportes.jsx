@@ -411,7 +411,16 @@ export default function Reportes({ usuario }) {
   // AFIP, no ingreso real del negocio, así que se usa monto_facturado (ya
   // sin IVA) + monto_negro, menos retención/comisión/descuento (que sí
   // achican lo que efectivamente entra).
-  const ingresoVentaNeto = v => (v.monto_facturado || 0) + (v.monto_negro || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+  // Ingreso neto (sin IVA) de una venta: el IVA cobrado es una deuda con
+  // AFIP, no ingreso real del negocio. Se usa "total" (que sí está cargado
+  // desde el momento de la venta, aunque todavía no se haya completado la
+  // Gestión Comercial) menos el IVA — no "monto_facturado", que recién se
+  // completa más tarde y en casi la mitad de las ventas recientes todavía
+  // está vacío (eso hacía que esas ventas contaran 0 de ingreso, aunque sí
+  // sumaban en la cantidad de animales — daba una ganancia negativa falsa).
+  // Si el IVA todavía no está cargado en esa venta puntual, no se resta
+  // nada — mejor un poco de IVA de más en esa venta que perderla entera.
+  const ingresoVentaNeto = v => (v.total || 0) - (v.iva_monto || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
 
   const ventas30 = ventas.filter(v => v.cantidad > 0 && new Date(v.creado_en) >= hace30d)
   const totalAnimVendidos30 = ventas30.reduce((s, v) => s + v.cantidad, 0)
