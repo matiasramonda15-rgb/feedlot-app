@@ -375,16 +375,20 @@ export default function Reportes({ usuario }) {
   // monto_total_con_iva directo — ese campo puede haber quedado
   // desactualizado en varios lotes (les falta sumar el IVA o el ajuste de
   // factura de feria), lo que infla artificialmente la ganancia calculada.
+  // Se usa el NETO (sin IVA) — el IVA de una compra es un crédito fiscal que
+  // se recupera después contra AFIP, no es plata que realmente sale del
+  // negocio, así que no corresponde contarlo como costo real acá.
   const totalLoteReal = l => {
-    const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
+    const totalFacturasNeto = (l.facturas_feria || []).reduce((s, f) => s + ((parseFloat(f.monto_neto) || 0) + (parseFloat(f.gastos_total) || 0)), 0)
     // Cuando hay facturas de feria cargadas, los gastos y la comisión de esa
-    // operación ya están adentro de cada "total_factura" — no hay que
-    // sumarlos de nuevo. Si no hay factura de feria, recién ahí se suma la
-    // comisión suelta (si la hay) al total facturado+IVA+negro.
-    if (totalFacturasReal > 0) return totalFacturasReal + (l.monto_negro || 0)
-    const ivaMontoCalc = l.monto_facturado != null ? (l.iva_monto ?? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100)) : 0
-    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) + (l.comision_monto || 0) : null
+    // operación ya están adentro de cada factura (en gastos_total) — no hay
+    // que sumarlos de nuevo. Si no hay factura de feria, recién ahí se suma
+    // la comisión suelta (si la hay) al monto facturado neto + negro.
+    if (totalFacturasNeto > 0) return totalFacturasNeto + (l.monto_negro || 0)
+    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + (l.monto_negro || 0) + (l.comision_monto || 0) : null
     const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
+    // Sin factura, precio_compra ya es lo que se pagó de bolsillo (no hay
+    // IVA que restar), así que ese caso queda igual que antes.
     return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
   }
 
@@ -403,12 +407,15 @@ export default function Reportes({ usuario }) {
   const hace30d = new Date(); hace30d.setDate(hace30d.getDate() - 30)
   const hace60d = new Date(); hace60d.setDate(hace60d.getDate() - 60)
 
+  // Ingreso neto (sin IVA) de una venta: el IVA cobrado es una deuda con
+  // AFIP, no ingreso real del negocio, así que se usa monto_facturado (ya
+  // sin IVA) + monto_negro, menos retención/comisión/descuento (que sí
+  // achican lo que efectivamente entra).
+  const ingresoVentaNeto = v => (v.monto_facturado || 0) + (v.monto_negro || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+
   const ventas30 = ventas.filter(v => v.cantidad > 0 && new Date(v.creado_en) >= hace30d)
   const totalAnimVendidos30 = ventas30.reduce((s, v) => s + v.cantidad, 0)
-  // "total" es el bruto (facturado + IVA + negro) — retención, comisión y
-  // descuento se guardan aparte y NO están restados ahí, así que hay que
-  // descontarlos acá para que el ingreso refleje lo que realmente entra.
-  const totalIngreso30 = ventas30.reduce((s, v) => s + (v.total || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0), 0)
+  const totalIngreso30 = ventas30.reduce((s, v) => s + ingresoVentaNeto(v), 0)
   const ingresoPromedioPorAnimalVendido = totalAnimVendidos30 > 0 ? totalIngreso30 / totalAnimVendidos30 : null
 
   const lotes60 = lotes.filter(l => l.cantidad > 0 && new Date(l.fecha_ingreso) >= hace60d)
@@ -477,7 +484,7 @@ export default function Reportes({ usuario }) {
       if (pesoProm < b.desde || pesoProm >= b.hasta) return
       kgTot += v.kg_vivo_total
       cabTot += v.cantidad
-      ingresoTot += (v.total || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+      ingresoTot += ingresoVentaNeto(v)
     })
     const precioKg = kgTot > 0 ? ingresoTot / kgTot : null
     return { ...b, precioKg, cabTot, margenKg: (precioKg != null && costoPorKgProducido != null) ? precioKg - costoPorKgProducido : null }
@@ -489,7 +496,7 @@ export default function Reportes({ usuario }) {
   ventas.forEach(v => {
     const key = mesKey(v.creado_en)
     if (!key || !(v.cantidad > 0)) return
-    ingresoNetoPorMes[key] = (ingresoNetoPorMes[key] || 0) + (v.total || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+    ingresoNetoPorMes[key] = (ingresoNetoPorMes[key] || 0) + ingresoVentaNeto(v)
   })
   const costoCompraPorMes = {}
   lotes.forEach(l => {
