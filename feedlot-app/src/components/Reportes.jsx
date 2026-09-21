@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
+import { emparejarCaravanas } from '../shared/caravanasLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
@@ -42,6 +43,7 @@ export default function Reportes({ usuario }) {
   const [gastosGenerales, setGastosGenerales] = useState([])
   const [eventosSanitarios, setEventosSanitarios] = useState([])
   const [stockSanitario, setStockSanitario] = useState([])
+  const [caravanasLecturas, setCaravanasLecturas] = useState([])
   const [pagosEmpleados, setPagosEmpleados] = useState([])
   const [comprasAgro, setComprasAgro] = useState([])
   const [serviciosTerceros, setServiciosTerceros] = useState([])
@@ -58,7 +60,7 @@ export default function Reportes({ usuario }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(2000),
@@ -77,6 +79,7 @@ export default function Reportes({ usuario }) {
       supabase.from('pagos_creditos').select('monto, fecha_pago, estado, creditos(activo_id, compras_insumos(insumo_tipo))').eq('estado', 'pagado'),
       supabase.from('eventos_sanitarios').select('producto, cantidad_ml, creado_en').order('creado_en', { ascending: false }).limit(3000),
       supabase.from('stock_sanitario').select('producto, precio_referencia'),
+      supabase.from('caravanas_lecturas').select('*, lotes(procedencia), corrales(numero)'),
     ])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
@@ -89,6 +92,7 @@ export default function Reportes({ usuario }) {
     setGastosGenerales(gg || [])
     setEventosSanitarios(es || [])
     setStockSanitario(ss || [])
+    setCaravanasLecturas(cl || [])
     setPagosEmpleados(pe || [])
     setComprasAgro(iag || [])
     setServiciosTerceros(st || [])
@@ -499,6 +503,39 @@ export default function Reportes({ usuario }) {
     return { ...b, precioKg, cabTot, margenKg: (precioKg != null && costoPorKgProducido != null) ? precioKg - costoPorKgProducido : null }
   })
 
+  // ── Caravanas electrónicas: permanencia y GDP REALES, medidos animal por
+  // animal (no estimados por flujo) — se emparejan las lecturas de ingreso
+  // y de venta por número de caravana. ──
+  const paresCaravana = emparejarCaravanas(caravanasLecturas).map(p => ({
+    ...p, procedencia: lotes.find(l => l.id === p.loteId)?.procedencia || null,
+  }))
+  const totalPares = paresCaravana.length
+  const permanenciaPromReal = totalPares > 0 ? paresCaravana.reduce((s, p) => s + p.dias, 0) / totalPares : null
+  const gdpPromReal = totalPares > 0 ? paresCaravana.reduce((s, p) => s + p.gdpIndividual, 0) / totalPares : null
+  const gdpOrdenadosCarav = [...paresCaravana].map(p => p.gdpIndividual).sort((a, b) => a - b)
+  const gdpMedianaReal = gdpOrdenadosCarav.length > 0 ? gdpOrdenadosCarav[Math.floor(gdpOrdenadosCarav.length / 2)] : null
+  const porProcedenciaCarav = {}
+  paresCaravana.forEach(p => {
+    const key = p.procedencia || 'Sin dato'
+    if (!porProcedenciaCarav[key]) porProcedenciaCarav[key] = []
+    porProcedenciaCarav[key].push(p)
+  })
+  const lecturasIngresoSinPar = caravanasLecturas.filter(l => l.tipo === 'ingreso' && !paresCaravana.some(p => p.numero_caravana === l.numero_caravana)).length
+  const lecturasVentaSinPar = caravanasLecturas.filter(l => l.tipo === 'venta' && !paresCaravana.some(p => p.numero_caravana === l.numero_caravana)).length
+  // Bandas de peso de ingreso, para ver si el GDP real cambia según qué tan
+  // liviano/pesado entra el animal.
+  const BANDAS_PESO_INGRESO = [
+    { desde: 0, hasta: 200, label: '< 200 kg' },
+    { desde: 200, hasta: 250, label: '200-250 kg' },
+    { desde: 250, hasta: 300, label: '250-300 kg' },
+    { desde: 300, hasta: 9999, label: '> 300 kg' },
+  ]
+  const gdpPorBandaIngreso = BANDAS_PESO_INGRESO.map(b => {
+    const enBanda = paresCaravana.filter(p => p.pesoIngreso >= b.desde && p.pesoIngreso < b.hasta)
+    const gdpProm = enBanda.length > 0 ? enBanda.reduce((s, p) => s + p.gdpIndividual, 0) / enBanda.length : null
+    return { ...b, cantidad: enBanda.length, gdpProm }
+  })
+
   // ── Ganancia promedio por animal, mes a mes (mismo método de arriba, pero
   // por mes calendario en vez de ventana móvil de 30/60 días) ──
   const ingresoNetoPorMes = {}
@@ -724,6 +761,7 @@ export default function Reportes({ usuario }) {
     { key: 'gdp', label: 'GDP y conversión' },
     { key: 'costos', label: 'Costos' },
     { key: 'rentabilidad', label: 'Rentabilidad' },
+    { key: 'caravanas', label: '📡 Caravanas' },
   ]
 
   return (
@@ -1871,6 +1909,91 @@ function SeccionComparativa({ S, anio, actividades, ingresoTotal, inversionTotal
           ))}
         </div>
       </div>
+      {tab === 'caravanas' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>📡 Permanencia y GDP reales, por caravana electrónica</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>
+            Medido animal por animal (ingreso → venta), no estimado por flujo — se arma solo cuando el mismo número de
+            caravana aparece en una lectura de ingreso y una de venta.
+          </div>
+
+          {totalPares === 0 ? (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '3rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>
+              Todavía no hay ningún par ingreso→venta completo.
+              {(lecturasIngresoSinPar > 0 || lecturasVentaSinPar > 0) && (
+                <div style={{ marginTop: 8, fontSize: 12 }}>
+                  Hay {lecturasIngresoSinPar} lecturas de ingreso y {lecturasVentaSinPar} de venta cargadas, esperando su otra mitad.
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+                <Stat label="Animales con par completo" val={totalPares} sub={`${lecturasIngresoSinPar} ingresos y ${lecturasVentaSinPar} ventas todavía sin su par`} />
+                <Stat label="Permanencia real promedio" val={permanenciaPromReal !== null ? `${Math.round(permanenciaPromReal)} días` : '—'}
+                  sub={permanenciaPromedio ? `estimada por flujo: ${Math.round(permanenciaPromedio)} días` : 'sin estimación para comparar'} color={S.accent} />
+                <Stat label="GDP real promedio" val={gdpPromReal !== null ? `${gdpPromReal.toFixed(2)} kg/día` : '—'}
+                  sub={gdpEstimado ? `estimado por flujo: ${gdpEstimado.toFixed(2)} kg/día` : 'sin estimación para comparar'} color={S.green} />
+                <Stat label="GDP real — mediana" val={gdpMedianaReal !== null ? `${gdpMedianaReal.toFixed(2)} kg/día` : '—'} sub="la mitad de los animales está arriba, la mitad abajo" />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>GDP real según peso de ingreso</div>
+                  {gdpPorBandaIngreso.filter(b => b.cantidad > 0).length === 0 ? (
+                    <div style={{ fontSize: 12, color: S.hint }}>Sin datos suficientes todavía.</div>
+                  ) : gdpPorBandaIngreso.filter(b => b.cantidad > 0).map(b => (
+                    <div key={b.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${S.border}`, fontSize: 12 }}>
+                      <span>{b.label} <span style={{ color: S.hint }}>({b.cantidad})</span></span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{b.gdpProm.toFixed(2)} kg/día</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>GDP real por procedencia</div>
+                  {Object.keys(porProcedenciaCarav).length === 0 ? (
+                    <div style={{ fontSize: 12, color: S.hint }}>Sin datos suficientes todavía.</div>
+                  ) : Object.entries(porProcedenciaCarav).map(([proc, arr]) => (
+                    <div key={proc} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${S.border}`, fontSize: 12 }}>
+                      <span>{proc} <span style={{ color: S.hint }}>({arr.length})</span></span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(arr.reduce((s, p) => s + p.gdpIndividual, 0) / arr.length).toFixed(2)} kg/día</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Detalle por animal</div>
+                <div style={{ maxHeight: 420, overflowY: 'auto', border: `1px solid ${S.border}`, borderRadius: 8 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: S.bg, position: 'sticky', top: 0 }}>
+                        {['Caravana', 'Procedencia', 'Ingreso', 'Kg ing.', 'Venta', 'Kg vta.', 'Días', 'GDP'].map(h => (
+                          <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Caravana' || h === 'Procedencia' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...paresCaravana].sort((a, b) => new Date(b.fechaVenta) - new Date(a.fechaVenta)).map(p => (
+                        <tr key={p.numero_caravana} style={{ borderBottom: `1px solid ${S.border}` }}>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 10 }}>...{p.numero_caravana.slice(-6)}</td>
+                          <td style={{ padding: '7px 10px' }}>{p.procedencia || '—'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{new Date(p.fechaIngreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.pesoIngreso}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{new Date(p.fechaVenta + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.pesoVenta}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.dias}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{p.gdpIndividual.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
