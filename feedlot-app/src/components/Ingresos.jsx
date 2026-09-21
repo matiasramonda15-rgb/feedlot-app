@@ -1119,7 +1119,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
 
       {/* ── TAB GESTIÓN COMERCIAL ── */}
       {tab === 'gestion' && (
-        <GestionComercial lotes={lotes} corrales={corrales} esDueno={esDueno} cargarDatos={cargarDatos} contactos={contactos} />
+        <GestionComercial lotes={lotes} corrales={corrales} esDueno={esDueno} cargarDatos={cargarDatos} contactos={contactos} usuario={usuario} />
       )}
 
       {/* ── TAB CALCULADORA ── */}
@@ -1463,7 +1463,7 @@ function normalizarFacturas(l) {
   return [{ proveedor: l.procedencia || '', cuit: '', nro_factura: '', feria_nombre: '', kg_factura: '', precio_neto: '', total_factura_manual: '', vencimientos: [{ fecha: '', monto: '', pagado: false }] }]
 }
 
-function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos }) {
+function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, usuario }) {
   const S = {
     bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', muted: '#6B6760', hint: '#9E9A94', text: '#1A1916',
     accent: '#378ADD', accentLight: '#E8EFF8', green: '#1E5C2E', greenLight: '#E8F4EB',
