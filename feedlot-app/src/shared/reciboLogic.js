@@ -113,7 +113,7 @@ export async function generarOrdenDePago(supabase, { destinatario, domicilio, lo
       return p.cheque_tercero_detalle.map(c => `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${descBase}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">#${c.numero || '—'} · ${c.banco || '—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${(c.fecha_cobro || c.fecha_vencimiento) ? new Date((c.fecha_cobro || c.fecha_vencimiento) + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;font-weight:600;">$ ${parseFloat(c.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
       </tr>`)
     }
@@ -301,7 +301,7 @@ export async function generarReciboDeCobro(supabase, { cliente, domicilio, local
       return p.cheque_tercero_detalle.map(c => `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${descBase}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">#${c.numero || '—'} · ${c.banco || '—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${(c.fecha_cobro || c.fecha_vencimiento) ? new Date((c.fecha_cobro || c.fecha_vencimiento) + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;font-weight:600;">$ ${parseFloat(c.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
       </tr>`)
     }

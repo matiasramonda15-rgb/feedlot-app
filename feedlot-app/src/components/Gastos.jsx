@@ -257,7 +257,7 @@ export default function Gastos({ usuario }) {
         return p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0
           ? { ...base, cheque_tercero_detalle: p.cheque_tercero_ids.map(id => {
               const ch = chequesCartera.find(c => String(c.id) === id)
-              return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
+              return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento, fecha_cobro: ch.fecha_cobro } : null
             }).filter(Boolean) }
           : base
       }),

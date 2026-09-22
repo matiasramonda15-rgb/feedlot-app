@@ -1857,7 +1857,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
       if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
         cheque_tercero_detalle = pago.cheque_tercero_ids.map(chId => {
           const ch = chequesCartera.find(c => String(c.id) === chId)
-          return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento } : null
+          return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento, fecha_cobro: ch.fecha_cobro } : null
         }).filter(Boolean)
       }
 
