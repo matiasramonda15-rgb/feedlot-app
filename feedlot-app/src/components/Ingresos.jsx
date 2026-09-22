@@ -1982,7 +1982,18 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
     const pagosRest = pagos.filter(pp => pp.id !== p.id)
     const totalPagadoRest = pagosRest.reduce((s, pp) => s + (pp.monto || 0), 0)
     const nuevoEstado = total && totalPagadoRest > 0 && totalPagadoRest >= total - 1000 ? 'pagado' : 'pendiente'
-    await supabase.from('lotes').update({ estado_pago: nuevoEstado }).eq('id', l.id)
+    // Si al borrar este pago no queda ningún otro pago para el lote, ninguna
+    // cuota puede seguir marcada como pagada — antes esto no se revertía, y
+    // una cuota podía quedar marcada "✓ pagada" en pantalla aunque el pago
+    // que la había marcado ya no existiera más.
+    const datosLote = { estado_pago: nuevoEstado }
+    if (totalPagadoRest === 0 && l.cuotas_pago?.length > 0) {
+      datosLote.cuotas_pago = l.cuotas_pago.map(factura => ({
+        ...factura,
+        vencimientos: (factura.vencimientos || []).map(v => ({ ...v, pagado: false })),
+      }))
+    }
+    await supabase.from('lotes').update(datosLote).eq('id', l.id)
     await cargarDatos()
     await cargarPagos()
   }
