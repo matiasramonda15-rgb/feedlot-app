@@ -1489,6 +1489,20 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
     setCaravanasGuardadas(prev => ({ ...prev, [loteId]: data || [] }))
   }
 
+  // Trae de una sola vez las caravanas de TODOS los lotes visibles, así el
+  // botón ya muestra la cantidad cargada sin tener que entrar a cada uno
+  // primero — antes se sabía recién después de tocarlo.
+  useEffect(() => {
+    if (!lotes || lotes.length === 0) return
+    const idsLotes = lotes.map(l => l.id)
+    supabase.from('caravanas_lecturas').select('*').eq('tipo', 'ingreso').in('lote_id', idsLotes).order('numero_caravana').then(({ data, error }) => {
+      if (error || !data) return
+      const porLote = {}
+      data.forEach(c => { if (!porLote[c.lote_id]) porLote[c.lote_id] = []; porLote[c.lote_id].push(c) })
+      setCaravanasGuardadas(porLote)
+    })
+  }, [lotes])
+
   async function borrarCaravana(id, loteId) {
     if (!confirm('¿Borrar esta lectura de caravana?')) return
     const { error } = await supabase.from('caravanas_lecturas').delete().eq('id', id)
