@@ -118,7 +118,8 @@ export async function generarOrdenDePago(supabase, { destinatario, domicilio, lo
       </tr>`)
     }
     const nro = p.subtipo_cheque === 'propio' ? `${p.cheque_propio?.numero || ''} · ${p.cheque_propio?.banco || ''}`.trim().replace(/^·\s*/, '') : ''
-    const fechaCobro = p.subtipo_cheque === 'propio' ? (p.cheque_propio?.fecha_vencimiento ? new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '') : ''
+    const fechaCobroVal = p.cheque_propio?.fecha_cobro || p.cheque_propio?.fecha_vencimiento
+    const fechaCobro = p.subtipo_cheque === 'propio' ? (fechaCobroVal ? new Date(fechaCobroVal + 'T12:00:00').toLocaleDateString('es-AR') : '') : ''
     return [`<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${descBase}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${nro}</td>

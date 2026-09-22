@@ -411,6 +411,7 @@ export default function Servicios({ usuario, mobile, nav }) {
           const { error: eCheq } = await supabase.from('cheques').insert({
             tipo: 'recibido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null,
             monto, fecha_emision: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento,
+            fecha_cobro: p.cheque_propio.fecha_cobro || null,
             librador: serviciosSel[0].s.cliente || null, estado: 'en_cartera', es_paralelo: p.es_paralelo || false,
             es_electronico: p.tipo === 'e-cheq', caja_oficial_id, caja_paralela_id,
           })

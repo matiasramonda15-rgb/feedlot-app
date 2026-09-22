@@ -8,7 +8,7 @@ export const PAGO_INIT = {
   es_paralelo: false,
   subtipo_cheque: '', // 'propio' | 'tercero' — solo aplica si tipo es 'cheque' o 'e-cheq'
   canje_detalle: '',
-  cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' },
+  cheque_propio: { numero: '', banco: '', fecha_vencimiento: '', fecha_cobro: '' },
   cheque_tercero_ids: [],
 }
 
@@ -157,7 +157,7 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
           </div>
 
           {pago.subtipo_cheque === 'propio' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>N° cheque</div>
                 <input type="text" value={pago.cheque_propio?.numero || ''} onChange={e => setChequePropio('numero', e.target.value)} style={inp} />
@@ -178,6 +178,11 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
                     })()}
                   </div>
                 )}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: S.green, textTransform: 'uppercase', marginBottom: 4 }}>Fecha de cobro real</div>
+                <input type="date" value={pago.cheque_propio?.fecha_cobro || ''} onChange={e => setChequePropio('fecha_cobro', e.target.value)} style={{ ...inp, border: `1px solid ${S.green}` }} />
+                <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Si no la sabés todavía, dejala vacía.</div>
               </div>
             </div>
           )}
