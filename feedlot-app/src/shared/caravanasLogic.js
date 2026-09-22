@@ -13,7 +13,10 @@ export function parsearReporteCaravanas(texto) {
   const resultado = []
   const vistos = new Set()
   for (const linea of lineas) {
-    const m = linea.trim().match(/^(\d{8,20})[\s\t,;]+(\d+(?:[.,]\d+)?)\s*(?:kg)?[\s\t,;]*(\d{1,2}:\d{2})?/i)
+    // El número puede ser una caravana electrónica larga (15 dígitos) o un
+    // número corto puesto a mano (ej. "5179") para identificar un animal
+    // que llegó sin caravana electrónica — se acepta cualquier largo.
+    const m = linea.trim().match(/^(\d{1,20})[\s\t,;]+(\d+(?:[.,]\d+)?)\s*(?:kg)?[\s\t,;]*(\d{1,2}:\d{2})?/i)
     if (!m) continue
     const numero_caravana = m[1]
     const peso = parseFloat(m[2].replace(',', '.'))
