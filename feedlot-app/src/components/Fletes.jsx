@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal } from '../shared/dateUtils'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { generarOrdenDePago } from '../shared/reciboLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -143,6 +144,12 @@ export default function Fletes({ usuario }) {
           if (ech) { alert('Error al registrar el cheque: ' + ech.message); setGuardando(false); return }
         } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
           for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
+          // Detalle para el recibo — antes no se armaba, así que el recibo
+          // no tenía de dónde sacar número/banco/fecha de cada cheque tercero.
+          pago.cheque_tercero_detalle = pago.cheque_tercero_ids.map(chId => {
+            const ch = chequesCartera.find(c => String(c.id) === chId)
+            return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento, fecha_cobro: ch.fecha_cobro } : null
+          }).filter(Boolean)
         }
       }
     }
@@ -157,6 +164,12 @@ export default function Fletes({ usuario }) {
       es_paralelo: pagos.some(p => p.es_paralelo),
     }).eq('id', flete.id)
     if (eFlete) { alert('El pago se registró, pero no se pudo actualizar el flete: ' + eFlete.message); setGuardando(false); return }
+    await generarOrdenDePago(supabase, {
+      destinatario: ct?.nombre || flete.transportista,
+      fecha: formPago.fecha,
+      concepto: `Flete — ${flete.transportista}${flete.lotes?.codigo ? ' · ' + flete.lotes.codigo : ''}`,
+      pagos,
+    })
     setPagandoId(null)
     setFormPago({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
     setGuardando(false)
