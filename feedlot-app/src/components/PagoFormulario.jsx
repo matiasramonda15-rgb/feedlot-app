@@ -202,7 +202,7 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
                       }} />
                       <div style={{ fontSize: 13 }}>
                         <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
-                        <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span>
+                        <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · cobro {ch.fecha_cobro ? new Date(ch.fecha_cobro + 'T12:00:00').toLocaleDateString('es-AR') : (ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—')}{ch.librador ? ` · ${ch.librador}` : ''}</span>
                       </div>
                     </label>
                   ))
