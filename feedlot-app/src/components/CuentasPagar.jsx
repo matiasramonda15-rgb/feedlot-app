@@ -24,6 +24,7 @@ const ORIGEN_INFO = {
   creditos:              { label: '🏦 Crédito', modulo: 'activos', color: S.purple },
   fletes:                { label: '🚚 Flete', modulo: 'fletes', color: S.accent },
   hacienda:              { label: '🐄 Compra hacienda', modulo: 'ingresos', color: S.accent },
+  ordenes:               { label: '🌾 Orden de trabajo (Agricultura)', modulo: 'agricultura', color: S.green },
 }
 
 export default function CuentasPagar({ usuario, setModulo }) {
@@ -41,6 +42,7 @@ export default function CuentasPagar({ usuario, setModulo }) {
       { data: pc },
       { data: fl },
       { data: lo },
+      { data: ot },
     ] = await Promise.all([
       // Compras de insumos: Alimentación, Sanidad y Agricultura comparten esta tabla
       supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
@@ -50,6 +52,9 @@ export default function CuentasPagar({ usuario, setModulo }) {
       supabase.from('fletes').select('*, lotes(codigo, procedencia)').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
       // Compras de hacienda con saldo pendiente (no pagadas del todo)
       supabase.from('lotes').select('*').neq('estado_pago', 'pagado').eq('marcado_resuelto', false).order('fecha_ingreso', { ascending: true }),
+      // Órdenes de trabajo de Agricultura a contratistas (labores, confección
+      // de rollo, etc.) — las propias (es_propia) no le deben nada a nadie.
+      supabase.from('ordenes_trabajo').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).eq('es_propia', false).order('fecha', { ascending: true }),
     ])
 
     const filas = []
@@ -113,12 +118,25 @@ export default function CuentasPagar({ usuario, setModulo }) {
       }
     }
 
+    // Órdenes de trabajo de Agricultura (contratistas — labores, confección
+    // de rollo, etc.)
+    ;(ot || []).forEach(o => {
+      const detalle = o.tipo === 'Confeccion de rollo' && o.cantidad_rollos
+        ? `${o.cantidad_rollos} rollos`
+        : o.superficie_ha_real ? `${o.superficie_ha_real} ha` : ''
+      filas.push({
+        id: `ot-${o.id}`, origen: 'ordenes', fecha: o.fecha, proveedor: o.proveedor || '—',
+        descripcion: `${o.tipo || 'Orden de trabajo'}${detalle ? ' — ' + detalle : ''}`,
+        monto: o.costo_total,
+      })
+    })
+
     filas.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
     setPendientes(filas)
     setLoading(false)
   }
 
-  const TABLA_POR_PREFIJO = { ci: 'compras_insumos', gg: 'gastos_generales', pc: 'pagos_creditos', fl: 'fletes', lo: 'lotes' }
+  const TABLA_POR_PREFIJO = { ci: 'compras_insumos', gg: 'gastos_generales', pc: 'pagos_creditos', fl: 'fletes', lo: 'lotes', ot: 'ordenes_trabajo' }
 
   async function marcarResuelto(p) {
     if (!confirm(`¿Marcar como ya resuelto "${p.descripcion}" (${p.proveedor})? Esto no registra ningún pago ni movimiento de caja — solo lo saca de esta lista porque ya se pagó antes de estar en el sistema.`)) return
@@ -151,7 +169,7 @@ export default function CuentasPagar({ usuario, setModulo }) {
     <div>
       <div style={{ marginBottom: '1.25rem' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: S.text, margin: 0 }}>Cuentas a pagar</h1>
-        <div style={{ fontSize: 13, color: S.muted, marginTop: 4 }}>Todo lo pendiente de pago de la empresa, junto — insumos, gastos generales, créditos, fletes y compras de hacienda.</div>
+        <div style={{ fontSize: 13, color: S.muted, marginTop: 4 }}>Todo lo pendiente de pago de la empresa, junto — insumos, gastos generales, créditos, fletes, compras de hacienda y órdenes de trabajo de Agricultura.</div>
       </div>
 
       {/* Resumen */}

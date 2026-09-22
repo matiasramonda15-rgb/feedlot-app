@@ -148,6 +148,21 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [lotes, setLotes] = useState([])
   const [corrales, setCorrales] = useState([])
   const [gdpPorCorral, setGdpPorCorral] = useState({})
+  const [caravanasVentaGuardadas, setCaravanasVentaGuardadas] = useState({}) // { [ventaId]: [...] | 'cargando' }
+
+  async function cargarCaravanasDeVenta(ventaId) {
+    setCaravanasVentaGuardadas(prev => ({ ...prev, [ventaId]: 'cargando' }))
+    const { data, error } = await supabase.from('caravanas_lecturas').select('*').eq('venta_id', ventaId).eq('tipo', 'venta').order('numero_caravana')
+    if (error) { alert('Error al cargar las caravanas guardadas: ' + error.message); setCaravanasVentaGuardadas(prev => ({ ...prev, [ventaId]: [] })); return }
+    setCaravanasVentaGuardadas(prev => ({ ...prev, [ventaId]: data || [] }))
+  }
+
+  async function borrarCaravanaVenta(id, ventaId) {
+    if (!confirm('¿Borrar esta lectura de caravana?')) return
+    const { error } = await supabase.from('caravanas_lecturas').delete().eq('id', id)
+    if (error) { alert('Error al borrar: ' + error.message); return }
+    await cargarCaravanasDeVenta(ventaId)
+  }
   const [compradores, setCompradores] = useState([])
 
   const [ventasSinPrecio, setVentasSinPrecio] = useState([])
@@ -715,7 +730,35 @@ export default function Ventas({ usuario, mobile, nav }) {
         </div>
 
         <div style={{ border: `1px solid ${S.green}`, borderRadius: 6, padding: '10px 12px', marginBottom: 10, background: S.greenLight }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: S.green, textTransform: 'uppercase', marginBottom: 8 }}>📡 Caravanas electrónicas (opcional) — pegá el reporte de pesaje de salida</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: S.green, textTransform: 'uppercase' }}>📡 Caravanas electrónicas (opcional) — pegá el reporte de pesaje de salida</div>
+            <button onClick={() => cargarCaravanasDeVenta(v.id)} style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: 'transparent', border: `1px solid ${S.green}`, color: S.green, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              🔄 Ver guardadas
+            </button>
+          </div>
+          {caravanasVentaGuardadas[v.id] === 'cargando' ? (
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: 8 }}>Cargando...</div>
+          ) : caravanasVentaGuardadas[v.id]?.length > 0 && (
+            <div style={{ marginBottom: 10, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden', maxHeight: 180, overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, background: S.surface }}>
+                <tbody>
+                  {caravanasVentaGuardadas[v.id].map(c => (
+                    <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                      <td style={{ padding: '4px 10px', fontFamily: 'monospace' }}>...{c.numero_caravana.slice(-6)}</td>
+                      <td style={{ padding: '4px 10px', fontFamily: 'monospace', textAlign: 'right' }}>{c.peso} kg</td>
+                      <td style={{ padding: '4px 10px', color: S.hint, textAlign: 'right' }}>{c.hora || '—'}</td>
+                      <td style={{ padding: '4px 10px', textAlign: 'right' }}>
+                        <button onClick={() => borrarCaravanaVenta(c.id, v.id)} style={{ padding: '2px 7px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Borrar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {caravanasVentaGuardadas[v.id]?.length === 0 && (
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: 8 }}>Todavía no hay ninguna guardada para esta venta.</div>
+          )}
           <textarea value={editandoVenta?.textoCaravanas || ''} onChange={e => setEditandoVenta({...editandoVenta, textoCaravanas: e.target.value})} rows={5}
             placeholder={'032010031451655 245 17:44\n032010031451658 268 17:45\n...'}
             style={{ width: '100%', fontFamily: 'monospace', fontSize: 11, padding: 10, border: `1px solid ${S.border}`, borderRadius: 6, boxSizing: 'border-box' }} />
