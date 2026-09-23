@@ -79,3 +79,41 @@ export function emparejarCaravanas(lecturas) {
   })
   return pares
 }
+
+// Parsea el listado de SENASA (un número de caravana por línea, sin peso ni
+// hora — es la lista LEGAL de lo que quedó asentado en el DTE/guía, que no
+// siempre coincide con lo que se leyó realmente en el campo). Tolerante a
+// líneas vacías o con texto que no sea puramente un número.
+export function parsearListaSenasa(texto) {
+  if (!texto) return []
+  const vistos = new Set()
+  const resultado = []
+  texto.split('\n').forEach(linea => {
+    const limpio = linea.trim()
+    if (!/^\d{4,20}$/.test(limpio)) return
+    if (vistos.has(limpio)) return
+    vistos.add(limpio)
+    resultado.push(limpio)
+  })
+  return resultado
+}
+
+// Guarda una lista de números de caravana SENASA para un lote.
+export async function guardarCaravanasSenasa(supabase, { numeros, loteId, usuario }) {
+  if (!numeros || numeros.length === 0) return { error: null, cantidad: 0 }
+  const filas = numeros.map(numero_caravana => ({ numero_caravana, lote_id: loteId, registrado_por: usuario?.id || null }))
+  const { error } = await supabase.from('caravanas_senasa').insert(filas)
+  return { error, cantidad: filas.length }
+}
+
+// Compara la lista de SENASA contra lo realmente leído en el campo (de
+// caravanas_lecturas, tipo ingreso) para un lote — para ver de un vistazo
+// qué caravanas están en un lado y no en el otro.
+export function compararCaravanasSenasaCampo(senasa, lecturasCampo) {
+  const numsCampo = new Set((lecturasCampo || []).map(l => l.numero_caravana))
+  const numsSenasa = new Set((senasa || []).map(s => s.numero_caravana))
+  const soloSenasa = [...numsSenasa].filter(n => !numsCampo.has(n))
+  const soloCampo = [...numsCampo].filter(n => !numsSenasa.has(n))
+  const enAmbos = [...numsSenasa].filter(n => numsCampo.has(n))
+  return { soloSenasa, soloCampo, enAmbos }
+}

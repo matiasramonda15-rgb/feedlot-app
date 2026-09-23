@@ -6,7 +6,7 @@ import { Loader } from './UI'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
 import { siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
-import { parsearReporteCaravanas, guardarLecturasCaravana } from '../shared/caravanasLogic'
+import { parsearReporteCaravanas, guardarLecturasCaravana, parsearListaSenasa, guardarCaravanasSenasa, compararCaravanasSenasaCampo } from '../shared/caravanasLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
 // Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
@@ -1509,6 +1509,34 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
     if (error) { alert('Error al borrar: ' + error.message); return }
     await cargarCaravanasDeLote(loteId)
   }
+
+  // ── Lista SENASA (legal) — separada de las lecturas de campo. No siempre
+  // coincide con lo que se lee con el bastón (puede haber más o menos
+  // caravanas asentadas legalmente que las que realmente se verificaron). ──
+  const [editandoSenasa, setEditandoSenasa] = useState(null)
+  const [textoSenasa, setTextoSenasa] = useState('')
+  const [senasaGuardando, setSenasaGuardando] = useState(false)
+  const [senasaGuardadas, setSenasaGuardadas] = useState({}) // { [loteId]: [...numeros] }
+
+  useEffect(() => {
+    if (!lotes || lotes.length === 0) return
+    const idsLotes = lotes.map(l => l.id)
+    supabase.from('caravanas_senasa').select('*').in('lote_id', idsLotes).order('numero_caravana').then(({ data, error }) => {
+      if (error || !data) return
+      const porLote = {}
+      data.forEach(c => { if (!porLote[c.lote_id]) porLote[c.lote_id] = []; porLote[c.lote_id].push(c) })
+      setSenasaGuardadas(porLote)
+    })
+  }, [lotes])
+
+  async function borrarCaravanaSenasa(id, loteId) {
+    if (!confirm('¿Borrar este número de la lista de SENASA?')) return
+    const { error } = await supabase.from('caravanas_senasa').delete().eq('id', id)
+    if (error) { alert('Error al borrar: ' + error.message); return }
+    const { data } = await supabase.from('caravanas_senasa').select('*').eq('lote_id', loteId).order('numero_caravana')
+    setSenasaGuardadas(prev => ({ ...prev, [loteId]: data || [] }))
+  }
+
   const [pagosMap, setPagosMap] = useState({})
   const [chequesCartera, setChequesCartera] = useState([])
   // (PAGO_INIT ahora viene del módulo compartido ./PagoFormulario)
@@ -2132,8 +2160,12 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                         ✏️ Editar
                       </button>
                       <button onClick={() => { const abrir = editandoCaravanas !== l.id; setEditandoCaravanas(abrir ? l.id : null); setTextoCaravanas(''); if (abrir) cargarCaravanasDeLote(l.id) }}
-                        style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap', marginRight: 4 }}>
                         📡 Caravanas{caravanasGuardadas[l.id]?.length > 0 ? ` (${caravanasGuardadas[l.id].length})` : ''}
+                      </button>
+                      <button onClick={() => { setEditandoSenasa(editandoSenasa === l.id ? null : l.id); setTextoSenasa('') }}
+                        style={{ padding: '3px 8px', fontSize: 10, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        🏛️ SENASA{senasaGuardadas[l.id]?.length > 0 ? ` (${senasaGuardadas[l.id].length})` : ''}
                       </button>
                     </td>
                     <td style={{ padding: '7px 10px', minWidth: 180 }}>
@@ -2392,6 +2424,97 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                                   {caravanasGuardando ? 'Guardando...' : `Guardar ${preview.length} lecturas`}
                                 </button>
                                 <button onClick={() => { setEditandoCaravanas(null); setTextoCaravanas('') }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                              </div>
+                            </>
+                          )
+                        })()}
+                      </td>
+                    </tr>
+                  )}
+                  {editandoSenasa === l.id && (
+                    <tr>
+                      <td colSpan={11} style={{ padding: '1.25rem', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>🏛️ Lista SENASA (legal) — C-{corralNum}</div>
+                        <div style={{ fontSize: 11, color: S.hint, marginBottom: 8 }}>
+                          Esta es la lista que queda asentada oficialmente (DTE/guía) — puede no coincidir con lo que se leyó
+                          realmente con el bastón en el campo. Pegá los números de caravana, uno por línea.
+                        </div>
+                        {senasaGuardadas[l.id]?.length > 0 && (
+                          <div style={{ marginBottom: 12, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
+                            <div style={{ padding: '6px 10px', background: S.accentLight, fontSize: 11, fontWeight: 600, color: S.accent }}>
+                              🏛️ {senasaGuardadas[l.id].length} caravanas asentadas en SENASA para este lote
+                            </div>
+                            {(() => {
+                              const { soloSenasa, soloCampo, enAmbos } = compararCaravanasSenasaCampo(senasaGuardadas[l.id], caravanasGuardadas[l.id] || [])
+                              return (
+                                <div style={{ padding: '10px', fontSize: 11 }}>
+                                  <div style={{ marginBottom: 6 }}><span style={{ color: S.green, fontWeight: 600 }}>✓ {enAmbos.length}</span> coinciden en las dos listas</div>
+                                  {soloSenasa.length > 0 && (
+                                    <div style={{ marginBottom: 6 }}>
+                                      <span style={{ color: S.amber, fontWeight: 600 }}>⚠ {soloSenasa.length} están en SENASA pero NO se leyeron en el campo:</span>
+                                      <div style={{ fontFamily: 'monospace', color: S.muted, marginTop: 3, wordBreak: 'break-all' }}>{soloSenasa.map(n => '...' + n.slice(-6)).join(', ')}</div>
+                                    </div>
+                                  )}
+                                  {soloCampo.length > 0 && (
+                                    <div>
+                                      <span style={{ color: S.accent, fontWeight: 600 }}>ℹ {soloCampo.length} se leyeron en el campo pero NO figuran en SENASA:</span>
+                                      <div style={{ fontFamily: 'monospace', color: S.muted, marginTop: 3, wordBreak: 'break-all' }}>{soloCampo.map(n => '...' + n.slice(-6)).join(', ')}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                            <div style={{ maxHeight: 160, overflowY: 'auto', borderTop: `1px solid ${S.border}` }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                                <tbody>
+                                  {senasaGuardadas[l.id].map(c => (
+                                    <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                                      <td style={{ padding: '4px 10px', fontFamily: 'monospace' }}>...{c.numero_caravana.slice(-6)}</td>
+                                      <td style={{ padding: '4px 10px', textAlign: 'right' }}>
+                                        <button onClick={() => borrarCaravanaSenasa(c.id, l.id)} style={{ padding: '2px 7px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Borrar</button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                        <textarea value={textoSenasa} onChange={e => setTextoSenasa(e.target.value)} rows={8}
+                          placeholder={'032010032225575\n032010032225576\n...'}
+                          style={{ width: '100%', fontFamily: 'monospace', fontSize: 11, padding: 10, border: `1px solid ${S.border}`, borderRadius: 6, marginBottom: 8, boxSizing: 'border-box' }} />
+                        {(() => {
+                          const yaGuardados = new Set((senasaGuardadas[l.id] || []).map(c => c.numero_caravana))
+                          const parseados = parsearListaSenasa(textoSenasa)
+                          const duplicados = parseados.filter(n => yaGuardados.has(n)).length
+                          const preview = parseados.filter(n => !yaGuardados.has(n))
+                          return (
+                            <>
+                              <div style={{ fontSize: 12, marginBottom: 8, color: preview.length > 0 ? S.accent : S.hint }}>
+                                {preview.length > 0 ? `✓ ${preview.length} números nuevos detectados` : parseados.length > 0 ? 'Todos esos números ya estaban guardados' : 'Pegá la lista para ver la vista previa'}
+                                {duplicados > 0 && <span style={{ color: S.hint }}> ({duplicados} ya estaban cargados, se omiten)</span>}
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button disabled={preview.length === 0 || senasaGuardando}
+                                  onClick={async () => {
+                                    setSenasaGuardando(true)
+                                    try {
+                                      const { error, cantidad } = await guardarCaravanasSenasa(supabase, { numeros: preview, loteId: l.id, usuario })
+                                      if (error) { alert('Error al guardar la lista de SENASA: ' + error.message); return }
+                                      alert(`Se guardaron ${cantidad} números de SENASA para este lote.`)
+                                      setTextoSenasa('')
+                                      const { data } = await supabase.from('caravanas_senasa').select('*').eq('lote_id', l.id).order('numero_caravana')
+                                      setSenasaGuardadas(prev => ({ ...prev, [l.id]: data || [] }))
+                                    } catch (e) {
+                                      alert('Error inesperado al guardar: ' + (e?.message || String(e)))
+                                    } finally {
+                                      setSenasaGuardando(false)
+                                    }
+                                  }}
+                                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: preview.length > 0 ? S.accent : S.bg, border: `1px solid ${preview.length > 0 ? S.accent : S.border}`, color: preview.length > 0 ? '#fff' : S.muted, borderRadius: 6, cursor: preview.length > 0 ? 'pointer' : 'default' }}>
+                                  {senasaGuardando ? 'Guardando...' : `Guardar ${preview.length} números`}
+                                </button>
+                                <button onClick={() => { setEditandoSenasa(null); setTextoSenasa('') }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                               </div>
                             </>
                           )
