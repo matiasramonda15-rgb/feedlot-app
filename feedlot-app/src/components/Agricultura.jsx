@@ -1242,11 +1242,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
     // Descontar stock de productos usados — con la superficie TOTAL (todos
     // los campos/lotes juntos), de forma atómica en la base. La dosis es por
-    // hectárea, así que da lo mismo hacerlo de una vez que por partes.
-    // Se guarda cuánto se descontó REALMENTE (puede ser menos que lo
-    // calculado si no había suficiente stock) — así, si después se elimina
-    // la orden, se repone exactamente eso y no una cantidad inventada que
-    // nunca existió en stock.
+    // Antes esto tenía un tope: se guardaba el mínimo entre lo necesario y lo
+    // que había en stock, porque el stock no podía bajar de 0. Ahora si no
+    // alcanza, se descuenta el total igual (el stock puede quedar en
+    // negativo) — así, cuando se repone comprando el producto después, el
+    // stock queda con la cantidad real, sin "perder" el déficit que hubo en
+    // el medio.
     const descontadoRealPorProducto = {}
     for (const p of form.productos) {
       if (!p.id || !p.dosis || !superficie) continue
@@ -1254,11 +1255,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const dosisChica = stockItem?.dosis_chica
       const usado = redondearMedio(parseFloat(p.dosis) * superficie, dosisChica)
       const stockDisponible = parseFloat(stockItem?.cantidad) || 0
-      const realmenteDescontado = Math.min(usado, stockDisponible)
-      if (realmenteDescontado < usado) {
-        if (!confirm(`Ojo: no hay suficiente stock de ${stockItem?.insumo || 'este producto'} — hacían falta ${usado.toLocaleString('es-AR')} y solo hay ${stockDisponible.toLocaleString('es-AR')}. Se va a descontar lo que hay y el stock queda en 0. ¿Seguir igual?`)) { setGuardando(false); return }
+      if (usado > stockDisponible) {
+        if (!confirm(`Ojo: no hay suficiente stock de ${stockItem?.insumo || 'este producto'} — hacían falta ${usado.toLocaleString('es-AR')} y solo hay ${stockDisponible.toLocaleString('es-AR')}. El stock va a quedar en negativo hasta que lo repongas. ¿Seguir igual?`)) { setGuardando(false); return }
       }
-      descontadoRealPorProducto[p.id] = realmenteDescontado
+      descontadoRealPorProducto[p.id] = usado
       const { error: errStock } = await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -usado })
       if (errStock) { alert('Error al descontar stock: ' + errStock.message); setGuardando(false); return }
     }
