@@ -378,6 +378,69 @@ export default function Ingresos({ usuario, mobile, nav }) {
     await cargarDatos()
   }
 
+  // ── Caravanas electrónicas y lista SENASA — vive acá (no dentro de
+  // GestionComercial) porque ahora tiene su propia pestaña, además del
+  // badge que se ve en la fila de cada lote en Gestión Comercial. Tiene que
+  // estar ANTES del "if (loading) return" de abajo — los hooks de React
+  // siempre tienen que llamarse en el mismo orden en cada render, y si
+  // quedan después de un corte así, se llaman una cantidad de veces
+  // distinta mientras carga que después de cargar, y React se rompe.
+  const [caravanasLoteSel, setCaravanasLoteSel] = useState(null)
+  const [caravanasGuardadas, setCaravanasGuardadas] = useState({}) // { [loteId]: [...lecturas] }
+  const [senasaGuardadas, setSenasaGuardadas] = useState({}) // { [loteId]: [...numeros] }
+  const [textoCaravanas, setTextoCaravanas] = useState('')
+  const [caravanasGuardando, setCaravanasGuardando] = useState(false)
+  const [textoSenasa, setTextoSenasa] = useState('')
+  const [senasaGuardando, setSenasaGuardando] = useState(false)
+
+  async function cargarCaravanasDeLote(loteId) {
+    const { data, error } = await supabase.from('caravanas_lecturas').select('*').eq('lote_id', loteId).eq('tipo', 'ingreso').order('numero_caravana')
+    if (error) { alert('Error al cargar las caravanas guardadas: ' + error.message); return }
+    setCaravanasGuardadas(prev => ({ ...prev, [loteId]: data || [] }))
+  }
+  async function cargarSenasaDeLote(loteId) {
+    const { data, error } = await supabase.from('caravanas_senasa').select('*').eq('lote_id', loteId).order('numero_caravana')
+    if (error) { alert('Error al cargar la lista de SENASA: ' + error.message); return }
+    setSenasaGuardadas(prev => ({ ...prev, [loteId]: data || [] }))
+  }
+
+  // Trae de una sola vez las caravanas y la lista SENASA de TODOS los lotes
+  // visibles, así el badge de cada fila ya muestra la cantidad sin tener
+  // que entrar a cada uno primero.
+  useEffect(() => {
+    if (!lotes || lotes.length === 0) return
+    const idsLotes = lotes.map(l => l.id)
+    supabase.from('caravanas_lecturas').select('*').eq('tipo', 'ingreso').in('lote_id', idsLotes).order('numero_caravana').then(({ data, error }) => {
+      if (error || !data) return
+      const porLote = {}
+      data.forEach(c => { if (!porLote[c.lote_id]) porLote[c.lote_id] = []; porLote[c.lote_id].push(c) })
+      setCaravanasGuardadas(porLote)
+    })
+    supabase.from('caravanas_senasa').select('*').in('lote_id', idsLotes).order('numero_caravana').then(({ data, error }) => {
+      if (error || !data) return
+      const porLote = {}
+      data.forEach(c => { if (!porLote[c.lote_id]) porLote[c.lote_id] = []; porLote[c.lote_id].push(c) })
+      setSenasaGuardadas(porLote)
+    })
+  }, [lotes])
+
+  async function borrarCaravana(id, loteId) {
+    if (!confirm('¿Borrar esta lectura de caravana?')) return
+    const { error } = await supabase.from('caravanas_lecturas').delete().eq('id', id)
+    if (error) { alert('Error al borrar: ' + error.message); return }
+    await cargarCaravanasDeLote(loteId)
+  }
+  async function borrarCaravanaSenasa(id, loteId) {
+    if (!confirm('¿Borrar este número de la lista de SENASA?')) return
+    const { error } = await supabase.from('caravanas_senasa').delete().eq('id', id)
+    if (error) { alert('Error al borrar: ' + error.message); return }
+    await cargarSenasaDeLote(loteId)
+  }
+  function irACaravanasDeLote(loteId) {
+    setCaravanasLoteSel(loteId)
+    setTab('caravanas')
+  }
+
   if (loading) return <Loader />
 
   // ── MODO CELULAR: solo el formulario simple de "nuevo ingreso" (báscula) ──
@@ -510,65 +573,6 @@ export default function Ingresos({ usuario, mobile, nav }) {
     { key: 'caravanas', label: '📡 Caravanas' },
     { key: 'calculadora', label: '🧮 Calculadora precio máximo' },
   ]
-
-  // ── Caravanas electrónicas y lista SENASA — vive acá (no dentro de
-  // GestionComercial) porque ahora tiene su propia pestaña, además del
-  // badge que se ve en la fila de cada lote en Gestión Comercial.
-  const [caravanasLoteSel, setCaravanasLoteSel] = useState(null)
-  const [caravanasGuardadas, setCaravanasGuardadas] = useState({}) // { [loteId]: [...lecturas] }
-  const [senasaGuardadas, setSenasaGuardadas] = useState({}) // { [loteId]: [...numeros] }
-  const [textoCaravanas, setTextoCaravanas] = useState('')
-  const [caravanasGuardando, setCaravanasGuardando] = useState(false)
-  const [textoSenasa, setTextoSenasa] = useState('')
-  const [senasaGuardando, setSenasaGuardando] = useState(false)
-
-  async function cargarCaravanasDeLote(loteId) {
-    const { data, error } = await supabase.from('caravanas_lecturas').select('*').eq('lote_id', loteId).eq('tipo', 'ingreso').order('numero_caravana')
-    if (error) { alert('Error al cargar las caravanas guardadas: ' + error.message); return }
-    setCaravanasGuardadas(prev => ({ ...prev, [loteId]: data || [] }))
-  }
-  async function cargarSenasaDeLote(loteId) {
-    const { data, error } = await supabase.from('caravanas_senasa').select('*').eq('lote_id', loteId).order('numero_caravana')
-    if (error) { alert('Error al cargar la lista de SENASA: ' + error.message); return }
-    setSenasaGuardadas(prev => ({ ...prev, [loteId]: data || [] }))
-  }
-
-  // Trae de una sola vez las caravanas y la lista SENASA de TODOS los lotes
-  // visibles, así el badge de cada fila ya muestra la cantidad sin tener
-  // que entrar a cada uno primero.
-  useEffect(() => {
-    if (!lotes || lotes.length === 0) return
-    const idsLotes = lotes.map(l => l.id)
-    supabase.from('caravanas_lecturas').select('*').eq('tipo', 'ingreso').in('lote_id', idsLotes).order('numero_caravana').then(({ data, error }) => {
-      if (error || !data) return
-      const porLote = {}
-      data.forEach(c => { if (!porLote[c.lote_id]) porLote[c.lote_id] = []; porLote[c.lote_id].push(c) })
-      setCaravanasGuardadas(porLote)
-    })
-    supabase.from('caravanas_senasa').select('*').in('lote_id', idsLotes).order('numero_caravana').then(({ data, error }) => {
-      if (error || !data) return
-      const porLote = {}
-      data.forEach(c => { if (!porLote[c.lote_id]) porLote[c.lote_id] = []; porLote[c.lote_id].push(c) })
-      setSenasaGuardadas(porLote)
-    })
-  }, [lotes])
-
-  async function borrarCaravana(id, loteId) {
-    if (!confirm('¿Borrar esta lectura de caravana?')) return
-    const { error } = await supabase.from('caravanas_lecturas').delete().eq('id', id)
-    if (error) { alert('Error al borrar: ' + error.message); return }
-    await cargarCaravanasDeLote(loteId)
-  }
-  async function borrarCaravanaSenasa(id, loteId) {
-    if (!confirm('¿Borrar este número de la lista de SENASA?')) return
-    const { error } = await supabase.from('caravanas_senasa').delete().eq('id', id)
-    if (error) { alert('Error al borrar: ' + error.message); return }
-    await cargarSenasaDeLote(loteId)
-  }
-  function irACaravanasDeLote(loteId) {
-    setCaravanasLoteSel(loteId)
-    setTab('caravanas')
-  }
 
   // ── VISTA NUEVO / EDITAR ──
   if (vista === 'nuevo' || vista === 'editar') {
