@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
-import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
+import { calcularIndicadoresFeedlot, promMovil } from '../shared/gdpLogic'
 import { emparejarCaravanas } from '../shared/caravanasLogic'
 
 const S = {
@@ -224,6 +224,18 @@ export default function Reportes({ usuario }) {
   // mismos animales en el mismo corral — los animales se mueven de corral, así
   // que esto es más confiable que comparar dos pesadas sueltas).
   const gdpEstimado = prom6?.gdp || prom3?.gdp || mesActual?.gdp || null
+  // Para la GANANCIA POR ANIMAL específicamente, se usa un promedio de
+  // permanencia/GDP que excluye el mes actual — el mes en curso todavía está
+  // abierto, así que cada lote nuevo que entra corre su número (lo vimos con
+  // el GDP de septiembre) y esa inestabilidad se filtraba directo a la
+  // ganancia, haciendo que subiera o bajara con cada ingreso nuevo sin que
+  // haya cambiado nada real del negocio. Con solo meses ya cerrados, la
+  // ganancia queda estable entre un ingreso y el siguiente.
+  const mesesCerrados = mesesGDP.slice(0, -1)
+  const prom6Cerrado = promMovil(mesesCerrados, 6)
+  const prom3Cerrado = promMovil(mesesCerrados, 3)
+  const permanenciaEstable = prom6Cerrado?.permanencia || prom3Cerrado?.permanencia || permanenciaPromedio
+  const gdpEstable = prom6Cerrado?.gdp || prom3Cerrado?.gdp || gdpEstimado
   const totalKgAlimConsumido = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalKg, 0)
 
   // Rentabilidad por venta
@@ -471,7 +483,7 @@ export default function Reportes({ usuario }) {
   // entero lo subestimaba fuerte (por un factor de ~4).
   const costoOperativoPromedioPorAnimal30 = existenciaProm30 > 0 ? costoOperativoTotal30 / existenciaProm30 : null
   const costoOperativoDiarioPorAnimal = costoOperativoPromedioPorAnimal30 !== null ? costoOperativoPromedioPorAnimal30 / 30 : null
-  const costoOperativoCicloCompleto = (costoOperativoDiarioPorAnimal !== null && permanenciaPromedio) ? costoOperativoDiarioPorAnimal * permanenciaPromedio : null
+  const costoOperativoCicloCompleto = (costoOperativoDiarioPorAnimal !== null && permanenciaEstable) ? costoOperativoDiarioPorAnimal * permanenciaEstable : null
 
   const gananciaPromedioPorAnimal = (ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoCicloCompleto != null)
     ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
@@ -481,7 +493,7 @@ export default function Reportes({ usuario }) {
   // Sirve para ver hasta qué peso conviene seguir engordando: mientras el
   // precio de venta de ese rango esté por encima del costo de producir el
   // kilo, cada kilo extra deja margen positivo.
-  const costoPorKgProducido = (costoOperativoDiarioPorAnimal != null && gdpEstimado) ? costoOperativoDiarioPorAnimal / gdpEstimado : null
+  const costoPorKgProducido = (costoOperativoDiarioPorAnimal != null && gdpEstable) ? costoOperativoDiarioPorAnimal / gdpEstable : null
   const BANDAS_PESO = [
     { desde: 0, hasta: 380, label: '< 380 kg' },
     { desde: 380, hasta: 410, label: '380-410 kg' },
@@ -1243,7 +1255,7 @@ export default function Reportes({ usuario }) {
               <Stat label="Costo / animal comprado" val={costoPromedioPorAnimalComprado !== null ? `$${Math.round(costoPromedioPorAnimalComprado).toLocaleString('es-AR')}` : '—'}
                 sub={`${totalAnimComprados60} animales · últimos 60 días`} />
               <Stat label="Costo operativo / animal" val={costoOperativoCicloCompleto !== null ? `$${Math.round(costoOperativoCicloCompleto).toLocaleString('es-AR')}` : '—'}
-                sub={permanenciaPromedio ? `${Math.round(permanenciaPromedio)} días promedio en el feedlot × $${costoOperativoDiarioPorAnimal ? Math.round(costoOperativoDiarioPorAnimal).toLocaleString('es-AR') : '—'}/día` : 'falta permanencia promedio'} />
+                sub={permanenciaEstable ? `${Math.round(permanenciaEstable)} días promedio en el feedlot × $${costoOperativoDiarioPorAnimal ? Math.round(costoOperativoDiarioPorAnimal).toLocaleString('es-AR') : '—'}/día` : 'falta permanencia promedio'} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: '1.25rem', padding: '10px 12px', background: S.bg, borderRadius: 8, fontSize: 11 }}>
               <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Alimentación (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(totalCostoAlim30).toLocaleString('es-AR')}</div></div>
