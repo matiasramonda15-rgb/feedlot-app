@@ -94,7 +94,11 @@ export default function Gastos({ usuario }) {
   useEffect(() => {
     const proveedor = form?.proveedor?.trim()
     if (!proveedor) { setAnticiposDisponibles([]); return }
-    supabase.from('anticipos_contactos').select('*').ilike('contacto', proveedor).gt('monto_disponible', 0).then(({ data, error }) => {
+    // Uso %...% en vez de una igualdad exacta porque algunos nombres de
+    // contacto quedaron guardados con un espacio de más al final (ej.
+    // "Casnem ") — comparando por igualdad estricta después de recortar el
+    // espacio del lado del formulario, nunca encontraba el anticipo.
+    supabase.from('anticipos_contactos').select('*').ilike('contacto', `%${proveedor}%`).gt('monto_disponible', 0).then(({ data, error }) => {
       if (error || !data) { setAnticiposDisponibles([]); return }
       setAnticiposDisponibles(data)
     })
