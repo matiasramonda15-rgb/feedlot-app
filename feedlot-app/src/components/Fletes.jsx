@@ -37,6 +37,7 @@ export default function Fletes({ usuario }) {
   const [showNuevo, setShowNuevo] = useState(false)
   const [formNuevo, setFormNuevo] = useState({ lote_id: '', transportista: '', fecha: hoyLocal(), cantidad: '', kg_bruto: '', monto: '', numero_factura: '', observaciones: '' })
   const [pagandoId, setPagandoId] = useState(null)
+  const [seleccionados, setSeleccionados] = useState([])
   const [formPago, setFormPago] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardando, setGuardando] = useState(false)
 
@@ -96,13 +97,18 @@ export default function Fletes({ usuario }) {
     await cargar()
   }
 
-  async function guardarPago(flete) {
+  async function guardarPago(fletesAPagar) {
+    const fletes = Array.isArray(fletesAPagar) ? fletesAPagar : [fletesAPagar]
     const pagos = formPago.pagos.filter(p => parseFloat(p.monto) > 0)
     if (!pagos.length) { alert('Ingresá el monto'); return }
     setGuardando(true)
     let caja_oficial_id = null, caja_paralela_id = null
     const ct = contactos.find(x => String(x.id) === formPago.contacto_id)
-    const desc = `Flete ${flete.transportista} · ${flete.lotes?.codigo || ''}`
+    // Con varios fletes del mismo pago, la descripción los menciona a todos
+    // (por código de lote) en vez de solo el primero.
+    const codigos = fletes.map(f => f.lotes?.codigo).filter(Boolean).join(', ')
+    const transportistaDesc = fletes[0].transportista
+    const desc = `Flete ${transportistaDesc}${fletes.length > 1 ? ` (${fletes.length} viajes)` : ''} · ${codigos}`
     for (const pago of pagos) {
       const monto = parseFloat(pago.monto)
       if (pago.tipo === 'canje') continue  // canje: no mueve caja, se compensa solo en Contactos
@@ -110,7 +116,7 @@ export default function Fletes({ usuario }) {
         const cuotas = parseInt(formPago.credito_cuotas) || 1
         const { data: cred, error: errCred } = await supabase.from('creditos').insert({
           entidad: formPago.credito_entidad || null,
-          descripcion: `Flete ${flete.transportista || ''} · ${flete.lotes?.codigo || ''}`,
+          descripcion: desc,
           monto_total: monto, cant_cuotas: cuotas, monto_cuota: Math.round(monto / cuotas),
           fecha_inicio: formPago.fecha, fecha_vencimiento: formPago.credito_vencimiento || null,
           cuotas_pagadas: 0, saldo_pendiente: monto, estado: 'activo', registrado_por: usuario?.id,
@@ -140,7 +146,7 @@ export default function Fletes({ usuario }) {
         if (eo) { alert('Error al registrar en caja oficial: ' + eo.message); setGuardando(false); return }
         if (!caja_oficial_id) caja_oficial_id = co?.id
         if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-          const { error: ech } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: ct?.nombre || flete.transportista, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: usuario?.id })
+          const { error: ech } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: ct?.nombre || transportistaDesc, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: usuario?.id })
           if (ech) { alert('Error al registrar el cheque: ' + ech.message); setGuardando(false); return }
         } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
           for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
@@ -154,23 +160,34 @@ export default function Fletes({ usuario }) {
       }
     }
     const totalPagado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-    const { error: eFlete } = await supabase.from('fletes').update({
-      estado_pago: 'pagado',
-      monto: flete.monto || totalPagado,
-      caja_oficial_id, caja_paralela_id,
-      contacto_id: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
-      pagos_detalle: pagos,
-      forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
-      es_paralelo: pagos.some(p => p.es_paralelo),
-    }).eq('id', flete.id)
-    if (eFlete) { alert('El pago se registró, pero no se pudo actualizar el flete: ' + eFlete.message); setGuardando(false); return }
+    // Con varios fletes en el mismo pago, cada uno se marca pagado con su
+    // parte proporcional del total combinado (según lo que costaba cada
+    // uno) — todos comparten la misma caja/cheque, para no duplicar el
+    // movimiento (el mismo bug que hubo en Servicios hace un tiempo).
+    const totalOriginal = fletes.reduce((s, f) => s + (f.monto || 0), 0) || totalPagado
+    for (const flete of fletes) {
+      const proporcion = totalOriginal > 0 ? (flete.monto || 0) / totalOriginal : 1 / fletes.length
+      const montoFlete = fletes.length > 1 ? Math.round(totalPagado * proporcion) : (flete.monto || totalPagado)
+      const { error: eFlete } = await supabase.from('fletes').update({
+        estado_pago: 'pagado',
+        monto: flete.monto || montoFlete,
+        caja_oficial_id, caja_paralela_id,
+        contacto_id: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
+        pagos_detalle: pagos,
+        monto_grupo: fletes.length > 1 ? totalPagado : null,
+        forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
+        es_paralelo: pagos.some(p => p.es_paralelo),
+      }).eq('id', flete.id)
+      if (eFlete) { alert(`El pago se registró, pero no se pudo actualizar el flete de ${flete.transportista}: ` + eFlete.message); setGuardando(false); return }
+    }
     await generarOrdenDePago(supabase, {
-      destinatario: ct?.nombre || flete.transportista,
+      destinatario: ct?.nombre || transportistaDesc,
       fecha: formPago.fecha,
-      concepto: `Flete — ${flete.transportista}${flete.lotes?.codigo ? ' · ' + flete.lotes.codigo : ''}`,
+      concepto: desc,
       pagos,
     })
     setPagandoId(null)
+    setSeleccionados([])
     setFormPago({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
     setGuardando(false)
     // Si el filtro estaba en "Pendientes", el flete que se acaba de pagar
@@ -283,25 +300,75 @@ export default function Fletes({ usuario }) {
             ✕ Limpiar
           </button>
         )}
+        {seleccionados.length >= 2 && (
+          <button onClick={() => {
+            const fletesSel = fletes.filter(f => seleccionados.includes(f.id))
+            const totalSel = fletesSel.reduce((s, f) => s + (f.monto || 0), 0)
+            setPagandoId('grupo')
+            setFormPago({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT, monto: totalSel ? String(totalSel) : '' }], contacto_id: '' })
+          }}
+            style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+            💳 Pagar {seleccionados.length} seleccionados juntos
+          </button>
+        )}
       </div>
+
+      {pagandoId === 'grupo' && (() => {
+        const fletesSel = fletes.filter(f => seleccionados.includes(f.id))
+        return (
+          <div style={{ background: S.surface, border: `1px solid ${S.accent}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>💳 Pagar {fletesSel.length} viajes juntos — {fletesSel[0]?.transportista}</div>
+            <div style={{ fontSize: 12, color: S.muted, marginBottom: 12 }}>
+              {fletesSel.map(f => `${f.lotes?.codigo || 'sin lote'} (${f.fecha ? new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'}): $${(f.monto || 0).toLocaleString('es-AR')}`).join(' + ')}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div>
+                <Label>Fecha de pago</Label>
+                <input type="date" value={formPago.fecha} onChange={e => setFormPago({ ...formPago, fecha: e.target.value })} style={inp()} />
+              </div>
+              <div>
+                <Label>Contacto (opcional)</Label>
+                <select value={formPago.contacto_id} onChange={e => setFormPago({ ...formPago, contacto_id: e.target.value })} style={inp()}>
+                  <option value="">— Sin vincular —</option>
+                  {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+            </div>
+            <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({ ...formPago, pagos: n })} chequesCartera={chequesCartera} S={S} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button onClick={() => guardarPago(fletesSel)} disabled={guardando}
+                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+                {guardando ? 'Guardando...' : `Registrar pago de los ${fletesSel.length} viajes`}
+              </button>
+              <button onClick={() => { setPagandoId(null); setSeleccionados([]) }} style={{ padding: '8px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Tabla */}
       <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: S.bg }}>
-              {['Fecha', 'Transportista', 'Lote', 'Procedencia', 'Animales', 'Kg bruto', 'N° Factura', 'Monto', 'Estado', ''].map(h => (
+              {['', 'Fecha', 'Transportista', 'Lote', 'Procedencia', 'Animales', 'Kg bruto', 'N° Factura', 'Monto', 'Estado', ''].map(h => (
                 <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {fletesFiltrados.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay fletes registrados.</td></tr>
+              <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay fletes registrados.</td></tr>
             )}
             {fletesFiltrados.map(f => (
               <>
                 <tr key={f.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                  <td style={{ padding: '9px 12px' }}>
+                    {f.estado_pago === 'pendiente' && (
+                      <input type="checkbox" checked={seleccionados.includes(f.id)}
+                        onChange={e => setSeleccionados(e.target.checked ? [...seleccionados, f.id] : seleccionados.filter(id => id !== f.id))} />
+                    )}
+                  </td>
                   <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>
                     {f.fecha ? new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
                   </td>
@@ -348,7 +415,7 @@ export default function Fletes({ usuario }) {
                 {/* Form edición */}
                 {editandoId === f.id && (
                   <tr key={`edit-${f.id}`} style={{ background: S.accentLight }}>
-                    <td colSpan={10} style={{ padding: '1rem' }}>
+                    <td colSpan={11} style={{ padding: '1rem' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
                         <div>
                           <Label>Transportista</Label>
@@ -375,7 +442,7 @@ export default function Fletes({ usuario }) {
                 {/* Form pago */}
                 {pagandoId === f.id && (
                   <tr key={`pago-${f.id}`} style={{ background: S.greenLight }}>
-                    <td colSpan={10} style={{ padding: '1rem' }}>
+                    <td colSpan={11} style={{ padding: '1rem' }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: '1rem' }}>💳 Registrar pago — {f.transportista}</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 12, marginBottom: '1rem' }}>
                         <div>
