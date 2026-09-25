@@ -566,7 +566,20 @@ export default function Gastos({ usuario }) {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: (pago.tipo === 'e-cheq' || pago.tipo === 'cheque') ? 10 : 0 }}>
                   <div>
                     <Label>Forma de pago</Label>
-                    <select value={pago.tipo} onChange={e => setPago(idx, 'tipo', e.target.value)}
+                    <select value={pago.tipo} onChange={e => {
+                      if (e.target.value === 'anticipo' && anticiposDisponibles.length > 0) {
+                        // Se autoselecciona el anticipo apenas se elige este
+                        // tipo de pago (el primero si hay más de uno) — antes
+                        // había que además hacer clic en la fila del anticipo
+                        // específico, y si no se hacía ese clic, el pago
+                        // quedaba marcado "anticipo" pero sin descontar nada.
+                        const a = anticiposDisponibles[0]
+                        const montoActual = parseFloat(pago.monto) || 0
+                        setPagoMulti(idx, { tipo: 'anticipo', anticipo_id: a.id, anticipo_detalle: a.descripcion, monto: String(Math.min(a.monto_disponible, montoActual || a.monto_disponible)) })
+                      } else {
+                        setPago(idx, 'tipo', e.target.value)
+                      }
+                    }}
                       style={inputStyle}>
                       <option value="transferencia">Transferencia</option>
                       <option value="efectivo">Efectivo</option>
