@@ -77,6 +77,7 @@ export default function Gastos({ usuario }) {
   const [activosList, setActivosList] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
   const [contactos, setContactos] = useState([])
+  const [anticiposDisponibles, setAnticiposDisponibles] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [filtroActividad, setFiltroActividad] = useState('')
@@ -86,6 +87,18 @@ export default function Gastos({ usuario }) {
   const [editandoId, setEditandoId] = useState(null)
 
   useEffect(() => { cargar() }, [])
+
+  // Anticipos disponibles para el proveedor elegido en el formulario — se
+  // recalcula cada vez que cambia el proveedor, para ofrecerlos como forma
+  // de pago (sin duplicar los que ya se agotaron).
+  useEffect(() => {
+    const proveedor = form?.proveedor?.trim()
+    if (!proveedor) { setAnticiposDisponibles([]); return }
+    supabase.from('anticipos_contactos').select('*').ilike('contacto', proveedor).gt('monto_disponible', 0).then(({ data, error }) => {
+      if (error || !data) { setAnticiposDisponibles([]); return }
+      setAnticiposDisponibles(data)
+    })
+  }, [form?.proveedor])
 
   async function cargar() {
     const [{ data: g }, { data: ch }, { data: ct }, { data: acts }] = await Promise.all([
@@ -154,6 +167,10 @@ export default function Gastos({ usuario }) {
       const monto = parseFloat(pago.monto) || 0
       if (!monto) continue
       if (pago.tipo === 'canje') { pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null }); continue }
+      if (pago.tipo === 'anticipo') {
+        pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null })
+        continue
+      }
       if (pago.tipo === 'credito') {
         const cuotas = parseInt(form.credito_cuotas) || 1
         const { data: cred, error: errCred } = await supabase.from('creditos').insert({
@@ -275,6 +292,18 @@ export default function Gastos({ usuario }) {
       await supabase.from('gastos_generales').update(datosGasto).eq('id', editandoId)
     } else {
       await supabase.from('gastos_generales').insert(datosGasto)
+    }
+
+    // Si algún pago usó un anticipo, se descuenta el saldo disponible de ese
+    // anticipo — así la próxima vez que se use, ya se ve cuánto queda.
+    if (pagarAhora) {
+      for (const pago of form.pagos) {
+        if (pago.tipo !== 'anticipo' || !pago.anticipo_id) continue
+        const monto = parseFloat(pago.monto) || 0
+        if (!monto) continue
+        const { data: ant } = await supabase.from('anticipos_contactos').select('monto_disponible').eq('id', pago.anticipo_id).single()
+        if (ant) await supabase.from('anticipos_contactos').update({ monto_disponible: Math.max(0, ant.monto_disponible - monto) }).eq('id', pago.anticipo_id)
+      }
     }
 
     await cargar()
@@ -541,8 +570,27 @@ export default function Gastos({ usuario }) {
                       <option value="e-cheq">💻 E-cheq</option>
                       <option value="cuenta_corriente">Cuenta corriente</option>
                       <option value="canje">🔄 Canje / Compensación (no mueve caja)</option>
+                      {anticiposDisponibles.length > 0 && <option value="anticipo">🎟️ Anticipo ya pagado (no mueve caja)</option>}
                       <option value="credito">🏦 Crédito (tarjeta/financiera)</option>
                     </select>
+                    {pago.tipo === 'anticipo' && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 6 }}>Descontar de un anticipo ya pagado</div>
+                        {anticiposDisponibles.map(a => {
+                          const seleccionado = pago.anticipo_id === a.id
+                          return (
+                            <div key={a.id} onClick={() => {
+                              const montoAplicar = Math.min(a.monto_disponible, parseFloat(pago.monto) || a.monto_disponible)
+                              setPago(idx, 'anticipo_id', a.id)
+                              setPago(idx, 'monto', String(montoAplicar))
+                            }}
+                              style={{ padding: '8px 10px', borderRadius: 6, border: `1px solid ${seleccionado ? S.accent : S.border}`, background: seleccionado ? S.accentLight : 'transparent', cursor: 'pointer', marginBottom: 6, fontSize: 12 }}>
+                              <b>${a.monto_disponible.toLocaleString('es-AR')}</b> disponibles — {a.descripcion}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                     {form.pagos.some(p => p.tipo === 'credito') && (
                       <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 10 }}>
                         <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>

@@ -18,7 +18,7 @@ const inpDefault = { width: '100%', border: '1px solid #E2DDD6', borderRadius: 6
 // cheque / e-cheq / canje, marcás si es paralelo, y si es cheque (físico o
 // electrónico) se abre el desglose propio/tercero con sus datos — incluida
 // la selección de cheques ya en cartera para depositar/endosar.
-export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [] }) {
+export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [], anticiposDisponibles = [] }) {
   const inp = inputStyle || inpDefault
   const set = (campo, valor) => onChange({ ...pago, [campo]: valor })
   const setChequePropio = (campo, valor) => onChange({ ...pago, cheque_propio: { ...(pago.cheque_propio || {}), [campo]: valor } })
@@ -43,6 +43,7 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
             <option value="e-cheq">💻 E-cheq</option>
             {opcionesExtra.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             {mostrarCanje && <option value="canje">🔄 Canje / Trueque</option>}
+            {anticiposDisponibles.length > 0 && <option value="anticipo">🎟️ Anticipo ya pagado</option>}
           </select>
         </div>
         <div>
@@ -65,8 +66,7 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
 
       {pago.tipo === 'canje' && (
         <div style={{ marginTop: 8 }}>
-          {deudasPendientes.length > 0 && (
-            <>
+          {deudasPendientes.length > 0 && (            <>
               <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>
                 Compensar contra (lo que se le debe a este contacto) — podés marcar varias
               </div>
@@ -142,6 +142,31 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>A cambio de</div>
           <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
             onChange={e => set('canje_detalle', e.target.value)} style={inp} />
+        </div>
+      )}
+
+      {pago.tipo === 'anticipo' && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 6 }}>
+            Descontar de un anticipo ya pagado — no genera ningún movimiento de caja nuevo
+          </div>
+          {anticiposDisponibles.map(a => {
+            const seleccionado = pago.anticipo_id === a.id
+            return (
+              <div key={a.id} onClick={() => {
+                const montoAplicar = Math.min(a.monto_disponible, parseFloat(pago.monto) || a.monto_disponible)
+                onChange({ ...pago, anticipo_id: a.id, anticipo_detalle: a.descripcion, monto: String(montoAplicar) })
+              }}
+                style={{ padding: '8px 10px', borderRadius: 6, border: `1px solid ${seleccionado ? S.accent : S.border}`, background: seleccionado ? S.accentLight : 'transparent', cursor: 'pointer', marginBottom: 6, fontSize: 12 }}>
+                <b>${a.monto_disponible.toLocaleString('es-AR')}</b> disponibles — {a.descripcion} ({new Date(a.fecha + 'T12:00:00').toLocaleDateString('es-AR')})
+              </div>
+            )
+          })}
+          {pago.anticipo_id && (
+            <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>
+              Se van a descontar ${(parseFloat(pago.monto) || 0).toLocaleString('es-AR')} del anticipo elegido arriba.
+            </div>
+          )}
         </div>
       )}
 
@@ -227,12 +252,12 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
 
 // Lista completa de pagos: varias FilaPago + botón de agregar + resumen del
 // total cargado contra el monto objetivo (si se pasa).
-export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [] }) {
+export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [], anticiposDisponibles = [] }) {
   const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
   return (
     <div>
       {pagos.map((pago, idx) => (
-        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra} deudasPendientes={deudasPendientes} onCrearDeuda={onCrearDeuda} opcionesInsumo={opcionesInsumo}
+        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra} deudasPendientes={deudasPendientes} onCrearDeuda={onCrearDeuda} opcionesInsumo={opcionesInsumo} anticiposDisponibles={anticiposDisponibles}
           onChange={p => onChangePagos(pagos.map((pp, i) => i === idx ? p : pp))}
           onRemove={pagos.length > 1 ? () => onChangePagos(pagos.filter((_, i) => i !== idx)) : null}
         />

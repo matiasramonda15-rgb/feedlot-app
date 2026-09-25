@@ -42,6 +42,7 @@ function descMedioPago(p) {
 export default function Contactos({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [contactos, setContactos] = useState([])
+  const [anticiposContactos, setAnticiposContactos] = useState([])
   const [ventas, setVentas] = useState([])
   const [lotes, setLotes] = useState([])
   const [comprasInsumos, setComprasInsumos] = useState([])
@@ -96,6 +97,7 @@ export default function Contactos({ usuario }) {
       { data: rs },
       { data: vencArr },
       { data: retLog },
+      { data: antic },
     ] = await Promise.all([
       supabase.from('contactos').select('*').order('nombre'),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -118,6 +120,7 @@ export default function Contactos({ usuario }) {
       supabase.from('retiros_socios').select('*').not('tercero', 'is', null).order('fecha', { ascending: false }),
       supabase.from('vencimientos_arriendo').select('*, campos(nombre, propietario)').order('fecha_vencimiento', { ascending: false }),
       supabase.from('retiros_insumos_log').select('*').order('fecha', { ascending: false }),
+      supabase.from('anticipos_contactos').select('*').order('fecha', { ascending: false }),
     ])
 
     setContactos(c || [])
@@ -132,6 +135,7 @@ export default function Contactos({ usuario }) {
     setOrdenesTrabajo(ot || [])
     setFletes(fl || [])
     setRetirosInsumosLog(retLog || [])
+    setAnticiposContactos(antic || [])
     // Agrupar las cuotas de cada crédito por credito_id, para poder mostrar
     // el detalle dentro de la ficha del banco.
     const cuotasPorCredito = {}
@@ -905,27 +909,40 @@ export default function Contactos({ usuario }) {
         )}
 
         {/* Saldo neto */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
-          <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '1rem' }}>
-            <div style={{ fontSize: 11, color: S.green, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>Ventas (te pagan)</div>
-            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${(totalVentas/1000000).toFixed(2)}M</div>
-            <div style={{ fontSize: 12, color: S.green, marginTop: 3 }}>Cobrado: ${(cobradoVentas/1000000).toFixed(2)}M</div>
-            {pendienteVentas > 0 && <div style={{ fontSize: 12, color: S.amber, marginTop: 2 }}>Pendiente: ${(pendienteVentas/1000000).toFixed(2)}M</div>}
-          </div>
-          <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem' }}>
-            <div style={{ fontSize: 11, color: S.red, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>Compras (les pagás)</div>
-            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.red }}>-${(totalCompras/1000000).toFixed(2)}M</div>
-            <div style={{ fontSize: 12, color: S.green, marginTop: 3 }}>Pagado: ${(pagadoCompras/1000000).toFixed(2)}M</div>
-            {pendienteCompras > 0 && <div style={{ fontSize: 12, color: S.red, marginTop: 2 }}>Pendiente: -${(pendienteCompras/1000000).toFixed(2)}M</div>}
-          </div>
-          <div style={{ background: saldoNeto >= 0 ? S.accentLight : S.redLight, border: `1px solid ${saldoNeto >= 0 ? S.accent : '#F09595'}`, borderRadius: 8, padding: '1rem' }}>
-            <div style={{ fontSize: 11, color: saldoNeto >= 0 ? S.accent : S.red, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>Saldo neto</div>
-            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: saldoNeto >= 0 ? S.accent : S.red }}>
-              {saldoNeto >= 0 ? '+' : ''}{(saldoNeto/1000000).toFixed(2)}M
+        {(() => {
+          const anticiposDeEste = anticiposContactos.filter(a => a.contacto?.trim() === nombre?.trim() && a.monto_disponible > 0)
+          const totalAnticipoDisponible = anticiposDeEste.reduce((s, a) => s + a.monto_disponible, 0)
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: totalAnticipoDisponible > 0 ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+              <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '1rem' }}>
+                <div style={{ fontSize: 11, color: S.green, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>Ventas (te pagan)</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.green }}>${(totalVentas/1000000).toFixed(2)}M</div>
+                <div style={{ fontSize: 12, color: S.green, marginTop: 3 }}>Cobrado: ${(cobradoVentas/1000000).toFixed(2)}M</div>
+                {pendienteVentas > 0 && <div style={{ fontSize: 12, color: S.amber, marginTop: 2 }}>Pendiente: ${(pendienteVentas/1000000).toFixed(2)}M</div>}
+              </div>
+              <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem' }}>
+                <div style={{ fontSize: 11, color: S.red, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>Compras (les pagás)</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.red }}>-${(totalCompras/1000000).toFixed(2)}M</div>
+                <div style={{ fontSize: 12, color: S.green, marginTop: 3 }}>Pagado: ${(pagadoCompras/1000000).toFixed(2)}M</div>
+                {pendienteCompras > 0 && <div style={{ fontSize: 12, color: S.red, marginTop: 2 }}>Pendiente: -${(pendienteCompras/1000000).toFixed(2)}M</div>}
+              </div>
+              {totalAnticipoDisponible > 0 && (
+                <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 8, padding: '1rem' }}>
+                  <div style={{ fontSize: 11, color: S.accent, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>🎟️ Anticipo disponible</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: S.accent }}>${(totalAnticipoDisponible/1000000).toFixed(2)}M</div>
+                  <div style={{ fontSize: 12, color: S.muted, marginTop: 3 }}>a favor, para futuras comisiones</div>
+                </div>
+              )}
+              <div style={{ background: saldoNeto >= 0 ? S.accentLight : S.redLight, border: `1px solid ${saldoNeto >= 0 ? S.accent : '#F09595'}`, borderRadius: 8, padding: '1rem' }}>
+                <div style={{ fontSize: 11, color: saldoNeto >= 0 ? S.accent : S.red, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>Saldo neto</div>
+                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: saldoNeto >= 0 ? S.accent : S.red }}>
+                  {saldoNeto >= 0 ? '+' : ''}{(saldoNeto/1000000).toFixed(2)}M
+                </div>
+                <div style={{ fontSize: 12, color: S.muted, marginTop: 3 }}>{saldoNeto >= 0 ? 'te deben' : 'les debés'}</div>
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: S.muted, marginTop: 3 }}>{saldoNeto >= 0 ? 'te deben' : 'les debés'}</div>
-          </div>
-        </div>
+          )
+        })()}
 
         {/* Tabs ficha */}
         <div style={{ display: 'flex', borderBottom: `1px solid ${S.border}`, marginBottom: '1.25rem' }}>
