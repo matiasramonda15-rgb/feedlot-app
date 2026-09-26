@@ -176,6 +176,34 @@ export default function Diagnostico({ usuario }) {
   const [problemas, setProblemas] = useState([])
   const [filtroSeveridad, setFiltroSeveridad] = useState('todas')
   const [ultimaCorrida, setUltimaCorrida] = useState(null)
+  const [descartados, setDescartados] = useState(new Set())
+  const [verDescartados, setVerDescartados] = useState(false)
+
+  // Clave estable para identificar la MISMA alerta entre una corrida y la
+  // siguiente — por tabla+id cuando el chequeo apunta a una fila concreta,
+  // y por el mensaje completo cuando no (ej. errores de chequeo).
+  function claveDe(p) {
+    return p.tabla && p.id != null ? `${p.categoria}|${p.tabla}|${p.id}` : `${p.categoria}|${p.mensaje}`
+  }
+
+  async function cargarDescartados() {
+    const { data } = await supabase.from('diagnostico_descartados').select('clave')
+    setDescartados(new Set((data || []).map(d => d.clave)))
+  }
+
+  async function descartar(p) {
+    const clave = claveDe(p)
+    setDescartados(prev => new Set([...prev, clave]))
+    const { error } = await supabase.from('diagnostico_descartados').insert({ clave, categoria: p.categoria, mensaje: p.mensaje, registrado_por: usuario?.id || null })
+    if (error && !error.message.includes('duplicate')) alert('No se pudo guardar el descarte: ' + error.message)
+  }
+
+  async function restaurar(clave) {
+    setDescartados(prev => { const n = new Set(prev); n.delete(clave); return n })
+    await supabase.from('diagnostico_descartados').delete().eq('clave', clave)
+  }
+
+  useEffect(() => { cargarDescartados() }, [])
 
   async function correr() {
     setLoading(true)
@@ -200,13 +228,18 @@ export default function Diagnostico({ usuario }) {
 
   const porCategoria = {}
   problemas.forEach(p => { if (!porCategoria[p.categoria]) porCategoria[p.categoria] = []; porCategoria[p.categoria].push(p) })
-  const problemasFiltrados = filtroSeveridad === 'todas' ? problemas : problemas.filter(p => p.severidad === filtroSeveridad)
+  // Las descartadas no se muestran en la lista normal — solo cuando se
+  // activa "Ver descartadas", para poder recuperar alguna por error.
+  const problemasVisibles = verDescartados ? problemas.filter(p => descartados.has(claveDe(p))) : problemas.filter(p => !descartados.has(claveDe(p)))
+  const problemasFiltrados = filtroSeveridad === 'todas' ? problemasVisibles : problemasVisibles.filter(p => p.severidad === filtroSeveridad)
   const porCategoriaFiltrado = {}
   problemasFiltrados.forEach(p => { if (!porCategoriaFiltrado[p.categoria]) porCategoriaFiltrado[p.categoria] = []; porCategoriaFiltrado[p.categoria].push(p) })
 
-  const conteoAlta = problemas.filter(p => p.severidad === 'alta').length
-  const conteoMedia = problemas.filter(p => p.severidad === 'media').length
-  const conteoBaja = problemas.filter(p => p.severidad === 'baja').length
+  const problemasActivos = problemas.filter(p => !descartados.has(claveDe(p)))
+  const conteoAlta = problemasActivos.filter(p => p.severidad === 'alta').length
+  const conteoMedia = problemasActivos.filter(p => p.severidad === 'media').length
+  const conteoBaja = problemasActivos.filter(p => p.severidad === 'baja').length
+  const conteoDescartadas = problemas.filter(p => descartados.has(claveDe(p))).length
 
   return (
     <div>
@@ -229,26 +262,34 @@ export default function Diagnostico({ usuario }) {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: '1.5rem' }}>
             {[
-              { label: 'Total encontrado', val: problemas.length, key: 'todas', color: S.text },
+              { label: 'Total encontrado', val: problemasActivos.length, key: 'todas', color: S.text },
               { label: '🔴 Alta', val: conteoAlta, key: 'alta', color: S.red },
               { label: '🟡 Media', val: conteoMedia, key: 'media', color: S.amber },
               { label: '⚪ Baja', val: conteoBaja, key: 'baja', color: S.muted },
             ].map(c => (
-              <button key={c.key} onClick={() => setFiltroSeveridad(c.key)}
-                style={{ textAlign: 'left', background: filtroSeveridad === c.key ? S.accentLight : S.surface, border: `1px solid ${filtroSeveridad === c.key ? S.accent : S.border}`, borderRadius: 10, padding: '1rem', cursor: 'pointer' }}>
+              <button key={c.key} onClick={() => { setFiltroSeveridad(c.key); setVerDescartados(false) }}
+                style={{ textAlign: 'left', background: !verDescartados && filtroSeveridad === c.key ? S.accentLight : S.surface, border: `1px solid ${!verDescartados && filtroSeveridad === c.key ? S.accent : S.border}`, borderRadius: 10, padding: '1rem', cursor: 'pointer' }}>
                 <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{c.label}</div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: c.color }}>{c.val}</div>
               </button>
             ))}
           </div>
 
-          {ultimaCorrida && (
-            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>Última revisión: {ultimaCorrida.toLocaleString('es-AR')}</div>
-          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            {ultimaCorrida ? (
+              <div style={{ fontSize: 11, color: S.hint }}>Última revisión: {ultimaCorrida.toLocaleString('es-AR')}</div>
+            ) : <div />}
+            {conteoDescartadas > 0 && (
+              <button onClick={() => setVerDescartados(v => !v)}
+                style={{ padding: '5px 10px', fontSize: 11, background: verDescartados ? S.accentLight : 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                {verDescartados ? '← Volver a las activas' : `👁 Ver descartadas (${conteoDescartadas})`}
+              </button>
+            )}
+          </div>
 
           {problemasFiltrados.length === 0 && (
             <div style={{ background: S.greenLight, border: `1px solid #97C459`, borderRadius: 10, padding: '2rem', textAlign: 'center', color: S.green, fontSize: 14, fontWeight: 600 }}>
-              ✓ {filtroSeveridad === 'todas' ? 'No se encontró ningún problema — todo consistente.' : 'No hay problemas de esta severidad.'}
+              ✓ {verDescartados ? 'No hay alertas descartadas.' : filtroSeveridad === 'todas' ? 'No se encontró ningún problema — todo consistente.' : 'No hay problemas de esta severidad.'}
             </div>
           )}
 
@@ -260,6 +301,17 @@ export default function Diagnostico({ usuario }) {
                   <div key={i} style={{ padding: '10px 14px', borderBottom: i < items.length - 1 ? `1px solid ${S.border}` : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, background: SEVERIDAD_BG[p.severidad] }}>
                     <div style={{ fontSize: 13, color: S.text, flex: 1 }}>{p.mensaje}</div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: SEVERIDAD_COLOR[p.severidad], whiteSpace: 'nowrap' }}>{SEVERIDAD_LABEL[p.severidad]}</div>
+                    {verDescartados ? (
+                      <button onClick={() => restaurar(claveDe(p))}
+                        style={{ padding: '3px 9px', fontSize: 11, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        ↺ Restaurar
+                      </button>
+                    ) : (
+                      <button onClick={() => descartar(p)}
+                        style={{ padding: '3px 9px', fontSize: 11, fontWeight: 600, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        ✓ Descartar
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
