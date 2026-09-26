@@ -255,8 +255,13 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   useEffect(() => { cargarDatos() }, [])
 
   async function cargarDatos() {
+    // Se usa el inicio del día (00:00), no el momento exacto de "ahora" —
+    // si no, mirar la pantalla antes de cierta hora dejaba afuera los
+    // registros de la mañana de "hace 7 días" (el mismo problema que hubo
+    // con el corte de mes en Reportes).
     const hace7dias = new Date()
     hace7dias.setDate(hace7dias.getDate() - 7)
+    hace7dias.setHours(0, 0, 0, 0)
     const hace7diasISO = hace7dias.toISOString()
 
     const [{ data: c }, { data: s }, { data: h }, { data: ha }, { data: fdb }, { data: cfgCap }, { data: rapp }, { data: compras }, { data: legacy }, { data: ct }] = await Promise.all([
@@ -416,6 +421,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     if (!confirm('¿Eliminar TODAS las raciones de los últimos 7 días? Esta acción no se puede deshacer.')) return
     const hace7dias = new Date()
     hace7dias.setDate(hace7dias.getDate() - 7)
+    hace7dias.setHours(0, 0, 0, 0)
     await supabase.from('raciones_app').delete().gte('creado_en', hace7dias.toISOString())
     await cargarDatos()
   }
