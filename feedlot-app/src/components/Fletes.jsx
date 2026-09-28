@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal } from '../shared/dateUtils'
-import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { PAGO_INIT, ListaPagos, armarDetalleChequesTercero } from './PagoFormulario'
+import { registrarMovimientoDePago, mensajeErrorPago } from '../shared/pagosLogic'
 import { generarOrdenDePago } from '../shared/reciboLogic'
 
 const S = {
@@ -136,26 +137,22 @@ export default function Fletes({ usuario }) {
         if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
         continue
       }
-      const fp = pago.subtipo_cheque || pago.tipo
+      const r = await registrarMovimientoDePago(supabase, pago, {
+        fecha: formPago.fecha, descripcion: desc, categoria: 'Flete', monto,
+        contactoId: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
+        beneficiarioCheque: ct?.nombre || transportistaDesc,
+        registradoPorCheque: usuario?.id,
+        // Fletes guarda un solo id de caja y su "eliminar" borra los cheques por ese id
+        cajaOficialIdDelCheque: caja_oficial_id,
+      })
+      if (r.error) { alert(mensajeErrorPago(r)); setGuardando(false); return }
       if (pago.es_paralelo) {
-        const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-        if (ep) { alert('Error al registrar en Caja 2: ' + ep.message); setGuardando(false); return }
-        if (!caja_paralela_id) caja_paralela_id = cp?.id
+        if (!caja_paralela_id) caja_paralela_id = r.cajaParalelaId
       } else {
-        const { data: co, error: eo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Flete', descripcion: desc, monto, forma_pago: fp, contacto_id: formPago.contacto_id ? parseInt(formPago.contacto_id) : null }).select().single()
-        if (eo) { alert('Error al registrar en caja oficial: ' + eo.message); setGuardando(false); return }
-        if (!caja_oficial_id) caja_oficial_id = co?.id
-        if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-          const { error: ech } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: ct?.nombre || transportistaDesc, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: usuario?.id })
-          if (ech) { alert('Error al registrar el cheque: ' + ech.message); setGuardando(false); return }
-        } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-          for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
-          // Detalle para el recibo — antes no se armaba, así que el recibo
-          // no tenía de dónde sacar número/banco/fecha de cada cheque tercero.
-          pago.cheque_tercero_detalle = pago.cheque_tercero_ids.map(chId => {
-            const ch = chequesCartera.find(c => String(c.id) === chId)
-            return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento, fecha_cobro: ch.fecha_cobro } : null
-          }).filter(Boolean)
+        if (!caja_oficial_id) caja_oficial_id = r.cajaOficialId
+        // Detalle para el recibo (número, banco y fechas de cada cheque de tercero)
+        if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
+          pago.cheque_tercero_detalle = armarDetalleChequesTercero(pago.cheque_tercero_ids, chequesCartera)
         }
       }
     }

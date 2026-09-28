@@ -29,6 +29,14 @@
  *   beneficiarioTercero                — si se pasa, se guarda como beneficiario
  *                                        al marcar el cheque de tercero
  *   devolverIdCheque                   — pide el id del cheque emitido creado
+ *   cajaOficialIdDelCheque             — id de caja al que vincular el cheque propio
+ *                                        emitido. Si no se pasa (o es null), se
+ *                                        vincula a la caja recién creada (lo
+ *                                        normal). Fletes guarda UN solo id de
+ *                                        caja por pago y su "eliminar" borra los
+ *                                        cheques por ese id, así que le pasa el
+ *                                        de la primera línea para seguir siendo
+ *                                        coherente con cómo elimina.
  * @returns { cajaOficialId, cajaParalelaId, chequeEmitidoId, error, etapa }
  *          etapa: 'caja_paralela' | 'caja_oficial' | 'cheque' cuando hay error
  */
@@ -37,7 +45,7 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
     fecha, descripcion, categoria,
     contactoId, beneficiarioCheque = null, registradoPorCheque,
     estadoChequeTercero = 'depositado', beneficiarioTercero,
-    devolverIdCheque = false,
+    devolverIdCheque = false, cajaOficialIdDelCheque,
   } = opts
   const monto = opts.monto !== undefined ? opts.monto : (parseFloat(pago.monto) || 0)
   const resultado = { cajaOficialId: null, cajaParalelaId: null, chequeEmitidoId: null, error: null, etapa: null }
@@ -61,7 +69,7 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
     const filaCheque = {
       tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null,
       fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto,
-      beneficiario: beneficiarioCheque, estado: 'entregado', caja_oficial_id: resultado.cajaOficialId,
+      beneficiario: beneficiarioCheque, estado: 'entregado', caja_oficial_id: cajaOficialIdDelCheque || resultado.cajaOficialId,
       es_electronico: pago.tipo === 'e-cheq',
     }
     if (registradoPorCheque !== undefined) filaCheque.registrado_por = registradoPorCheque
