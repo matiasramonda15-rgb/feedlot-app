@@ -99,3 +99,114 @@ export function mensajeErrorPago(resultado) {
   if (resultado?.etapa === 'cheque') return 'Error al registrar el cheque: ' + detalle
   return 'Error al registrar el pago: ' + detalle
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Eliminar un movimiento de caja desde la pantalla de Caja sin dejar "pagado"
+// el registro que lo originó.
+//
+// Antes, Caja borraba el movimiento a secas: el flete, gasto, etc. seguía
+// figurando "pagado" apuntando a una caja que ya no existía. Los fletes ya
+// se revierten solos; los demás módulos avisan (se van sumando de a uno, a
+// medida que se migran y se prueban).
+// ───────────────────────────────────────────────────────────────────────────
+
+// Módulos que enlazan con la caja pero todavía no se revierten solos desde acá.
+const ORIGENES_SIN_REVERSION = [
+  ['gastos_generales', 'un gasto general'],
+  ['compras_insumos', 'una compra de insumos'],
+  ['ordenes_trabajo', 'una orden de trabajo'],
+  ['servicios_terceros', 'un servicio a terceros'],
+  ['pagos_empleados', 'un pago de personal'],
+  ['ingresos_agroquimicos', 'un ingreso de agroquímicos'],
+  ['retiros_socios', 'un retiro de socio'],
+  ['pagos_creditos', 'una cuota de crédito'],
+  ['vencimientos_arriendo', 'un arriendo'],
+  ['ventas_granos', 'una venta de granos'],
+]
+
+/**
+ * Busca qué registros apuntan a un movimiento de caja.
+ * @returns { fletes, otros:[{etiqueta,cantidad}], resumen:{...}, error }
+ */
+export async function buscarOrigenesDeCaja(supabase, tablaCaja, id) {
+  const col = tablaCaja === 'caja_paralela' ? 'caja_paralela_id' : 'caja_oficial_id'
+  const { data: fletes, error } = await supabase.from('fletes').select('*').eq(col, id)
+  if (error) return { fletes: [], otros: [], resumen: null, error }
+  const lista = fletes || []
+  const otros = []
+  const consultas = await Promise.all(ORIGENES_SIN_REVERSION.map(async ([tabla, etiqueta]) => {
+    const { data } = await supabase.from(tabla).select('id').eq(col, id)
+    return { etiqueta, cantidad: (data || []).length }
+  }))
+  consultas.forEach(c => { if (c.cantidad > 0) otros.push(c) })
+
+  // Para explicarle al usuario qué se va a revertir
+  const cajas = new Set()
+  lista.forEach(f => {
+    if (f.caja_oficial_id) cajas.add('o' + f.caja_oficial_id)
+    if (f.caja_paralela_id) cajas.add('p' + f.caja_paralela_id)
+  })
+  const resumen = {
+    nombres: [...new Set(lista.map(f => f.transportista).filter(Boolean))].join(', '),
+    otrosMovimientos: Math.max(0, cajas.size - 1),
+    hayCheques: lista.some(f => (f.pagos_detalle || []).some(p => p.subtipo_cheque === 'propio' || (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0))),
+  }
+  return { fletes: lista, otros, resumen, error: null }
+}
+
+/**
+ * Deja uno o varios fletes como PENDIENTES otra vez: borra los movimientos de
+ * caja de ese pago, devuelve a cartera los cheques de tercero o borra el
+ * cheque propio emitido, y limpia los datos del pago (igual que un flete que
+ * nunca se pagó). Si algo falla a mitad de camino devuelve { error, etapa }.
+ */
+export async function revertirPagoDeFletes(supabase, fletes) {
+  const idsOficial = new Set(), idsParalela = new Set()
+  fletes.forEach(f => {
+    if (f.caja_oficial_id) idsOficial.add(f.caja_oficial_id)
+    if (f.caja_paralela_id) idsParalela.add(f.caja_paralela_id)
+  })
+  // 1) movimientos de caja (primero: si esto falla, el flete queda tal cual)
+  for (const id of idsOficial) {
+    const { error } = await supabase.from('caja_oficial').delete().eq('id', id)
+    if (error) return { error, etapa: 'caja' }
+  }
+  for (const id of idsParalela) {
+    const { error } = await supabase.from('caja_paralela').delete().eq('id', id)
+    if (error) return { error, etapa: 'caja' }
+  }
+  // 2) cheques
+  for (const f of fletes) {
+    for (const p of (f.pagos_detalle || [])) {
+      if (p.subtipo_cheque === 'propio') {
+        if (f.caja_oficial_id) await supabase.from('cheques').delete().eq('caja_oficial_id', f.caja_oficial_id).eq('tipo', 'emitido')
+      } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
+        for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
+      }
+    }
+  }
+  // 3) el flete vuelve a pendiente
+  for (const f of fletes) {
+    const { error } = await supabase.from('fletes').update({
+      estado_pago: 'pendiente', forma_pago: null, es_paralelo: false, contacto_id: null,
+      caja_oficial_id: null, caja_paralela_id: null, pagos_detalle: null, monto_grupo: null,
+    }).eq('id', f.id)
+    if (error) return { error, etapa: 'flete' }
+  }
+  return { error: null }
+}
+
+// Textos de los avisos de Caja (uno para fletes, otro para los demás módulos).
+export function mensajeEliminarCajaConFletes(fletes, resumen) {
+  const n = fletes.length
+  return `Este movimiento es el pago de ${n === 1 ? 'un flete' : n + ' fletes'} (${resumen.nombres}).\n\n` +
+    `Si lo eliminás, ${n === 1 ? 'ese flete vuelve' : 'esos fletes vuelven'} a quedar PENDIENTE de pago` +
+    (resumen.otrosMovimientos > 0 ? `, y también se eliminan los otros ${resumen.otrosMovimientos} movimiento(s) de caja de ese mismo pago` : '') +
+    (resumen.hayCheques ? ' (los cheques usados se revierten)' : '') + '.\n\n¿Continuar?'
+}
+export function mensajeEliminarCajaConOtros(otros) {
+  const lista = otros.map(o => o.etiqueta + (o.cantidad > 1 ? ` (${o.cantidad})` : '')).join(', ')
+  return `Este movimiento está vinculado a ${lista}.\n\n` +
+    'Si lo eliminás desde acá, ese registro va a seguir figurando como PAGADO aunque ya no haya plata en caja. ' +
+    'Lo recomendable es eliminarlo desde su propio módulo, así se revierte todo junto.\n\n¿Eliminar de todas formas?'
+}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
+import { buscarOrigenesDeCaja, revertirPagoDeFletes, mensajeEliminarCajaConFletes, mensajeEliminarCajaConOtros } from '../shared/pagosLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -289,8 +290,26 @@ export default function Comercial({ usuario }) {
   }
 
   async function eliminar(tabla, id) {
-    if (!confirm('Eliminar este registro?')) return
     let error = null
+    if (tabla === 'caja_oficial' || tabla === 'caja_paralela') {
+      // Antes se borraba a secas y el flete/gasto/etc. de origen seguía
+      // figurando "pagado" apuntando a una caja que ya no existía.
+      const orig = await buscarOrigenesDeCaja(supabase, tabla, id)
+      if (orig.error) { alert('No se pudo verificar si este movimiento pertenece a otro registro: ' + orig.error.message); return }
+      if (orig.fletes.length > 0) {
+        if (!confirm(mensajeEliminarCajaConFletes(orig.fletes, orig.resumen))) return
+        const rev = await revertirPagoDeFletes(supabase, orig.fletes)
+        if (rev.error) {
+          alert(rev.etapa === 'flete'
+            ? 'Se eliminó el movimiento de caja, pero no se pudo dejar el flete como pendiente: ' + rev.error.message + '\n\nEntrá a Fletes y eliminá o volvé a cargar ese pago.'
+            : 'No se pudo eliminar el movimiento de caja: ' + rev.error.message + '\n\nNo se cambió nada.')
+          await cargar()
+          return
+        }
+      } else if (orig.otros.length > 0) {
+        if (!confirm(mensajeEliminarCajaConOtros(orig.otros))) return
+      } else if (!confirm('Eliminar este registro?')) return
+    } else if (!confirm('Eliminar este registro?')) return
     if (tabla === 'cheques') {
       // Si tiene pago_venta_id, borrar el pago (cascade borra cheque y caja)
       const cheque = cheques.find(c => c.id === id)
