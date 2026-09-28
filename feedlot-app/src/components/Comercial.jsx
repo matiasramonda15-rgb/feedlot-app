@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
-import { buscarOrigenesDeCaja, revertirPagoDeFletes, mensajeEliminarCajaConFletes, mensajeEliminarCajaConOtros } from '../shared/pagosLogic'
+import { buscarOrigenesDeCaja, validarDeshacerOrigen, deshacerPagosDeOrigen, mensajeDeshacerPago, mensajeCajaBloqueada, mensajeErrorDeshacer } from '../shared/pagosLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -292,22 +292,20 @@ export default function Comercial({ usuario }) {
   async function eliminar(tabla, id) {
     let error = null
     if (tabla === 'caja_oficial' || tabla === 'caja_paralela') {
-      // Antes se borraba a secas y el flete/gasto/etc. de origen seguía
-      // figurando "pagado" apuntando a una caja que ya no existía.
+      // Una sola regla: al eliminar un movimiento de caja, el pago se deshace
+      // completo y el registro de origen vuelve a quedar PENDIENTE. Si ese
+      // módulo todavía no sabe deshacerse solo, no se elimina y se avisa.
+      // (Antes se borraba a secas y el flete/gasto de origen seguía "pagado".)
       const orig = await buscarOrigenesDeCaja(supabase, tabla, id)
       if (orig.error) { alert('No se pudo verificar si este movimiento pertenece a otro registro: ' + orig.error.message); return }
-      if (orig.fletes.length > 0) {
-        if (!confirm(mensajeEliminarCajaConFletes(orig.fletes, orig.resumen))) return
-        const rev = await revertirPagoDeFletes(supabase, orig.fletes)
-        if (rev.error) {
-          alert(rev.etapa === 'flete'
-            ? 'Se eliminó el movimiento de caja, pero no se pudo dejar el flete como pendiente: ' + rev.error.message + '\n\nEntrá a Fletes y eliminá o volvé a cargar ese pago.'
-            : 'No se pudo eliminar el movimiento de caja: ' + rev.error.message + '\n\nNo se cambió nada.')
-          await cargar()
-          return
-        }
-      } else if (orig.otros.length > 0) {
-        if (!confirm(mensajeEliminarCajaConOtros(orig.otros))) return
+      if (orig.otros.length > 0) { alert(mensajeCajaBloqueada(orig.otros)); return }
+      if (orig.fletes.length + orig.gastos.length > 0) {
+        // Primero se verifica que se pueda deshacer, y recién después se pregunta.
+        const val = await validarDeshacerOrigen(supabase, orig)
+        if (!val.ok) { alert(val.motivo + '\n\nNo se cambió nada.'); return }
+        if (!confirm(mensajeDeshacerPago(orig))) return
+        const rev = await deshacerPagosDeOrigen(supabase, orig)
+        if (rev.error) { alert(mensajeErrorDeshacer(rev)); await cargar(); return }
       } else if (!confirm('Eliminar este registro?')) return
     } else if (!confirm('Eliminar este registro?')) return
     if (tabla === 'cheques') {

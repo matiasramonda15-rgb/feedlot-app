@@ -101,18 +101,19 @@ export function mensajeErrorPago(resultado) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Eliminar un movimiento de caja desde la pantalla de Caja sin dejar "pagado"
-// el registro que lo originó.
+// Eliminar un movimiento de caja desde la pantalla de Caja.
 //
-// Antes, Caja borraba el movimiento a secas: el flete, gasto, etc. seguía
-// figurando "pagado" apuntando a una caja que ya no existía. Los fletes ya
-// se revierten solos; los demás módulos avisan (se van sumando de a uno, a
-// medida que se migran y se prueban).
+// UNA sola regla para todos los módulos: al eliminar un movimiento de caja,
+// el pago se deshace COMPLETO y el registro de origen vuelve a quedar
+// PENDIENTE de pago. Si el módulo de origen todavía no sabe deshacerse solo,
+// Caja NO lo elimina y avisa a dónde ir — nunca queda un "pagado" sin plata.
+//
+// Ya se deshacen solos: fletes y gastos. Se van sumando de a uno, cada uno
+// con sus pruebas, junto con la migración de su guardado.
 // ───────────────────────────────────────────────────────────────────────────
 
-// Módulos que enlazan con la caja pero todavía no se revierten solos desde acá.
+// Módulos que enlazan con la caja pero todavía NO se deshacen solos desde acá.
 const ORIGENES_SIN_REVERSION = [
-  ['gastos_generales', 'un gasto general'],
   ['compras_insumos', 'una compra de insumos'],
   ['ordenes_trabajo', 'una orden de trabajo'],
   ['servicios_terceros', 'un servicio a terceros'],
@@ -124,49 +125,96 @@ const ORIGENES_SIN_REVERSION = [
   ['ventas_granos', 'una venta de granos'],
 ]
 
+const num = (x) => Number(x) || 0
+const listaPagos = (r) => (Array.isArray(r?.pagos_detalle) ? r.pagos_detalle : [])
+
 /**
  * Busca qué registros apuntan a un movimiento de caja.
- * @returns { fletes, otros:[{etiqueta,cantidad}], resumen:{...}, error }
+ * @returns { fletes, gastos, otros:[{etiqueta,cantidad}], error }
  */
 export async function buscarOrigenesDeCaja(supabase, tablaCaja, id) {
   const col = tablaCaja === 'caja_paralela' ? 'caja_paralela_id' : 'caja_oficial_id'
+  const colArray = tablaCaja === 'caja_paralela' ? 'caja_paralela_ids' : 'caja_oficial_ids'
   const { data: fletes, error } = await supabase.from('fletes').select('*').eq(col, id)
-  if (error) return { fletes: [], otros: [], resumen: null, error }
-  const lista = fletes || []
+  if (error) return { fletes: [], gastos: [], otros: [], error }
+  // Un gasto puede tener varias cajas: se busca por la principal y por la lista.
+  const { data: g1, error: e1 } = await supabase.from('gastos_generales').select('*').eq(col, id)
+  if (e1) return { fletes: [], gastos: [], otros: [], error: e1 }
+  const { data: g2, error: e2 } = await supabase.from('gastos_generales').select('*').contains(colArray, [id])
+  if (e2) return { fletes: [], gastos: [], otros: [], error: e2 }
+  const vistos = new Set(), gastos = []
+  ;[...(g1 || []), ...(g2 || [])].forEach(g => { if (!vistos.has(g.id)) { vistos.add(g.id); gastos.push(g) } })
+
   const otros = []
   const consultas = await Promise.all(ORIGENES_SIN_REVERSION.map(async ([tabla, etiqueta]) => {
     const { data } = await supabase.from(tabla).select('id').eq(col, id)
     return { etiqueta, cantidad: (data || []).length }
   }))
   consultas.forEach(c => { if (c.cantidad > 0) otros.push(c) })
-
-  // Para explicarle al usuario qué se va a revertir
-  const cajas = new Set()
-  lista.forEach(f => {
-    if (f.caja_oficial_id) cajas.add('o' + f.caja_oficial_id)
-    if (f.caja_paralela_id) cajas.add('p' + f.caja_paralela_id)
-  })
-  const resumen = {
-    nombres: [...new Set(lista.map(f => f.transportista).filter(Boolean))].join(', '),
-    otrosMovimientos: Math.max(0, cajas.size - 1),
-    hayCheques: lista.some(f => (f.pagos_detalle || []).some(p => p.subtipo_cheque === 'propio' || (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0))),
-  }
-  return { fletes: lista, otros, resumen, error: null }
+  return { fletes: fletes || [], gastos, otros, error: null }
 }
 
 /**
- * Deja uno o varios fletes como PENDIENTES otra vez: borra los movimientos de
- * caja de ese pago, devuelve a cartera los cheques de tercero o borra el
- * cheque propio emitido, y limpia los datos del pago (igual que un flete que
- * nunca se pagó). Si algo falla a mitad de camino devuelve { error, etapa }.
+ * Antes de tocar nada: ¿se puede deshacer este pago sin dejar algo a medias?
+ * Devuelve { ok:true } o { ok:false, motivo } con qué hacer.
  */
+export async function validarDeshacerGasto(supabase, gasto) {
+  for (const p of listaPagos(gasto)) {
+    if (p.tipo !== 'credito') continue
+    if (!p._credito_id) return { ok: false, motivo: 'Este gasto se pagó con crédito y es anterior al seguimiento automático de ese crédito, así que no puedo deshacerlo solo. Eliminá el crédito desde Créditos y después volvé a intentar.' }
+    const { data: cuotas } = await supabase.from('pagos_creditos').select('id, estado').eq('credito_id', p._credito_id)
+    if ((cuotas || []).some(c => c.estado !== 'pendiente')) return { ok: false, motivo: 'El crédito de este gasto ya tiene cuotas pagadas, así que no se puede deshacer solo. Revisalo en Créditos.' }
+  }
+  const { data: anticipos } = await supabase.from('anticipos_contactos').select('id, monto_original, monto_disponible').eq('gasto_generales_id', gasto.id)
+  if ((anticipos || []).some(a => num(a.monto_disponible) < num(a.monto_original))) {
+    return { ok: false, motivo: 'Este gasto es un anticipo que ya se usó (en parte o del todo) para pagar otros gastos. Primero eliminá o deshacé esos gastos.' }
+  }
+  return { ok: true }
+}
+export function validarDeshacerFlete(flete) {
+  if (listaPagos(flete).some(p => p.tipo === 'credito')) {
+    return { ok: false, motivo: 'Este flete se pagó con crédito y todavía no puedo deshacerlo solo. Eliminá ese crédito desde Créditos y después volvé a intentar.' }
+  }
+  return { ok: true }
+}
+
+/**
+ * Efectos "de fondo" de un gasto que hay que deshacer junto con la caja:
+ * devolver el saldo del anticipo usado, borrar el crédito que se creó y
+ * borrar el anticipo que este mismo gasto creó.
+ */
+export async function revertirEfectosDeGasto(supabase, gasto) {
+  for (const p of listaPagos(gasto)) {
+    if (p.tipo === 'anticipo' && p.anticipo_id) {
+      const monto = parseFloat(p.monto) || 0
+      if (!monto) continue
+      const { data: ant } = await supabase.from('anticipos_contactos').select('monto_original, monto_disponible').eq('id', p.anticipo_id).single()
+      if (ant) {
+        const { error } = await supabase.from('anticipos_contactos').update({ monto_disponible: Math.min(num(ant.monto_original), num(ant.monto_disponible) + monto) }).eq('id', p.anticipo_id)
+        if (error) return { error, etapa: 'efectos' }
+      }
+    } else if (p.tipo === 'credito' && p._credito_id) {
+      const { error: e1 } = await supabase.from('pagos_creditos').delete().eq('credito_id', p._credito_id)
+      if (e1) return { error: e1, etapa: 'efectos' }
+      const { error: e2 } = await supabase.from('creditos').delete().eq('id', p._credito_id)
+      if (e2) return { error: e2, etapa: 'efectos' }
+    }
+  }
+  const { data: creados } = await supabase.from('anticipos_contactos').select('id').eq('gasto_generales_id', gasto.id)
+  if ((creados || []).length > 0) {
+    const { error } = await supabase.from('anticipos_contactos').delete().eq('gasto_generales_id', gasto.id)
+    if (error) return { error, etapa: 'efectos' }
+  }
+  return { error: null }
+}
+
+/** Deja uno o varios fletes PENDIENTES otra vez (caja, cheques y datos del pago). */
 export async function revertirPagoDeFletes(supabase, fletes) {
   const idsOficial = new Set(), idsParalela = new Set()
   fletes.forEach(f => {
     if (f.caja_oficial_id) idsOficial.add(f.caja_oficial_id)
     if (f.caja_paralela_id) idsParalela.add(f.caja_paralela_id)
   })
-  // 1) movimientos de caja (primero: si esto falla, el flete queda tal cual)
   for (const id of idsOficial) {
     const { error } = await supabase.from('caja_oficial').delete().eq('id', id)
     if (error) return { error, etapa: 'caja' }
@@ -175,9 +223,8 @@ export async function revertirPagoDeFletes(supabase, fletes) {
     const { error } = await supabase.from('caja_paralela').delete().eq('id', id)
     if (error) return { error, etapa: 'caja' }
   }
-  // 2) cheques
   for (const f of fletes) {
-    for (const p of (f.pagos_detalle || [])) {
+    for (const p of listaPagos(f)) {
       if (p.subtipo_cheque === 'propio') {
         if (f.caja_oficial_id) await supabase.from('cheques').delete().eq('caja_oficial_id', f.caja_oficial_id).eq('tipo', 'emitido')
       } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
@@ -185,7 +232,6 @@ export async function revertirPagoDeFletes(supabase, fletes) {
       }
     }
   }
-  // 3) el flete vuelve a pendiente
   for (const f of fletes) {
     const { error } = await supabase.from('fletes').update({
       estado_pago: 'pendiente', forma_pago: null, es_paralelo: false, contacto_id: null,
@@ -196,17 +242,98 @@ export async function revertirPagoDeFletes(supabase, fletes) {
   return { error: null }
 }
 
-// Textos de los avisos de Caja (uno para fletes, otro para los demás módulos).
-export function mensajeEliminarCajaConFletes(fletes, resumen) {
-  const n = fletes.length
-  return `Este movimiento es el pago de ${n === 1 ? 'un flete' : n + ' fletes'} (${resumen.nombres}).\n\n` +
-    `Si lo eliminás, ${n === 1 ? 'ese flete vuelve' : 'esos fletes vuelven'} a quedar PENDIENTE de pago` +
-    (resumen.otrosMovimientos > 0 ? `, y también se eliminan los otros ${resumen.otrosMovimientos} movimiento(s) de caja de ese mismo pago` : '') +
-    (resumen.hayCheques ? ' (los cheques usados se revierten)' : '') + '.\n\n¿Continuar?'
+/** Deja un gasto PENDIENTE otra vez (caja, cheques, anticipo, crédito y datos del pago). */
+export async function revertirPagoDeGasto(supabase, gasto) {
+  const oficialIds = gasto.caja_oficial_ids || (gasto.caja_oficial_id ? [gasto.caja_oficial_id] : [])
+  const paralelaIds = gasto.caja_paralela_ids || (gasto.caja_paralela_id ? [gasto.caja_paralela_id] : [])
+  const chequeEmitidoIds = gasto.cheque_emitido_ids || []
+  for (const id of oficialIds) {
+    const { error } = await supabase.from('caja_oficial').delete().eq('id', id)
+    if (error) return { error, etapa: 'caja' }
+  }
+  for (const id of paralelaIds) {
+    const { error } = await supabase.from('caja_paralela').delete().eq('id', id)
+    if (error) return { error, etapa: 'caja' }
+  }
+  for (const id of chequeEmitidoIds) await supabase.from('cheques').delete().eq('id', id)
+  for (const p of listaPagos(gasto)) {
+    if (p.subtipo_cheque === 'tercero') {
+      const detalle = p.cheque_tercero_detalle || []
+      if (detalle.length > 0) {
+        for (const c of detalle) {
+          if (c.id) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', c.id)
+          else if (c.numero) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('numero', c.numero).eq('estado', 'entregado')
+        }
+      } else {
+        for (const chId of (p.cheque_tercero_ids || [])) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
+      }
+    }
+    // Gastos viejos: cheque propio sin id guardado
+    if (chequeEmitidoIds.length === 0 && p.subtipo_cheque === 'propio' && p.cheque_propio?.numero) {
+      await supabase.from('cheques').delete().eq('numero', p.cheque_propio.numero).eq('tipo', 'emitido').eq('monto', parseFloat(p.monto) || 0)
+    }
+  }
+  const ef = await revertirEfectosDeGasto(supabase, gasto)
+  if (ef.error) return ef
+  const { error } = await supabase.from('gastos_generales').update({
+    estado_pago: 'pendiente', forma_pago: null, es_paralelo: false, pagos_detalle: [],
+    caja_oficial_id: null, caja_paralela_id: null, caja_oficial_ids: null, caja_paralela_ids: null, cheque_emitido_ids: null,
+  }).eq('id', gasto.id)
+  if (error) return { error, etapa: 'gasto' }
+  return { error: null }
 }
-export function mensajeEliminarCajaConOtros(otros) {
+
+/**
+ * ¿Se pueden deshacer TODOS los pagos de este origen? Se consulta ANTES de
+ * preguntarle nada al usuario, para no pedirle una confirmación que después
+ * no se puede cumplir. Devuelve { ok:true } o { ok:false, motivo }.
+ */
+export async function validarDeshacerOrigen(supabase, orig) {
+  for (const f of orig.fletes) { const v = validarDeshacerFlete(f); if (!v.ok) return v }
+  for (const g of orig.gastos) { const v = await validarDeshacerGasto(supabase, g); if (!v.ok) return v }
+  return { ok: true }
+}
+
+/** Valida y, si se puede, deshace TODOS los pagos de un origen (fletes y gastos). */
+export async function deshacerPagosDeOrigen(supabase, orig) {
+  const val = await validarDeshacerOrigen(supabase, orig)
+  if (!val.ok) return { error: { message: val.motivo }, etapa: 'validacion' }
+  if (orig.fletes.length > 0) { const r = await revertirPagoDeFletes(supabase, orig.fletes); if (r.error) return r }
+  for (const g of orig.gastos) { const r = await revertirPagoDeGasto(supabase, g); if (r.error) return r }
+  return { error: null }
+}
+
+// ── Textos de los avisos de Caja ──
+export function mensajeDeshacerPago(orig) {
+  const items = [
+    ...orig.fletes.map(f => `un flete (${f.transportista || 'sin transportista'})`),
+    ...orig.gastos.map(g => `un gasto (${[g.categoria, g.proveedor].filter(Boolean).join(' — ') || 'sin detalle'})`),
+  ]
+  const cajas = new Set()
+  ;[...orig.fletes, ...orig.gastos].forEach(r => {
+    ;(r.caja_oficial_ids || (r.caja_oficial_id ? [r.caja_oficial_id] : [])).forEach(i => cajas.add('o' + i))
+    ;(r.caja_paralela_ids || (r.caja_paralela_id ? [r.caja_paralela_id] : [])).forEach(i => cajas.add('p' + i))
+  })
+  const otrosMov = Math.max(0, cajas.size - 1)
+  const pagos = [...orig.fletes, ...orig.gastos].flatMap(listaPagos)
+  const hayCheques = pagos.some(p => p.subtipo_cheque === 'propio' || (p.subtipo_cheque === 'tercero' && (p.cheque_tercero_ids?.length > 0 || p.cheque_tercero_detalle?.length > 0)))
+  const hayAnticipo = pagos.some(p => p.tipo === 'anticipo')
+  return `Este movimiento es el pago de ${items.join(' y ')}.\n\n` +
+    `Si lo eliminás, el pago se deshace completo y ${items.length === 1 ? 'ese registro vuelve' : 'esos registros vuelven'} a quedar PENDIENTE de pago` +
+    (otrosMov > 0 ? `; también se eliminan los otros ${otrosMov} movimiento(s) de caja de ese mismo pago` : '') +
+    (hayCheques ? '; los cheques usados se revierten' : '') +
+    (hayAnticipo ? '; el anticipo usado se devuelve' : '') + '.\n\n¿Continuar?'
+}
+export function mensajeCajaBloqueada(otros) {
   const lista = otros.map(o => o.etiqueta + (o.cantidad > 1 ? ` (${o.cantidad})` : '')).join(', ')
-  return `Este movimiento está vinculado a ${lista}.\n\n` +
-    'Si lo eliminás desde acá, ese registro va a seguir figurando como PAGADO aunque ya no haya plata en caja. ' +
-    'Lo recomendable es eliminarlo desde su propio módulo, así se revierte todo junto.\n\n¿Eliminar de todas formas?'
+  return `Este movimiento pertenece a ${lista}.\n\n` +
+    'Todavía no puedo deshacerlo desde Caja sin dejar ese registro como PAGADO aunque no haya plata en caja, así que no lo elimino.\n\n' +
+    'Eliminalo desde su propio módulo: ahí se revierte todo junto.'
+}
+export function mensajeErrorDeshacer(rev) {
+  const detalle = rev?.error?.message || ''
+  if (rev?.etapa === 'validacion') return detalle + '\n\nNo se cambió nada.'
+  if (rev?.etapa === 'caja') return 'No se pudo eliminar el movimiento de caja: ' + detalle + '\n\nNo se cambió nada.'
+  return 'Se eliminó el movimiento de caja, pero no se pudo terminar de dejar el registro como pendiente: ' + detalle +
+    '\n\nEntrá al módulo de origen y revisalo (eliminá o volvé a cargar ese pago).'
 }

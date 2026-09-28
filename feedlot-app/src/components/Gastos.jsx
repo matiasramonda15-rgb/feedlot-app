@@ -4,6 +4,7 @@ import { Loader } from './UI'
 import { hoyLocal } from '../shared/dateUtils'
 import { generarOrdenDePago } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { validarDeshacerGasto, revertirEfectosDeGasto } from '../shared/pagosLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -201,7 +202,8 @@ export default function Gastos({ usuario }) {
         }
         const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
         if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
-        pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null })
+        // Se guarda el id del crédito para poder deshacerlo si se elimina el gasto
+        pagosConIds.push({ ...pago, _caja_id: null, _es_paralelo: false, _cheque_emitido_id: null, _credito_id: cred.id })
         continue
       }
       // Antes esto decía siempre "e-cheq" apenas hubiera un subtipo (propio/
@@ -322,6 +324,10 @@ export default function Gastos({ usuario }) {
   }
 
   async function eliminar(g) {
+    // Antes de tocar nada: ¿se puede deshacer sin dejar algo a medias?
+    // (un anticipo que ya se usó en otros gastos, un crédito con cuotas pagadas...)
+    const val = await validarDeshacerGasto(supabase, g)
+    if (!val.ok) { alert(val.motivo); return }
     if (!confirm('¿Eliminar este gasto? Se eliminará también de la caja y se revertirán los cheques usados.')) return
 
     // Método robusto: usar arrays de ids guardados (gastos nuevos)
@@ -363,6 +369,16 @@ export default function Gastos({ usuario }) {
           await supabase.from('caja_oficial').delete().eq('fecha', g.fecha).eq('monto', monto).eq('tipo', 'egreso')
         }
       }
+    }
+
+    // Efectos de fondo: devolver el saldo del anticipo que se usó, borrar el
+    // crédito que se creó y el anticipo que este mismo gasto haya creado.
+    // (Antes esto no se deshacía: el anticipo quedaba sin devolver.)
+    const ef = await revertirEfectosDeGasto(supabase, g)
+    if (ef.error) {
+      alert('Se eliminó la caja, pero no se pudo terminar de deshacer el anticipo o el crédito de este gasto: ' + ef.error.message + '\n\nEl gasto NO se borró, para que puedas revisarlo.')
+      await cargar()
+      return
     }
 
     await supabase.from('gastos_generales').delete().eq('id', g.id)
