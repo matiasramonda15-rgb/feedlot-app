@@ -1602,7 +1602,9 @@ async function generarReciboCompra(lote, pagos, corrales) {
     if (subtipo === 'propio') {
       const nro = p.cheque_propio?.numero || p.numero_cheque || ''
       const banco = p.cheque_propio?.banco || p.banco || ''
-      const vto = p.cheque_propio?.fecha_vencimiento || p.fecha_vencimiento_cheque || ''
+      // Bajo el encabezado "FECHA COBRO" va la fecha de cobro real si se cargó;
+      // si no, la fecha de pago del cheque (fecha_vencimiento en el formulario).
+      const vto = p.cheque_propio?.fecha_cobro || p.cheque_propio?.fecha_vencimiento || p.fecha_vencimiento_cheque || ''
       return [`<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${[nro, banco].filter(Boolean).join(' · ')}</td>
@@ -1616,7 +1618,7 @@ async function generarReciboCompra(lote, pagos, corrales) {
       return p.cheque_tercero_detalle.map(ch => `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">#${ch.numero || '—'} · ${ch.banco || '—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${(ch.fecha_cobro || ch.fecha_vencimiento) ? new Date((ch.fecha_cobro || ch.fecha_vencimiento)+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(ch.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
       </tr>`)
     }

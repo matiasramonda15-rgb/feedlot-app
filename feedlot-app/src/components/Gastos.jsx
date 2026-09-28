@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { hoyLocal } from '../shared/dateUtils'
 import { generarOrdenDePago } from '../shared/reciboLogic'
+import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -38,7 +39,9 @@ const ACTIVIDAD_COLORS = {
   General:     { bg: '#F0EAFB', color: '#3D1A6B' },
 }
 
-const PAGO_INIT = { tipo: 'transferencia', monto: '', es_paralelo: false, subtipo_cheque: '', cheque_propio: { numero: '', banco: '', fecha_vencimiento: '' }, cheque_tercero_ids: [] }
+// (PAGO_INIT ahora se importa de PagoFormulario, compartido con el resto de
+// los módulos — así queda sincronizado si se le agrega un campo ahí, como
+// pasó con "fecha_cobro" del cheque propio.)
 
 // Contacto genérico para gastos puntuales de una sola vez (ej: le compraste
 // algo chico a alguien que probablemente no vuelvas a tratar). Se elige del
@@ -553,151 +556,21 @@ export default function Gastos({ usuario }) {
             )}
             {pagarAhora && (
             <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Formas de pago</div>
-              <button onClick={agregarPago}
-                style={{ padding: '4px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>
-                + Agregar forma de pago
-              </button>
-            </div>
+            <ListaPagos pagos={form.pagos} onChangePagos={n => setForm({ ...form, pagos: n })} chequesCartera={chequesCartera} S={S}
+              opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (tarjeta/financiera)' }]} anticiposDisponibles={anticiposDisponibles} />
 
-            {form.pagos.map((pago, idx) => (
-              <div key={idx} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginBottom: (pago.tipo === 'e-cheq' || pago.tipo === 'cheque') ? 10 : 0 }}>
-                  <div>
-                    <Label>Forma de pago</Label>
-                    <select value={pago.tipo} onChange={e => {
-                      if (e.target.value === 'anticipo' && anticiposDisponibles.length > 0) {
-                        // Se autoselecciona el anticipo apenas se elige este
-                        // tipo de pago (el primero si hay más de uno) — antes
-                        // había que además hacer clic en la fila del anticipo
-                        // específico, y si no se hacía ese clic, el pago
-                        // quedaba marcado "anticipo" pero sin descontar nada.
-                        const a = anticiposDisponibles[0]
-                        const montoActual = parseFloat(pago.monto) || 0
-                        setPagoMulti(idx, { tipo: 'anticipo', anticipo_id: a.id, anticipo_detalle: a.descripcion, monto: String(Math.min(a.monto_disponible, montoActual || a.monto_disponible)) })
-                      } else {
-                        setPago(idx, 'tipo', e.target.value)
-                      }
-                    }}
-                      style={inputStyle}>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="efectivo">Efectivo</option>
-                      <option value="cheque">📄 Cheque</option>
-                      <option value="e-cheq">💻 E-cheq</option>
-                      <option value="cuenta_corriente">Cuenta corriente</option>
-                      <option value="canje">🔄 Canje / Compensación (no mueve caja)</option>
-                      {anticiposDisponibles.length > 0 && <option value="anticipo">🎟️ Anticipo ya pagado (no mueve caja)</option>}
-                      <option value="credito">🏦 Crédito (tarjeta/financiera)</option>
-                    </select>
-                    {pago.tipo === 'anticipo' && (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 6 }}>Descontar de un anticipo ya pagado</div>
-                        {anticiposDisponibles.map(a => {
-                          const seleccionado = pago.anticipo_id === a.id
-                          return (
-                            <div key={a.id} onClick={() => {
-                              const montoAplicar = Math.min(a.monto_disponible, parseFloat(pago.monto) || a.monto_disponible)
-                              setPago(idx, 'anticipo_id', a.id)
-                              setPago(idx, 'monto', String(montoAplicar))
-                            }}
-                              style={{ padding: '8px 10px', borderRadius: 6, border: `1px solid ${seleccionado ? S.accent : S.border}`, background: seleccionado ? S.accentLight : 'transparent', cursor: 'pointer', marginBottom: 6, fontSize: 12 }}>
-                              <b>${a.monto_disponible.toLocaleString('es-AR')}</b> disponibles — {a.descripcion}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {form.pagos.some(p => p.tipo === 'credito') && (
-                      <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 10 }}>
-                        <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
-                          El proveedor ya cobró (se lo pagó la tarjeta/financiera) — la deuda queda en Créditos{form.activo_id ? ', vinculada al activo elegido arriba (se va a repartir con su mismo % de uso)' : ''}.
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                          <div><Label>Entidad</Label><input type="text" value={form.credito_entidad || ''} onChange={e => setForm({...form, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Tarjeta Agronación" /></div>
-                          <div><Label>Cant. de cuotas</Label><input type="number" value={form.credito_cuotas || '1'} onChange={e => setForm({...form, credito_cuotas: e.target.value})} style={inputStyle} /></div>
-                          <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={form.credito_vencimiento || ''} onChange={e => setForm({...form, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <Label>Monto $</Label>
-                    <input type="number" value={pago.monto} onChange={e => setPago(idx, 'monto', e.target.value)} style={inputStyle} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.purple, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <input type="checkbox" checked={pago.es_paralelo} onChange={e => setPago(idx, 'es_paralelo', e.target.checked)} />
-                      Caja 2
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    {form.pagos.length > 1 && (
-                      <button onClick={() => quitarPago(idx)}
-                        style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
-                    )}
-                  </div>
+            {form.pagos.some(p => p.tipo === 'credito') && (
+              <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 4, marginBottom: 10 }}>
+                <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
+                  El proveedor ya cobró (se lo pagó la tarjeta/financiera) — la deuda queda en Créditos{form.activo_id ? ', vinculada al activo elegido arriba (se va a repartir con su mismo % de uso)' : ''}.
                 </div>
-
-                {/* Cheque físico / E-cheq */}
-                {(pago.tipo === 'e-cheq' || pago.tipo === 'cheque') && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 10 : 0 }}>
-                      {(pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
-                        <button key={t} onClick={() => setPago(idx, 'subtipo_cheque', pago.subtipo_cheque === t ? '' : t)}
-                          style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: `1px solid ${pago.subtipo_cheque === t ? S.accent : S.border}`, background: pago.subtipo_cheque === t ? S.accentLight : 'transparent', color: pago.subtipo_cheque === t ? S.accent : S.muted }}>
-                          {t === 'propio' ? '📤 Propio' : '📥 Tercero'}
-                        </button>
-                      ))}
-                    </div>
-                    {pago.subtipo_cheque === 'propio' && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-                        <div><Label>N° cheque</Label><input type="text" value={pago.cheque_propio.numero} onChange={e => setPagoChequePropio(idx, 'numero', e.target.value)} style={inputStyle} /></div>
-                        <div><Label>Banco</Label><input type="text" value={pago.cheque_propio.banco} onChange={e => setPagoChequePropio(idx, 'banco', e.target.value)} style={inputStyle} /></div>
-                        <div>
-                          <Label>Fecha de pago (cuándo se cobra) *</Label>
-                          <input type="date" value={pago.cheque_propio.fecha_vencimiento} onChange={e => setPagoChequePropio(idx, 'fecha_vencimiento', e.target.value)} style={{ ...inputStyle, borderColor: S.amber }} />
-                          {pago.cheque_propio.fecha_vencimiento && (
-                            <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>
-                              Vence (30 días después): {(() => { const d = new Date(pago.cheque_propio.fecha_vencimiento + 'T12:00:00'); d.setDate(d.getDate() + 30); return d.toLocaleDateString('es-AR') })()}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {pago.subtipo_cheque === 'tercero' && (
-                      <div style={{ marginTop: 8 }}>
-                        {(() => {
-                          const lista = chequesCartera.filter(ch => (pago.es_paralelo ? ch.es_paralelo : !ch.es_paralelo) && (ch.es_electronico === (pago.tipo === 'e-cheq') || ch.es_electronico == null))
-                          return lista.length === 0
-                            ? <div style={{ fontSize: 13, color: S.hint }}>No hay cheques en cartera {pago.es_paralelo ? '(paralelo)' : '(oficial)'}.</div>
-                            : lista.map(ch => (
-                              <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', border: `1px solid ${pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accent : S.border}`, borderRadius: 6, background: pago.cheque_tercero_ids?.includes(String(ch.id)) ? S.accentLight : S.surface, cursor: 'pointer', marginBottom: 5 }}>
-                                <input type="checkbox" checked={pago.cheque_tercero_ids?.includes(String(ch.id)) || false} onChange={() => {
-                                  const actuales = pago.cheque_tercero_ids || []
-                                  const yaEsta = actuales.includes(String(ch.id))
-                                  const nuevos = yaEsta ? actuales.filter(id => id !== String(ch.id)) : [...actuales, String(ch.id)]
-                                  const nuevoMonto = nuevos.reduce((s, id) => s + (chequesCartera.find(c => String(c.id) === id)?.monto || 0), 0)
-                                  setPagoMulti(idx, { cheque_tercero_ids: nuevos, monto: String(nuevoMonto || '') })
-                                }} />
-                                <div style={{ fontSize: 13 }}>
-                                  <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
-                                  <span style={{ color: S.muted, marginLeft: 8 }}>#{ch.numero || 'sin nro'} · {ch.banco || '—'} · vence {ch.fecha_vencimiento ? new Date(ch.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'}{ch.librador ? ` · ${ch.librador}` : ''}</span>
-                                </div>
-                              </label>
-                            ))
-                        })()}
-                        {pago.cheque_tercero_ids?.length > 0 && (
-                          <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, marginTop: 6, padding: '6px 10px', background: S.accentLight, borderRadius: 6 }}>
-                            {pago.cheque_tercero_ids.length} cheque{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} seleccionado{pago.cheque_tercero_ids.length !== 1 ? 's' : ''} · Total: ${parseFloat(pago.monto || 0).toLocaleString('es-AR')}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <div><Label>Entidad</Label><input type="text" value={form.credito_entidad || ''} onChange={e => setForm({...form, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Tarjeta Agronación" /></div>
+                  <div><Label>Cant. de cuotas</Label><input type="number" value={form.credito_cuotas || '1'} onChange={e => setForm({...form, credito_cuotas: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={form.credito_vencimiento || ''} onChange={e => setForm({...form, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                </div>
               </div>
-            ))}
+            )}
 
             {/* Resumen pagos */}
             {montoTotal > 0 && (

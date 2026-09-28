@@ -18,6 +18,18 @@ const inpDefault = { width: '100%', border: '1px solid #E2DDD6', borderRadius: 6
 // cheque / e-cheq / canje, marcás si es paralelo, y si es cheque (físico o
 // electrónico) se abre el desglose propio/tercero con sus datos — incluida
 // la selección de cheques ya en cartera para depositar/endosar.
+// Arma el detalle (número, banco, fechas, monto) de los cheques de tercero
+// elegidos, tomándolo de la cartera. Los recibos lo necesitan para imprimir
+// cada cheque — antes solo Ingresos, Gastos y Fletes lo armaban (cada uno con
+// su propia copia) y en el resto de los módulos el recibo salía con el cheque
+// en blanco. Ahora se arma acá, una sola vez, al tildar los cheques.
+export function armarDetalleChequesTercero(ids, chequesCartera) {
+  return (ids || []).map(id => {
+    const ch = (chequesCartera || []).find(c => String(c.id) === String(id))
+    return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento, fecha_cobro: ch.fecha_cobro } : null
+  }).filter(Boolean)
+}
+
 export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [], anticiposDisponibles = [] }) {
   const inp = inputStyle || inpDefault
   const set = (campo, valor) => onChange({ ...pago, [campo]: valor })
@@ -36,7 +48,20 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
       <div style={{ display: 'grid', gridTemplateColumns: mostrarParalelo ? '1fr 1fr auto auto' : '1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Forma de pago</div>
-          <select value={pago.tipo} onChange={e => onChange({ ...pago, tipo: e.target.value, subtipo_cheque: '' })} style={inp}>
+          <select value={pago.tipo} onChange={e => {
+            if (e.target.value === 'anticipo' && anticiposDisponibles.length > 0) {
+              // Se autoselecciona el anticipo apenas se elige este tipo de
+              // pago (el primero si hay más de uno) — antes había que
+              // además hacer clic en la fila del anticipo específico, y si
+              // no se hacía ese clic extra, el pago quedaba marcado
+              // "anticipo" pero sin descontar nada de verdad.
+              const a = anticiposDisponibles[0]
+              const montoActual = parseFloat(pago.monto) || 0
+              onChange({ ...pago, tipo: 'anticipo', subtipo_cheque: '', anticipo_id: a.id, anticipo_detalle: a.descripcion, monto: String(Math.min(a.monto_disponible, montoActual || a.monto_disponible)) })
+            } else {
+              onChange({ ...pago, tipo: e.target.value, subtipo_cheque: '' })
+            }
+          }} style={inp}>
             <option value="transferencia">Transferencia</option>
             <option value="efectivo">Efectivo</option>
             <option value="cheque">📄 Cheque</option>
@@ -228,7 +253,7 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
                         const yaEsta = actuales.includes(String(ch.id))
                         const nuevos = yaEsta ? actuales.filter(id => id !== String(ch.id)) : [...actuales, String(ch.id)]
                         const nuevoMonto = nuevos.reduce((s, id) => s + (chequesCartera.find(x => String(x.id) === id)?.monto || 0), 0)
-                        onChange({ ...pago, cheque_tercero_ids: nuevos, monto: String(nuevoMonto || '') })
+                        onChange({ ...pago, cheque_tercero_ids: nuevos, cheque_tercero_detalle: armarDetalleChequesTercero(nuevos, chequesCartera), monto: String(nuevoMonto || '') })
                       }} />
                       <div style={{ fontSize: 13 }}>
                         <strong>${ch.monto?.toLocaleString('es-AR')}</strong>
