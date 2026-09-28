@@ -4,7 +4,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
-import { registrarMovimientoDePago, mensajeErrorPago } from '../shared/pagosLogic'
+import { registrarMovimientoDePago, mensajeErrorPago, revertirPagoDePersonal } from '../shared/pagosLogic'
 
 const PAGO_INIT_P = PAGO_INIT
 
@@ -96,17 +96,23 @@ export default function Personal({ usuario }) {
     const emp = empleados.find(e => String(e.id) === String(formPago.empleado_id))
     const desc = `Personal — ${emp?.nombre || ''} · ${formPago.tipo}${formPago.concepto ? ' · ' + formPago.concepto : ''}`
     let caja_oficial_id = null, caja_paralela_id = null
+    const cajaOficialIds = [], cajaParalelaIds = [], chequeEmitidoIds = []
     for (const p of pagosForm.filter(p => p.monto)) {
       const monto = parseFloat(p.monto) || 0
       if (!monto) continue
       const r = await registrarMovimientoDePago(supabase, p, {
         fecha: formPago.fecha, descripcion: desc, categoria: 'Personal', monto,
-        beneficiarioCheque: emp?.nombre || null,
+        beneficiarioCheque: emp?.nombre || null, devolverIdCheque: true,
       })
       if (r.error) { alert(mensajeErrorPago(r)); setGuardando(false); return }
-      if (p.es_paralelo) caja_paralela_id = r.cajaParalelaId
-      else caja_oficial_id = r.cajaOficialId
+      if (p.es_paralelo) { if (!caja_paralela_id) caja_paralela_id = r.cajaParalelaId; if (r.cajaParalelaId) cajaParalelaIds.push(r.cajaParalelaId) }
+      else { if (!caja_oficial_id) caja_oficial_id = r.cajaOficialId; if (r.cajaOficialId) cajaOficialIds.push(r.cajaOficialId) }
+      if (r.chequeEmitidoId) chequeEmitidoIds.push(r.chequeEmitidoId)
     }
+    // Se guardan TODOS los ids (no solo el primero) — antes, un pago dividido
+    // en varias formas de pago (ej. 2 cheques de tercero) solo recordaba la
+    // última caja creada, y las anteriores quedaban sueltas sin poder
+    // revertirse. Ya pasó de verdad con un pago de Oscar Ramonda.
     const { error: errPago } = await supabase.from('pagos_empleados').insert({
       ...formPago,
       monto: totalPagos,
@@ -114,6 +120,9 @@ export default function Personal({ usuario }) {
       registrado_por: usuario?.id,
       caja_oficial_id,
       caja_paralela_id,
+      caja_oficial_ids: cajaOficialIds.length > 0 ? cajaOficialIds : null,
+      caja_paralela_ids: cajaParalelaIds.length > 0 ? cajaParalelaIds : null,
+      cheque_emitido_ids: chequeEmitidoIds.length > 0 ? chequeEmitidoIds : null,
     })
     if (errPago) { alert('El pago se registró en caja, pero no se pudo guardar el detalle del pago: ' + errPago.message); setGuardando(false); return }
     await cargar()
@@ -125,15 +134,10 @@ export default function Personal({ usuario }) {
 
   async function eliminarPago(p) {
     if (!confirm('¿Eliminar este pago? Se eliminará también de la caja y se revertirá el cheque si tenía.')) return
-    // Antes esto borraba directo, dejando la caja y el cheque emitido
-    // sueltos si el pago se había hecho con cheque.
-    if (p.caja_oficial_id) {
-      await supabase.from('cheques').delete().eq('caja_oficial_id', p.caja_oficial_id).eq('tipo', 'emitido')
-      await supabase.from('caja_oficial').delete().eq('id', p.caja_oficial_id)
-    }
-    if (p.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', p.caja_paralela_id)
-    const { error } = await supabase.from('pagos_empleados').delete().eq('id', p.id)
-    if (error) { alert('Error al eliminar: ' + error.message); return }
+    // Misma función que usa Caja para deshacer un pago de personal desde ahí
+    // — así las dos formas de eliminar hacen exactamente lo mismo.
+    const r = await revertirPagoDePersonal(supabase, p)
+    if (r.error) { alert('Error al eliminar: ' + r.error.message); return }
     await cargar()
   }
 

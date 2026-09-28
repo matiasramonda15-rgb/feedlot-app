@@ -117,7 +117,6 @@ const ORIGENES_SIN_REVERSION = [
   ['compras_insumos', 'una compra de insumos'],
   ['ordenes_trabajo', 'una orden de trabajo'],
   ['servicios_terceros', 'un servicio a terceros'],
-  ['pagos_empleados', 'un pago de personal'],
   ['ingresos_agroquimicos', 'un ingreso de agroquímicos'],
   ['retiros_socios', 'un retiro de socio'],
   ['pagos_creditos', 'una cuota de crédito'],
@@ -130,20 +129,28 @@ const listaPagos = (r) => (Array.isArray(r?.pagos_detalle) ? r.pagos_detalle : [
 
 /**
  * Busca qué registros apuntan a un movimiento de caja.
- * @returns { fletes, gastos, otros:[{etiqueta,cantidad}], error }
+ * @returns { fletes, gastos, personal, otros:[{etiqueta,cantidad}], error }
  */
+async function buscarPorPrincipalYLista(supabase, tabla, col, colArray, id) {
+  const { data: d1, error: e1 } = await supabase.from(tabla).select('*').eq(col, id)
+  if (e1) return { filas: null, error: e1 }
+  const { data: d2, error: e2 } = await supabase.from(tabla).select('*').contains(colArray, [id])
+  if (e2) return { filas: null, error: e2 }
+  const vistos = new Set(), filas = []
+  ;[...(d1 || []), ...(d2 || [])].forEach(r => { if (!vistos.has(r.id)) { vistos.add(r.id); filas.push(r) } })
+  return { filas, error: null }
+}
 export async function buscarOrigenesDeCaja(supabase, tablaCaja, id) {
   const col = tablaCaja === 'caja_paralela' ? 'caja_paralela_id' : 'caja_oficial_id'
   const colArray = tablaCaja === 'caja_paralela' ? 'caja_paralela_ids' : 'caja_oficial_ids'
   const { data: fletes, error } = await supabase.from('fletes').select('*').eq(col, id)
-  if (error) return { fletes: [], gastos: [], otros: [], error }
-  // Un gasto puede tener varias cajas: se busca por la principal y por la lista.
-  const { data: g1, error: e1 } = await supabase.from('gastos_generales').select('*').eq(col, id)
-  if (e1) return { fletes: [], gastos: [], otros: [], error: e1 }
-  const { data: g2, error: e2 } = await supabase.from('gastos_generales').select('*').contains(colArray, [id])
-  if (e2) return { fletes: [], gastos: [], otros: [], error: e2 }
-  const vistos = new Set(), gastos = []
-  ;[...(g1 || []), ...(g2 || [])].forEach(g => { if (!vistos.has(g.id)) { vistos.add(g.id); gastos.push(g) } })
+  if (error) return { fletes: [], gastos: [], personal: [], otros: [], error }
+  // Gastos y pagos de personal pueden tener varias cajas: se busca por la
+  // principal y por la lista (array), y se unen sin duplicar.
+  const g = await buscarPorPrincipalYLista(supabase, 'gastos_generales', col, colArray, id)
+  if (g.error) return { fletes: [], gastos: [], personal: [], otros: [], error: g.error }
+  const pe = await buscarPorPrincipalYLista(supabase, 'pagos_empleados', col, colArray, id)
+  if (pe.error) return { fletes: [], gastos: [], personal: [], otros: [], error: pe.error }
 
   const otros = []
   const consultas = await Promise.all(ORIGENES_SIN_REVERSION.map(async ([tabla, etiqueta]) => {
@@ -151,7 +158,7 @@ export async function buscarOrigenesDeCaja(supabase, tablaCaja, id) {
     return { etiqueta, cantidad: (data || []).length }
   }))
   consultas.forEach(c => { if (c.cantidad > 0) otros.push(c) })
-  return { fletes: fletes || [], gastos, otros, error: null }
+  return { fletes: fletes || [], gastos: g.filas, personal: pe.filas, otros, error: null }
 }
 
 /**
@@ -283,6 +290,34 @@ export async function revertirPagoDeGasto(supabase, gasto) {
   return { error: null }
 }
 
+/** Deja un pago de personal PENDIENTE otra vez: se elimina directo, no vuelve
+ * a "pendiente" — Personal no tiene ese estado, cada pago es un hecho propio.
+ * Revierte caja, cheque propio emitido y cheques de tercero. */
+export async function revertirPagoDePersonal(supabase, pago) {
+  const oficialIds = pago.caja_oficial_ids || (pago.caja_oficial_id ? [pago.caja_oficial_id] : [])
+  const paralelaIds = pago.caja_paralela_ids || (pago.caja_paralela_id ? [pago.caja_paralela_id] : [])
+  for (const id of oficialIds) {
+    if (pago.caja_oficial_id === id || (pago.caja_oficial_ids || []).includes(id)) {
+      await supabase.from('cheques').delete().eq('caja_oficial_id', id).eq('tipo', 'emitido')
+    }
+    const { error } = await supabase.from('caja_oficial').delete().eq('id', id)
+    if (error) return { error, etapa: 'caja' }
+  }
+  for (const id of paralelaIds) {
+    const { error } = await supabase.from('caja_paralela').delete().eq('id', id)
+    if (error) return { error, etapa: 'caja' }
+  }
+  // Cheques de tercero recibidos como pago (quedan "entregado" a nombre del
+  // empleado) vuelven a la cartera en vez de borrarse.
+  for (const id of oficialIds) {
+    const relacionados = await supabase.from('cheques').select('id').eq('caja_oficial_id', id).eq('tipo', 'recibido')
+    for (const ch of (relacionados.data || [])) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null, caja_oficial_id: null }).eq('id', ch.id)
+  }
+  const { error } = await supabase.from('pagos_empleados').delete().eq('id', pago.id)
+  if (error) return { error, etapa: 'personal' }
+  return { error: null }
+}
+
 /**
  * ¿Se pueden deshacer TODOS los pagos de este origen? Se consulta ANTES de
  * preguntarle nada al usuario, para no pedirle una confirmación que después
@@ -300,17 +335,20 @@ export async function deshacerPagosDeOrigen(supabase, orig) {
   if (!val.ok) return { error: { message: val.motivo }, etapa: 'validacion' }
   if (orig.fletes.length > 0) { const r = await revertirPagoDeFletes(supabase, orig.fletes); if (r.error) return r }
   for (const g of orig.gastos) { const r = await revertirPagoDeGasto(supabase, g); if (r.error) return r }
+  for (const p of (orig.personal || [])) { const r = await revertirPagoDePersonal(supabase, p); if (r.error) return r }
   return { error: null }
 }
 
 // ── Textos de los avisos de Caja ──
 export function mensajeDeshacerPago(orig) {
+  const personal = orig.personal || []
   const items = [
     ...orig.fletes.map(f => `un flete (${f.transportista || 'sin transportista'})`),
     ...orig.gastos.map(g => `un gasto (${[g.categoria, g.proveedor].filter(Boolean).join(' — ') || 'sin detalle'})`),
+    ...personal.map(p => `un pago de personal (${p.concepto || p.tipo || 'sin detalle'})`),
   ]
   const cajas = new Set()
-  ;[...orig.fletes, ...orig.gastos].forEach(r => {
+  ;[...orig.fletes, ...orig.gastos, ...personal].forEach(r => {
     ;(r.caja_oficial_ids || (r.caja_oficial_id ? [r.caja_oficial_id] : [])).forEach(i => cajas.add('o' + i))
     ;(r.caja_paralela_ids || (r.caja_paralela_id ? [r.caja_paralela_id] : [])).forEach(i => cajas.add('p' + i))
   })

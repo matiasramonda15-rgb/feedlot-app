@@ -299,7 +299,7 @@ export default function Comercial({ usuario }) {
       const orig = await buscarOrigenesDeCaja(supabase, tabla, id)
       if (orig.error) { alert('No se pudo verificar si este movimiento pertenece a otro registro: ' + orig.error.message); return }
       if (orig.otros.length > 0) { alert(mensajeCajaBloqueada(orig.otros)); return }
-      if (orig.fletes.length + orig.gastos.length > 0) {
+      if (orig.fletes.length + orig.gastos.length + (orig.personal || []).length > 0) {
         // Primero se verifica que se pueda deshacer, y recién después se pregunta.
         const val = await validarDeshacerOrigen(supabase, orig)
         if (!val.ok) { alert(val.motivo + '\n\nNo se cambió nada.'); return }
