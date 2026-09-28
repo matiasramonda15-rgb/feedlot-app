@@ -4,6 +4,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { registrarMovimientoDePago, mensajeErrorPago } from '../shared/pagosLogic'
 
 const PAGO_INIT_P = PAGO_INIT
 
@@ -98,21 +99,13 @@ export default function Personal({ usuario }) {
     for (const p of pagosForm.filter(p => p.monto)) {
       const monto = parseFloat(p.monto) || 0
       if (!monto) continue
-      if (p.es_paralelo) {
-        const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-        if (errCp) { alert('Error al registrar en Caja 2: ' + errCp.message); setGuardando(false); return }
-        caja_paralela_id = cp?.id
-      } else {
-        const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Personal', descripcion: desc, monto, forma_pago: p.subtipo_cheque || p.tipo }).select().single()
-        if (errCo) { alert('Error al registrar en caja oficial: ' + errCo.message); setGuardando(false); return }
-        caja_oficial_id = co?.id
-        if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
-          const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento, monto, beneficiario: emp?.nombre || null, estado: 'entregado', caja_oficial_id, es_electronico: p.tipo === 'e-cheq' })
-          if (errCheq) { alert('Error al registrar el cheque: ' + errCheq.message); setGuardando(false); return }
-        } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
-          for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
-        }
-      }
+      const r = await registrarMovimientoDePago(supabase, p, {
+        fecha: formPago.fecha, descripcion: desc, categoria: 'Personal', monto,
+        beneficiarioCheque: emp?.nombre || null,
+      })
+      if (r.error) { alert(mensajeErrorPago(r)); setGuardando(false); return }
+      if (p.es_paralelo) caja_paralela_id = r.cajaParalelaId
+      else caja_oficial_id = r.cajaOficialId
     }
     const { error: errPago } = await supabase.from('pagos_empleados').insert({
       ...formPago,
