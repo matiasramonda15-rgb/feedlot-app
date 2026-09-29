@@ -1,4 +1,5 @@
 import { ListaPagos } from './PagoFormulario'
+import { registrarMovimientoDePago } from '../shared/pagosLogic'
 
 // Checklist de compras pendientes de pago — selección, precio (si falta) y
 // N° factura (si falta) por cada una. Usado tanto en Insumos (Alimentación
@@ -100,42 +101,70 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
   )
 }
 
-// Registra el pago agrupado de varias compras pendientes: crea los
-// movimientos de caja / cheques según la lista de pagos (usando ListaPagos),
+// Registra el pago de UNA o VARIAS compras pendientes — es el ÚNICO lugar
+// donde se pagan compras de insumos (Insumos y Agricultura). Crea los
+// movimientos de caja / cheques de cada forma de pago (con la función
+// compartida registrarMovimientoDePago, la misma que Personal y Fletes),
 // actualiza cada compra seleccionada (precio si faltaba, factura si se
-// cargó, estado a pagado), y actualiza el precio de referencia del insumo
-// en el stock correspondiente vía el callback que le pases.
+// cargó, estado) y actualiza el precio de referencia del insumo en el stock
+// correspondiente vía el callback que le pases.
+//
+// Qué cambió respecto de la versión anterior (de acá para adelante):
+//  - Se guardan TODOS los movimientos de caja del pago (caja_oficial_ids /
+//    caja_paralela_ids / cheque_emitido_ids), no solo el primero. Antes, un
+//    pago con dos formas de pago dejaba la segunda caja "huérfana".
+//  - Cada forma de pago guardada en pagos_detalle lleva su fecha, el id de
+//    su movimiento de caja (_caja_id), su cheque emitido (_cheque_emitido_id)
+//    y un id del pago (_pago_grupo) que es el mismo para todas las compras
+//    pagadas juntas — así se puede saber después qué se pagó con qué.
+//  - Los cheques de tercero quedan "entregado" a nombre del proveedor, en
+//    Caja 1 y en Caja 2 (antes: "depositado" en Caja 1 y sin tocar en Caja 2).
+//  - Un pago de $0 (solo fijar precio) ya no borra los ids de caja que la
+//    compra tenía de pagos anteriores.
 //
 // actualizarPrecioReferencia(compra, precioUnit) — se llama solo cuando la
 // compra no tenía precio y se cargó ahora; cada módulo sabe a qué tabla de
 // stock (stock_insumos / stock_sanitario / stock_agro) le corresponde.
+function nuevoIdPago() {
+  try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID() } catch (e) { /* sigue abajo */ }
+  return `pg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+const unirIds = (...listas) => {
+  const todos = [...new Set(listas.flat().filter(x => x != null).map(Number))]
+  return todos.length > 0 ? todos : null
+}
+
 export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
   creditoEntidad, creditoCuotas, creditoVencimiento, creditoEsDolares, cotizacionDolarCredito, creditoMontoUsd, monedas, cotizacionDolar, modos,
 }) {
-  let caja_oficial_id = null, caja_paralela_id = null
+  const pagoGrupo = nuevoIdPago()
+  const cajaOficialIds = [], cajaParalelaIds = [], chequeEmitidoIds = []
+  // Cada forma de pago con monto, ya con los ids que generó en caja.
+  const lineas = []
   for (const pago of pagos) {
     const monto = parseFloat(pago.monto) || 0
     if (!monto) continue
-    if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
-    if (pago.tipo === 'credito') continue  // crédito: tampoco mueve caja — el proveedor ya cobró vía la financiera
-    const formaPago = pago.subtipo_cheque || pago.tipo
-    if (pago.es_paralelo) {
-      const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion, monto }).select().single()
-      if (errCp) return { error: errCp }
-      if (!caja_paralela_id) caja_paralela_id = cp?.id || null
-    } else {
-      const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion, monto, forma_pago: formaPago, contacto_id: contactoId ? parseInt(contactoId) : null }).select().single()
-      if (errCo) return { error: errCo }
-      if (!caja_oficial_id) caja_oficial_id = co?.id || null
-      if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-        const { error: errCheq } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: contactoNombre || null, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq', registrado_por: registradoPor || null })
-        if (errCheq) return { error: errCheq }
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
-      }
-    }
+    const linea = { ...pago, fecha: pago.fecha || fecha, _pago_grupo: pagoGrupo, _caja_id: null, _es_paralelo: !!pago.es_paralelo, _cheque_emitido_id: null }
+    // Canje y crédito no mueven caja (el proveedor cobra en mercadería o
+    // vía la financiera), pero cuentan como pagado.
+    if (pago.tipo === 'canje' || pago.tipo === 'credito') { lineas.push(linea); continue }
+    const r = await registrarMovimientoDePago(supabase, pago, {
+      fecha, descripcion, categoria: 'Compra insumos', monto,
+      contactoId: contactoId ? parseInt(contactoId) : null,
+      beneficiarioCheque: contactoNombre || null,
+      registradoPorCheque: registradoPor || null,
+      estadoChequeTercero: 'entregado',
+      beneficiarioTercero: contactoNombre || undefined,
+      marcarTerceroEnCaja2: true,
+      devolverIdCheque: true,
+    })
+    if (r.error) return { error: r.error }
+    if (r.cajaOficialId) cajaOficialIds.push(r.cajaOficialId)
+    if (r.cajaParalelaId) cajaParalelaIds.push(r.cajaParalelaId)
+    if (r.chequeEmitidoId) chequeEmitidoIds.push(r.chequeEmitidoId)
+    lineas.push({ ...linea, _caja_id: r.cajaParalelaId || r.cajaOficialId || null, _cheque_emitido_id: r.chequeEmitidoId || null })
   }
 
   // Si parte del pago fue con crédito de una financiera/banco, el proveedor
@@ -219,13 +248,26 @@ export async function pagarComprasPendientes(supabase, {
     // del pago conjunto, como si cada una se hubiera pagado entera por
     // separado (inflaba el "pagado" varias veces sobre lo mismo).
     const proporcion = totalCombinado > 0 ? (totalesFinales[id] || 0) / totalCombinado : (1 / seleccionadas.length)
-    const pagosProporcionales = pagos.map(p => ({ ...p, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
+    const pagosProporcionales = lineas.map(p => ({ ...p, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
     const montoPagadoAhora = pagosProporcionales.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+    // Ids de caja: los que la compra ya tenía (de pagos anteriores) + los de
+    // este pago. Se leen frescos de la base para no pisar nada.
+    const { data: actual } = await supabase.from('compras_insumos')
+      .select('caja_oficial_id, caja_paralela_id, caja_oficial_ids, caja_paralela_ids, cheque_emitido_ids').eq('id', id).single()
+    const prev = actual || c
     const upd = {
-      caja_oficial_id, caja_paralela_id,
+      caja_oficial_id: prev.caja_oficial_id || cajaOficialIds[0] || null,
+      caja_paralela_id: prev.caja_paralela_id || cajaParalelaIds[0] || null,
+      caja_oficial_ids: unirIds(prev.caja_oficial_ids || (prev.caja_oficial_id ? [prev.caja_oficial_id] : []), cajaOficialIds),
+      caja_paralela_ids: unirIds(prev.caja_paralela_ids || (prev.caja_paralela_id ? [prev.caja_paralela_id] : []), cajaParalelaIds),
+      cheque_emitido_ids: unirIds(prev.cheque_emitido_ids || [], chequeEmitidoIds),
       pagos_detalle: [...(c.pagos_detalle || []), ...pagosProporcionales],
-      forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
-      es_paralelo: pagos.some(p => p.es_paralelo),
+    }
+    // Forma de pago y caja: solo si de verdad se pagó algo ahora. Un "guardar
+    // precio sin pagar" ya no pisa la caja elegida al cargar la compra.
+    if (lineas.length > 0) {
+      upd.forma_pago = lineas.map(p => p.subtipo_cheque || p.tipo).join('+')
+      upd.es_paralelo = lineas.some(p => p.es_paralelo)
     }
     if (contactoId) upd.contacto_id = parseInt(contactoId)
     // Si la compra se cargó sin precio, se define recién ahora al pagar —

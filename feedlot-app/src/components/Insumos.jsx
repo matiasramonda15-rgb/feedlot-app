@@ -49,11 +49,8 @@ export default function Insumos({ usuario }) {
   const [showForm, setShowForm] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
-  const [pagarInline, setPagarInline] = useState(null)
-  const [guardandoPagoInline, setGuardandoPagoInline] = useState(false)
   const [retirandoId, setRetirandoId] = useState(null)
   const [cantidadRetiro, setCantidadRetiro] = useState('')
-  const [formPagoInline, setFormPagoInline] = useState({ fecha: hoyLocal(), tipo: 'transferencia', monto: '', precio_unitario: '', es_paralelo: false, pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [seleccionadas, setSeleccionadas] = useState([])
   const [preciosGrupal, setPreciosGrupal] = useState({})
   const [modosGrupal, setModosGrupal] = useState({})
@@ -61,6 +58,9 @@ export default function Insumos({ usuario }) {
   const [showPagosPend, setShowPagosPend] = useState(false)
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
+  // Traba contra el doble clic: el estado "guardandoPago" tarda un render en
+  // deshabilitar el botón, y un doble clic rápido alcanzaba a pagar dos veces.
+  const pagandoRef = React.useRef(false)
   const [form, setForm] = useState({
     fecha: hoyLocal(),
     tipo: 'alimentacion',
@@ -127,9 +127,28 @@ export default function Insumos({ usuario }) {
   }
 
 
+  // El botón "Pagar" de cada fila ya no abre un formulario propio: marca esa
+  // compra y abre el MISMO formulario de pago de arriba (el único lugar donde
+  // se pagan compras), con el saldo y el proveedor ya cargados.
+  function abrirPagoDe(c) {
+    const yaPagado = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
+    const saldo = c.total ? Math.max(0, c.total - yaPagado) : null
+    const contacto = c.proveedor ? contactos.find(ct => ct.nombre === c.proveedor) : null
+    setSeleccionadas([c.id])
+    setPreciosGrupal({}); setModosGrupal({}); setFacturasGrupal({})
+    setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT, monto: saldo ? String(saldo) : '' }], contacto_id: contacto ? String(contacto.id) : '', credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
+    setShowPagosPend(true)
+    setTimeout(() => document.getElementById('form-pago-compras')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
   const stockActual = form.tipo === 'alimentacion' ? stockAlim : stockSan
 
   async function guardar() {
+    // Al cargar una compra NUNCA se paga desde acá: queda pendiente y se paga
+    // desde "Pagar" (el único lugar de pago de compras). Esta pantalla de
+    // carga además hoy no se muestra (las pestañas de stock no están en TABS),
+    // pero si se vuelve a activar no puede generar pagos por su cuenta.
+    const pagarAhora = false
     if (!form.insumo_id || !form.cantidad) {
       alert('Completá insumo y cantidad')
       return
@@ -339,7 +358,7 @@ export default function Insumos({ usuario }) {
             const totalPagGrupal2 = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const inp = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
             return (
-              <div style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div id="form-pago-compras" style={{ background: S.greenLight, border: `1px solid ${S.green}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem', scrollMarginTop: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: S.green, marginBottom: '1.25rem' }}>
                   💳 Pagar {seleccionadas.length} compra{seleccionadas.length !== 1 ? 's' : ''} · Total: ${totalSel2.toLocaleString('es-AR')}
                 </div>
@@ -390,10 +409,12 @@ export default function Insumos({ usuario }) {
                     style={{ padding: '8px 16px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                   {totalPagGrupal2 === 0 && (
                     <button onClick={async () => {
+                      if (pagandoRef.current) return
                       if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
                       // Atajo directo para el caso de "solo quiero fijar el precio,
                       // todavía no voy a pagar nada" — hace lo mismo que Confirmar
                       // pago con $0, pero sin el paso extra del cartel de confirmación.
+                      pagandoRef.current = true
                       setGuardandoPago(true)
                       const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
                       const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`
@@ -408,6 +429,7 @@ export default function Insumos({ usuario }) {
                           await supabase.from(tabla).update({ precio_referencia: precioFinal, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
                         },
                       })
+                      pagandoRef.current = false
                       if (error) { alert('Error al guardar el precio: ' + error.message); setGuardandoPago(false); return }
                       setSeleccionadas([])
                       setPreciosGrupal({})
@@ -423,6 +445,7 @@ export default function Insumos({ usuario }) {
                     </button>
                   )}
                   <button onClick={async () => {
+                    if (pagandoRef.current) return
                     if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
                     // Se permite dejar el pago en $0 — sirve para fijar el precio de una
                     // compra sin sacar plata todavía (se paga después, de a poco). Se
@@ -431,6 +454,7 @@ export default function Insumos({ usuario }) {
                     // Se permite pagar MENOS que el total (deja el resto pendiente, para
                     // pagar de a poco con el tiempo) — solo se bloquea si se carga de más.
                     if (totalSel2 > 0 && totalPagGrupal2 - totalSel2 > 0.5) { alert('El total de pagos es mayor que el total de las compras — revisá los montos.'); return }
+                    pagandoRef.current = true
                     setGuardandoPago(true)
                     const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
                     const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`
@@ -445,6 +469,7 @@ export default function Insumos({ usuario }) {
                         await supabase.from(tabla).update({ precio_referencia: precioFinal, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
                       },
                     })
+                    pagandoRef.current = false
                     if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
                     // Un solo recibo combinado con todos los remitos pagados juntos —
                     // antes esto no generaba ningún recibo acá, así que había que
@@ -560,31 +585,34 @@ export default function Insumos({ usuario }) {
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                               🖨️ Recibo
                             </button>
-                          : <button onClick={() => {
-                              setPagarInline(pagarInline === c.id ? null : c.id)
-                              // Si la compra ya tiene proveedor cargado, se busca el contacto
-                              // que coincide por nombre y se precarga solo — no tiene sentido
-                              // volver a preguntarlo si ya está clarísimo de quién es la deuda.
-                              const contactoMatch = c.proveedor ? contactos.find(ct => ct.nombre === c.proveedor) : null
-                              // Precargar el SALDO PENDIENTE (total menos lo ya pagado), no el
-                              // total completo — si no, un pago parcial se confunde con el total
-                              // y la compra queda mal marcada como "pagada" (bug real, 18/03).
-                              const sumaPagosPrevios = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-                              const saldoPendiente = c.total ? Math.max(0, c.total - sumaPagosPrevios) : null
-                              const montoPrecarga = saldoPendiente != null ? String(saldoPendiente) : (c.total ? String(c.total) : '')
-                              setFormPagoInline({ fecha: hoyLocal(), tipo: 'transferencia', monto: montoPrecarga, precio_unitario: c.precio_unitario ? String(c.precio_unitario) : '', numero_factura: c.numero_factura || '', proveedor: c.proveedor || '', cuit: contactoMatch?.cuit || c.cuit || '', iva: contactoMatch?.iva || c.iva || '', cbu: contactoMatch?.cbu || c.cbu || '', contacto_id: contactoMatch ? String(contactoMatch.id) : '', es_paralelo: false, pagos: [{ ...PAGO_INIT, monto: montoPrecarga }] })
-                            }}
+                          : <button onClick={() => abrirPagoDe(c)}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                               💳 {c.estado_pago === 'parcial' ? 'Pagar saldo' : 'Pagar'}
                             </button>
                         }
                         <button onClick={async () => {
-                          if (!confirm('¿Eliminar esta compra? Se eliminará también de la caja y se revertirán los cheques usados.')) return
-                          if (c.caja_oficial_id) {
-                            await supabase.from('cheques').delete().eq('caja_oficial_id', c.caja_oficial_id).eq('tipo', 'emitido')
-                            await supabase.from('caja_oficial').delete().eq('id', c.caja_oficial_id)
+                          // Si se pagó JUNTO con otras compras (mismo pago), borrar sus
+                          // movimientos de caja dejaría a las otras como pagadas sin
+                          // plata. En ese caso no se elimina y se avisa.
+                          const grupos = [...new Set((c.pagos_detalle || []).map(p => p._pago_grupo).filter(Boolean))]
+                          for (const g of grupos) {
+                            const { data: otras } = await supabase.from('compras_insumos').select('id, insumo_nombre').contains('pagos_detalle', [{ _pago_grupo: g }]).neq('id', c.id)
+                            if ((otras || []).length > 0) {
+                              alert(`Esta compra se pagó en un mismo pago junto con: ${otras.map(o => o.insumo_nombre || 'otra compra').join(', ')}.\n\nSi la elimino sola, esas compras quedarían como pagadas sin la plata en caja, así que no la elimino.\n\nNo se cambió nada.`)
+                              return
+                            }
                           }
-                          if (c.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', c.caja_paralela_id)
+                          if (!confirm('¿Eliminar esta compra? Se eliminará también de la caja y se revertirán los cheques usados.')) return
+                          // TODOS los movimientos de caja y cheques emitidos de la compra
+                          // (antes solo se borraba el primero de cada caja).
+                          const idsOf = [...new Set([...(c.caja_oficial_ids || []), ...(c.caja_oficial_id ? [c.caja_oficial_id] : [])])]
+                          const idsPar = [...new Set([...(c.caja_paralela_ids || []), ...(c.caja_paralela_id ? [c.caja_paralela_id] : [])])]
+                          for (const chId of (c.cheque_emitido_ids || [])) await supabase.from('cheques').delete().eq('id', chId)
+                          for (const id of idsOf) {
+                            await supabase.from('cheques').delete().eq('caja_oficial_id', id).eq('tipo', 'emitido')
+                            await supabase.from('caja_oficial').delete().eq('id', id)
+                          }
+                          for (const id of idsPar) await supabase.from('caja_paralela').delete().eq('id', id)
                           for (const p of (c.pagos_detalle || [])) {
                             if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
                               for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
@@ -608,198 +636,6 @@ export default function Insumos({ usuario }) {
                       </div>
                     </td>
                   </tr>
-                  {pagarInline === c.id && (
-                    <tr>
-                      <td colSpan={10} style={{ padding: '1.25rem', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
-                        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                            Pagar — {c.insumo_nombre}{c.proveedor ? ` · ${c.proveedor}` : ''}
-                          </div>
-                          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>
-                            {c.cantidad?.toLocaleString('es-AR')} {c.unidad || 'kg'} · Total: {c.total ? `$${c.total.toLocaleString('es-AR')}` : '—'}
-                          </div>
-
-                          {/* Contacto y Fecha */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 12, marginBottom: '1rem' }}>
-                            <div>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Contacto / Proveedor</div>
-                              <select value={formPagoInline.contacto_id} onChange={e => {
-                                const ct = contactos.find(x => String(x.id) === e.target.value)
-                                setFormPagoInline({...formPagoInline, contacto_id: e.target.value,
-                                  proveedor: ct?.nombre || formPagoInline.proveedor,
-                                  cuit: ct?.cuit || formPagoInline.cuit,
-                                  cbu: ct?.cbu || formPagoInline.cbu,
-                                  iva: ct?.iva || formPagoInline.iva,
-                                })
-                              }} style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }}>
-                                <option value="">— Sin contacto —</option>
-                                {contactos.map(ct => <option key={ct.id} value={ct.id}>{ct.nombre}{ct.localidad ? ` (${ct.localidad})` : ''}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Fecha</div>
-                              <input type="date" value={formPagoInline.fecha} onChange={e => setFormPagoInline({...formPagoInline, fecha: e.target.value})}
-                                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }} />
-                            </div>
-                          </div>
-
-                        {/* Datos de factura */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: '1rem' }}>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Precio $/{c.unidad || 'kg'} *</div>
-                            <input type="number" value={formPagoInline.precio_unitario}
-                              onChange={e => {
-                                const precio = e.target.value
-                                const total = precio && c.cantidad ? String(Math.round(parseFloat(precio) * c.cantidad)) : ''
-                                const pagos = formPagoInline.pagos.map((p, i) => i === 0 ? {...p, monto: total || p.monto} : p)
-                                setFormPagoInline({...formPagoInline, precio_unitario: precio, pagos})
-                              }}
-                              placeholder="ej. 1500"
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.accent}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.surface, boxSizing: 'border-box', color: S.text }} />
-                            {formPagoInline.precio_unitario && c.cantidad && (
-                              <div style={{ fontSize: 11, color: S.green, marginTop: 3 }}>
-                                Total: ${Math.round(parseFloat(formPagoInline.precio_unitario) * c.cantidad).toLocaleString('es-AR')}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>N° Factura</div>
-                            <input type="text" value={formPagoInline.numero_factura}
-                              onChange={e => setFormPagoInline({...formPagoInline, numero_factura: e.target.value})}
-                              placeholder="0001-00012345"
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, fontFamily: 'monospace', background: S.surface, boxSizing: 'border-box', color: S.text }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Proveedor</div>
-                            <div style={{ padding: '9px 12px', fontSize: 13, color: formPagoInline.proveedor ? S.text : S.hint }}>
-                              {formPagoInline.proveedor || 'Elegí un contacto arriba'}
-                            </div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>CUIT</div>
-                            <input type="text" value={formPagoInline.cuit}
-                              onChange={e => setFormPagoInline({...formPagoInline, cuit: e.target.value})}
-                              placeholder="20-12345678-9"
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>IVA</div>
-                            <input type="text" value={formPagoInline.iva}
-                              onChange={e => setFormPagoInline({...formPagoInline, iva: e.target.value})}
-                              placeholder="ej. Responsable Inscripto"
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>CBU</div>
-                            <input type="text" value={formPagoInline.cbu}
-                              onChange={e => setFormPagoInline({...formPagoInline, cbu: e.target.value})}
-                              placeholder="ej. 0720..."
-                              style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', color: S.text }} />
-                          </div>
-                        </div>
-
-                        {/* Formas de pago — igual a Gastos generales */}
-                        <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
-                        <ListaPagos pagos={formPagoInline.pagos} onChangePagos={n => setFormPagoInline({...formPagoInline, pagos: n})} chequesCartera={chequesCartera} S={S} />
-
-
-                          {/* Resumen — igual a Gastos */}
-                          {(() => {
-                            const totalPagos = formPagoInline.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-                            const montoTotal = c.total || 0
-                            const sumaPagosPrevios = (c.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-                            const saldoRestante = montoTotal - sumaPagosPrevios - totalPagos
-                            return montoTotal > 0 ? (
-                              <div style={{ background: Math.abs(saldoRestante) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(saldoRestante) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: '1rem' }}>
-                                <div style={{ color: S.muted, marginBottom: sumaPagosPrevios > 0 ? 4 : 0 }}>Total de la compra: <strong>${montoTotal.toLocaleString('es-AR')}</strong></div>
-                                {sumaPagosPrevios > 0 && <div style={{ color: S.muted, marginBottom: 4 }}>Ya pagado antes: <strong>${sumaPagosPrevios.toLocaleString('es-AR')}</strong></div>}
-                                <div style={{ color: S.muted }}>Pagando ahora: <strong>${totalPagos.toLocaleString('es-AR')}</strong></div>
-                                <div style={{ marginTop: 4, fontWeight: 700, color: saldoRestante > 0.5 ? S.amber : S.green }}>
-                                  {saldoRestante > 0.5 ? `Queda pendiente: $${saldoRestante.toLocaleString('es-AR')}` : '✓ Con esto queda saldado'}
-                                </div>
-                              </div>
-                            ) : null
-                          })()}
-
-                                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: '1rem' }}>
-                            <button onClick={() => setPagarInline(null)}
-                              style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
-                              Cancelar
-                            </button>
-                            <button onClick={async () => {
-                              // Sin esto, un doble clic dispara todo el guardado dos veces y
-                              // duplica cheques y movimientos de caja (nos pasó con un pago real).
-                              if (guardandoPagoInline) return
-                              // Cada pago guarda su propia fecha (no solo la compra) — así el
-                              // Presupuesto puede contar la plata en el mes en que realmente
-                              // se pagó, no en el mes de la compra (importa con proveedores
-                              // a 30/60 días).
-                              const pagos = formPagoInline.pagos.map(p => ({ ...p, fecha: p.fecha || formPagoInline.fecha }))
-                              const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-                              if (!totalPagos) { alert('Ingresá el monto'); return }
-                              setGuardandoPagoInline(true)
-                              const desc = `Pago compra ${c.insumo_nombre}${c.proveedor ? ` — ${c.proveedor}` : ''}`
-                              let caja_oficial_id = null, caja_paralela_id = null
-                              for (const pago of pagos) {
-                                const monto = parseFloat(pago.monto) || 0
-                                if (!monto) continue
-                                if (pago.tipo === 'canje') continue  // canje: no toca caja, pero ya cuenta como pagado
-                                const fp = pago.tipo
-                                if (pago.es_paralelo) {
-                                  const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-                                  if (errCp || !cp) { alert(`No se pudo registrar la salida de $${monto.toLocaleString('es-AR')} en Caja 2 (${errCp?.message || 'sin datos de respuesta'}). El pago NO quedó guardado — intentá de nuevo.`); setGuardandoPagoInline(false); return }
-                                  if (!caja_paralela_id) caja_paralela_id = cp?.id
-                                } else {
-                                  const { data: co, error: errCo } = await supabase.from('caja_oficial').insert({ fecha: formPagoInline.fecha, tipo: 'egreso', categoria: 'Compra insumos', descripcion: desc, monto, forma_pago: fp, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).select().single()
-                                  if (errCo || !co) { alert(`No se pudo registrar la salida de $${monto.toLocaleString('es-AR')} en Caja 1 (${errCo?.message || 'sin datos de respuesta'}). El pago NO quedó guardado — intentá de nuevo.`); setGuardandoPagoInline(false); return }
-                                  if (!caja_oficial_id) caja_oficial_id = co?.id
-                                }
-                                if (pago.tipo === 'e-cheq' && pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-                                  for (const chId of pago.cheque_tercero_ids) {
-                                    await supabase.from('cheques').update({ estado: 'entregado', beneficiario: formPagoInline.proveedor || c.proveedor || null }).eq('id', parseInt(chId))
-                                  }
-                                }
-                                if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-                                  const { error: eCheqInline } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoInline.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
-                                  if (eCheqInline) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqInline.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); setGuardandoPagoInline(false); return }
-                                }
-                              }
-                              // FIX (bug real 18/03): antes esto siempre pisaba el total de la
-                              // compra con lo pagado en esta pantalla y marcaba "pagado" sin
-                              // importar si era parcial — un pago parcial de $9M sobre una
-                              // compra de $36M quedaba registrado como cancelación total.
-                              // Ahora: el total real de la compra (ya cargado, o cantidad×precio
-                              // si todavía no tenía) NUNCA se pisa con el monto pagado; los pagos
-                              // se acumulan en vez de reemplazarse; y el estado se calcula
-                              // comparando lo pagado en total contra el total real.
-                              const pagosPrevios = c.pagos_detalle || []
-                              const sumaPagosPrevios = pagosPrevios.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-                              const sumaAcumulada = sumaPagosPrevios + totalPagos
-                              const precioUnit = formPagoInline.precio_unitario ? parseFloat(formPagoInline.precio_unitario) : c.precio_unitario || (!c.total && c.cantidad ? Math.round(totalPagos / c.cantidad * 100) / 100 : null)
-                              // Total real: el que ya tenía la compra > el que sale de cantidad×precio > si no hay ninguno de los dos, recién ahí se toma lo pagado como el total (compra sin precio cargado todavía).
-                              let totalReal = c.total || null
-                              if (!totalReal && precioUnit && c.cantidad) totalReal = Math.round(c.cantidad * precioUnit)
-                              if (!totalReal) totalReal = sumaAcumulada
-                              const nuevoEstado = sumaAcumulada >= totalReal - 0.5 ? 'pagado' : 'parcial'
-                              const pagosAcumulados = [...pagosPrevios, ...pagos]
-                              const formaDesc = pagos.map(p => p.subtipo_cheque ? `e-cheq ${p.subtipo_cheque}` : p.tipo).join('+')
-                              await supabase.from('compras_insumos').update({ estado_pago: nuevoEstado, total: totalReal, precio_unitario: precioUnit, numero_factura: formPagoInline.numero_factura || null, proveedor: formPagoInline.proveedor || c.proveedor || null, cuit: formPagoInline.cuit || null, iva: formPagoInline.iva || null, cbu: formPagoInline.cbu || null, forma_pago: formaDesc, es_paralelo: pagos.some(p => p.es_paralelo), caja_oficial_id, caja_paralela_id, pagos_detalle: pagosAcumulados, contacto_id: formPagoInline.contacto_id ? parseInt(formPagoInline.contacto_id) : null }).eq('id', c.id)
-                              if (precioUnit) {
-                                const tabla = c.insumo_tipo === 'sanitario' ? 'stock_sanitario' : 'stock_insumos'
-                                await supabase.from(tabla).update({ precio_referencia: precioUnit, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
-                              }
-                              setPagarInline(null)
-                              setGuardandoPagoInline(false)
-                              await cargar()
-                              generarRecibo({ ...c, fecha: formPagoInline.fecha, precio_unitario: precioUnit, total: totalReal }, pagos)
-                            }} disabled={guardandoPagoInline} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: guardandoPagoInline ? 0.6 : 1 }}>
-                              {guardandoPagoInline ? 'Guardando...' : '💾 Confirmar y emitir recibo'}
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                   </React.Fragment>
                 ))}
               </tbody>

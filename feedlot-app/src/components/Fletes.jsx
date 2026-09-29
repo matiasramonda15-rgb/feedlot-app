@@ -142,6 +142,7 @@ export default function Fletes({ usuario }) {
         contactoId: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
         beneficiarioCheque: ct?.nombre || transportistaDesc,
         registradoPorCheque: usuario?.id,
+        beneficiarioTercero: ct?.nombre || transportistaDesc || null,
         // Fletes guarda un solo id de caja y su "eliminar" borra los cheques por ese id
         cajaOficialIdDelCheque: caja_oficial_id,
       })

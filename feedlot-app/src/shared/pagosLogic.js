@@ -24,18 +24,16 @@
  *   beneficiarioCheque                 — beneficiario del cheque propio emitido
  *   registradoPorCheque                — si se pasa, se guarda registrado_por en
  *                                        el cheque propio; si no, no se manda
- *   estadoChequeTercero                — 'depositado' (por defecto, como venían
- *                                        haciendo la mayoría) o 'entregado'
+ *   estadoChequeTercero                — 'entregado' (por defecto: un cheque de
+ *                                        tercero con el que se paga queda en
+ *                                        manos de quien cobra) u otro estado
  *   beneficiarioTercero                — si se pasa, se guarda como beneficiario
  *                                        al marcar el cheque de tercero
- *   marcarTerceroEnCaja2               — si es true, los cheques de tercero de
- *                                        una línea de Caja 2 también se marcan
- *                                        (estado + beneficiario). Por defecto
- *                                        false: hasta ahora Caja 2 no los tocaba
- *                                        y Gastos los marca por su cuenta.
- *                                        Personal lo pide en true. Cuando Gastos
- *                                        y Fletes se revisen, pasa a ser la regla
- *                                        de todos.
+ *   marcarTerceroEnCaja2               — los cheques de tercero de una línea de
+ *                                        Caja 2 también se marcan (estado +
+ *                                        beneficiario). Por defecto true: es la
+ *                                        regla para todos. Antes Caja 2 no los
+ *                                        tocaba y quedaban "en cartera".
  *   devolverIdCheque                   — pide el id del cheque emitido creado
  *   cajaOficialIdDelCheque             — id de caja al que vincular el cheque propio
  *                                        emitido. Si no se pasa (o es null), se
@@ -52,8 +50,8 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
   const {
     fecha, descripcion, categoria,
     contactoId, beneficiarioCheque = null, registradoPorCheque,
-    estadoChequeTercero = 'depositado', beneficiarioTercero,
-    marcarTerceroEnCaja2 = false,
+    estadoChequeTercero = 'entregado', beneficiarioTercero,
+    marcarTerceroEnCaja2 = true,
     devolverIdCheque = false, cajaOficialIdDelCheque,
   } = opts
   const monto = opts.monto !== undefined ? opts.monto : (parseFloat(pago.monto) || 0)
@@ -68,8 +66,7 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
     for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update(cambios).eq('id', parseInt(chId))
   }
 
-  // Caja 2 (paralela): el movimiento y, si el módulo lo pide, los cheques de
-  // tercero. Antes nunca se marcaban acá: un cheque de Caja 2 usado para
+  // Caja 2 (paralela): el movimiento y los cheques de tercero. Antes nunca se marcaban acá: un cheque de Caja 2 usado para
   // pagar quedaba "en cartera" como si no se hubiera usado (pasó con el pago
   // a Braian Vega, cheque de $600.000).
   if (pago.es_paralelo) {
@@ -144,6 +141,9 @@ const ORIGENES_SIN_REVERSION = [
   ['ventas_granos', 'una venta de granos'],
 ]
 
+// De las tablas de arriba, las que ya guardan la lista completa de cajas.
+const TABLAS_CON_LISTA_DE_CAJAS = ['compras_insumos']
+
 const num = (x) => Number(x) || 0
 const listaPagos = (r) => (Array.isArray(r?.pagos_detalle) ? r.pagos_detalle : [])
 
@@ -175,7 +175,14 @@ export async function buscarOrigenesDeCaja(supabase, tablaCaja, id) {
   const otros = []
   const consultas = await Promise.all(ORIGENES_SIN_REVERSION.map(async ([tabla, etiqueta]) => {
     const { data } = await supabase.from(tabla).select('id').eq(col, id)
-    return { etiqueta, cantidad: (data || []).length }
+    const ids = new Set((data || []).map(r => r.id))
+    // Compras de insumos ahora guardan TODAS sus cajas en una lista: la
+    // segunda caja de un pago también tiene que quedar protegida.
+    if (TABLAS_CON_LISTA_DE_CAJAS.includes(tabla)) {
+      const { data: d2 } = await supabase.from(tabla).select('id').contains(colArray, [id])
+      ;(d2 || []).forEach(r => ids.add(r.id))
+    }
+    return { etiqueta, cantidad: ids.size }
   }))
   consultas.forEach(c => { if (c.cantidad > 0) otros.push(c) })
   return { fletes: fletes || [], gastos: g.filas, personal: pe.filas, otros, error: null }
