@@ -1,5 +1,5 @@
 import { ListaPagos } from './PagoFormulario'
-import { registrarMovimientoDePago } from '../shared/pagosLogic'
+import { registrarPagos, unirIds } from '../shared/pagosLogic'
 
 // Checklist de compras pendientes de pago — selección, precio (si falta) y
 // N° factura (si falta) por cada una. Usado tanto en Insumos (Alimentación
@@ -125,47 +125,24 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
 // actualizarPrecioReferencia(compra, precioUnit) — se llama solo cuando la
 // compra no tenía precio y se cargó ahora; cada módulo sabe a qué tabla de
 // stock (stock_insumos / stock_sanitario / stock_agro) le corresponde.
-function nuevoIdPago() {
-  try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID() } catch (e) { /* sigue abajo */ }
-  return `pg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
-const unirIds = (...listas) => {
-  const todos = [...new Set(listas.flat().filter(x => x != null).map(Number))]
-  return todos.length > 0 ? todos : null
-}
-
 export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
   creditoEntidad, creditoCuotas, creditoVencimiento, creditoEsDolares, cotizacionDolarCredito, creditoMontoUsd, monedas, cotizacionDolar, modos,
 }) {
-  const pagoGrupo = nuevoIdPago()
-  const cajaOficialIds = [], cajaParalelaIds = [], chequeEmitidoIds = []
-  // Cada forma de pago con monto, ya con los ids que generó en caja.
-  const lineas = []
-  for (const pago of pagos) {
-    const monto = parseFloat(pago.monto) || 0
-    if (!monto) continue
-    const linea = { ...pago, fecha: pago.fecha || fecha, _pago_grupo: pagoGrupo, _caja_id: null, _es_paralelo: !!pago.es_paralelo, _cheque_emitido_id: null }
-    // Canje y crédito no mueven caja (el proveedor cobra en mercadería o
-    // vía la financiera), pero cuentan como pagado.
-    if (pago.tipo === 'canje' || pago.tipo === 'credito') { lineas.push(linea); continue }
-    const r = await registrarMovimientoDePago(supabase, pago, {
-      fecha, descripcion, categoria: 'Compra insumos', monto,
-      contactoId: contactoId ? parseInt(contactoId) : null,
-      beneficiarioCheque: contactoNombre || null,
-      registradoPorCheque: registradoPor || null,
-      estadoChequeTercero: 'entregado',
-      beneficiarioTercero: contactoNombre || undefined,
-      marcarTerceroEnCaja2: true,
-      devolverIdCheque: true,
-    })
-    if (r.error) return { error: r.error }
-    if (r.cajaOficialId) cajaOficialIds.push(r.cajaOficialId)
-    if (r.cajaParalelaId) cajaParalelaIds.push(r.cajaParalelaId)
-    if (r.chequeEmitidoId) chequeEmitidoIds.push(r.chequeEmitidoId)
-    lineas.push({ ...linea, _caja_id: r.cajaParalelaId || r.cajaOficialId || null, _cheque_emitido_id: r.chequeEmitidoId || null })
-  }
+  // Caja + cheques de cada forma de pago: la función compartida (la misma de
+  // Personal y Fletes). Devuelve las líneas ya marcadas y TODOS los ids.
+  const reg = await registrarPagos(supabase, pagos, {
+    fecha, descripcion, categoria: 'Compra insumos',
+    contactoId: contactoId ? parseInt(contactoId) : null,
+    beneficiarioCheque: contactoNombre || null,
+    registradoPorCheque: registradoPor || null,
+    estadoChequeTercero: 'entregado',
+    beneficiarioTercero: contactoNombre || undefined,
+    marcarTerceroEnCaja2: true,
+  })
+  if (reg.error) return { error: reg.error }
+  const { lineas, cajaOficialIds, cajaParalelaIds, chequeEmitidoIds } = reg
 
   // Si parte del pago fue con crédito de una financiera/banco, el proveedor
   // ya cobró — se registra la deuda en Créditos, vinculada a la primera
@@ -192,6 +169,8 @@ export async function pagarComprasPendientes(supabase, {
       registrado_por: registradoPor || null,
     }).select().single()
     if (errCredito) return { error: errCredito }
+    // Se anota el crédito en su línea de pago, para poder deshacerlo después.
+    lineas.forEach(l => { if (l.tipo === 'credito') l._credito_id = cred.id })
     // Generar las cuotas reales (antes esto quedaba sin crear, así que el
     // crédito aparecía en Activos pero no había nada para "pagar" después).
     // Si son varias cuotas, se reparten mensualmente a partir del vencimiento

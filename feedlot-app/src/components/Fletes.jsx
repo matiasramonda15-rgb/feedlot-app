@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal } from '../shared/dateUtils'
 import { PAGO_INIT, ListaPagos, armarDetalleChequesTercero } from './PagoFormulario'
-import { registrarMovimientoDePago, mensajeErrorPago } from '../shared/pagosLogic'
+import { registrarPagos, unirIds, mensajeErrorPago, buscarFletesDelMismoPago, validarDeshacerFlete, revertirPagoDeFletes } from '../shared/pagosLogic'
 import { generarOrdenDePago } from '../shared/reciboLogic'
 
 const S = {
@@ -103,59 +103,54 @@ export default function Fletes({ usuario }) {
     const pagos = formPago.pagos.filter(p => parseFloat(p.monto) > 0)
     if (!pagos.length) { alert('Ingresá el monto'); return }
     setGuardando(true)
-    let caja_oficial_id = null, caja_paralela_id = null
     const ct = contactos.find(x => String(x.id) === formPago.contacto_id)
     // Con varios fletes del mismo pago, la descripción los menciona a todos
     // (por código de lote) en vez de solo el primero.
     const codigos = fletes.map(f => f.lotes?.codigo).filter(Boolean).join(', ')
     const transportistaDesc = fletes[0].transportista
     const desc = `Flete ${transportistaDesc}${fletes.length > 1 ? ` (${fletes.length} viajes)` : ''} · ${codigos}`
-    for (const pago of pagos) {
-      const monto = parseFloat(pago.monto)
-      if (pago.tipo === 'canje') continue  // canje: no mueve caja, se compensa solo en Contactos
-      if (pago.tipo === 'credito') {
-        const cuotas = parseInt(formPago.credito_cuotas) || 1
-        const { data: cred, error: errCred } = await supabase.from('creditos').insert({
-          entidad: formPago.credito_entidad || null,
-          descripcion: desc,
-          monto_total: monto, cant_cuotas: cuotas, monto_cuota: Math.round(monto / cuotas),
-          fecha_inicio: formPago.fecha, fecha_vencimiento: formPago.credito_vencimiento || null,
-          cuotas_pagadas: 0, saldo_pendiente: monto, estado: 'activo', registrado_por: usuario?.id,
-        }).select().single()
-        if (errCred) { alert('Error al crear el crédito: ' + errCred.message); setGuardando(false); return }
-        const cuotasAInsertar = []
-        for (let i = 0; i < cuotas; i++) {
-          let fechaCuota = formPago.credito_vencimiento || formPago.fecha
-          if (i > 0 && formPago.credito_vencimiento) {
-            const d = new Date(formPago.credito_vencimiento + 'T12:00:00')
-            d.setMonth(d.getMonth() + i)
-            fechaCuota = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-          }
-          cuotasAInsertar.push({ credito_id: cred.id, fecha: fechaCuota, nro_cuota: i + 1, estado: 'pendiente', monto: Math.round(monto / cuotas) })
+    // Caja + cheques de TODAS las formas de pago, con la función compartida
+    // (la misma de Personal e Insumos). Antes se guardaba solo la primera
+    // caja de cada tipo y, si se pagaba con dos formas de pago, la segunda
+    // quedaba suelta. Ahora cada cheque propio queda vinculado a su propia
+    // caja y se guardan todos los ids.
+    const reg = await registrarPagos(supabase, pagos, {
+      fecha: formPago.fecha, descripcion: desc, categoria: 'Flete',
+      contactoId: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
+      beneficiarioCheque: ct?.nombre || transportistaDesc,
+      registradoPorCheque: usuario?.id,
+      beneficiarioTercero: ct?.nombre || transportistaDesc || null,
+      chequesCartera,
+    })
+    if (reg.error) { alert(mensajeErrorPago(reg)); setGuardando(false); return }
+    const { lineas, cajaOficialIds, cajaParalelaIds, chequeEmitidoIds } = reg
+    // Crédito (financiera/banco): no mueve caja; se crea la deuda y se anota
+    // su id en la línea de pago.
+    for (const linea of lineas) {
+      if (linea.tipo !== 'credito') continue
+      const monto = parseFloat(linea.monto)
+      const cuotas = parseInt(formPago.credito_cuotas) || 1
+      const { data: cred, error: errCred } = await supabase.from('creditos').insert({
+        entidad: formPago.credito_entidad || null,
+        descripcion: desc,
+        monto_total: monto, cant_cuotas: cuotas, monto_cuota: Math.round(monto / cuotas),
+        fecha_inicio: formPago.fecha, fecha_vencimiento: formPago.credito_vencimiento || null,
+        cuotas_pagadas: 0, saldo_pendiente: monto, estado: 'activo', registrado_por: usuario?.id,
+      }).select().single()
+      if (errCred) { alert('Error al crear el crédito: ' + errCred.message); setGuardando(false); return }
+      linea._credito_id = cred.id
+      const cuotasAInsertar = []
+      for (let i = 0; i < cuotas; i++) {
+        let fechaCuota = formPago.credito_vencimiento || formPago.fecha
+        if (i > 0 && formPago.credito_vencimiento) {
+          const d = new Date(formPago.credito_vencimiento + 'T12:00:00')
+          d.setMonth(d.getMonth() + i)
+          fechaCuota = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
         }
-        const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
-        if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
-        continue
+        cuotasAInsertar.push({ credito_id: cred.id, fecha: fechaCuota, nro_cuota: i + 1, estado: 'pendiente', monto: Math.round(monto / cuotas) })
       }
-      const r = await registrarMovimientoDePago(supabase, pago, {
-        fecha: formPago.fecha, descripcion: desc, categoria: 'Flete', monto,
-        contactoId: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
-        beneficiarioCheque: ct?.nombre || transportistaDesc,
-        registradoPorCheque: usuario?.id,
-        beneficiarioTercero: ct?.nombre || transportistaDesc || null,
-        // Fletes guarda un solo id de caja y su "eliminar" borra los cheques por ese id
-        cajaOficialIdDelCheque: caja_oficial_id,
-      })
-      if (r.error) { alert(mensajeErrorPago(r)); setGuardando(false); return }
-      if (pago.es_paralelo) {
-        if (!caja_paralela_id) caja_paralela_id = r.cajaParalelaId
-      } else {
-        if (!caja_oficial_id) caja_oficial_id = r.cajaOficialId
-        // Detalle para el recibo (número, banco y fechas de cada cheque de tercero)
-        if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-          pago.cheque_tercero_detalle = armarDetalleChequesTercero(pago.cheque_tercero_ids, chequesCartera)
-        }
-      }
+      const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
+      if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
     }
     const totalPagado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     // Con varios fletes en el mismo pago, cada uno se marca pagado con su
@@ -169,9 +164,10 @@ export default function Fletes({ usuario }) {
       const { error: eFlete } = await supabase.from('fletes').update({
         estado_pago: 'pagado',
         monto: flete.monto || montoFlete,
-        caja_oficial_id, caja_paralela_id,
+        caja_oficial_id: cajaOficialIds[0] || null, caja_paralela_id: cajaParalelaIds[0] || null,
+        caja_oficial_ids: unirIds(cajaOficialIds), caja_paralela_ids: unirIds(cajaParalelaIds), cheque_emitido_ids: unirIds(chequeEmitidoIds),
         contacto_id: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
-        pagos_detalle: pagos,
+        pagos_detalle: lineas,
         monto_grupo: fletes.length > 1 ? totalPagado : null,
         forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
         es_paralelo: pagos.some(p => p.es_paralelo),
@@ -182,7 +178,7 @@ export default function Fletes({ usuario }) {
       destinatario: ct?.nombre || transportistaDesc,
       fecha: formPago.fecha,
       concepto: desc,
-      pagos,
+      pagos: lineas,
     })
     setPagandoId(null)
     setSeleccionados([])
@@ -391,18 +387,24 @@ export default function Fletes({ usuario }) {
                           style={{ padding: '3px 8px', fontSize: 11, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>💳 Pagar</button>
                       )}
                       <button onClick={async () => {
-                        if (!confirm('¿Eliminar este flete? Se eliminará también de la caja y se revertirán los cheques usados.')) return
-                        // Antes esto borraba directo, dejando la caja y los
-                        // cheques sueltos si el flete ya estaba pagado.
-                        if (f.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', f.caja_oficial_id)
-                        if (f.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', f.caja_paralela_id)
-                        for (const p of (f.pagos_detalle || [])) {
-                          if (p.subtipo_cheque === 'propio') {
-                            if (f.caja_oficial_id) await supabase.from('cheques').delete().eq('caja_oficial_id', f.caja_oficial_id).eq('tipo', 'emitido')
-                          } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
-                            for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
-                          }
-                        }
+                        // Misma regla que eliminar el pago desde Caja: el pago se deshace
+                        // COMPLETO. Si este flete se pagó junto con otros, esos otros
+                        // vuelven a quedar pendientes (antes quedaban "pagados" sin la
+                        // plata en caja, porque se borraba la caja que compartían).
+                        let otrosDelPago = []
+                        if (f.estado_pago === 'pagado') {
+                          const r = await buscarFletesDelMismoPago(supabase, f)
+                          if (r.error) { alert('No se pudo revisar el pago de este flete: ' + r.error.message + '\n\nNo se cambió nada.'); return }
+                          const v = r.fletes.map(validarDeshacerFlete).find(x => !x.ok)
+                          if (v) { alert(v.motivo + '\n\nNo se cambió nada.'); return }
+                          otrosDelPago = r.fletes.filter(x => x.id !== f.id)
+                          const aviso = otrosDelPago.length > 0
+                            ? `¿Eliminar este flete?\n\nSe pagó junto con ${otrosDelPago.length} flete(s) más (${otrosDelPago.map(x => x.transportista || 'sin transportista').join(', ')}). Se deshace el pago completo: se eliminan sus movimientos de caja, los cheques se revierten y esos otros fletes vuelven a quedar PENDIENTES.`
+                            : '¿Eliminar este flete? Se eliminará también de la caja y se revertirán los cheques usados.'
+                          if (!confirm(aviso)) return
+                          const rev = await revertirPagoDeFletes(supabase, r.fletes)
+                          if (rev.error) { alert('No se pudo deshacer el pago: ' + rev.error.message + '\n\nRevisá el flete antes de volver a intentar.'); await cargar(); return }
+                        } else if (!confirm('¿Eliminar este flete?')) return
                         await supabase.from('fletes').delete().eq('id', f.id)
                         await cargar()
                       }} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>🗑</button>

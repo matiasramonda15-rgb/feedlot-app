@@ -107,6 +107,60 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
   return resultado
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Registrar TODAS las formas de pago de un pago (un formulario completo).
+//
+// Recorre las líneas del formulario, registra caja + cheques de cada una con
+// registrarMovimientoDePago, y devuelve:
+//   lineas            — las formas de pago con monto, listas para guardar en
+//                       pagos_detalle: cada una con su fecha, el id de su
+//                       movimiento de caja (_caja_id), su cheque emitido
+//                       (_cheque_emitido_id), si fue Caja 2 (_es_paralelo), el
+//                       detalle de los cheques de tercero y un id del pago
+//                       (_pago_grupo) que comparten todos los registros
+//                       pagados juntos.
+//   cajaOficialIds / cajaParalelaIds / chequeEmitidoIds — TODOS los ids
+//                       creados (no solo el primero: ese fue el origen de
+//                       las cajas huérfanas en Personal, Insumos y Fletes).
+// Canje y crédito no mueven caja: pasan como línea (el crédito lo crea cada
+// módulo y le agrega _credito_id). Las opciones son las mismas de
+// registrarMovimientoDePago, más chequesCartera (para el detalle del recibo).
+// Si algo falla devuelve { error, etapa } — lo ya registrado queda en lineas.
+// ───────────────────────────────────────────────────────────────────────────
+export function nuevoIdPago() {
+  try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID() } catch (e) { /* sigue abajo */ }
+  return `pg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+export function unirIds(...listas) {
+  const todos = [...new Set(listas.flat().filter(x => x != null).map(Number))]
+  return todos.length > 0 ? todos : null
+}
+
+export async function registrarPagos(supabase, pagos, opts) {
+  const { fecha, chequesCartera, ...optsMovimiento } = opts
+  const res = { pagoGrupo: nuevoIdPago(), lineas: [], cajaOficialIds: [], cajaParalelaIds: [], chequeEmitidoIds: [], error: null, etapa: null }
+  for (const pago of (pagos || [])) {
+    const monto = parseFloat(pago.monto) || 0
+    if (!monto) continue
+    const linea = { ...pago, fecha: pago.fecha || fecha, _pago_grupo: res.pagoGrupo, _caja_id: null, _es_paralelo: !!pago.es_paralelo, _cheque_emitido_id: null }
+    if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0 && !(pago.cheque_tercero_detalle?.length > 0) && chequesCartera) {
+      linea.cheque_tercero_detalle = (pago.cheque_tercero_ids || []).map(id => {
+        const ch = chequesCartera.find(c => String(c.id) === String(id))
+        return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento, fecha_cobro: ch.fecha_cobro } : null
+      }).filter(Boolean)
+    }
+    if (pago.tipo === 'canje' || pago.tipo === 'credito') { res.lineas.push(linea); continue }
+    const r = await registrarMovimientoDePago(supabase, pago, { ...optsMovimiento, fecha, monto, devolverIdCheque: true })
+    if (r.error) return { ...res, error: r.error, etapa: r.etapa }
+    if (r.cajaOficialId) res.cajaOficialIds.push(r.cajaOficialId)
+    if (r.cajaParalelaId) res.cajaParalelaIds.push(r.cajaParalelaId)
+    if (r.chequeEmitidoId) res.chequeEmitidoIds.push(r.chequeEmitidoId)
+    res.lineas.push({ ...linea, _caja_id: r.cajaParalelaId || r.cajaOficialId || null, _cheque_emitido_id: r.chequeEmitidoId || null })
+  }
+  return res
+}
+
 // Mensaje para mostrar cuando registrarMovimientoDePago devuelve error — el
 // mismo texto que mostraba cada módulo antes de usar esta función.
 export function mensajeErrorPago(resultado) {
@@ -163,10 +217,11 @@ async function buscarPorPrincipalYLista(supabase, tabla, col, colArray, id) {
 export async function buscarOrigenesDeCaja(supabase, tablaCaja, id) {
   const col = tablaCaja === 'caja_paralela' ? 'caja_paralela_id' : 'caja_oficial_id'
   const colArray = tablaCaja === 'caja_paralela' ? 'caja_paralela_ids' : 'caja_oficial_ids'
-  const { data: fletes, error } = await supabase.from('fletes').select('*').eq(col, id)
-  if (error) return { fletes: [], gastos: [], personal: [], otros: [], error }
-  // Gastos y pagos de personal pueden tener varias cajas: se busca por la
+  // Fletes, gastos y pagos de personal pueden tener varias cajas: se busca por la
   // principal y por la lista (array), y se unen sin duplicar.
+  const fl = await buscarPorPrincipalYLista(supabase, 'fletes', col, colArray, id)
+  if (fl.error) return { fletes: [], gastos: [], personal: [], otros: [], error: fl.error }
+  const fletes = fl.filas
   const g = await buscarPorPrincipalYLista(supabase, 'gastos_generales', col, colArray, id)
   if (g.error) return { fletes: [], gastos: [], personal: [], otros: [], error: g.error }
   const pe = await buscarPorPrincipalYLista(supabase, 'pagos_empleados', col, colArray, id)
@@ -242,12 +297,48 @@ export async function revertirEfectosDeGasto(supabase, gasto) {
   return { error: null }
 }
 
+// Solo se mandan las columnas de listas si el registro las trae (así el
+// código funciona igual antes y después de agregarlas a la tabla).
+const TIENE_LISTAS = (r) => r && ('caja_oficial_ids' in r || 'caja_paralela_ids' in r || 'cheque_emitido_ids' in r)
+
+/**
+ * Todos los fletes pagados en el MISMO pago que este (incluido él): los que
+ * comparten alguna caja o el id de pago. Sirve para que "Eliminar" en Fletes
+ * deshaga el pago completo, igual que eliminar el movimiento desde Caja.
+ */
+export async function buscarFletesDelMismoPago(supabase, flete) {
+  const vistos = new Map([[flete.id, flete]])
+  const agregar = (filas) => (filas || []).forEach(r => { if (!vistos.has(r.id)) vistos.set(r.id, r) })
+  const oficial = [...new Set([...(flete.caja_oficial_ids || []), ...(flete.caja_oficial_id ? [flete.caja_oficial_id] : [])])]
+  const paralela = [...new Set([...(flete.caja_paralela_ids || []), ...(flete.caja_paralela_id ? [flete.caja_paralela_id] : [])])]
+  for (const id of oficial) {
+    const r = await buscarPorPrincipalYLista(supabase, 'fletes', 'caja_oficial_id', 'caja_oficial_ids', id)
+    if (r.error) return { fletes: null, error: r.error }
+    agregar(r.filas)
+  }
+  for (const id of paralela) {
+    const r = await buscarPorPrincipalYLista(supabase, 'fletes', 'caja_paralela_id', 'caja_paralela_ids', id)
+    if (r.error) return { fletes: null, error: r.error }
+    agregar(r.filas)
+  }
+  const grupos = [...new Set(listaPagos(flete).map(p => p._pago_grupo).filter(Boolean))]
+  for (const g of grupos) {
+    const { data, error } = await supabase.from('fletes').select('*').contains('pagos_detalle', [{ _pago_grupo: g }])
+    if (error) return { fletes: null, error }
+    agregar(data)
+  }
+  return { fletes: [...vistos.values()], error: null }
+}
+
 /** Deja uno o varios fletes PENDIENTES otra vez (caja, cheques y datos del pago). */
 export async function revertirPagoDeFletes(supabase, fletes) {
-  const idsOficial = new Set(), idsParalela = new Set()
+  const idsOficial = new Set(), idsParalela = new Set(), idsChequeEmitido = new Set()
   fletes.forEach(f => {
     if (f.caja_oficial_id) idsOficial.add(f.caja_oficial_id)
     if (f.caja_paralela_id) idsParalela.add(f.caja_paralela_id)
+    ;(f.caja_oficial_ids || []).forEach(i => idsOficial.add(i))
+    ;(f.caja_paralela_ids || []).forEach(i => idsParalela.add(i))
+    ;(f.cheque_emitido_ids || []).forEach(i => idsChequeEmitido.add(i))
   })
   for (const id of idsOficial) {
     const { error } = await supabase.from('caja_oficial').delete().eq('id', id)
@@ -257,10 +348,14 @@ export async function revertirPagoDeFletes(supabase, fletes) {
     const { error } = await supabase.from('caja_paralela').delete().eq('id', id)
     if (error) return { error, etapa: 'caja' }
   }
+  // Cheques propios: los nuevos por su id; los viejos (sin id guardado) por
+  // la caja a la que quedaron vinculados.
+  for (const chId of idsChequeEmitido) await supabase.from('cheques').delete().eq('id', chId)
+  const cajasDeFletes = [...idsOficial]
   for (const f of fletes) {
     for (const p of listaPagos(f)) {
       if (p.subtipo_cheque === 'propio') {
-        if (f.caja_oficial_id) await supabase.from('cheques').delete().eq('caja_oficial_id', f.caja_oficial_id).eq('tipo', 'emitido')
+        for (const cid of cajasDeFletes) await supabase.from('cheques').delete().eq('caja_oficial_id', cid).eq('tipo', 'emitido')
       } else if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
         for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
       }
@@ -270,6 +365,7 @@ export async function revertirPagoDeFletes(supabase, fletes) {
     const { error } = await supabase.from('fletes').update({
       estado_pago: 'pendiente', forma_pago: null, es_paralelo: false, contacto_id: null,
       caja_oficial_id: null, caja_paralela_id: null, pagos_detalle: null, monto_grupo: null,
+      ...(TIENE_LISTAS(f) ? { caja_oficial_ids: null, caja_paralela_ids: null, cheque_emitido_ids: null } : {}),
     }).eq('id', f.id)
     if (error) return { error, etapa: 'flete' }
   }
