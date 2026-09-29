@@ -28,6 +28,14 @@
  *                                        haciendo la mayoría) o 'entregado'
  *   beneficiarioTercero                — si se pasa, se guarda como beneficiario
  *                                        al marcar el cheque de tercero
+ *   marcarTerceroEnCaja2               — si es true, los cheques de tercero de
+ *                                        una línea de Caja 2 también se marcan
+ *                                        (estado + beneficiario). Por defecto
+ *                                        false: hasta ahora Caja 2 no los tocaba
+ *                                        y Gastos los marca por su cuenta.
+ *                                        Personal lo pide en true. Cuando Gastos
+ *                                        y Fletes se revisen, pasa a ser la regla
+ *                                        de todos.
  *   devolverIdCheque                   — pide el id del cheque emitido creado
  *   cajaOficialIdDelCheque             — id de caja al que vincular el cheque propio
  *                                        emitido. Si no se pasa (o es null), se
@@ -45,16 +53,30 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
     fecha, descripcion, categoria,
     contactoId, beneficiarioCheque = null, registradoPorCheque,
     estadoChequeTercero = 'depositado', beneficiarioTercero,
+    marcarTerceroEnCaja2 = false,
     devolverIdCheque = false, cajaOficialIdDelCheque,
   } = opts
   const monto = opts.monto !== undefined ? opts.monto : (parseFloat(pago.monto) || 0)
   const resultado = { cajaOficialId: null, cajaParalelaId: null, chequeEmitidoId: null, error: null, etapa: null }
 
-  // Caja 2 (paralela): solo el movimiento, sin cheques.
+  // Marca los cheques de tercero elegidos en esta línea (entregados a quien
+  // se le paga). Mismo cambio para Caja 1 y Caja 2.
+  const marcarChequesTercero = async () => {
+    if (pago.subtipo_cheque !== 'tercero' || !(pago.cheque_tercero_ids?.length > 0)) return
+    const cambios = { estado: estadoChequeTercero }
+    if (beneficiarioTercero !== undefined) cambios.beneficiario = beneficiarioTercero
+    for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update(cambios).eq('id', parseInt(chId))
+  }
+
+  // Caja 2 (paralela): el movimiento y, si el módulo lo pide, los cheques de
+  // tercero. Antes nunca se marcaban acá: un cheque de Caja 2 usado para
+  // pagar quedaba "en cartera" como si no se hubiera usado (pasó con el pago
+  // a Braian Vega, cheque de $600.000).
   if (pago.es_paralelo) {
     const { data, error } = await supabase.from('caja_paralela').insert({ fecha, tipo: 'egreso', descripcion, monto }).select().single()
     if (error) return { ...resultado, error, etapa: 'caja_paralela' }
     resultado.cajaParalelaId = data?.id
+    if (marcarTerceroEnCaja2) await marcarChequesTercero()
     return resultado
   }
 
@@ -81,10 +103,8 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
       const { error: errCheq } = await supabase.from('cheques').insert(filaCheque)
       if (errCheq) return { ...resultado, error: errCheq, etapa: 'cheque' }
     }
-  } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-    const cambios = { estado: estadoChequeTercero }
-    if (beneficiarioTercero !== undefined) cambios.beneficiario = beneficiarioTercero
-    for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update(cambios).eq('id', parseInt(chId))
+  } else {
+    await marcarChequesTercero()
   }
 
   return resultado
@@ -307,8 +327,20 @@ export async function revertirPagoDePersonal(supabase, pago) {
     const { error } = await supabase.from('caja_paralela').delete().eq('id', id)
     if (error) return { error, etapa: 'caja' }
   }
-  // Cheques de tercero recibidos como pago (quedan "entregado" a nombre del
-  // empleado) vuelven a la cartera en vez de borrarse.
+  // Cheques de tercero entregados al empleado: vuelven a la cartera en vez de
+  // borrarse. Los pagos nuevos guardan qué cheques se usaron en pagos_detalle
+  // (Caja 1 y Caja 2); los viejos no, así que para esos se sigue buscando por
+  // el id de caja como antes.
+  const idsTercero = new Set()
+  for (const p of listaPagos(pago)) {
+    if (p.subtipo_cheque !== 'tercero') continue
+    ;(p.cheque_tercero_ids || []).forEach(i => idsTercero.add(parseInt(i)))
+    ;(p.cheque_tercero_detalle || []).forEach(c => { if (c?.id) idsTercero.add(parseInt(c.id)) })
+  }
+  for (const chId of idsTercero) {
+    if (!chId) continue
+    await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', chId)
+  }
   for (const id of oficialIds) {
     const relacionados = await supabase.from('cheques').select('id').eq('caja_oficial_id', id).eq('tipo', 'recibido')
     for (const ch of (relacionados.data || [])) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null, caja_oficial_id: null }).eq('id', ch.id)
@@ -353,7 +385,7 @@ export function mensajeDeshacerPago(orig) {
     ;(r.caja_paralela_ids || (r.caja_paralela_id ? [r.caja_paralela_id] : [])).forEach(i => cajas.add('p' + i))
   })
   const otrosMov = Math.max(0, cajas.size - 1)
-  const pagos = [...orig.fletes, ...orig.gastos].flatMap(listaPagos)
+  const pagos = [...orig.fletes, ...orig.gastos, ...personal].flatMap(listaPagos)
   const hayCheques = pagos.some(p => p.subtipo_cheque === 'propio' || (p.subtipo_cheque === 'tercero' && (p.cheque_tercero_ids?.length > 0 || p.cheque_tercero_detalle?.length > 0)))
   const hayAnticipo = pagos.some(p => p.tipo === 'anticipo')
   return `Este movimiento es el pago de ${items.join(' y ')}.\n\n` +

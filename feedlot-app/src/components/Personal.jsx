@@ -3,10 +3,36 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble } from '../shared/reciboLogic'
-import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { PAGO_INIT, ListaPagos, armarDetalleChequesTercero } from './PagoFormulario'
 import { registrarMovimientoDePago, mensajeErrorPago, revertirPagoDePersonal } from '../shared/pagosLogic'
 
 const PAGO_INIT_P = PAGO_INIT
+
+// Las fechas vienen de la base como 'AAAA-MM-DD'. new Date('2026-09-28') las
+// toma como medianoche UTC, que en Argentina es el día ANTERIOR a las 21 hs:
+// por eso la tabla mostraba 27/09 para un pago del 28/09 (y un pago del 1/1
+// contaba para el año anterior). Tomándolas al mediodía no se corren nunca.
+const diaDe = f => new Date(f + 'T12:00:00')
+const fmtCorta = f => f ? diaDe(f).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
+const fmtLarga = f => f ? diaDe(f).toLocaleDateString('es-AR') : '—'
+const pesos = n => '$' + (Number(n) || 0).toLocaleString('es-AR')
+
+// Una línea de "forma de pago" en palabras, para el recibo. Si es con cheques
+// de tercero, lista cada cheque (número, banco, monto, vencimiento).
+function describirFormaPago(p) {
+  const caja = p.es_paralelo ? 'Caja 2' : 'Caja 1'
+  const medio = p.tipo === 'e-cheq' ? 'E-cheq' : p.tipo === 'cheque' ? 'Cheque' : p.tipo === 'efectivo' ? 'Efectivo' : p.tipo === 'transferencia' ? 'Transferencia' : (p.tipo || 'Pago')
+  if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.subtipo_cheque === 'tercero') {
+    const cheques = (p.cheque_tercero_detalle || []).map(c =>
+      `#${c.numero || 's/n'} ${c.banco || ''} ${pesos(c.monto)} (vto ${fmtCorta(c.fecha_vencimiento)})`.replace(/\s+/g, ' '))
+    return `${medio} de tercero — ${cheques.join(' · ') || pesos(p.monto)} — ${caja}`
+  }
+  if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.subtipo_cheque === 'propio') {
+    const c = p.cheque_propio || {}
+    return `${medio} propio #${c.numero || 's/n'} ${c.banco || ''} ${pesos(p.monto)} (vto ${fmtCorta(c.fecha_vencimiento)}) — ${caja}`.replace(/\s+/g, ' ')
+  }
+  return `${medio} ${pesos(p.monto)} — ${caja}`
+}
 
 
 const S = {
@@ -103,12 +129,26 @@ export default function Personal({ usuario }) {
       const r = await registrarMovimientoDePago(supabase, p, {
         fecha: formPago.fecha, descripcion: desc, categoria: 'Personal', monto,
         beneficiarioCheque: emp?.nombre || null, devolverIdCheque: true,
+        // Un cheque de tercero con el que se le paga a un empleado queda
+        // ENTREGADO a su nombre (antes quedaba "depositado", que no es lo que
+        // pasó: le pasó a Oscar y a Braian). Y se marca también si es de Caja 2.
+        estadoChequeTercero: 'entregado', beneficiarioTercero: emp?.nombre || null,
+        marcarTerceroEnCaja2: true,
       })
       if (r.error) { alert(mensajeErrorPago(r)); setGuardando(false); return }
       if (p.es_paralelo) { if (!caja_paralela_id) caja_paralela_id = r.cajaParalelaId; if (r.cajaParalelaId) cajaParalelaIds.push(r.cajaParalelaId) }
       else { if (!caja_oficial_id) caja_oficial_id = r.cajaOficialId; if (r.cajaOficialId) cajaOficialIds.push(r.cajaOficialId) }
       if (r.chequeEmitidoId) chequeEmitidoIds.push(r.chequeEmitidoId)
     }
+    // Detalle de cada forma de pago (qué cheques, de qué caja) — lo usan el
+    // recibo y el "Eliminar" para devolver los cheques a la cartera. Antes
+    // Personal no lo guardaba y después no había forma de saber con qué se pagó.
+    const pagosDetalle = pagosForm.filter(p => parseFloat(p.monto) > 0).map(p => ({
+      ...p,
+      cheque_tercero_detalle: p.subtipo_cheque === 'tercero'
+        ? ((p.cheque_tercero_detalle?.length > 0) ? p.cheque_tercero_detalle : armarDetalleChequesTercero(p.cheque_tercero_ids, chequesCartera))
+        : [],
+    }))
     // Se guardan TODOS los ids (no solo el primero) — antes, un pago dividido
     // en varias formas de pago (ej. 2 cheques de tercero) solo recordaba la
     // última caja creada, y las anteriores quedaban sueltas sin poder
@@ -123,6 +163,7 @@ export default function Personal({ usuario }) {
       caja_oficial_ids: cajaOficialIds.length > 0 ? cajaOficialIds : null,
       caja_paralela_ids: cajaParalelaIds.length > 0 ? cajaParalelaIds : null,
       cheque_emitido_ids: chequeEmitidoIds.length > 0 ? chequeEmitidoIds : null,
+      pagos_detalle: pagosDetalle,
     })
     if (errPago) { alert('El pago se registró en caja, pero no se pudo guardar el detalle del pago: ' + errPago.message); setGuardando(false); return }
     await cargar()
@@ -152,7 +193,7 @@ export default function Personal({ usuario }) {
   // corriente como en Contactos, porque acá no hay "deuda": la empresa le
   // paga a él, en un solo sentido).
   function imprimirResumenEmpleado(emp, pagosEmp) {
-    const ordenados = [...pagosEmp].sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+    const ordenados = [...pagosEmp].sort((a, b) => diaDe(a.fecha) - diaDe(b.fecha))
     const total = ordenados.reduce((s, p) => s + (p.monto || 0), 0)
     const filas = ordenados.map(p => `
       <tr>
@@ -189,7 +230,7 @@ export default function Personal({ usuario }) {
   const empleadoSel = empleados.find(e => String(e.id) === String(empleadoSelId))
   const pagosSel = empleadoSelId ? pagos.filter(p => String(p.empleado_id) === String(empleadoSelId)) : pagos
   const anio = new Date().getFullYear()
-  const pagosAnio = pagos.filter(p => new Date(p.fecha).getFullYear() === anio)
+  const pagosAnio = pagos.filter(p => diaDe(p.fecha).getFullYear() === anio)
   const totalAnio = pagosAnio.reduce((s, p) => s + (p.monto || 0), 0)
   const sueldosBase = empleados.filter(e => e.activo).reduce((s, e) => s + (e.sueldo_base || 0), 0)
 
@@ -268,7 +309,7 @@ export default function Personal({ usuario }) {
 
           {empleados.map(e => {
             const pagosEmp = pagos.filter(p => p.empleado_id === e.id)
-            const totalEmp = pagosEmp.filter(p => new Date(p.fecha).getFullYear() === anio).reduce((s, p) => s + (p.monto || 0), 0)
+            const totalEmp = pagosEmp.filter(p => diaDe(p.fecha).getFullYear() === anio).reduce((s, p) => s + (p.monto || 0), 0)
             const isSel = String(e.id) === String(empleadoSelId)
             return (
               <div key={e.id} style={{ border: `1px solid ${editandoEmp?.id === e.id ? S.accent : isSel ? S.accent : S.border}`, borderRadius: 8, marginBottom: 6, overflow: 'hidden', opacity: e.activo ? 1 : 0.6 }}>
@@ -366,7 +407,7 @@ export default function Personal({ usuario }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1rem' }}>
               {[
                 { label: 'Sueldo base', val: empleadoSel.sueldo_base ? `$${empleadoSel.sueldo_base.toLocaleString('es-AR')}` : '—' },
-                { label: `Pagado en ${anio}`, val: `$${pagosSel.filter(p => new Date(p.fecha).getFullYear() === anio).reduce((s, p) => s + (p.monto || 0), 0).toLocaleString('es-AR')}`, color: S.green },
+                { label: `Pagado en ${anio}`, val: `$${pagosSel.filter(p => diaDe(p.fecha).getFullYear() === anio).reduce((s, p) => s + (p.monto || 0), 0).toLocaleString('es-AR')}`, color: S.green },
                 { label: 'Total histórico', val: `$${pagosSel.reduce((s, p) => s + (p.monto || 0), 0).toLocaleString('es-AR')}` },
               ].map((m, i) => (
                 <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '.85rem' }}>
@@ -446,7 +487,7 @@ export default function Personal({ usuario }) {
                   {pagosSel.length === 0 && <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay pagos registrados.</td></tr>}
                   {pagosSel.map(p => (
                     <tr key={p.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(p.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12 }}>{fmtCorta(p.fecha)}</td>
                       <td style={{ padding: '9px 12px', fontWeight: 600 }}>{p.empleados?.nombre}</td>
                       <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.accentLight, color: S.accent }}>{p.tipo}</span></td>
                       <td style={{ padding: '9px 12px', color: S.muted }}>{p.concepto || '—'}</td>
@@ -456,12 +497,17 @@ export default function Personal({ usuario }) {
                           <button onClick={async () => {
                             await abrirReciboDoble(supabase, {
                               titulo: 'Recibo de Pago',
-                              fecha: new Date(p.fecha).toLocaleDateString('es-AR'),
+                              fecha: fmtLarga(p.fecha),
                               filas: [
                                 ['Empleado', p.empleados?.nombre || '—'],
-                                ['Fecha de pago', new Date(p.fecha).toLocaleDateString('es-AR')],
+                                ['Fecha de pago', fmtLarga(p.fecha)],
                                 ['Tipo', p.tipo],
                                 ['Concepto', p.concepto || '—'],
+                                // Una fila por forma de pago, con cada cheque
+                                // detallado. Los pagos viejos no tienen detalle
+                                // guardado y salen como antes.
+                                ...(Array.isArray(p.pagos_detalle) ? p.pagos_detalle : []).map((fp, i, arr) =>
+                                  [arr.length > 1 ? `Forma de pago ${i + 1}` : 'Forma de pago', describirFormaPago(fp)]),
                               ],
                               montoLabel: 'TOTAL ABONADO',
                               monto: `$${p.monto?.toLocaleString('es-AR')}`,
