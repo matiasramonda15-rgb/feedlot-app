@@ -1387,7 +1387,6 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       fecha: formPagoGrupal.fecha, descripcion: desc, categoria: 'Orden de trabajo agricultura',
       beneficiarioCheque: provs || null, registradoPorCheque: usuario?.id,
       beneficiarioTercero: provs || null, chequesCartera,
-      canjeEnCaja: true, // como siempre hizo esta pantalla
     })
     if (reg.error) { alert(mensajeErrorPago(reg) + (reg.lineas.length ? '\n\nOjo: una parte del pago ya quedó registrada en caja — revisala antes de volver a pagar.' : '')); setGuardandoPago(false); return }
     const { lineas, cajaOficialIds, cajaParalelaIds, chequeEmitidoIds } = reg
@@ -2288,7 +2287,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   </div>
 
                   <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
-                  <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
+                  <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo  />
 
 
                   <div style={{ background: Math.abs(totalSelec-totalPagoGrupal) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(totalSelec-totalPagoGrupal) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: '1rem' }}>
@@ -3441,7 +3440,6 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
       fecha: formPago.fecha, descripcion: desc, categoria: 'Arriendo agricultura',
       beneficiarioCheque: v.campos?.propietario || null, registradoPorCheque: usuario?.id,
       beneficiarioTercero: v.campos?.propietario || null, chequesCartera,
-      canjeEnCaja: true, // como siempre hizo esta pantalla
     })
     if (reg.error) { alert(mensajeErrorPago(reg) + (reg.lineas.length ? '\n\nOjo: una parte del pago ya quedó registrada en caja — revisala antes de volver a pagar.' : '')); setGuardandoPago(false); return }
 
@@ -3668,7 +3666,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
                           <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
                         </div>
                         <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
-                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }]} />
+                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo  />
 
                         {v.monto_total && (
                           <div style={{ background: Math.abs(v.monto_total - totalPagos) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(v.monto_total - totalPagos) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
@@ -3922,7 +3920,6 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         pagos: formCompra.pagos, fecha: formCompra.fecha, descripcion: desc,
         contactoNombre: formCompra.proveedor || null, registradoPor: usuario?.id,
         categoriaCaja: 'Compra insumos Agricultura',
-        canjeEnCaja: true, // como siempre hizo esta pantalla (ver registrarPagos)
         creditoEntidad: formCompra.credito_entidad, creditoCuotas: formCompra.credito_cuotas, creditoVencimiento: formCompra.credito_vencimiento,
         creditoEsDolares: formCompra.credito_es_dolares, cotizacionDolarCredito: cotizacionDolar, creditoMontoUsd: formCompra.credito_monto_usd,
       })
@@ -4042,7 +4039,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                   <input type="date" value={formPagoGrupal.fecha} onChange={e => setFormPagoGrupal({...formPagoGrupal, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
                 </div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
-                <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }, { value: 'credito', label: '🏦 Crédito (financiera/banco)' }]} />
+                <ListaPagos pagos={formPagoGrupal.pagos} onChangePagos={n => setFormPagoGrupal({...formPagoGrupal, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (financiera/banco)' }]} />
                 {formPagoGrupal.pagos.some(p => p.tipo === 'credito') && (
                   <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginBottom: 10 }}>
                     <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
@@ -4243,7 +4240,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           {/* Formas de pago */}
           {pagarAhora && <div style={{ marginBottom: '1rem' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Formas de pago</div>
-            <ListaPagos pagos={formCompra.pagos} onChangePagos={n => setFormCompra({...formCompra, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'cuenta_corriente', label: 'Cuenta corriente' }, { value: 'credito', label: '🏦 Crédito (financiera/banco)' }]} />
+            <ListaPagos pagos={formCompra.pagos} onChangePagos={n => setFormCompra({...formCompra, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (financiera/banco)' }]} />
             {formCompra.pagos.some(p => p.tipo === 'credito') && (
               <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginBottom: '1rem' }}>
                 <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
