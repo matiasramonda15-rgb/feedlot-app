@@ -3844,29 +3844,14 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     if (pagarAhora && Math.abs(total - totalPagos) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`); return }
     setGuardando(true)
 
-    let caja_oficial_id = null, caja_paralela_id = null
     const desc = `Compra ${formCompra.insumo_nombre}${formCompra.proveedor ? ` — ${formCompra.proveedor}` : ''}`
 
-    if (pagarAhora) for (const pago of formCompra.pagos) {
-      const monto = parseFloat(pago.monto) || 0
-      if (!monto) continue
-      if (pago.tipo === 'credito') continue  // no mueve caja — se registra en Créditos después de guardar la compra
-      const formaPago = pago.tipo
-      if (pago.es_paralelo) {
-        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formCompra.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-        if (!caja_paralela_id) caja_paralela_id = cp?.id || null
-      } else {
-        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formCompra.fecha, tipo: 'egreso', categoria: 'Compra insumos Agricultura', descripcion: desc, monto, forma_pago: formaPago }).select().single()
-        if (!caja_oficial_id) caja_oficial_id = co?.id || null
-      }
-      if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { error: eCheqStock } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formCompra.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, beneficiario: formCompra.proveedor || null, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
-        if (eCheqStock) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqStock.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'entregado', beneficiario: formCompra.proveedor || null }).eq('id', parseInt(chId))
-      }
-    }
-
+    // La compra se guarda SIEMPRE como pendiente. Si se marcó "Pagar ahora",
+    // se paga enseguida con el mismo código que "Pagar" en compras
+    // pendientes (pagarComprasPendientes) — un solo lugar de pago para todas
+    // las compras. Si el pago falla, la compra queda guardada como pendiente
+    // (antes podía quedar plata en caja sin compra, o solo la primera caja
+    // vinculada).
     const { data: compraInsertada, error: errIngresoAgro } = await supabase.from('compras_insumos').insert({
       insumo_id: parseInt(formCompra.agroquimico_id), insumo_tipo: 'agro', insumo_nombre: formCompra.insumo_nombre, unidad: formCompra.unidad || null,
       cantidad, precio_unitario: precioUnit, total,
@@ -3874,59 +3859,17 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       proveedor: formCompra.proveedor || null, domicilio: formCompra.domicilio || null, localidad: formCompra.localidad || null,
       cuit: formCompra.cuit || null, iva: formCompra.iva || null, cbu: formCompra.cbu || null,
       numero_factura: formCompra.numero_factura || null, observaciones: formCompra.observaciones || null,
-      // Solo se guarda el detalle del pago si realmente se pagó ahora — si queda
-      // pendiente, no hay que dejar un "pago" fantasma con el monto en blanco
-      // (eso hacía aparecer una fila de $0 sin descripción en Contactos).
-      forma_pago: pagarAhora ? formCompra.pagos.map(p => p.subtipo_cheque || p.tipo).join('+') : null,
-      es_paralelo: pagarAhora ? formCompra.pagos.some(p => p.es_paralelo) : false,
-      pagos_detalle: pagarAhora ? formCompra.pagos.map(p => ({ ...p, fecha: p.fecha || formCompra.fecha })) : null,
+      // El pago (si se paga ahora) lo registra pagarComprasPendientes más
+      // abajo: acá la compra nace pendiente y sin detalle de pago.
+      forma_pago: null,
+      es_paralelo: false,
+      pagos_detalle: null,
       fecha: formCompra.fecha,
-      caja_oficial_id, caja_paralela_id, registrado_por: usuario?.id,
-      estado_pago: pagarAhora ? 'pagado' : 'pendiente',
+      registrado_por: usuario?.id,
+      estado_pago: 'pendiente',
       retirado: formCompra.retirado,
     }).select().single()
     if (errIngresoAgro) { alert('Error al guardar la compra: ' + errIngresoAgro.message); setGuardando(false); return }
-
-    // Si se pagó (parte) con crédito, el proveedor ya cobró (se lo pagó la
-    // financiera) — se registra la deuda en Créditos, vinculada a esta compra.
-    const pagoCredito = formCompra.pagos.find(p => p.tipo === 'credito' && parseFloat(p.monto) > 0)
-    if (pagarAhora && pagoCredito) {
-      const montoCredito = parseFloat(pagoCredito.monto)
-      const cuotas = parseInt(formCompra.credito_cuotas) || 1
-      const esDolares = !!formCompra.credito_es_dolares
-      const montoUsd = esDolares ? (formCompra.credito_monto_usd ? parseFloat(formCompra.credito_monto_usd) : (cotizacionDolar ? Math.round((montoCredito / cotizacionDolar) * 100) / 100 : null)) : null
-      const { data: cred, error: errCredito } = await supabase.from('creditos').insert({
-        compra_insumos_id: compraInsertada?.id,
-        entidad: formCompra.credito_entidad || null,
-        descripcion: `${formCompra.insumo_nombre} — ${formCompra.proveedor || ''}`,
-        es_dolares: esDolares,
-        monto_total: esDolares ? 0 : montoCredito, monto_total_usd: montoUsd,
-        cant_cuotas: cuotas, monto_cuota: esDolares ? null : Math.round(montoCredito / cuotas),
-        fecha_inicio: formCompra.fecha, fecha_vencimiento: formCompra.credito_vencimiento || null,
-        cuotas_pagadas: 0, saldo_pendiente: esDolares ? 0 : montoCredito, estado: 'activo',
-        registrado_por: usuario?.id,
-      }).select().single()
-      if (errCredito) {
-        alert('La compra se guardó, pero no se pudo registrar el crédito: ' + errCredito.message + ' — cargalo a mano en Créditos.')
-      } else {
-        const cuotasAInsertar = []
-        for (let i = 0; i < cuotas; i++) {
-          let fechaCuota = formCompra.credito_vencimiento || formCompra.fecha
-          if (i > 0 && formCompra.credito_vencimiento) {
-            const d = new Date(formCompra.credito_vencimiento + 'T12:00:00')
-            d.setMonth(d.getMonth() + i)
-            fechaCuota = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-          }
-          cuotasAInsertar.push({
-            credito_id: cred.id, fecha: fechaCuota, nro_cuota: i + 1, estado: 'pendiente',
-            monto: esDolares ? null : Math.round(montoCredito / cuotas),
-            monto_usd: esDolares && montoUsd ? Math.round((montoUsd / cuotas) * 100) / 100 : null,
-          })
-        }
-        const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
-        if (errCuotas) alert('El crédito se guardó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
-      }
-    }
 
     // Actualizar stock: la cantidad se suma solo si ya se retiró físicamente.
     // Si se dejó marcado "todavía no lo retiramos", el stock queda igual hasta
@@ -3965,13 +3908,31 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       await supabase.from('stock_agro').update(upd).eq('id', item.id)
     }
 
+    // Pagar ahora: mismo camino que "Pagar" en compras pendientes (caja,
+    // cheques y crédito si hubo). Se guardan todas las cajas del pago.
+    let pagoOk = true
+    if (pagarAhora && compraInsertada) {
+      const { error: errPago } = await pagarComprasPendientes(supabase, {
+        seleccionadas: [compraInsertada.id], pendientes: [compraInsertada], precios: {}, facturas: null,
+        pagos: formCompra.pagos, fecha: formCompra.fecha, descripcion: desc,
+        contactoNombre: formCompra.proveedor || null, registradoPor: usuario?.id,
+        categoriaCaja: 'Compra insumos Agricultura',
+        creditoEntidad: formCompra.credito_entidad, creditoCuotas: formCompra.credito_cuotas, creditoVencimiento: formCompra.credito_vencimiento,
+        creditoEsDolares: formCompra.credito_es_dolares, cotizacionDolarCredito: cotizacionDolar, creditoMontoUsd: formCompra.credito_monto_usd,
+      })
+      if (errPago) {
+        pagoOk = false
+        alert('La compra se guardó (y el stock se actualizó), pero el pago no se pudo registrar: ' + errPago.message + '\n\nLa compra quedó PENDIENTE: pagala desde "Pagar" en compras pendientes. Revisá en Caja si llegó a registrarse alguna parte del pago antes de volver a pagar.')
+      }
+    }
+
     setShowFormCompra(false)
     setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '', credito_es_dolares: false, credito_monto_usd: '' })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
     // Generar recibo si pagó ahora
-    if (pagarAhora) {
+    if (pagarAhora && pagoOk) {
       generarReciboAgro({ ...formCompra, fecha: formCompra.fecha }, formCompra.pagos, stock)
     }
   }
@@ -4020,6 +3981,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             monedas: monedasPend, cotizacionDolar, modos: modosPend,
             pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
             descripcion: 'Pago compras insumos Agricultura', registradoPor: usuario?.id,
+            categoriaCaja: 'Compra insumos Agricultura',
             creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
             creditoEsDolares: formPagoGrupal.credito_es_dolares, cotizacionDolarCredito: cotizacionDolar, creditoMontoUsd: formPagoGrupal.credito_monto_usd,
             actualizarPrecioReferencia: async (i, precioFinal) => {
@@ -4449,12 +4411,26 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>
                       )}
                       <button onClick={async () => {
-                        if (!confirm('¿Eliminar esta compra? Se eliminará de la caja y se revertirán los cheques usados.')) return
-                        if (i.caja_oficial_id) {
-                          await supabase.from('cheques').delete().eq('caja_oficial_id', i.caja_oficial_id).eq('tipo', 'emitido')
-                          await supabase.from('caja_oficial').delete().eq('id', i.caja_oficial_id)
+                        // Si se pagó en un mismo pago junto con otras compras, borrar sus
+                        // cajas dejaría a las otras pagadas sin plata: no se elimina.
+                        const grupos = [...new Set((i.pagos_detalle || []).map(p => p._pago_grupo).filter(Boolean))]
+                        for (const g of grupos) {
+                          const { data: otras } = await supabase.from('compras_insumos').select('id, insumo_nombre').contains('pagos_detalle', [{ _pago_grupo: g }]).neq('id', i.id)
+                          if ((otras || []).length > 0) {
+                            alert(`Esta compra se pagó en un mismo pago junto con: ${otras.map(o => o.insumo_nombre || 'otra compra').join(', ')}.\n\nSi la elimino sola, esas compras quedarían como pagadas sin la plata en caja, así que no la elimino.\n\nNo se cambió nada.`)
+                            return
+                          }
                         }
-                        if (i.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', i.caja_paralela_id)
+                        if (!confirm('¿Eliminar esta compra? Se eliminará de la caja y se revertirán los cheques usados.')) return
+                        // TODOS los movimientos de caja y cheques emitidos (antes solo el primero).
+                        const idsOf = [...new Set([...(i.caja_oficial_ids || []), ...(i.caja_oficial_id ? [i.caja_oficial_id] : [])])]
+                        const idsPar = [...new Set([...(i.caja_paralela_ids || []), ...(i.caja_paralela_id ? [i.caja_paralela_id] : [])])]
+                        for (const chId of (i.cheque_emitido_ids || [])) await supabase.from('cheques').delete().eq('id', chId)
+                        for (const id of idsOf) {
+                          await supabase.from('cheques').delete().eq('caja_oficial_id', id).eq('tipo', 'emitido')
+                          await supabase.from('caja_oficial').delete().eq('id', id)
+                        }
+                        for (const id of idsPar) await supabase.from('caja_paralela').delete().eq('id', id)
                         for (const p of (i.pagos_detalle || [])) {
                           if (p.subtipo_cheque === 'tercero' && p.cheque_tercero_ids?.length > 0) {
                             for (const chId of p.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))

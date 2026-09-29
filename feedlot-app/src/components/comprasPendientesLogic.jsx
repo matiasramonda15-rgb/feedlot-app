@@ -122,6 +122,8 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
 //  - Un pago de $0 (solo fijar precio) ya no borra los ids de caja que la
 //    compra tenía de pagos anteriores.
 //
+// categoriaCaja — categoría del movimiento en Caja 1 ('Compra insumos' por
+// defecto; Agricultura usa 'Compra insumos Agricultura').
 // actualizarPrecioReferencia(compra, precioUnit) — se llama solo cuando la
 // compra no tenía precio y se cargó ahora; cada módulo sabe a qué tabla de
 // stock (stock_insumos / stock_sanitario / stock_agro) le corresponde.
@@ -129,11 +131,12 @@ export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
   creditoEntidad, creditoCuotas, creditoVencimiento, creditoEsDolares, cotizacionDolarCredito, creditoMontoUsd, monedas, cotizacionDolar, modos,
+  categoriaCaja = 'Compra insumos',
 }) {
   // Caja + cheques de cada forma de pago: la función compartida (la misma de
   // Personal y Fletes). Devuelve las líneas ya marcadas y TODOS los ids.
   const reg = await registrarPagos(supabase, pagos, {
-    fecha, descripcion, categoria: 'Compra insumos',
+    fecha, descripcion, categoria: categoriaCaja,
     contactoId: contactoId ? parseInt(contactoId) : null,
     beneficiarioCheque: contactoNombre || null,
     registradoPorCheque: registradoPor || null,
