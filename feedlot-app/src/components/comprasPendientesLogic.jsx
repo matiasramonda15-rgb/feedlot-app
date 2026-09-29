@@ -122,6 +122,8 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
 //  - Un pago de $0 (solo fijar precio) ya no borra los ids de caja que la
 //    compra tenía de pagos anteriores.
 //
+// canjeEnCaja — si el canje se registra como egreso en Caja 1 (ver
+// registrarPagos). Por defecto no.
 // categoriaCaja — categoría del movimiento en Caja 1 ('Compra insumos' por
 // defecto; Agricultura usa 'Compra insumos Agricultura').
 // actualizarPrecioReferencia(compra, precioUnit) — se llama solo cuando la
@@ -131,7 +133,7 @@ export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
   creditoEntidad, creditoCuotas, creditoVencimiento, creditoEsDolares, cotizacionDolarCredito, creditoMontoUsd, monedas, cotizacionDolar, modos,
-  categoriaCaja = 'Compra insumos',
+  categoriaCaja = 'Compra insumos', canjeEnCaja = false,
 }) {
   // Caja + cheques de cada forma de pago: la función compartida (la misma de
   // Personal y Fletes). Devuelve las líneas ya marcadas y TODOS los ids.
@@ -143,6 +145,7 @@ export async function pagarComprasPendientes(supabase, {
     estadoChequeTercero: 'entregado',
     beneficiarioTercero: contactoNombre || undefined,
     marcarTerceroEnCaja2: true,
+    canjeEnCaja,
   })
   if (reg.error) return { error: reg.error }
   const { lineas, cajaOficialIds, cajaParalelaIds, chequeEmitidoIds } = reg

@@ -122,8 +122,11 @@ export async function registrarMovimientoDePago(supabase, pago, opts) {
 //   cajaOficialIds / cajaParalelaIds / chequeEmitidoIds — TODOS los ids
 //                       creados (no solo el primero: ese fue el origen de
 //                       las cajas huérfanas en Personal, Insumos y Fletes).
-// Canje y crédito no mueven caja: pasan como línea (el crédito lo crea cada
-// módulo y le agrega _credito_id). Las opciones son las mismas de
+// Crédito no mueve caja: pasa como línea (lo crea cada módulo y le agrega
+// _credito_id). Canje tampoco, salvo canjeEnCaja: true — algunas pantallas
+// (órdenes, arriendos, compra agro al cargarla) siempre lo registraron como
+// egreso en Caja 1, para compensar la venta que entró como ingreso; se
+// respeta hasta definir una sola regla. Las opciones son las mismas de
 // registrarMovimientoDePago, más chequesCartera (para el detalle del recibo).
 // Si algo falla devuelve { error, etapa } — lo ya registrado queda en lineas.
 // ───────────────────────────────────────────────────────────────────────────
@@ -138,7 +141,7 @@ export function unirIds(...listas) {
 }
 
 export async function registrarPagos(supabase, pagos, opts) {
-  const { fecha, chequesCartera, ...optsMovimiento } = opts
+  const { fecha, chequesCartera, canjeEnCaja = false, ...optsMovimiento } = opts
   const res = { pagoGrupo: nuevoIdPago(), lineas: [], cajaOficialIds: [], cajaParalelaIds: [], chequeEmitidoIds: [], error: null, etapa: null }
   for (const pago of (pagos || [])) {
     const monto = parseFloat(pago.monto) || 0
@@ -150,7 +153,7 @@ export async function registrarPagos(supabase, pagos, opts) {
         return ch ? { id: ch.id, numero: ch.numero, banco: ch.banco, monto: ch.monto, fecha_vencimiento: ch.fecha_vencimiento, fecha_cobro: ch.fecha_cobro } : null
       }).filter(Boolean)
     }
-    if (pago.tipo === 'canje' || pago.tipo === 'credito') { res.lineas.push(linea); continue }
+    if (pago.tipo === 'credito' || (pago.tipo === 'canje' && !canjeEnCaja)) { res.lineas.push(linea); continue }
     const r = await registrarMovimientoDePago(supabase, pago, { ...optsMovimiento, fecha, monto, devolverIdCheque: true })
     if (r.error) return { ...res, error: r.error, etapa: r.etapa }
     if (r.cajaOficialId) res.cajaOficialIds.push(r.cajaOficialId)
@@ -196,7 +199,7 @@ const ORIGENES_SIN_REVERSION = [
 ]
 
 // De las tablas de arriba, las que ya guardan la lista completa de cajas.
-const TABLAS_CON_LISTA_DE_CAJAS = ['compras_insumos']
+const TABLAS_CON_LISTA_DE_CAJAS = ['compras_insumos', 'ordenes_trabajo', 'vencimientos_arriendo']
 
 const num = (x) => Number(x) || 0
 const listaPagos = (r) => (Array.isArray(r?.pagos_detalle) ? r.pagos_detalle : [])

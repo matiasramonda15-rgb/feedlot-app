@@ -5,6 +5,7 @@ import { Loader } from './UI'
 import { abrirReciboDoble, siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
+import { registrarPagos, unirIds, mensajeErrorPago, validarDeshacerGasto, revertirPagoDeGasto } from '../shared/pagosLogic'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -1376,38 +1377,36 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (totalPagGrupal - totalSel > 0.5) { alert(`El total de pagos ($${totalPagGrupal.toLocaleString('es-AR')}) es mayor que el total seleccionado ($${totalSel.toLocaleString('es-AR')}) — revisá los montos.`); return }
     setGuardandoPago(true)
 
-    let caja_oficial_id = null, caja_paralela_id = null
     const provs = [...new Set(seleccionadas.map(id => pendientes.find(o => o.id === id)?.proveedor).filter(Boolean))].join(', ')
     const desc = `Pago órdenes agricultura — ${provs || 'varios'}`
 
-    for (const pago of formPagoGrupal.pagos) {
-      const monto = parseFloat(pago.monto) || 0
-      if (!monto) continue
-      const fp = pago.tipo
-      if (pago.es_paralelo) {
-        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', descripcion: desc, monto }).select().single()
-        if (!caja_paralela_id) caja_paralela_id = cp?.id || null
-      } else {
-        const { data: co, error: eCoAgro } = await supabase.from('caja_oficial').insert({ fecha: formPagoGrupal.fecha, tipo: 'egreso', categoria: 'Orden de trabajo agricultura', descripcion: desc, monto, forma_pago: fp }).select().single()
-        if (eCoAgro) { alert('Error al registrar en caja: ' + eCoAgro.message); return }
-        if (!caja_oficial_id) caja_oficial_id = co?.id || null
-      }
-      if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { error: eCheqAgro1 } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPagoGrupal.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
-        if (eCheqAgro1) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqAgro1.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'entregado', beneficiario: provs || null }).eq('id', parseInt(chId))
-      }
-    }
+    // Caja + cheques de TODAS las formas de pago con la función compartida.
+    // Antes se guardaba solo la primera caja de cada tipo (la otra quedaba
+    // huérfana) y un error dejaba el botón trabado en "Guardando...".
+    const reg = await registrarPagos(supabase, formPagoGrupal.pagos, {
+      fecha: formPagoGrupal.fecha, descripcion: desc, categoria: 'Orden de trabajo agricultura',
+      beneficiarioCheque: provs || null, registradoPorCheque: usuario?.id,
+      beneficiarioTercero: provs || null, chequesCartera,
+      canjeEnCaja: true, // como siempre hizo esta pantalla
+    })
+    if (reg.error) { alert(mensajeErrorPago(reg) + (reg.lineas.length ? '\n\nOjo: una parte del pago ya quedó registrada en caja — revisala antes de volver a pagar.' : '')); setGuardandoPago(false); return }
+    const { lineas, cajaOficialIds, cajaParalelaIds, chequeEmitidoIds } = reg
 
     for (const id of seleccionadas) {
       const o = pendientes.find(x => x.id === id)
       const totalOrden = o ? montoOrden(o) : 0
       const proporcion = totalSel > 0 ? totalOrden / totalSel : (1 / seleccionadas.length)
-      const pagosProporcionales = formPagoGrupal.pagos.map(p => ({ ...p, fecha: p.fecha || formPagoGrupal.fecha, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
+      const pagosProporcionales = lineas.map(p => ({ ...p, monto: Math.round((parseFloat(p.monto) || 0) * proporcion) }))
       const montoPagadoAhora = pagosProporcionales.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
       const pagadoPrevio = (o?.pagos_detalle || []).reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
-      const upd = { caja_oficial_id, caja_paralela_id, pagos_detalle: [...(o?.pagos_detalle || []), ...pagosProporcionales], domicilio: formPagoGrupal.domicilio || null, localidad: formPagoGrupal.localidad || null, cuit: formPagoGrupal.cuit || null, iva: formPagoGrupal.iva || null, cbu: formPagoGrupal.cbu || null }
+      // Cajas: las que la orden ya tenía (pagos anteriores) + las de este pago.
+      const upd = {
+        caja_oficial_id: o?.caja_oficial_id || cajaOficialIds[0] || null,
+        caja_paralela_id: o?.caja_paralela_id || cajaParalelaIds[0] || null,
+        caja_oficial_ids: unirIds(o?.caja_oficial_ids || (o?.caja_oficial_id ? [o.caja_oficial_id] : []), cajaOficialIds),
+        caja_paralela_ids: unirIds(o?.caja_paralela_ids || (o?.caja_paralela_id ? [o.caja_paralela_id] : []), cajaParalelaIds),
+        cheque_emitido_ids: unirIds(o?.cheque_emitido_ids || [], chequeEmitidoIds),
+        pagos_detalle: [...(o?.pagos_detalle || []), ...pagosProporcionales], domicilio: formPagoGrupal.domicilio || null, localidad: formPagoGrupal.localidad || null, cuit: formPagoGrupal.cuit || null, iva: formPagoGrupal.iva || null, cbu: formPagoGrupal.cbu || null }
       // Si la orden no tenía costo cargado, se define recién ahora al pagar
       let totalFinalOrden = totalOrden
       if (o && !o.costo_total && costosPend[id]) {
@@ -2167,12 +2166,30 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                             generarReciboOrden(o, campos, campanas, stockAgro)
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>🖨️ Recibo</button>}
                           <button onClick={async () => {
-                            if (!confirm('¿Eliminar esta orden? Se repondrá el stock de los insumos que se habían descontado, y se revertirá la caja y los cheques si estaba pagada.')) return
-                            if (o.caja_oficial_id) {
-                              await supabase.from('cheques').delete().eq('caja_oficial_id', o.caja_oficial_id).eq('tipo', 'emitido')
-                              await supabase.from('caja_oficial').delete().eq('id', o.caja_oficial_id)
+                            // Pagada junto con otras órdenes en un mismo pago: borrar sus cajas
+                            // dejaría a las otras pagadas sin plata — no se elimina.
+                            const gruposPago = [...new Set((o.pagos_detalle || []).map(p => p._pago_grupo).filter(Boolean))]
+                            for (const g of gruposPago) {
+                              const { data: otras } = await supabase.from('ordenes_trabajo').select('id, tipo, proveedor').contains('pagos_detalle', [{ _pago_grupo: g }]).neq('id', o.id)
+                              if ((otras || []).length > 0) {
+                                alert(`Esta orden se pagó en un mismo pago junto con ${otras.length} orden(es) más (${otras.map(x => [x.tipo, x.proveedor].filter(Boolean).join(' · ') || 'orden').join(', ')}).\n\nSi la elimino sola, esas órdenes quedarían como pagadas sin la plata en caja, así que no la elimino.\n\nNo se cambió nada.`)
+                                return
+                              }
                             }
-                            if (o.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', o.caja_paralela_id)
+                            if (!confirm('¿Eliminar esta orden? Se repondrá el stock de los insumos que se habían descontado, y se revertirá la caja y los cheques si estaba pagada.')) return
+                            // TODAS las cajas y cheques del pago (antes solo la primera caja,
+                            // y los cheques de tercero no volvían a la cartera).
+                            const idsOfO = [...new Set([...(o.caja_oficial_ids || []), ...(o.caja_oficial_id ? [o.caja_oficial_id] : [])])]
+                            const idsParO = [...new Set([...(o.caja_paralela_ids || []), ...(o.caja_paralela_id ? [o.caja_paralela_id] : [])])]
+                            for (const chId of (o.cheque_emitido_ids || [])) await supabase.from('cheques').delete().eq('id', chId)
+                            for (const id of idsOfO) {
+                              await supabase.from('cheques').delete().eq('caja_oficial_id', id).eq('tipo', 'emitido')
+                              await supabase.from('caja_oficial').delete().eq('id', id)
+                            }
+                            for (const id of idsParO) await supabase.from('caja_paralela').delete().eq('id', id)
+                            for (const p of (o.pagos_detalle || [])) {
+                              if (p.subtipo_cheque === 'tercero') for (const chId of (p.cheque_tercero_ids || [])) await supabase.from('cheques').update({ estado: 'en_cartera', beneficiario: null }).eq('id', parseInt(chId))
+                            }
                             // Reponer stock de los insumos que se habían descontado al crear
                             // esta orden — se usa lo que REALMENTE se descontó en su momento
                             // (guardado en descontado_real), no lo recalculado de nuevo, porque
@@ -3157,30 +3174,19 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
     setGuardando(true)
     const monto = parseFloat(form.monto)
 
-    let caja_oficial_id = null, caja_paralela_id = null
+    // El pago solo se registra al crear el gasto (no se vuelve a cobrar caja
+    // al editar). Mismo registro que Gastos generales: todas las cajas y
+    // cheques quedan guardados (antes, solo la primera caja de cada tipo, y
+    // un cheque de tercero de Caja 2 quedaba "en cartera").
+    let reg = null
     if (!editando) {
-      // El pago solo se registra al crear el gasto (no se vuelve a cobrar caja al editar)
-      for (const pago of form.pagos.filter(p => p.monto)) {
-        const m = parseFloat(pago.monto) || 0
-        if (!m) continue
-        if (pago.tipo === 'canje') continue
-        const desc = `${form.concepto} — Agricultura${form.proveedor ? ' — ' + form.proveedor : ''}`
-        if (pago.es_paralelo) {
-          const { data: cp, error: ep } = await supabase.from('caja_paralela').insert({ fecha: form.fecha, tipo: 'egreso', descripcion: desc, monto: m }).select().single()
-          if (ep) { alert('Error al registrar en Caja 2: ' + ep.message); setGuardando(false); return }
-          if (!caja_paralela_id) caja_paralela_id = cp?.id
-        } else {
-          const { data: co, error: eo } = await supabase.from('caja_oficial').insert({ fecha: form.fecha, tipo: 'egreso', categoria: 'Gastos Agricultura', descripcion: desc, monto: m, forma_pago: pago.subtipo_cheque || pago.tipo }).select().single()
-          if (eo) { alert('Error al registrar en caja oficial: ' + eo.message); setGuardando(false); return }
-          if (!caja_oficial_id) caja_oficial_id = co?.id
-          if (pago.subtipo_cheque === 'propio' && pago.cheque_propio?.fecha_vencimiento) {
-            const { error: ec } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: form.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: form.proveedor || null, estado: 'entregado', caja_oficial_id, es_electronico: pago.tipo === 'e-cheq' })
-            if (ec) { alert('Error al registrar el cheque: ' + ec.message); setGuardando(false); return }
-          } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-            for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'entregado', beneficiario: form.proveedor || null }).eq('id', parseInt(chId))
-          }
-        }
-      }
+      const desc = `${form.concepto} — Agricultura${form.proveedor ? ' — ' + form.proveedor : ''}`
+      reg = await registrarPagos(supabase, form.pagos, {
+        fecha: form.fecha, descripcion: desc, categoria: 'Gastos Agricultura',
+        beneficiarioCheque: form.proveedor || null, beneficiarioTercero: form.proveedor || null,
+        chequesCartera,
+      })
+      if (reg.error) { alert(mensajeErrorPago(reg) + (reg.lineas.length ? '\n\nOjo: una parte del pago ya quedó registrada en caja — revisala antes de volver a cargar el gasto.' : '')); setGuardando(false); return }
     }
 
     const data = {
@@ -3189,11 +3195,14 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
       proveedor: form.proveedor || null, actividad: 'Agricultura',
     }
     if (!editando) {
-      data.forma_pago = form.pagos.map(p => p.subtipo_cheque || p.tipo).join('+')
-      data.es_paralelo = form.pagos.some(p => p.es_paralelo)
-      data.pagos_detalle = form.pagos
-      data.caja_oficial_id = caja_oficial_id
-      data.caja_paralela_id = caja_paralela_id
+      data.forma_pago = reg.lineas.map(p => p.subtipo_cheque || p.tipo).join('+') || null
+      data.es_paralelo = reg.lineas.some(p => p.es_paralelo)
+      data.pagos_detalle = reg.lineas
+      data.caja_oficial_id = reg.cajaOficialIds[0] || null
+      data.caja_paralela_id = reg.cajaParalelaIds[0] || null
+      data.caja_oficial_ids = unirIds(reg.cajaOficialIds)
+      data.caja_paralela_ids = unirIds(reg.cajaParalelaIds)
+      data.cheque_emitido_ids = unirIds(reg.chequeEmitidoIds)
     }
     const { error } = editando
       ? await supabase.from('gastos_generales').update(data).eq('id', editando)
@@ -3277,9 +3286,15 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
                   <button onClick={() => { setEditando(g.id); setForm({ campo_id: g.campo_id || '', campana_id: g.campana_id || '', concepto: g.categoria || g.descripcion || '', monto: g.monto || '', fecha: g.fecha || '', proveedor: g.proveedor || '', observaciones: '', pagos: [{ ...PAGO_INIT }] }); setShowForm(true) }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                   <button onClick={async () => {
-                    if (!confirm('¿Eliminar? Esto también va a sacar el movimiento de caja asociado.')) return
-                    if (g.caja_oficial_id) await supabase.from('caja_oficial').delete().eq('id', g.caja_oficial_id)
-                    if (g.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', g.caja_paralela_id)
+                    // Misma regla que Gastos generales: se deshace el pago completo
+                    // (todas las cajas, cheque propio borrado, cheques de tercero a
+                    // cartera). Antes solo se borraba la primera caja y los cheques
+                    // quedaban como estaban.
+                    const val = await validarDeshacerGasto(supabase, g)
+                    if (!val.ok) { alert(val.motivo); return }
+                    if (!confirm('¿Eliminar? Esto también va a sacar los movimientos de caja asociados y revertir los cheques.')) return
+                    const rev = await revertirPagoDeGasto(supabase, g)
+                    if (rev.error) { alert('No se pudo deshacer el pago de este gasto: ' + rev.error.message + '\n\nEl gasto NO se borró. Revisalo antes de volver a intentar.'); cargar(); return }
                     const { error } = await supabase.from('gastos_generales').delete().eq('id', g.id)
                     if (error) { alert('Error al eliminar: ' + error.message); return }
                     cargar()
@@ -3420,38 +3435,28 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
     const tnPagado = tnMes * meses
 
     const desc = `Arriendo ${v.campos?.nombre || ''} — ${v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''}`
-    let caja_oficial_id = null, caja_paralela_id = null
-
-    for (const pago of formPago.pagos) {
-      const m = parseFloat(pago.monto) || 0
-      if (!m) continue
-      const fp = pago.tipo
-      if (pago.es_paralelo) {
-        const { data: cp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto: m }).select().single()
-        if (!caja_paralela_id) caja_paralela_id = cp?.id || null
-      } else {
-        const { data: co } = await supabase.from('caja_oficial').insert({ fecha: formPago.fecha, tipo: 'egreso', categoria: 'Arriendo agricultura', descripcion: desc, monto: m, forma_pago: fp }).select().single()
-        if (!caja_oficial_id) caja_oficial_id = co?.id || null
-      }
-      if (!pago.es_paralelo && pago.subtipo_cheque === 'propio') {
-        const { error: eCheqArr } = await supabase.from('cheques').insert({ tipo: 'emitido', numero: pago.cheque_propio.numero || null, banco: pago.cheque_propio.banco || null, fecha_cobro: formPago.fecha, fecha_vencimiento: pago.cheque_propio.fecha_vencimiento, monto: m, beneficiario: v.campos?.propietario || null, estado: 'entregado', caja_oficial_id, registrado_por: usuario?.id })
-        if (eCheqArr) { alert(`El cheque N° ${pago.cheque_propio.numero || '(sin número)'} no se pudo guardar en la cartera (${eCheqArr.message}). El pago NO se terminó de confirmar — revisá e intentá de nuevo.`); return }
-      } else if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-        for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'entregado', beneficiario: v.campos?.propietario || null }).eq('id', parseInt(chId))
-      }
-    }
+    // Caja + cheques de TODAS las formas de pago (antes: solo la primera caja
+    // de cada tipo, y sin avisar si algo fallaba).
+    const reg = await registrarPagos(supabase, formPago.pagos, {
+      fecha: formPago.fecha, descripcion: desc, categoria: 'Arriendo agricultura',
+      beneficiarioCheque: v.campos?.propietario || null, registradoPorCheque: usuario?.id,
+      beneficiarioTercero: v.campos?.propietario || null, chequesCartera,
+      canjeEnCaja: true, // como siempre hizo esta pantalla
+    })
+    if (reg.error) { alert(mensajeErrorPago(reg) + (reg.lineas.length ? '\n\nOjo: una parte del pago ya quedó registrada en caja — revisala antes de volver a pagar.' : '')); setGuardandoPago(false); return }
 
     await supabase.from('vencimientos_arriendo').update({
       estado: 'pagado', pagado_en: formPago.fecha,
       precio_pizarra: precio || null,
       tn_ha: tnPagado || null,
       monto_total: montoCalc || totalPagos,
-      caja_oficial_id, caja_paralela_id,
-      pagos_detalle: formPago.pagos.map(p => ({ ...p, fecha: p.fecha || formPago.fecha })),
-      forma_pago: formPago.pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
+      caja_oficial_id: reg.cajaOficialIds[0] || null, caja_paralela_id: reg.cajaParalelaIds[0] || null,
+      caja_oficial_ids: unirIds(reg.cajaOficialIds), caja_paralela_ids: unirIds(reg.cajaParalelaIds), cheque_emitido_ids: unirIds(reg.chequeEmitidoIds),
+      pagos_detalle: reg.lineas,
+      forma_pago: reg.lineas.map(p => p.subtipo_cheque || p.tipo).join('+'),
     }).eq('id', v.id)
 
-    const pagosFinal = [...formPago.pagos]
+    const pagosFinal = [...reg.lineas]
     const fechaPago = formPago.fecha
     setPagoAbierto(null)
     setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
@@ -3917,6 +3922,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         pagos: formCompra.pagos, fecha: formCompra.fecha, descripcion: desc,
         contactoNombre: formCompra.proveedor || null, registradoPor: usuario?.id,
         categoriaCaja: 'Compra insumos Agricultura',
+        canjeEnCaja: true, // como siempre hizo esta pantalla (ver registrarPagos)
         creditoEntidad: formCompra.credito_entidad, creditoCuotas: formCompra.credito_cuotas, creditoVencimiento: formCompra.credito_vencimiento,
         creditoEsDolares: formCompra.credito_es_dolares, cotizacionDolarCredito: cotizacionDolar, creditoMontoUsd: formCompra.credito_monto_usd,
       })
