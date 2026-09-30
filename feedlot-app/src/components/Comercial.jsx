@@ -60,6 +60,13 @@ const diasHasta = iso => Math.round((new Date(iso + 'T12:00:00') - new Date(hoyI
 // Los que siguen EN CARTERA nunca se archivan solos (si vencen ahí, hay que
 // verlos).
 const chequeArchivado = c => c.estado !== 'en_cartera' && !!fechaVtoCheque(c) && fechaVtoCheque(c) < hoyISO()
+// Cheques de terceros que tenemos EN CARTERA, que ya están en fecha de cobro
+// y vencen dentro de `dias` días: hay que depositarlos o usarlos ya.
+const terceroPorVencer = (c, dias) => c.tipo === 'recibido' && c.estado === 'en_cartera'
+  && !!fechaCobroCheque(c) && fechaCobroCheque(c) <= hoyISO()
+  && !!fechaVtoCheque(c) && fechaVtoCheque(c) >= hoyISO() && fechaVtoCheque(c) <= sumarDias(hoyISO(), dias)
+// …y los que ya vencieron sin salir de la cartera.
+const terceroVencidoEnCartera = c => c.tipo === 'recibido' && c.estado === 'en_cartera' && !!fechaVtoCheque(c) && fechaVtoCheque(c) < hoyISO()
 // Cheques propios (emitidos) que se van a cobrar de nuestra cuenta entre hoy y
 // dentro de `dias` días.
 const propioSeCobraEn = (c, dias) => c.tipo === 'emitido' && !ESTADOS_FINALES_CHEQUE.includes(c.estado) && !!fechaCobroCheque(c)
@@ -446,6 +453,10 @@ export default function Comercial({ usuario }) {
   // días (por fecha de cobro). Es el número que aparece en las pestañas.
   const chCobro7Of = chOficialEm.filter(c => propioSeCobraEn(c, 7))
   const chCobro7Par = chParaleloEm.filter(c => propioSeCobraEn(c, 7))
+  // Aviso: cheques de terceros en cartera, ya al cobro, que vencen en ≤ 7 días
+  // (o que ya vencieron sin depositarse).
+  const chTerVenceOf = chOficialRec.filter(c => terceroPorVencer(c, 7) || terceroVencidoEnCartera(c))
+  const chTerVencePar = chParaleloRec.filter(c => terceroPorVencer(c, 7) || terceroVencidoEnCartera(c))
   // Lista: "Vigentes" = todo lo que no está archivado; cada estado muestra
   // sus cheques no archivados; "Archivados" los que ya salieron de la
   // cartera y pasaron su vencimiento; "Ver todos" sin filtro.
@@ -466,8 +477,8 @@ export default function Comercial({ usuario }) {
   const TABS = [
     { key: 'caja_oficial', label: 'Caja 1' },
     { key: 'caja_paralela', label: 'Caja 2' },
-    { key: 'cheques_oficial', label: `Cheques Caja 1${chCobro7Of.length > 0 ? ` ⚠${chCobro7Of.length}` : ''}` },
-    { key: 'cheques_paralelo', label: `Cheques Caja 2${chCobro7Par.length > 0 ? ` ⚠${chCobro7Par.length}` : ''}` },
+    { key: 'cheques_oficial', label: `Cheques Caja 1${(chCobro7Of.length + chTerVenceOf.length) > 0 ? ` ⚠${chCobro7Of.length + chTerVenceOf.length}` : ''}` },
+    { key: 'cheques_paralelo', label: `Cheques Caja 2${(chCobro7Par.length + chTerVencePar.length) > 0 ? ` ⚠${chCobro7Par.length + chTerVencePar.length}` : ''}` },
     { key: 'dolares', label: '💵 Dólares' },
   ]
 
@@ -573,6 +584,47 @@ export default function Comercial({ usuario }) {
                 <div style={{ fontSize: 11, color: S.hint }}>en los próximos {diasProyeccion} días</div>
               </div>
             </div>
+          </div>
+        )
+      })()}
+
+      {/* Alarma: cheques de TERCEROS en cartera que ya se pueden cobrar y vencen
+          en los próximos 7 días (o ya vencieron sin depositarse). */}
+      {(() => {
+        const lista = [...chTerVenceOf.map(c => ({ ...c, _caja: 'Caja 1' })), ...chTerVencePar.map(c => ({ ...c, _caja: 'Caja 2' }))]
+          .sort((a, b) => (fechaVtoCheque(a) || '').localeCompare(fechaVtoCheque(b) || ''))
+        const suma = arr => arr.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+        const hay = lista.length > 0
+        const fmtF = f => new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+        return (
+          <div style={{ background: hay ? S.redLight : S.surface, border: `1px solid ${hay ? '#F09595' : S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: hay ? S.red : S.text }}>{hay ? '⚠' : '✓'} Cheques de terceros por vencer — próximos 7 días</div>
+              <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
+                <span>Caja 1: <b style={{ fontFamily: 'monospace', color: chTerVenceOf.length ? S.red : S.green }}>${suma(chTerVenceOf).toLocaleString('es-AR')}</b> <span style={{ color: S.hint }}>({chTerVenceOf.length})</span></span>
+                <span style={{ color: S.purple }}>Caja 2: <b style={{ fontFamily: 'monospace', color: chTerVencePar.length ? S.red : S.green }}>${suma(chTerVencePar).toLocaleString('es-AR')}</b> <span style={{ color: S.hint }}>({chTerVencePar.length})</span></span>
+              </div>
+            </div>
+            {!hay && <div style={{ fontSize: 12, color: S.muted, marginTop: 6 }}>Ningún cheque en cartera vence en los próximos 7 días.</div>}
+            {hay && (
+              <div style={{ marginTop: 8 }}>
+                {lista.map(c => {
+                  const fv = fechaVtoCheque(c)
+                  const d = diasHasta(fv)
+                  return (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, padding: '4px 0', borderTop: `1px solid #F5D5D5` }}>
+                      <span>
+                        <b style={{ color: c._caja === 'Caja 2' ? S.purple : S.text }}>{c._caja}</b> · #{c.numero || 's/n'} · {c.banco || '—'} · {c.librador || '—'}
+                      </span>
+                      <span style={{ whiteSpace: 'nowrap' }}>
+                        <b style={{ fontFamily: 'monospace' }}>${(parseFloat(c.monto) || 0).toLocaleString('es-AR')}</b>
+                        <span style={{ marginLeft: 8, color: S.red, fontWeight: 600 }}>{d < 0 ? `venció el ${fmtF(fv)}` : d === 0 ? 'vence hoy' : `vence ${fmtF(fv)} (${d}d)`}</span>
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )
       })()}
