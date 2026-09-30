@@ -91,13 +91,18 @@ export default function Asistente({ usuario }) {
     for (let vuelta = 0; vuelta < 6; vuelta++) {
       let data
       try {
-        const resp = await fetch('/api/asistente', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: historial }),
-        })
-        data = await resp.json()
-        if (!resp.ok) { setError(data.error || 'Error al conectar con el asistente'); setCargando(false); return }
+        // La llamada a Claude la hace la función "asistente" de Supabase
+        // (igual que "leer-factura" en Ingresos), con la clave guardada allá.
+        // Antes apuntaba a /api/asistente, una función de Vercel que nunca
+        // llegó a publicarse — por eso el asistente no andaba.
+        const { data: resp, error: errFn } = await supabase.functions.invoke('asistente', { body: { messages: historial } })
+        if (errFn) {
+          let detalle = errFn.message
+          try { const cuerpo = await errFn.context?.json?.(); if (cuerpo?.error) detalle = cuerpo.error } catch (_) { /* sin detalle */ }
+          setError('Error al conectar con el asistente: ' + detalle); setCargando(false); return
+        }
+        if (resp?.error) { setError(resp.error); setCargando(false); return }
+        data = resp
       } catch (e) {
         setError('No se pudo conectar con el asistente: ' + e.message)
         setCargando(false)

@@ -25,7 +25,6 @@ var CuentasPagar = lazy(() => import('./CuentasPagar'))
 var Presupuesto  = lazy(() => import('./Presupuesto'))
 var Diagnostico  = lazy(() => import('./Diagnostico'))
 var Asistente    = lazy(() => import('./Asistente'))
-var Novedades    = lazy(() => import('./Novedades'))
 
 const MODULOS = {
   tablero: Tablero, corrales: Corrales, ingresos: Ingresos, pesada: Pesada,
@@ -35,7 +34,6 @@ const MODULOS = {
   cuentas_pagar: CuentasPagar,
   presupuesto: Presupuesto,
   diagnostico: Diagnostico,
-  novedades: Novedades,
   asistente: Asistente,
 }
 

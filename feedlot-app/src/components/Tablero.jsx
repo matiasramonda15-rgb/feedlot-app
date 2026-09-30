@@ -269,7 +269,6 @@ export default function Tablero({ usuario }) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn size="sm">Ver reportes</Btn>
-          <Btn size="sm" variant="primary">+ Registrar novedad</Btn>
         </div>
       </div>
 

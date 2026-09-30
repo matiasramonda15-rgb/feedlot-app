@@ -13,9 +13,8 @@ const S = {
 
 const MENU = [
   {
-    section: 'NOVEDADES',
+    section: 'ASISTENTE',
     items: [
-      { id: 'novedades',    label: '📋 Novedades',         roles: ['dueno', 'secretaria', 'encargado'] },
       { id: 'asistente',    label: '🤖 Asistente',         roles: ['dueno', 'secretaria'] },
     ]
   },
