@@ -12,12 +12,16 @@ const S = {
 }
 
 const MENU = [
-  {
-    section: 'ASISTENTE',
-    items: [
-      { id: 'asistente',    label: '🤖 Asistente',         roles: ['dueno', 'secretaria'] },
-    ]
-  },
+  // ASISTENTE — desactivado hasta nuevo aviso (usa la API de Claude, que se
+  // paga aparte). El código sigue en Asistente.jsx y la función "asistente"
+  // en Supabase; para reactivarlo alcanza con volver a poner esta sección y
+  // cargar ANTHROPIC_API_KEY en Supabase → Edge Functions → Secrets:
+  // {
+  //   section: 'ASISTENTE',
+  //   items: [
+  //     { id: 'asistente',    label: '🤖 Asistente',         roles: ['dueno', 'secretaria'] },
+  //   ]
+  // },
   {
     section: 'FEEDLOT',
     items: [
