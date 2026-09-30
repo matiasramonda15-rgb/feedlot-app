@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
+import Conciliacion from './Conciliacion'
 import { buscarOrigenesDeCaja, validarDeshacerOrigen, deshacerPagosDeOrigen, mensajeDeshacerPago, mensajeCajaBloqueada, mensajeErrorDeshacer } from '../shared/pagosLogic'
 
 const S = {
@@ -508,6 +509,7 @@ export default function Comercial({ usuario }) {
     { key: 'cheques_oficial', label: `Cheques Caja 1${(chCobro7Of.length + chTerVenceOf.length) > 0 ? ` ⚠${chCobro7Of.length + chTerVenceOf.length}` : ''}` },
     { key: 'cheques_paralelo', label: `Cheques Caja 2${(chCobro7Par.length + chTerVencePar.length) > 0 ? ` ⚠${chCobro7Par.length + chTerVencePar.length}` : ''}` },
     { key: 'dolares', label: '💵 Dólares' },
+    { key: 'conciliacion', label: '🧮 Conciliación' },
   ]
 
   const FiltrosPeriodo = () => (
@@ -954,6 +956,8 @@ export default function Comercial({ usuario }) {
         <TablaCheques items={chFiltradosPar} filtro={filtroChequePar} setFiltro={setFiltroChequePar} filtroEstado={filtroEstadoChequePar} setFiltroEstado={setFiltroEstadoChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
+
+      {tab === 'conciliacion' && <Conciliacion cajaOficial={cajaOficial} cajaParalela={cajaParalela} cheques={cheques} S={S} />}
 
       {tab === 'dolares' && (() => {
         const saldoUSD = dolares.reduce((a, d) => a + (d.tipo === 'ingreso' ? (d.monto_usd || 0) : -(d.monto_usd || 0)), 0)
