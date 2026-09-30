@@ -53,7 +53,7 @@ const NOMBRE_OCASIONAL = 'Proveedor / Cliente ocasional'
 
 const FORM_INIT = {
   actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', activo_id: '',
-  fecha: hoyLocal(), no_recurrente: false,
+  fecha: hoyLocal(), no_recurrente: false, tipo_costo: 'operativo',
   proveedor: '', comprobante: '', detalleOcasional: '',
   // Datos proveedor para recibo
   domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
@@ -74,6 +74,21 @@ async function generarRecibo(supabase, gasto, pagos) {
     pagos,
   })
 }
+
+// Cómo cuenta un gasto en la rentabilidad (Reportes):
+//  - operativo: costo del mes a mes (combustible, fletes, honorarios…)
+//  - inversion: obra, equipamiento, algo puntual — no suma al costo operativo
+//  - consumo: pago de algo que YA se cuenta por consumo (alimento, urea,
+//    rollos, vacunas, concentrado): sumarlo sería contarlo dos veces
+//  - anual: se reparte en 12 meses (ej. limpieza de fosa una vez por año)
+const TIPOS_COSTO = [
+  { v: 'operativo', l: 'Operativo (se repite)', corto: 'Operativo' },
+  { v: 'inversion', l: 'Inversión o gasto puntual', corto: 'Inversión' },
+  { v: 'consumo', l: 'Ya contado en alimento/sanidad', corto: 'Ya en consumo' },
+  { v: 'anual', l: 'Anual: repartir en 12 meses', corto: 'Anual ÷12' },
+]
+const tipoCostoDe = g => g.en_consumo ? 'consumo' : g.prorrateo_meses > 1 ? 'anual' : g.no_recurrente ? 'inversion' : 'operativo'
+const camposTipoCosto = t => ({ no_recurrente: t === 'inversion', en_consumo: t === 'consumo', prorrateo_meses: t === 'anual' ? 12 : null })
 
 export default function Gastos({ usuario }) {
   const [loading, setLoading] = useState(true)
@@ -270,7 +285,7 @@ export default function Gastos({ usuario }) {
       descripcion: descripcionFinal || null,
       monto: form.monto ? montoTotal : null,
       fecha: form.fecha,
-      no_recurrente: form.no_recurrente || false,
+      ...camposTipoCosto(form.tipo_costo || (form.no_recurrente ? 'inversion' : 'operativo')),
       proveedor: form.proveedor || null,
       comprobante: form.comprobante || null,
       domicilio: form.domicilio || null,
@@ -462,11 +477,27 @@ export default function Gastos({ usuario }) {
               <Label>Monto total $</Label>
               <input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} />
             </div>
-            <div style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" id="no_recurrente" checked={form.no_recurrente || false} onChange={e => setForm({...form, no_recurrente: e.target.checked})} />
-              <label htmlFor="no_recurrente" style={{ fontSize: 12, cursor: 'pointer' }}>
-                Es una inversión o gasto puntual (hormigón, obra, flete de cosecha, etc.) — <strong>no</strong> algo que se repite todos los meses
-              </label>
+            <div style={{ gridColumn: '1/-1' }}>
+              <Label>¿Cómo cuenta en la rentabilidad?</Label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {TIPOS_COSTO.map(t => {
+                  const activo = (form.tipo_costo || 'operativo') === t.v
+                  return (
+                    <button key={t.v} type="button" onClick={() => setForm({ ...form, tipo_costo: t.v, no_recurrente: t.v === 'inversion' })}
+                      style={{ padding: '6px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer', fontWeight: activo ? 600 : 400, border: `1px solid ${activo ? S.accent : S.border}`, background: activo ? S.accentLight : S.surface, color: activo ? S.accent : S.muted }}>
+                      {t.l}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>
+                {{
+                  operativo: 'Suma al costo del mes (combustible, fletes, honorarios, reparaciones…).',
+                  inversion: 'Obra, equipamiento, algo que no se repite: no suma al costo operativo por animal.',
+                  consumo: 'Alimento, urea, rollos, vacunas, concentrado: ya se cuentan por lo que se consume, así que este pago no se vuelve a sumar.',
+                  anual: 'Se reparte en partes iguales en los 12 meses desde la fecha del gasto.',
+                }[form.tipo_costo || 'operativo']}
+              </div>
             </div>
             <div style={{ gridColumn: '1/-1' }}>
               <Label>Activo relacionado (opcional)</Label>
@@ -640,7 +671,19 @@ export default function Gastos({ usuario }) {
                         return act ? <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>🔧 {act.nombre}</div> : null
                       })()}
                     </td>
-                    <td style={{ padding: '9px 12px' }}><span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber }}>{g.categoria}</span></td>
+                    <td style={{ padding: '9px 12px' }}>
+                      <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber }}>{g.categoria}</span>
+                      {/* Cómo cuenta en la rentabilidad — se puede cambiar acá mismo */}
+                      <select value={tipoCostoDe(g)} title="Cómo cuenta en la rentabilidad (Reportes)"
+                        onChange={async e => {
+                          const { error } = await supabase.from('gastos_generales').update(camposTipoCosto(e.target.value)).eq('id', g.id)
+                          if (error) { alert('No se pudo cambiar: ' + error.message); return }
+                          await cargar()
+                        }}
+                        style={{ display: 'block', marginTop: 4, padding: '1px 4px', fontSize: 10, border: `1px solid ${S.border}`, borderRadius: 4, background: tipoCostoDe(g) === 'operativo' ? S.surface : S.bg, color: tipoCostoDe(g) === 'operativo' ? S.muted : S.accent, cursor: 'pointer' }}>
+                        {TIPOS_COSTO.map(t => <option key={t.v} value={t.v}>{t.corto}</option>)}
+                      </select>
+                    </td>
                     <td style={{ padding: '9px 12px', color: S.muted }}>{g.descripcion || '—'}</td>
                     <td style={{ padding: '9px 12px', color: S.muted }}>{g.proveedor || '—'}</td>
                     <td style={{ padding: '9px 12px', fontSize: 11 }}>{g.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Caja 2</span> : (g.estado_pago === 'pendiente' ? '—' : g.forma_pago || '—')}</td>
@@ -653,7 +696,7 @@ export default function Gastos({ usuario }) {
                         {g.estado_pago === 'pendiente' && (
                           <button onClick={() => {
                             setEditandoId(g.id)
-                            setForm({ actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: String(g.monto || ''), activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', pagos: [{ ...PAGO_INIT, monto: String(g.monto || '') }] })
+                            setForm({ actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: String(g.monto || ''), activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', no_recurrente: !!g.no_recurrente, tipo_costo: tipoCostoDe(g), pagos: [{ ...PAGO_INIT, monto: String(g.monto || '') }] })
                             setPagarAhora(true)
                             setShowForm(true)
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>

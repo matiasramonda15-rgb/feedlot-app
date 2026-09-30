@@ -305,22 +305,28 @@ export default function Reportes({ usuario }) {
     if (actividad === 'Feedlot') rentabilidadPorMes[key].costoManoObra += pe.monto || 0
     else if (actividad === 'General') rentabilidadPorMes[key].costoManoObra += (pe.monto || 0) / 3
   })
-  gastosGenerales.filter(g => g.actividad === 'Feedlot' && !g.no_recurrente).forEach(g => {
+  // Gastos generales del feedlot (los "General" se reparten en 3 partes
+  // iguales, igual que los sueldos del personal General). No suman:
+  //  - los marcados como inversión / no recurrente (obra, equipamiento…);
+  //  - los marcados "ya contado en alimento/sanidad" (en_consumo): pagos de
+  //    alimento, urea, rollos, vacunas… que ya entran por consumo real —
+  //    sumarlos acá era contarlos dos veces.
+  // Los marcados como anuales (prorrateo_meses) se reparten en partes
+  // iguales desde el mes del gasto (ej. limpieza de fosa ÷ 12).
+  const sumarMeses = (key, n) => { const [a, m] = key.split('-').map(Number); const d = new Date(a, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+  gastosGenerales.forEach(g => {
+    const factor = g.actividad === 'Feedlot' ? 1 : g.actividad === 'General' ? 1 / 3 : 0
+    if (!factor || g.no_recurrente || g.en_consumo) return
     const key = mesKey(g.fecha)
     if (!key) return
-    asegurarMes(key)
-    rentabilidadPorMes[key].costoGastos += g.monto || 0
-  })
-  // Los gastos marcados como "General" (ej. un proveedor que no es de una
-  // actividad puntual) se reparten en tres partes iguales, igual que los
-  // sueldos del personal "General". Los marcados "no recurrente" (una
-  // inversión puntual, un flete de cosecha una vez al año, etc.) quedan
-  // afuera de este promedio — no reflejan un costo del mes a mes.
-  gastosGenerales.filter(g => g.actividad === 'General' && !g.no_recurrente).forEach(g => {
-    const key = mesKey(g.fecha)
-    if (!key) return
-    asegurarMes(key)
-    rentabilidadPorMes[key].costoGastos += (g.monto || 0) / 3
+    const partes = g.prorrateo_meses > 1 ? g.prorrateo_meses : 1
+    const mesHoy = mesKey(new Date().toISOString())
+    for (let i = 0; i < partes; i++) {
+      const k = sumarMeses(key, i)
+      if (k > mesHoy) break // los meses que todavía no llegaron se suman cuando llegan
+      asegurarMes(k)
+      rentabilidadPorMes[k].costoGastos += (g.monto || 0) * factor / partes
+    }
   })
   const rentabilidadMensual = Object.entries(rentabilidadPorMes).sort((a, b) => b[0].localeCompare(a[0])).map(([mes, d]) => {
     const costoTotal = d.costoHacienda + d.costoAlim + d.costoSanidad + d.costoManoObra + d.costoGastos
