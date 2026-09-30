@@ -129,6 +129,15 @@ export default function Comercial({ usuario }) {
   const [guardandoDolar, setGuardandoDolar] = useState(false)
   const [tcActual, setTcActual] = useState('')
   const [loading, setLoading] = useState(true)
+  // Retenciones practicadas a proveedores (Ganancias, IIBB…): quedan "a
+  // depositar" hasta que se paga el VEP; ahí salen de Caja 1 en un solo
+  // movimiento (categoría "Retenciones depositadas", no es un gasto: la
+  // retención ya forma parte del costo de la compra).
+  const [retenciones, setRetenciones] = useState([])
+  const [retSel, setRetSel] = useState([])
+  const [fechaDepositoRet, setFechaDepositoRet] = useState(hoyLocal())
+  const [verRetDepositadas, setVerRetDepositadas] = useState(false)
+  const [guardandoRet, setGuardandoRet] = useState(false)
   const [cajaOficial, setCajaOficial] = useState([])
   const [cajaParalela, setCajaParalela] = useState([])
   const [cheques, setCheques] = useState([])
@@ -164,7 +173,7 @@ export default function Comercial({ usuario }) {
 
   async function cargar() {
     try {
-    const [{ data: co }, { data: cp }, { data: ch }, { data: vt }, { data: lt }, { data: ct }, { data: dol }] = await Promise.all([
+    const [{ data: co }, { data: cp }, { data: ch }, { data: vt }, { data: lt }, { data: ct }, { data: dol }, { data: ret }] = await Promise.all([
       supabase.from('caja_oficial').select('*, contactos(nombre)').order('fecha', { ascending: false }),
       supabase.from('caja_paralela').select('*').order('fecha', { ascending: false }),
       supabase.from('cheques').select('*').order('fecha_vencimiento', { ascending: true }),
@@ -172,6 +181,7 @@ export default function Comercial({ usuario }) {
       supabase.from('lotes').select('*, pagos_compras(monto)').order('created_at', { ascending: false }),
       supabase.from('contactos').select('*').eq('activo', true).order('nombre'),
       supabase.from('caja_dolares').select('*').order('fecha', { ascending: false }),
+      supabase.from('retenciones').select('*').order('fecha', { ascending: true }),
     ])
     setCajaOficial(co || [])
     setCajaParalela(cp || [])
@@ -180,8 +190,47 @@ export default function Comercial({ usuario }) {
     setLotesCta(lt || [])
     setContactos(ct || [])
     setDolares(dol || [])
+    setRetenciones(ret || [])
     } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack) }
     setLoading(false)
+  }
+
+  async function depositarRetenciones() {
+    const sel = retenciones.filter(r => retSel.includes(r.id) && r.estado === 'a_depositar')
+    if (sel.length === 0) { alert('Tildá las retenciones que pagaste con el VEP'); return }
+    const total = Math.round(sel.reduce((s, r) => s + (parseFloat(r.monto) || 0), 0) * 100) / 100
+    const impuestos = [...new Set(sel.map(r => r.impuesto))].join(' + ')
+    const certs = sel.map(r => r.certificado || 's/n').join(', ')
+    if (!confirm(`¿Registrar el depósito de ${sel.length} retención(es) de ${impuestos} por $${total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}?\n\nSale de Caja 1 el ${new Date(fechaDepositoRet + 'T12:00:00').toLocaleDateString('es-AR')}.`)) return
+    setGuardandoRet(true)
+    const { data: mov, error } = await supabase.from('caja_oficial').insert({
+      fecha: fechaDepositoRet, tipo: 'egreso', categoria: 'Retenciones depositadas',
+      descripcion: `Depósito retenciones ${impuestos} — Cert. ${certs}`,
+      monto: total, forma_pago: 'transferencia',
+    }).select().single()
+    if (error) { alert('No se pudo registrar el depósito en Caja 1: ' + error.message); setGuardandoRet(false); return }
+    const { error: errUpd } = await supabase.from('retenciones')
+      .update({ estado: 'depositada', fecha_deposito: fechaDepositoRet, caja_oficial_id: mov.id })
+      .in('id', sel.map(r => r.id)).eq('estado', 'a_depositar')
+    if (errUpd) {
+      await supabase.from('caja_oficial').delete().eq('id', mov.id)
+      alert('No se pudieron marcar las retenciones como depositadas: ' + errUpd.message + '\n\nNo se registró nada.')
+      setGuardandoRet(false); return
+    }
+    setRetSel([]); setGuardandoRet(false)
+    await cargar()
+  }
+
+  async function deshacerDepositoRetenciones(cajaId) {
+    const grupo = retenciones.filter(r => r.caja_oficial_id === cajaId)
+    if (!confirm(`¿Deshacer este depósito? Se elimina el egreso de Caja 1 y ${grupo.length} retención(es) vuelven a quedar "a depositar".`)) return
+    setGuardandoRet(true)
+    const { error } = await supabase.from('retenciones').update({ estado: 'a_depositar', fecha_deposito: null, caja_oficial_id: null }).eq('caja_oficial_id', cajaId)
+    if (error) { alert('No se pudo deshacer: ' + error.message); setGuardandoRet(false); return }
+    const { error: errCaja } = await supabase.from('caja_oficial').delete().eq('id', cajaId)
+    if (errCaja) alert('Las retenciones volvieron a "a depositar", pero no se pudo borrar el egreso de Caja 1: ' + errCaja.message + '\n\nBorralo a mano desde Caja 1.')
+    setGuardandoRet(false)
+    await cargar()
   }
 
   async function guardarDolar() {
@@ -487,6 +536,91 @@ export default function Comercial({ usuario }) {
                 <div style={{ fontSize: 11, color: S.hint }}>en los próximos {diasProyeccion} días</div>
               </div>
             </div>
+          </div>
+        )
+      })()}
+
+      {/* Retenciones a depositar — lo retenido a proveedores (ARCA/Rentas)
+          que todavía no se pagó con el VEP. */}
+      {(() => {
+        const aDepositar = retenciones.filter(r => r.estado === 'a_depositar')
+        const depositadas = retenciones.filter(r => r.estado === 'depositada')
+        if (aDepositar.length === 0 && depositadas.length === 0) return null
+        const totalPend = aDepositar.reduce((s, r) => s + (parseFloat(r.monto) || 0), 0)
+        const totalSel = aDepositar.filter(r => retSel.includes(r.id)).reduce((s, r) => s + (parseFloat(r.monto) || 0), 0)
+        const fmt = n => '$' + (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        const fmtF = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
+        const th = { padding: '7px 10px', fontSize: 11, fontWeight: 600, color: S.muted, textAlign: 'left', textTransform: 'uppercase' }
+        const td = { padding: '8px 10px', fontSize: 12, borderTop: `1px solid ${S.border}` }
+        const depositos = [...new Set(depositadas.map(r => r.caja_oficial_id))].map(cid => {
+          const rs = depositadas.filter(r => r.caja_oficial_id === cid)
+          return { cid, fecha: rs[0]?.fecha_deposito, rs, total: rs.reduce((s, r) => s + (parseFloat(r.monto) || 0), 0) }
+        }).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+        return (
+          <div style={{ background: S.surface, border: `1px solid ${aDepositar.length ? S.amber : S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: aDepositar.length ? 10 : 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>🧾 Retenciones a depositar</div>
+                <div style={{ fontSize: 12, color: S.muted }}>
+                  {aDepositar.length > 0 ? <>{aDepositar.length} pendiente{aDepositar.length !== 1 ? 's' : ''} · <b style={{ color: S.amber, fontFamily: 'monospace' }}>{fmt(totalPend)}</b></> : 'No hay retenciones pendientes'}
+                </div>
+              </div>
+              {depositadas.length > 0 && (
+                <button onClick={() => setVerRetDepositadas(!verRetDepositadas)}
+                  style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
+                  {verRetDepositadas ? 'Ocultar depositadas' : `Ver depositadas (${depositos.length})`}
+                </button>
+              )}
+            </div>
+            {aDepositar.length > 0 && (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>
+                      <th style={th}><input type="checkbox" checked={aDepositar.every(r => retSel.includes(r.id))} onChange={e => setRetSel(e.target.checked ? aDepositar.map(r => r.id) : [])} /></th>
+                      <th style={th}>Fecha</th><th style={th}>Proveedor</th><th style={th}>Impuesto</th><th style={th}>Certificado</th><th style={{ ...th, textAlign: 'right' }}>Monto</th>
+                    </tr></thead>
+                    <tbody>
+                      {aDepositar.map(r => (
+                        <tr key={r.id}>
+                          <td style={td}><input type="checkbox" checked={retSel.includes(r.id)} onChange={e => setRetSel(e.target.checked ? [...retSel, r.id] : retSel.filter(x => x !== r.id))} /></td>
+                          <td style={{ ...td, fontFamily: 'monospace' }}>{fmtF(r.fecha)}</td>
+                          <td style={td}>{r.proveedor || '—'}</td>
+                          <td style={td}>{r.impuesto}</td>
+                          <td style={{ ...td, fontFamily: 'monospace' }}>{r.certificado || <span style={{ color: S.amber }}>sin N°</span>}</td>
+                          <td style={{ ...td, textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{fmt(r.monto)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                  <span style={{ fontSize: 12, color: S.muted }}>Fecha del VEP</span>
+                  <input type="date" value={fechaDepositoRet} onChange={e => setFechaDepositoRet(e.target.value)}
+                    style={{ padding: '5px 8px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6 }} />
+                  <button onClick={depositarRetenciones} disabled={guardandoRet || retSel.length === 0}
+                    style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: retSel.length ? S.accent : S.bg, border: 'none', color: retSel.length ? '#fff' : S.hint, borderRadius: 6, cursor: retSel.length ? 'pointer' : 'default' }}>
+                    {guardandoRet ? 'Guardando...' : `Registrar depósito${totalSel ? ' · ' + fmt(totalSel) : ''} (sale de Caja 1)`}
+                  </button>
+                </div>
+              </>
+            )}
+            {verRetDepositadas && depositos.length > 0 && (
+              <div style={{ marginTop: 12, borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
+                {depositos.map(d => (
+                  <div key={d.cid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 12 }}>
+                    <span>
+                      <b style={{ fontFamily: 'monospace' }}>{fmtF(d.fecha)}</b> · {d.rs.map(r => `${r.proveedor || '—'} (${r.certificado || 's/n'})`).join(', ')}
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <b style={{ fontFamily: 'monospace' }}>{fmt(d.total)}</b>
+                      <button onClick={() => deshacerDepositoRetenciones(d.cid)} disabled={guardandoRet}
+                        style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Deshacer</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )
       })()}

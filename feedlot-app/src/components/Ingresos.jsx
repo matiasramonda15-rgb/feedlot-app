@@ -1623,6 +1623,17 @@ async function generarReciboCompra(lote, pagos, corrales) {
       </tr>`)
     }
 
+    // Retención: impuesto y N° de certificado
+    if (tipo === 'retencion') {
+      const partes = (p.observaciones || '').split(' · ')
+      return [`<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">RETENCIÓN ${(partes[0] || '').toUpperCase()}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${partes[1] || ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR') : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+    </tr>`]
+    }
+
     // Transferencia, efectivo, cuenta corriente
     return [`<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;">${desc}</td>
@@ -2048,6 +2059,8 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
   async function registrarPago(lote) {
     const totalPagos = formPago.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     if (!totalPagos) { alert('Ingresá el monto'); return }
+    const retSinCert = formPago.pagos.filter(p => p.tipo === 'retencion' && (parseFloat(p.monto) || 0) > 0 && !(p.retencion_certificado || '').trim())
+    if (retSinCert.length > 0 && !confirm('Hay una retención sin número de certificado. ¿La registro igual? (el número lo podés agregar después volviendo a cargarla)')) return
     setGuardando(true)
 
     const totalLote = totalLoteCalc(lote)
@@ -2075,6 +2088,14 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
         }).filter(Boolean)
       }
 
+      // Retención (Ganancias, IIBB…): cuenta como pagado al proveedor, pero la
+      // plata no sale ese día — se deposita después en ARCA/Rentas desde
+      // Comercial → "Retenciones a depositar". No mueve caja acá.
+      const esRetencion = pago.tipo === 'retencion'
+      const impuestoRet = pago.retencion_impuesto || 'Impuesto a las Ganancias'
+      const certRet = (pago.retencion_certificado || '').trim()
+      if (esRetencion) desc = `Retención ${impuestoRet}${certRet ? ` — Cert. N° ${certRet}` : ''} — ${lote.procedencia || ''}`
+
       const { data: pagoInsertado, error: errPago } = await supabase.from('pagos_compras').insert({
         lote_id: lote.id, fecha: formPago.fecha, monto,
         forma_pago: formaPago,
@@ -2085,10 +2106,25 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
         fecha_vencimiento_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.fecha_vencimiento || null : null,
         cheque_propio: pago.subtipo_cheque === 'propio' ? pago.cheque_propio : null,
         cheque_tercero_detalle,
-        es_negro: pago.es_paralelo || false,
+        es_negro: esRetencion ? false : (pago.es_paralelo || false),
         descripcion: pago.tipo === 'canje' && pago.canje_detalle ? `${desc} — Canje, a cambio de: ${pago.canje_detalle}` : desc,
+        observaciones: esRetencion ? `${impuestoRet} · Cert. N° ${certRet || 's/n'}` : null,
       }).select().single()
       if (errPago) { alert('Error al registrar el pago: ' + errPago.message); setGuardando(false); return }
+
+      if (esRetencion) {
+        const { error: errRet } = await supabase.from('retenciones').insert({
+          fecha: formPago.fecha, impuesto: impuestoRet, certificado: certRet || null, monto,
+          proveedor: lote.procedencia || null, origen: 'compra_hacienda',
+          lote_id: lote.id, pago_compra_id: pagoInsertado.id, registrado_por: usuario?.id || null,
+        })
+        if (errRet) {
+          // Sin la retención registrada, el pago no puede quedar: se deshace.
+          await supabase.from('pagos_compras').delete().eq('id', pagoInsertado.id)
+          alert('No se pudo registrar la retención: ' + errRet.message + '\n\nNo se guardó ese pago; revisá e intentá de nuevo.')
+          setGuardando(false); return
+        }
+      }
 
       let pagoCajaId = null
       // Canje: no sale plata de ninguna caja — se compensa solo en Contactos
@@ -2118,7 +2154,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
         }
         const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
         if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
-      } else if (pago.tipo !== 'canje') {
+      } else if (pago.tipo !== 'canje' && !esRetencion) {
         if (pago.es_paralelo) {
           const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
           if (errCp) { alert('El pago se registró, pero no se pudo cargar en Caja 2: ' + errCp.message); setGuardando(false); return }
@@ -2176,6 +2212,16 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
     // "rechazado": el cheque rebotó (sin fondos) — no vuelve a la cartera
     // como si estuviera bien, queda marcado RECHAZADO (no se puede reusar).
     const esRechazo = motivo === 'rechazado'
+    // Retención ya depositada en ARCA: no se puede borrar el pago sin antes
+    // deshacer el depósito (si no, la caja quedaría con un depósito de una
+    // retención que ya no existe).
+    if (p.forma_pago === 'retencion') {
+      const { data: rets } = await supabase.from('retenciones').select('id, estado').eq('pago_compra_id', p.id)
+      if ((rets || []).some(r => r.estado === 'depositada')) {
+        alert('Esta retención ya figura como DEPOSITADA.\n\nPrimero deshacé el depósito desde Comercial → "Retenciones a depositar" y después la podés eliminar acá.\n\nNo se cambió nada.')
+        return
+      }
+    }
     if (esRechazo && !confirm('¿Confirmás que el cheque fue RECHAZADO por el banco (sin fondos, etc.)? Va a quedar marcado como rechazado en la cartera, y esta compra vuelve a figurar con el saldo pendiente para pagarla con otra cosa.')) return
     if (!esRechazo && !confirm('¿Eliminar este pago? Se eliminará de la caja y se revertirán los cheques usados (vuelven a la cartera como si nada hubiera pasado).')) return
     const { data: chAsoc } = await supabase.from('cheques').select('id').eq('pago_compra_id', p.id).eq('tipo', 'emitido').maybeSingle()
@@ -2191,6 +2237,10 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
     }
     await supabase.from('caja_oficial').delete().eq('pago_compra_id', p.id)
     await supabase.from('caja_paralela').delete().eq('pago_compra_id', p.id)
+    if (p.forma_pago === 'retencion') {
+      const { error: errDelRet } = await supabase.from('retenciones').delete().eq('pago_compra_id', p.id).eq('estado', 'a_depositar')
+      if (errDelRet) { alert('No se pudo eliminar la retención: ' + errDelRet.message + '\n\nNo se eliminó el pago.'); return }
+    }
     const { error: errDelPago } = await supabase.from('pagos_compras').delete().eq('id', p.id)
     if (errDelPago) { alert('Error al eliminar el pago: ' + errDelPago.message); return }
     const pagosRest = pagos.filter(pp => pp.id !== p.id)
@@ -2402,7 +2452,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                                 {pagos.map((p, pi) => (
                                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagos.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                    <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
+                                    <span style={{ fontSize: 13 }}>{p.forma_pago === 'retencion' ? `🧾 Retención · ${p.observaciones || ''}` : p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                       <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
                                       <button onClick={() => generarReciboCompra(l, [p], corrales)} title="Recibo de solo este pago" style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 13 }}>🖨️</button>
@@ -2508,7 +2558,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                             </div>
                           )
                         })()}
-                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (tarjeta/financiera)' }]} />
+                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (tarjeta/financiera)' }, { value: 'retencion', label: '🧾 Retención (ARCA / Rentas)' }]} />
                         {formPago.pagos.some(p => p.tipo === 'credito') && (
                           <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 8, marginBottom: 10 }}>
                             <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
@@ -2604,7 +2654,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                           <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                             {pagosArch.map((p, pi) => (
                               <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosArch.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
+                                <span style={{ fontSize: 13 }}>{p.forma_pago === 'retencion' ? `🧾 Retención · ${p.observaciones || ''}` : p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                   <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
                                   <button onClick={() => generarReciboCompra(l, [p], corrales)} title="Recibo de solo este pago" style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 13 }}>🖨️</button>

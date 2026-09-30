@@ -3,7 +3,7 @@ import { useState } from 'react'
 // Forma inicial de un pago — la misma en todos los módulos que registran
 // cobros/pagos (Insumos, Ventas, Ingresos, Agricultura, Servicios, Personal).
 export const PAGO_INIT = {
-  tipo: 'transferencia', // 'transferencia' | 'efectivo' | 'cheque' | 'e-cheq' | 'canje'
+  tipo: 'transferencia', // 'transferencia' | 'efectivo' | 'cheque' | 'e-cheq' | 'canje' | 'retencion' (solo donde se ofrece)
   monto: '',
   es_paralelo: false,
   subtipo_cheque: '', // 'propio' | 'tercero' — solo aplica si tipo es 'cheque' o 'e-cheq'
@@ -11,6 +11,9 @@ export const PAGO_INIT = {
   cheque_propio: { numero: '', banco: '', fecha_vencimiento: '', fecha_cobro: '' },
   cheque_tercero_ids: [],
 }
+
+// Impuestos que se pueden retener al pagar (forma de pago "Retención").
+export const IMPUESTOS_RETENCION = ['Impuesto a las Ganancias', 'Ingresos Brutos', 'IVA', 'SUSS']
 
 const inpDefault = { width: '100%', border: '1px solid #E2DDD6', borderRadius: 6, padding: '8px 10px', fontSize: 13, background: '#fff', boxSizing: 'border-box' }
 
@@ -58,6 +61,10 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
               const a = anticiposDisponibles[0]
               const montoActual = parseFloat(pago.monto) || 0
               onChange({ ...pago, tipo: 'anticipo', subtipo_cheque: '', anticipo_id: a.id, anticipo_detalle: a.descripcion, monto: String(Math.min(a.monto_disponible, montoActual || a.monto_disponible)) })
+            } else if (e.target.value === 'retencion') {
+              // La retención no sale de ninguna caja ese día (se deposita
+              // después en ARCA/Rentas desde Comercial): nunca es Caja 2.
+              onChange({ ...pago, tipo: 'retencion', subtipo_cheque: '', es_paralelo: false, retencion_impuesto: pago.retencion_impuesto || IMPUESTOS_RETENCION[0] })
             } else {
               onChange({ ...pago, tipo: e.target.value, subtipo_cheque: '' })
             }
@@ -78,7 +85,7 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
         {mostrarParalelo && (
           <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.muted, cursor: 'pointer' }}>
-              <input type="checkbox" checked={pago.es_paralelo || false} onChange={e => set('es_paralelo', e.target.checked)} />
+              <input type="checkbox" checked={pago.es_paralelo || false} disabled={pago.tipo === 'retencion'} onChange={e => set('es_paralelo', e.target.checked)} />
               Caja 2
             </label>
           </div>
@@ -167,6 +174,27 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>A cambio de</div>
           <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
             onChange={e => set('canje_detalle', e.target.value)} style={inp} />
+        </div>
+      )}
+
+      {pago.tipo === 'retencion' && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Impuesto</div>
+              <select value={pago.retencion_impuesto || IMPUESTOS_RETENCION[0]} onChange={e => set('retencion_impuesto', e.target.value)} style={inp}>
+                {IMPUESTOS_RETENCION.map(i => <option key={i} value={i}>{i}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° de certificado</div>
+              <input type="text" value={pago.retencion_certificado || ''} placeholder="ej. 0000-2026-000016"
+                onChange={e => set('retencion_certificado', e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: S.hint, marginTop: 6 }}>
+            No sale plata de caja ahora: queda en "Retenciones a depositar" (Comercial) hasta que pagues el VEP.
+          </div>
         </div>
       )}
 
