@@ -175,6 +175,10 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [pagosExpandidos, setPagosExpandidos] = useState({})
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false)
   const [verPagosArchivadaVenta, setVerPagosArchivadaVenta] = useState(null)
+  // Cheque rechazado: el comprador lo reemplaza por efectivo/transferencia.
+  // { pagoId, forma, fecha, caja2 } del cobro que se está reemplazando.
+  const [reemplazoCheque, setReemplazoCheque] = useState(null)
+  const [guardandoReemplazo, setGuardandoReemplazo] = useState(false)
   const [filtroArchivadas, setFiltroArchivadas] = useState({ comprador: '', desde: '', hasta: '' })
   const [filtroVentas, setFiltroVentas] = useState('')
   const [grupoExpandido, setGrupoExpandido] = useState(null)
@@ -223,6 +227,102 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [ventaConfirmada, setVentaConfirmada] = useState(null)
 
   useEffect(() => { cargar(); cargarChequesParalelos() }, [])
+
+  // ── Cheque rechazado ──────────────────────────────────────────────────────
+  // Cuando un cheque recibido en un cobro vuelve rechazado y el comprador lo
+  // reemplaza por efectivo o transferencia: el cheque queda en la cartera
+  // como RECHAZADO (no se borra, así queda la historia), el ingreso de caja
+  // del cheque se reemplaza por uno nuevo con la fecha y la caja del pago
+  // real, y el cobro pasa a decir con qué se pagó. El monto del cobro no
+  // cambia, así que la venta sigue igual de cobrada.
+  async function reemplazarChequeRechazado(p, v, corralesStr) {
+    const r = reemplazoCheque
+    if (!r || !r.fecha) { alert('Poné la fecha en que te pagó'); return }
+    if (guardandoReemplazo) return
+    const { data: chs } = await supabase.from('cheques').select('id, numero, estado, beneficiario').eq('pago_venta_id', p.id)
+    const numero = p.numero_cheque || chs?.[0]?.numero || 's/n'
+    const entregados = (chs || []).filter(c => c.estado === 'entregado')
+    let aviso = `¿Marcar el cheque #${numero} como RECHAZADO y registrar que ${v.comprador || 'el comprador'} lo pagó en ${r.forma} (${r.caja2 ? 'Caja 2' : 'Caja 1'}) el ${new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-AR')}?`
+    if (entregados.length > 0) aviso += `\n\nOjo: este cheque figura ENTREGADO${entregados[0].beneficiario ? ' a ' + entregados[0].beneficiario : ''}. Si te lo devolvieron, ese pago quedó sin cubrir: revisalo en su módulo.`
+    if (!confirm(aviso)) return
+    setGuardandoReemplazo(true)
+    const monto = p.monto
+    const desc = 'Venta ' + corralesStr + ' ' + (v.comprador || '') + ` (reemplaza cheque #${numero} rechazado)`
+    // 1) El ingreso nuevo, con la fecha y la caja reales del pago.
+    const { data: nuevo, error: eIns } = r.caja2
+      ? await supabase.from('caja_paralela').insert({ fecha: r.fecha, tipo: 'ingreso', descripcion: desc, monto, pago_venta_id: p.id }).select().single()
+      : await supabase.from('caja_oficial').insert({ fecha: r.fecha, tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: desc, monto, forma_pago: r.forma, pago_venta_id: p.id }).select().single()
+    if (eIns) { alert('No se pudo registrar el ingreso: ' + eIns.message + '\n\nNo se cambió nada.'); setGuardandoReemplazo(false); return }
+    // 2) El cheque queda RECHAZADO y se desvincula del ingreso viejo.
+    const { error: eCh } = await supabase.from('cheques').update({ estado: 'rechazado', caja_oficial_id: null, caja_paralela_id: null, observaciones: `Rechazado — reemplazado por ${r.forma} el ${r.fecha}` }).eq('pago_venta_id', p.id)
+    if (eCh) {
+      await (r.caja2 ? supabase.from('caja_paralela') : supabase.from('caja_oficial')).delete().eq('id', nuevo.id)
+      alert('No se pudo marcar el cheque como rechazado: ' + eCh.message + '\n\nNo se cambió nada.'); setGuardandoReemplazo(false); return
+    }
+    // 3) Se borra el ingreso viejo del cheque (el nuevo queda).
+    if (r.caja2) {
+      await supabase.from('caja_paralela').delete().eq('pago_venta_id', p.id).neq('id', nuevo.id)
+      await supabase.from('caja_oficial').delete().eq('pago_venta_id', p.id)
+    } else {
+      await supabase.from('caja_oficial').delete().eq('pago_venta_id', p.id).neq('id', nuevo.id)
+      await supabase.from('caja_paralela').delete().eq('pago_venta_id', p.id)
+    }
+    // 4) El cobro pasa a decir con qué se pagó.
+    const { error: ePago } = await supabase.from('pagos_ventas').update({
+      forma_pago: r.forma, fecha: r.fecha, es_paralelo: !!r.caja2,
+      numero_cheque: null, banco: null, fecha_vencimiento_cheque: null, subtipo_cheque: null, librador_real: null,
+      observaciones: `Reemplaza cheque #${numero} rechazado${p.observaciones ? ' — ' + p.observaciones : ''}`,
+    }).eq('id', p.id)
+    if (ePago) alert('El cheque quedó rechazado y la caja actualizada, pero no se pudo actualizar el cobro: ' + ePago.message)
+    setReemplazoCheque(null); setGuardandoReemplazo(false)
+    await cargar()
+  }
+
+  // Botón "↩ Rechazado" (solo en cobros con cheque) + el formulario chico.
+  function botonChequeRechazado(p) {
+    if (!['cheque', 'e-cheq'].includes(p.forma_pago)) return null
+    const abierto = reemplazoCheque?.pagoId === p.id
+    return (
+      <button onClick={() => setReemplazoCheque(abierto ? null : { pagoId: p.id, forma: 'efectivo', fecha: hoyLocal(), caja2: !!p.es_paralelo })}
+        title="El cheque volvió rechazado y el comprador lo pagó de otra forma"
+        style={{ padding: '2px 8px', fontSize: 11, background: abierto ? S.amberLight : 'transparent', border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        ↩ Rechazado
+      </button>
+    )
+  }
+  function formChequeRechazado(p, v, corralesStr) {
+    if (reemplazoCheque?.pagoId !== p.id) return null
+    const r = reemplazoCheque
+    const inp = { padding: '5px 8px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 5, background: S.surface }
+    return (
+      <div style={{ padding: '8px 10px', background: S.amberLight, borderTop: `1px solid ${S.border}`, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 12 }}>
+        <span style={{ color: S.amber, fontWeight: 600 }}>Cheque rechazado → lo pagó en</span>
+        <select value={r.forma} onChange={e => setReemplazoCheque({ ...r, forma: e.target.value })} style={inp}>
+          <option value="efectivo">Efectivo</option>
+          <option value="transferencia">Transferencia</option>
+        </select>
+        <input type="date" value={r.fecha} onChange={e => setReemplazoCheque({ ...r, fecha: e.target.value })} style={inp} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked={!!r.caja2} onChange={e => setReemplazoCheque({ ...r, caja2: e.target.checked })} /> Caja 2
+        </label>
+        <button onClick={() => reemplazarChequeRechazado(p, v, corralesStr)} disabled={guardandoReemplazo}
+          style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: S.amber, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer' }}>
+          {guardandoReemplazo ? 'Guardando...' : `Confirmar ($${(p.monto || 0).toLocaleString('es-AR')})`}
+        </button>
+        <button onClick={() => setReemplazoCheque(null)} style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>Cancelar</button>
+      </div>
+    )
+  }
+
+  // Aviso antes de deshacer un cobro con un cheque que ya no está en cartera.
+  async function confirmarDeshacerCobro(p) {
+    const { data: chs } = await supabase.from('cheques').select('numero, estado, beneficiario').eq('pago_venta_id', p.id)
+    const usado = (chs || []).find(c => c.estado && c.estado !== 'en_cartera')
+    if (usado) {
+      return confirm(`El cheque #${usado.numero || 's/n'} de este cobro figura "${usado.estado}"${usado.beneficiario ? ' (' + usado.beneficiario + ')' : ''}.\n\nSi volvió rechazado, usá "↩ Rechazado" en vez de borrarlo: así queda la historia del cheque.\n\n¿Borrar el cobro y el cheque igual?`)
+    }
+    return confirm('¿Deshacer este pago? Se eliminará de la caja y el cheque, si tenía.')
+  }
 
   async function cargar() {
     try {
@@ -2230,12 +2330,14 @@ export default function Ventas({ usuario, mobile, nav }) {
                               {pagosList.length > 0 && (
                                 <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden', marginBottom: 12, maxWidth: 480 }}>
                                   {pagosList.map((p, pi) => (
-                                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosList.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                      <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralela ? ' · Caja 2' : ''}</span>
+                                    <React.Fragment key={p.id}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosList.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                                      <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralelo ? ' · Caja 2' : ''}{p.observaciones?.startsWith('Reemplaza cheque') ? <span style={{ fontSize: 11, color: S.amber }}> · {p.observaciones.split(' — ')[0]}</span> : null}</span>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                         <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                        {botonChequeRechazado(p)}
                                         <button onClick={async () => {
-                                          if (!confirm('¿Deshacer este pago? Se eliminará de la caja y el cheque, si tenía.')) return
+                                          if (!(await confirmarDeshacerCobro(p))) return
                                           // Antes esto borraba el pago directo, dejando la caja y el
                                           // cheque recibido sueltos.
                                           await supabase.from('cheques').delete().eq('pago_venta_id', p.id)
@@ -2257,6 +2359,8 @@ export default function Ventas({ usuario, mobile, nav }) {
                                         }} style={{ background: 'none', border: 'none', color: '#7A1A1A', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                       </div>
                                     </div>
+                                    {formChequeRechazado(p, v, corralesStr)}
+                                    </React.Fragment>
                                   ))}
                                 </div>
                               )}
@@ -2538,25 +2642,39 @@ export default function Ventas({ usuario, mobile, nav }) {
                         </div>
                         {expandidoArch && (
                           <div style={{ padding: '0 14px 14px' }}>
-                            <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>Pagos realizados — tocá ✕ para deshacer uno si hubo un error (se revierte la caja y el cheque)</div>
+                            <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>Pagos realizados — ✕ deshace un cobro cargado por error · ↩ Rechazado si un cheque volvió y lo pagaron de otra forma</div>
                             {pagosArch.length === 0 && <div style={{ fontSize: 13, color: S.hint }}>Sin pagos registrados.</div>}
                             {pagosArch.length > 0 && (
                               <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                                 {pagosArch.map((p, pi) => (
-                                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosArch.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                    <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralela ? ' · Caja 2' : ''}</span>
+                                  <React.Fragment key={p.id}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosArch.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                                    <span style={{ fontSize: 13 }}>{p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_paralelo ? ' · Caja 2' : ''}{p.observaciones?.startsWith('Reemplaza cheque') ? <span style={{ fontSize: 11, color: S.amber }}> · {p.observaciones.split(' — ')[0]}</span> : null}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                       <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
+                                      {botonChequeRechazado(p)}
                                       <button onClick={async () => {
-                                        if (!confirm('¿Deshacer este pago? Se eliminará de la caja y el cheque, si tenía.')) return
+                                        if (!(await confirmarDeshacerCobro(p))) return
                                         await supabase.from('cheques').delete().eq('pago_venta_id', p.id)
                                         await supabase.from('caja_oficial').delete().eq('pago_venta_id', p.id)
                                         await supabase.from('caja_paralela').delete().eq('pago_venta_id', p.id)
                                         await supabase.from('pagos_ventas').delete().eq('id', p.id)
+                                        // Igual que en las ventas activas: si al sacar este cobro la
+                                        // venta ya no está cobrada del todo, vuelve a pendiente/facturada
+                                        // y sale de Archivadas, así se le puede cargar el cobro correcto.
+                                        const idsG = grupo.map(vv => vv.id)
+                                        const { data: restantes } = await supabase.from('pagos_ventas').select('monto').in('venta_id', idsG)
+                                        const totalRest = (restantes || []).reduce((s, pp) => s + (pp.monto || 0), 0)
+                                        if (totalRest < totalArch - 1000) {
+                                          for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: vv.monto_facturado != null ? 'facturado' : 'pendiente' }).eq('id', vv.id)
+                                          alert('La venta quedó con saldo pendiente y volvió a la lista de ventas en curso: cargale ahí el cobro correcto.')
+                                        }
                                         await cargar()
                                       }} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }}>✕</button>
                                     </div>
                                   </div>
+                                  {formChequeRechazado(p, v, corrStr)}
+                                  </React.Fragment>
                                 ))}
                               </div>
                             )}
