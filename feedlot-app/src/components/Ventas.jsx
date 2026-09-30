@@ -2193,14 +2193,6 @@ export default function Ventas({ usuario, mobile, nav }) {
             </div>
           )}
 
-          {ventas.filter(v => v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)).length > 0 && (
-            <div style={{ background: S.redLight, border: '1px solid #F09595', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: S.red, marginBottom: 6 }}>Vencimientos proximos - 7 dias</div>
-              {ventas.filter(v => v.fecha_vencimiento_cobro && v.estado_comercial !== 'cobrado' && new Date(v.fecha_vencimiento_cobro) <= new Date(Date.now() + 7 * 86400000)).map(v => (
-                <div key={v.id} style={{ fontSize: 12, color: S.red, marginBottom: 2 }}>C-{v.corrales?.numero} - {v.comprador || 'Sin comprador'} - vence {new Date(v.fecha_vencimiento_cobro + 'T12:00:00').toLocaleDateString('es-AR')}</div>
-              ))}
-            </div>
-          )}
 
           <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
             <select value={filtroGestion} onChange={e => setFiltroGestion(e.target.value)}
