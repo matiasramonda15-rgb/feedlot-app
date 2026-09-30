@@ -36,7 +36,36 @@ const ESTADOS_CHEQUE = { en_cartera: { bg: '#FDF0E0', color: '#7A4500' }, entreg
 // plata que va a entrar o salir en esa fecha.
 const ESTADOS_FINALES_CHEQUE = ['cobrado', 'rechazado', 'anulado']
 
-function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFiltroEstado, cambiarEstadoCheque, eliminar }) {
+// Fechas de un cheque, iguales para recibidos y emitidos:
+//  - Fecha de cobro: desde cuándo se puede cobrar/depositar.
+//  - Vencimiento: 30 días después de la fecha de cobro (ya no se muestra en la
+//    lista, pero se usa para archivar).
+// Ojo: en los cheques EMITIDOS (propios) la fecha de cobro quedó guardada en
+// el campo fecha_vencimiento (el formulario de pago la pide como "Fecha de
+// pago (cuándo se cobra)"), y fecha_cobro guarda el día que se registró el
+// pago. En los RECIBIDOS, fecha_cobro es la de cobro y fecha_vencimiento la de
+// vencimiento. Estas dos funciones lo unifican.
+const sumarDias = (iso, d) => { const f = new Date(iso + 'T12:00:00'); f.setDate(f.getDate() + d); return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}` }
+const fechaCobroCheque = c => c.tipo === 'emitido'
+  ? (c.fecha_vencimiento || c.fecha_cobro || null)
+  : (c.fecha_cobro || (c.fecha_vencimiento ? sumarDias(c.fecha_vencimiento, -30) : null))
+const fechaVtoCheque = c => {
+  if (c.tipo === 'emitido') return c.fecha_vencimiento ? sumarDias(c.fecha_vencimiento, 30) : null
+  return c.fecha_vencimiento || (c.fecha_cobro ? sumarDias(c.fecha_cobro, 30) : null)
+}
+const hoyISO = () => { const f = new Date(); return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}` }
+const diasHasta = iso => Math.round((new Date(iso + 'T12:00:00') - new Date(hoyISO() + 'T12:00:00')) / 86400000)
+// Un cheque que ya salió de la cartera (entregado, depositado, cobrado…) o
+// uno propio, queda en la lista hasta su vencimiento; después se archiva.
+// Los que siguen EN CARTERA nunca se archivan solos (si vencen ahí, hay que
+// verlos).
+const chequeArchivado = c => c.estado !== 'en_cartera' && !!fechaVtoCheque(c) && fechaVtoCheque(c) < hoyISO()
+// Cheques propios (emitidos) que se van a cobrar de nuestra cuenta entre hoy y
+// dentro de `dias` días.
+const propioSeCobraEn = (c, dias) => c.tipo === 'emitido' && !ESTADOS_FINALES_CHEQUE.includes(c.estado) && !!fechaCobroCheque(c)
+  && fechaCobroCheque(c) >= hoyISO() && fechaCobroCheque(c) <= sumarDias(hoyISO(), dias)
+
+function TablaCheques({ items, filtro, setFiltro, filtroEstado, setFiltroEstado, cambiarEstadoCheque, eliminar }) {
     return (
       <div>
         <div style={{ display: 'flex', gap: 8, marginBottom: '1.25rem', justifyContent: 'space-between', flexWrap: 'wrap' }}>
@@ -48,7 +77,7 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
               </button>
             ))}
             <div style={{ width: 1, background: S.border, margin: '0 4px' }} />
-            {[['en_cartera', '📥 En cartera'], ['entregado', '📤 Entregados'], ['depositado', '🏦 Depositados'], ['cobrado', '✅ Cobrados'], ['todos', 'Ver todos']].map(([f, l]) => (
+            {[['vigentes', 'Vigentes'], ['en_cartera', '📥 En cartera'], ['entregado', '📤 Entregados'], ['depositado', '🏦 Depositados'], ['cobrado', '✅ Cobrados'], ['archivados', '🗄 Archivados'], ['todos', 'Ver todos']].map(([f, l]) => (
               <button key={f} onClick={() => setFiltroEstado(f)}
                 style={{ padding: '6px 12px', fontSize: 12, fontWeight: filtroEstado === f ? 600 : 400, background: filtroEstado === f ? S.purple : 'transparent', border: `1px solid ${filtroEstado === f ? S.purple : S.border}`, color: filtroEstado === f ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 {l}
@@ -57,9 +86,11 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
           </div>
           <div style={{ fontSize: 12, color: S.muted }}>{items.length} cheques</div>
         </div>
-        {(filtroEstado === 'entregado' || filtroEstado === 'depositado' || filtroEstado === 'cobrado') && (
+        {filtroEstado !== 'todos' && filtroEstado !== 'en_cartera' && (
           <div style={{ fontSize: 11, color: S.hint, marginTop: -8, marginBottom: 12 }}>
-            Se muestran los últimos 35 días desde el vencimiento — tocá "Ver todos" para buscar uno más viejo.
+            {filtroEstado === 'archivados'
+              ? 'Cheques que ya salieron de la cartera y pasaron su vencimiento (30 días después de la fecha de cobro).'
+              : 'Los cheques que ya salieron de la cartera (entregados, depositados, cobrados) y los propios se archivan cuando vencen — tocá "🗄 Archivados" para verlos.'}
           </div>
         )}
 
@@ -67,7 +98,7 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead><tr style={{ background: S.bg }}>
-                {['Tipo', 'Medio', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Vencimiento', 'Librador/Beneficiario', 'Estado', ''].map(h => (
+                {['Tipo', 'Medio', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Librador/Beneficiario', 'Estado', ''].map(h => (
                   <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr></thead>
@@ -75,8 +106,14 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
                 {items.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cheques.</td></tr>}
                 {items.map(c => {
                   const ec = ESTADOS_CHEQUE[c.estado] || ESTADOS_CHEQUE.en_cartera
-                  const diasVence = Math.ceil((new Date(c.fecha_vencimiento + 'T12:00:00') - new Date()) / (1000 * 60 * 60 * 24))
-                  const urgente = diasVence <= 7 && !ESTADOS_FINALES_CHEQUE.includes(c.estado)
+                  const fCobro = fechaCobroCheque(c)
+                  const fVto = fechaVtoCheque(c)
+                  const dCobro = fCobro ? diasHasta(fCobro) : null
+                  // Aviso: cheque propio que se cobra de nuestra cuenta en los próximos 7 días.
+                  const urgente = propioSeCobraEn(c, 7)
+                  // Recibido todavía en cartera: ya se puede depositar / ya venció.
+                  const vencidoEnCartera = c.tipo === 'recibido' && c.estado === 'en_cartera' && fVto && fVto < hoyISO()
+                  const alCobro = c.tipo === 'recibido' && c.estado === 'en_cartera' && fCobro && fCobro <= hoyISO() && !vencidoEnCartera
                   return (
                     <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}`, background: urgente ? '#FFF5F5' : 'transparent' }}>
                       <td style={{ padding: '9px 12px' }}>
@@ -93,12 +130,12 @@ function TablaCheques({ items, chVence7, filtro, setFiltro, filtroEstado, setFil
                       <td style={{ padding: '9px 12px', fontSize: 12, color: S.muted }}>{c.banco || '—'}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600 }}>${c.monto?.toLocaleString('es-AR')}</td>
                       <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>{c.fecha_emision ? new Date(c.fecha_emision + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: S.muted }}>
-                        {c.fecha_cobro ? new Date(c.fecha_cobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
-                      </td>
-                      <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, fontWeight: urgente ? 700 : 400, color: urgente ? S.red : S.text }}>
-                        {new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                        {urgente && <span style={{ fontSize: 10, marginLeft: 4, color: S.red }}>({diasVence}d) ⚠</span>}
+                      <td title={fVto ? `Vence el ${new Date(fVto + 'T12:00:00').toLocaleDateString('es-AR')}` : ''}
+                        style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, fontWeight: (urgente || vencidoEnCartera) ? 700 : 400, color: (urgente || vencidoEnCartera) ? S.red : S.text, whiteSpace: 'nowrap' }}>
+                        {fCobro ? new Date(fCobro + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                        {urgente && <span style={{ fontSize: 10, marginLeft: 4 }}>({dCobro === 0 ? 'hoy' : `${dCobro}d`}) ⚠</span>}
+                        {alCobro && <span style={{ fontSize: 10, marginLeft: 4, color: S.green, fontWeight: 600 }}>al cobro</span>}
+                        {vencidoEnCartera && <span style={{ fontSize: 10, marginLeft: 4 }}>vencido</span>}
                       </td>
                       <td style={{ padding: '9px 12px', fontSize: 12 }}>
                         {c.librador && c.beneficiario ? `${c.librador} / ${c.beneficiario}` : (c.librador || c.beneficiario || '—')}
@@ -158,9 +195,9 @@ export default function Comercial({ usuario }) {
   // Por defecto solo se ven los cheques "en cartera" — los ya entregados o
   // depositados quedan archivados, para no mezclarlos en la lista del día a
   // día. Se puede desplegar "Ver todos" para buscar uno viejo.
-  const [filtroEstadoCheque, setFiltroEstadoCheque] = useState('en_cartera')
+  const [filtroEstadoCheque, setFiltroEstadoCheque] = useState('vigentes')
   const [diasProyeccion, setDiasProyeccion] = useState(7)
-  const [filtroEstadoChequePar, setFiltroEstadoChequePar] = useState('en_cartera')
+  const [filtroEstadoChequePar, setFiltroEstadoChequePar] = useState('vigentes')
   const [showFormOf, setShowFormOf] = useState(false)
   const [showFormPar, setShowFormPar] = useState(false)
   const [showFormContacto, setShowFormContacto] = useState(false)
@@ -405,48 +442,32 @@ export default function Comercial({ usuario }) {
   const chOficialEm = chOficial.filter(c => c.tipo === 'emitido')
   const chParaleloRec = chParalelo.filter(c => c.tipo === 'recibido')
   const chParaleloEm = chParalelo.filter(c => c.tipo === 'emitido')
-  // Un cheque sigue siendo relevante para el aviso de vencimiento mientras
-  // no esté en un estado FINAL — un cheque "entregado" (emitido, ya se lo
-  // dimos a alguien) o "depositado" (recibido, en trámite en el banco)
-  // TODAVÍA representa plata que va a entrar o salir en esa fecha; solo deja
-  // de importar una vez cobrado, rechazado o anulado.
-  const chVence7Of = chOficial.filter(c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
-  const chVence7Par = chParalelo.filter(c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') <= new Date(Date.now() + 7 * 86400000))
-  const hace35dias = new Date(); hace35dias.setDate(hace35dias.getDate() - 35)
-  // Los cheques ya "entregados"/"depositados"/"cobrados" — resueltos, sin
-  // nada para hacer con ellos — dejan de mostrarse a los 35 días de
-  // vencidos, para que esa lista no se haga eterna. "En cartera" y "Ver
-  // todos" no tienen este límite, ya que ahí sí puede hacer falta ver algo
-  // viejo puntual.
-  const ESTADOS_ARCHIVABLES = ['entregado', 'depositado', 'cobrado']
-  const filtrarViejos = c => {
-    if (!ESTADOS_ARCHIVABLES.includes(filtroEstadoCheque)) return true
-    return !c.fecha_vencimiento || new Date(c.fecha_vencimiento + 'T12:00:00') >= hace35dias
+  // Aviso: cheques PROPIOS que se cobran de nuestra cuenta en los próximos 7
+  // días (por fecha de cobro). Es el número que aparece en las pestañas.
+  const chCobro7Of = chOficialEm.filter(c => propioSeCobraEn(c, 7))
+  const chCobro7Par = chParaleloEm.filter(c => propioSeCobraEn(c, 7))
+  // Lista: "Vigentes" = todo lo que no está archivado; cada estado muestra
+  // sus cheques no archivados; "Archivados" los que ya salieron de la
+  // cartera y pasaron su vencimiento; "Ver todos" sin filtro.
+  const pasaFiltroEstado = (c, f) => {
+    if (f === 'todos') return true
+    if (f === 'archivados') return chequeArchivado(c)
+    if (chequeArchivado(c)) return false
+    return f === 'vigentes' || c.estado === f
   }
-  const filtrarViejosPar = c => {
-    if (!ESTADOS_ARCHIVABLES.includes(filtroEstadoChequePar)) return true
-    return !c.fecha_vencimiento || new Date(c.fecha_vencimiento + 'T12:00:00') >= hace35dias
-  }
-  const chFiltradosOf = (filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm)
-    .filter(c => filtroEstadoCheque === 'todos' || c.estado === filtroEstadoCheque)
-    .filter(filtrarViejos)
-  const chFiltradosPar = (filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm)
-    .filter(c => filtroEstadoChequePar === 'todos' || c.estado === filtroEstadoChequePar)
-    .filter(filtrarViejosPar)
-  // El aviso de "vence en 7 días" que se ve DENTRO de la tabla respeta el
-  // filtro elegido (recibidos/emitidos) — el del tab de arriba y la tarjeta
-  // resumen siguen mostrando el total general, sin filtrar, para no perder
-  // de vista una urgencia solo porque se está mirando el otro filtro.
-  const chVence7OfFiltrado = chVence7Of.filter(c => chFiltradosOf.includes(c))
-  const chVence7ParFiltrado = chVence7Par.filter(c => chFiltradosPar.includes(c))
+  const ordenarPorCobro = arr => [...arr].sort((a, b) => (fechaCobroCheque(a) || '9999').localeCompare(fechaCobroCheque(b) || '9999'))
+  const chFiltradosOf = ordenarPorCobro((filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm)
+    .filter(c => pasaFiltroEstado(c, filtroEstadoCheque)))
+  const chFiltradosPar = ordenarPorCobro((filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm)
+    .filter(c => pasaFiltroEstado(c, filtroEstadoChequePar)))
 
   const isChecque = ['cheque', 'e-cheq'].includes(formOf.forma_pago)
 
   const TABS = [
     { key: 'caja_oficial', label: 'Caja 1' },
     { key: 'caja_paralela', label: 'Caja 2' },
-    { key: 'cheques_oficial', label: `Cheques Caja 1${chVence7Of.length > 0 ? ` ⚠${chVence7Of.length}` : ''}` },
-    { key: 'cheques_paralelo', label: `Cheques Caja 2${chVence7Par.length > 0 ? ` ⚠${chVence7Par.length}` : ''}` },
+    { key: 'cheques_oficial', label: `Cheques Caja 1${chCobro7Of.length > 0 ? ` ⚠${chCobro7Of.length}` : ''}` },
+    { key: 'cheques_paralelo', label: `Cheques Caja 2${chCobro7Par.length > 0 ? ` ⚠${chCobro7Par.length}` : ''}` },
     { key: 'dolares', label: '💵 Dólares' },
   ]
 
@@ -491,9 +512,14 @@ export default function Comercial({ usuario }) {
           { label: 'Cheques Caja 1', val: `$${(suma(carteraOf) / 1000000).toFixed(1)}M`, sub: `${fmtCant(carteraOf.length)} en cartera · $${suma(carteraOf).toLocaleString('es-AR')}`, color: S.amber },
           { label: 'Cheques Caja 2', val: `$${(suma(carteraPar) / 1000000).toFixed(1)}M`, sub: `${fmtCant(carteraPar.length)} en cartera · $${suma(carteraPar).toLocaleString('es-AR')}`, color: S.amber, purple: true },
           { label: 'Cheques en cartera (total)', val: carteraOf.length + carteraPar.length, sub: `$${(suma(carteraOf) + suma(carteraPar)).toLocaleString('es-AR')}`, color: S.amber },
+          // Disponibilidad: todo lo que hay, Caja 1 + Caja 2. Los cheques en
+          // cartera YA están dentro del saldo de cada caja (cuando se recibe un
+          // cheque se registra el ingreso en la caja), así que no se vuelven a
+          // sumar: el detalle muestra cuánto es plata y cuánto es cheques.
+          { label: 'Disponibilidad', val: `$${((coIng - coEg + cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `Plata $${((coIng - coEg + cpIng - cpEg - suma(carteraOf) - suma(carteraPar)) / 1000000).toFixed(1)}M · Cheques $${((suma(carteraOf) + suma(carteraPar)) / 1000000).toFixed(1)}M`, color: (coIng - coEg + cpIng - cpEg) >= 0 ? S.green : S.red, destacada: true },
           ]
         })().map((m, i) => (
-          <div key={i} style={{ background: m.purple ? S.purpleLight : S.surface, border: `1px solid ${m.purple ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem' }}>
+          <div key={i} style={{ background: m.destacada ? S.greenLight : m.purple ? S.purpleLight : S.surface, border: `${m.destacada ? 2 : 1}px solid ${m.destacada ? S.green : m.purple ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: m.purple ? S.purple : S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
             <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
             <div style={{ fontSize: 11, color: m.purple ? S.purple : S.hint, marginTop: 3 }}>{m.sub}</div>
@@ -505,19 +531,19 @@ export default function Comercial({ usuario }) {
           para cubrir los cheques EMITIDOS (los que van a salir de la cuenta)
           que vencen dentro de la ventana de días elegida. */}
       {(() => {
-        const hoy = new Date()
-        const limite = new Date(Date.now() + diasProyeccion * 86400000)
-        const enVentana = c => !ESTADOS_FINALES_CHEQUE.includes(c.estado) && c.fecha_vencimiento && new Date(c.fecha_vencimiento + 'T12:00:00') >= new Date(hoy.toDateString()) && new Date(c.fecha_vencimiento + 'T12:00:00') <= limite
+        // Cheques propios que se cobran de nuestra cuenta en la ventana elegida
+        // (por fecha de cobro, no por vencimiento).
+        const enVentana = c => propioSeCobraEn(c, diasProyeccion)
         const emOfVentana = chOficialEm.filter(enVentana)
         const emParVentana = chParaleloEm.filter(enVentana)
         const totalOf = emOfVentana.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
         const totalPar = emParVentana.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
         return (
-          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+          <div style={{ background: (totalOf + totalPar) > 0 ? S.redLight : S.surface, border: `1px solid ${(totalOf + totalPar) > 0 ? '#F09595' : S.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>💵 Fondos necesarios — cheques emitidos por vencer</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: (totalOf + totalPar) > 0 ? S.red : S.text }}>{(totalOf + totalPar) > 0 ? '⚠' : '✓'} Cheques propios que se cobran — próximos {diasProyeccion} días</div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                {[5, 15, 30].map(d => (
+                {[7, 15, 30].map(d => (
                   <button key={d} onClick={() => setDiasProyeccion(d)}
                     style={{ padding: '5px 12px', fontSize: 12, fontWeight: diasProyeccion === d ? 600 : 400, background: diasProyeccion === d ? S.accent : 'transparent', border: `1px solid ${diasProyeccion === d ? S.accent : S.border}`, color: diasProyeccion === d ? '#fff' : S.muted, borderRadius: 6, cursor: 'pointer' }}>
                     {d} días
@@ -542,7 +568,7 @@ export default function Comercial({ usuario }) {
                 <div style={{ fontSize: 11, color: S.hint }}>{emParVentana.length} cheque{emParVentana.length !== 1 ? 's' : ''}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Total a cubrir</div>
+                <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Total que sale de la cuenta</div>
                 <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: (totalOf + totalPar) > 0 ? S.red : S.green }}>${(totalOf + totalPar).toLocaleString('es-AR')}</div>
                 <div style={{ fontSize: 11, color: S.hint }}>en los próximos {diasProyeccion} días</div>
               </div>
@@ -840,11 +866,11 @@ export default function Comercial({ usuario }) {
       )}
 
       {tab === 'cheques_oficial' && (
-        <TablaCheques items={chFiltradosOf} chVence7={chVence7OfFiltrado} filtro={filtroCheque} setFiltro={setFiltroCheque} filtroEstado={filtroEstadoCheque} setFiltroEstado={setFiltroEstadoCheque} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+        <TablaCheques items={chFiltradosOf} filtro={filtroCheque} setFiltro={setFiltroCheque} filtroEstado={filtroEstadoCheque} setFiltroEstado={setFiltroEstadoCheque} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
       {tab === 'cheques_paralelo' && (
-        <TablaCheques items={chFiltradosPar} chVence7={chVence7ParFiltrado} filtro={filtroChequePar} setFiltro={setFiltroChequePar} filtroEstado={filtroEstadoChequePar} setFiltroEstado={setFiltroEstadoChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
+        <TablaCheques items={chFiltradosPar} filtro={filtroChequePar} setFiltro={setFiltroChequePar} filtroEstado={filtroEstadoChequePar} setFiltroEstado={setFiltroEstadoChequePar} cambiarEstadoCheque={cambiarEstadoCheque} eliminar={eliminar} />
       )}
 
 
