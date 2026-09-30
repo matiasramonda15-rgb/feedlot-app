@@ -420,8 +420,29 @@ export default function Reportes({ usuario }) {
   // promedio por animal comprado (últimos 60 días, más margen porque las
   // compras no son todos los meses) menos costo operativo promedio por
   // animal en el feedlot (últimos 30 días).
-  const hace30d = new Date(); hace30d.setDate(hace30d.getDate() - 30)
-  const hace60d = new Date(); hace60d.setDate(hace60d.getDate() - 60)
+  // ── Ventanas de DÍAS CERRADOS (hasta ayer inclusive) ──
+  // Antes cada ventana arrancaba en "ahora menos 30 días", con hora incluida:
+  // a medida que pasaban las horas entraban y salían movimientos del borde y
+  // el número se movía durante el día. Además la mano de obra y los gastos
+  // se tomaban de 30 días: según el día, la ventana agarraba uno o dos pagos
+  // de sueldo, o un gasto grande que después salía, y la ganancia saltaba.
+  // Ahora:
+  //  - todo se cuenta por días completos, hasta ayer, con fecha local: el
+  //    número cambia como mucho una vez por día (o cuando se carga/corrige
+  //    un dato);
+  //  - ventas y compras: promedio de los últimos 60 días;
+  //  - alimentación y sanidad (consumo real): últimos 60 días, por
+  //    animal-día;
+  //  - mano de obra y gastos: últimos 3 MESES CERRADOS, por animal-día —
+  //    los sueldos se pagan una vez por mes y los gastos vienen de a
+  //    golpes, así que por mes cerrado se promedian sin saltos;
+  //  - permanencia: promedio de meses cerrados (ya era así).
+  const VENTANA_VENTAS = 60, VENTANA_COMPRAS = 60, VENTANA_CONSUMO = 60, MESES_FIJOS = 3
+  const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const diaLocal = x => !x ? null : (/^\d{4}-\d{2}-\d{2}$/.test(x) ? x : isoLocal(new Date(x)))
+  const hoyStr = isoLocal(new Date())
+  const haceDias = n => { const d = new Date(); d.setDate(d.getDate() - n); return isoLocal(d) }
+  const enVentana = (f, n) => { const d = diaLocal(f); return !!d && d >= haceDias(n) && d < hoyStr }
 
   // Ingreso neto (sin IVA) de una venta: el IVA cobrado es una deuda con
   // AFIP, no ingreso real del negocio, así que se usa monto_facturado (ya
@@ -438,51 +459,59 @@ export default function Reportes({ usuario }) {
   // nada — mejor un poco de IVA de más en esa venta que perderla entera.
   const ingresoVentaNeto = v => (v.total || 0) - (v.iva_monto || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
 
-  const ventas30 = ventas.filter(v => v.cantidad > 0 && new Date(v.creado_en) >= hace30d)
-  const totalAnimVendidos30 = ventas30.reduce((s, v) => s + v.cantidad, 0)
-  const totalIngreso30 = ventas30.reduce((s, v) => s + ingresoVentaNeto(v), 0)
-  const ingresoPromedioPorAnimalVendido = totalAnimVendidos30 > 0 ? totalIngreso30 / totalAnimVendidos30 : null
+  const ventasV = ventas.filter(v => v.cantidad > 0 && enVentana(v.creado_en, VENTANA_VENTAS))
+  const totalAnimVendidosV = ventasV.reduce((s, v) => s + v.cantidad, 0)
+  const totalIngresoV = ventasV.reduce((s, v) => s + ingresoVentaNeto(v), 0)
+  const ingresoPromedioPorAnimalVendido = totalAnimVendidosV > 0 ? totalIngresoV / totalAnimVendidosV : null
 
-  const lotes60 = lotes.filter(l => l.cantidad > 0 && new Date(l.fecha_ingreso) >= hace60d)
-  const totalAnimComprados60 = lotes60.reduce((s, l) => s + l.cantidad, 0)
-  const totalCostoCompra60 = lotes60.reduce((s, l) => s + totalLoteReal(l), 0)
-  const costoPromedioPorAnimalComprado = totalAnimComprados60 > 0 ? totalCostoCompra60 / totalAnimComprados60 : null
+  const lotesV = lotes.filter(l => l.cantidad > 0 && enVentana(l.fecha_ingreso, VENTANA_COMPRAS))
+  const totalAnimCompradosV = lotesV.reduce((s, l) => s + l.cantidad, 0)
+  const totalCostoCompraV = lotesV.reduce((s, l) => s + totalLoteReal(l), 0)
+  const costoPromedioPorAnimalComprado = totalAnimCompradosV > 0 ? totalCostoCompraV / totalAnimCompradosV : null
 
-  const totalCostoAlim30 = Object.values(costoAlimPorCorral).reduce((s, c) => s + c.totalCosto, 0)
-  // Antes esto sumaba las FACTURAS de compra de sanidad de los últimos 30
-  // días — si comprás vacunas para 3 meses de una sola vez, ese mes queda
-  // inflado y los siguientes 2 sin nada, aunque el producto se esté usando
-  // todos los días. Ahora se calcula por CONSUMO real, igual que la
-  // alimentación: cada evento sanitario (vacunación, tratamiento) aplicado
-  // en los últimos 30 días × el precio de referencia de ese producto.
-  const costoSanidad30 = eventosSanitarios
-    .filter(e => new Date(e.creado_en) >= hace30d)
-    .reduce((s, e) => s + costoEventoSanitario(e), 0)
-  const costoManoObra30 = pagosEmpleados.filter(pe => new Date(pe.fecha || pe.creado_en) >= hace30d).reduce((s, pe) => {
-    const act = pe.empleados?.actividad
-    if (act === 'Feedlot') return s + (pe.monto || 0)
-    if (act === 'General') return s + (pe.monto || 0) / 3
-    return s
-  }, 0)
-  // Los gastos marcados como "no recurrente" (inversión puntual, flete de
-  // cosecha una vez al año, etc.) quedan afuera — no son parte del costo
-  // típico de mantener un animal un día en el feedlot.
-  const costoGastos30 = gastosGenerales.filter(g => new Date(g.fecha) >= hace30d && !g.no_recurrente).reduce((s, g) => {
-    if (g.actividad === 'Feedlot') return s + (g.monto || 0)
-    if (g.actividad === 'General') return s + (g.monto || 0) / 3
-    return s
-  }, 0)
-  const costoOperativoTotal30 = totalCostoAlim30 + costoSanidad30 + costoManoObra30 + costoGastos30
-  const existenciaProm30 = diasConDatos30.length > 0
-    ? diasConDatos30.reduce((s, d) => s + d.animales, 0) / diasConDatos30.length
-    : null
-  // Esto es el costo de los últimos 30 días nomás — hay que llevarlo a "por
-  // día" y multiplicarlo por cuánto tiempo REAL pasa un animal en el feedlot
-  // (129 días en promedio, no 30) para tener el costo operativo real del
-  // ciclo completo. Usar directamente el de 30 días como si fuera el ciclo
-  // entero lo subestimaba fuerte (por un factor de ~4).
-  const costoOperativoPromedioPorAnimal30 = existenciaProm30 > 0 ? costoOperativoTotal30 / existenciaProm30 : null
-  const costoOperativoDiarioPorAnimal = costoOperativoPromedioPorAnimal30 !== null ? costoOperativoPromedioPorAnimal30 / 30 : null
+  // Consumo (alimentación + sanidad), últimos 60 días cerrados, por animal-día.
+  // Animal-días = suma, día por día, de los animales de los corrales que
+  // comieron ese día (el mismo dato que se usa para el consumo diario).
+  const costoRacion = r => {
+    const kgRollo = r.kg_rollo_extra || (r.solo_rollo ? (r.kg_total || 0) : 0)
+    const kgMixer = (r.kg_total || 0) - kgRollo
+    const dietaH = r.tipo_dieta || 'seco'
+    const etapaH = r.mezclador === 'Acostumbramiento' ? 'acostumbramiento' : r.mezclador === 'Recria' ? 'recria' : 'terminacion'
+    const precioMixer = precioPorDieta[`${dietaH}_${etapaH}`]?.precio ?? precioPromAlim ?? 0
+    const precioRolloUsado = precioRollo ?? precioPromAlim ?? 0
+    return kgRollo * precioRolloUsado + kgMixer * precioMixer
+  }
+  const diasConsumoV = {}
+  raciones.filter(r => enVentana(r.creado_en, VENTANA_CONSUMO)).forEach(r => {
+    const dia = diaLocal(r.creado_en)
+    if (!diasConsumoV[dia]) diasConsumoV[dia] = { animales: 0, corrales: new Set(), costo: 0 }
+    diasConsumoV[dia].costo += costoRacion(r)
+    if (r.corral_id && !diasConsumoV[dia].corrales.has(r.corral_id)) {
+      diasConsumoV[dia].animales += (r.cantidad_animales ?? r.corrales?.animales) || 0
+      diasConsumoV[dia].corrales.add(r.corral_id)
+    }
+  })
+  const diasConsumoValidos = Object.values(diasConsumoV).filter(d => d.animales > 0)
+  const animalDiasConsumo = diasConsumoValidos.reduce((s, d) => s + d.animales, 0)
+  const costoAlimV = diasConsumoValidos.reduce((s, d) => s + d.costo, 0)
+  const costoSanidadV = eventosSanitarios.filter(e => enVentana(e.creado_en, VENTANA_CONSUMO)).reduce((s, e) => s + costoEventoSanitario(e), 0)
+  const existenciaPromV = diasConsumoValidos.length > 0 ? animalDiasConsumo / diasConsumoValidos.length : null
+  const costoConsumoDiario = animalDiasConsumo > 0 ? (costoAlimV + costoSanidadV) / animalDiasConsumo : null
+
+  // Mano de obra y gastos, últimos 3 meses cerrados, por animal-día (mismos
+  // montos que la tabla de rentabilidad mensual, y la existencia promedio de
+  // cada mes del cálculo de GDP).
+  // (mesesGDP trae el mes como etiqueta, "sep 26": la clave AAAA-MM de la
+  // tabla de rentabilidad sale de su fecha de inicio)
+  const claveMesGDP = m => m.fechaInicio ? isoLocal(new Date(m.fechaInicio)).slice(0, 7) : null
+  const mesesFijos = mesesCerrados.slice(-MESES_FIJOS).filter(m => m.existenciaPromedio > 0 && m.dias > 0)
+  const costoManoObraMeses = mesesFijos.reduce((s, m) => s + (rentabilidadPorMes[claveMesGDP(m)]?.costoManoObra || 0), 0)
+  const costoGastosMeses = mesesFijos.reduce((s, m) => s + (rentabilidadPorMes[claveMesGDP(m)]?.costoGastos || 0), 0)
+  const animalDiasMeses = mesesFijos.reduce((s, m) => s + m.existenciaPromedio * m.dias, 0)
+  const costoFijoDiario = animalDiasMeses > 0 ? (costoManoObraMeses + costoGastosMeses) / animalDiasMeses : null
+  const periodoFijos = mesesFijos.length ? `${mesesFijos[0].mes}–${mesesFijos[mesesFijos.length - 1].mes}` : '—'
+
+  const costoOperativoDiarioPorAnimal = (costoConsumoDiario != null && costoFijoDiario != null) ? costoConsumoDiario + costoFijoDiario : null
   const costoOperativoCicloCompleto = (costoOperativoDiarioPorAnimal !== null && permanenciaEstable) ? costoOperativoDiarioPorAnimal * permanenciaEstable : null
 
   const gananciaPromedioPorAnimal = (ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoCicloCompleto != null)
@@ -563,9 +592,12 @@ export default function Reportes({ usuario }) {
     costoCompraPorMes[key] = (costoCompraPorMes[key] || 0) + totalLoteReal(l)
   })
   const gananciaMensual = mesesGDP.map(m => {
-    const ingresoProm = m.cabVendidas > 0 ? (ingresoNetoPorMes[m.mes] || 0) / m.cabVendidas : null
-    const compraProm = m.cabIngresadas > 0 ? (costoCompraPorMes[m.mes] || 0) / m.cabIngresadas : null
-    const rp = rentabilidadPorMes[m.mes]
+    // La clave AAAA-MM sale de la fecha de inicio del mes (m.mes es solo la
+    // etiqueta "sep 26" — antes se usaba como clave y no encontraba nada).
+    const k = claveMesGDP(m)
+    const ingresoProm = m.cabVendidas > 0 ? (ingresoNetoPorMes[k] || 0) / m.cabVendidas : null
+    const compraProm = m.cabIngresadas > 0 ? (costoCompraPorMes[k] || 0) / m.cabIngresadas : null
+    const rp = rentabilidadPorMes[k]
     const costoOpTotalMes = rp ? (rp.costoAlim + rp.costoSanidad + rp.costoManoObra + rp.costoGastos) : 0
     const costoOpDiarioMes = (m.existenciaPromedio > 0 && m.dias > 0) ? costoOpTotalMes / m.existenciaPromedio / m.dias : null
     // Se usa la permanencia de ESE mes si hay dato — si no, la permanencia
@@ -864,7 +896,7 @@ export default function Reportes({ usuario }) {
                   <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
                   <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`${mesActual.cabVendidas} animales`} />
                   <Stat label="Existencia promedio (feedlot)" val={Math.round(mesActual.existenciaPromedio)} sub={`total de cabezas · inicio: ${mesActual.stockInicial} → fin: ${mesActual.stockFinal}`} />
-                  <Stat label="Ganancia por ternero" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'} sub="con datos de los últimos 30 días" color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
+                  <Stat label="Ganancia por ternero" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'} sub="promedios de 60 días y 3 meses cerrados" color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
                 </div>
               </div>
 
@@ -1243,26 +1275,28 @@ export default function Reportes({ usuario }) {
               Se mide como flujo continuo, comparando precio de reposición contra precio de venta — no lote por lote,
               porque en un feedlot con varios lotes engordando a la vez, tratar de emparejar "esta compra con esta
               venta" no refleja bien la realidad (ver la tabla de abajo, que muestra por qué). Ingreso promedio por
-              animal vendido (últimos 30 días) menos costo promedio por animal comprado (últimos 60 días) menos costo
-              operativo por animal del ciclo completo (alimentación + sanidad + mano de obra + gastos de los últimos
-              30 días, llevado a costo por día y multiplicado por la permanencia promedio real en el feedlot).
+              animal vendido (últimos 60 días) menos costo promedio por animal comprado (últimos 60 días) menos costo
+              operativo del ciclo completo: costo por animal por día × permanencia promedio en el feedlot. El costo
+              por día suma alimentación y sanidad (consumo real de los últimos 60 días) y mano de obra y gastos
+              (últimos 3 meses cerrados, para que un sueldo o un gasto grande no hagan saltar el número). Se cuentan
+              solo días completos, hasta ayer: el valor cambia de a poco, no durante el día.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
               <Stat label="Ganancia promedio por animal" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'}
                 sub="ingreso − compra − operativo" color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
               <Stat label="Ingreso / animal vendido" val={ingresoPromedioPorAnimalVendido !== null ? `$${Math.round(ingresoPromedioPorAnimalVendido).toLocaleString('es-AR')}` : '—'}
-                sub={`${totalAnimVendidos30} animales · últimos 30 días`} color={S.green} />
+                sub={`${totalAnimVendidosV} animales · últimos 60 días`} color={S.green} />
               <Stat label="Costo / animal comprado" val={costoPromedioPorAnimalComprado !== null ? `$${Math.round(costoPromedioPorAnimalComprado).toLocaleString('es-AR')}` : '—'}
-                sub={`${totalAnimComprados60} animales · últimos 60 días`} />
+                sub={`${totalAnimCompradosV} animales · últimos 60 días`} />
               <Stat label="Costo operativo / animal" val={costoOperativoCicloCompleto !== null ? `$${Math.round(costoOperativoCicloCompleto).toLocaleString('es-AR')}` : '—'}
                 sub={permanenciaEstable ? `${Math.round(permanenciaEstable)} días promedio en el feedlot × $${costoOperativoDiarioPorAnimal ? Math.round(costoOperativoDiarioPorAnimal).toLocaleString('es-AR') : '—'}/día` : 'falta permanencia promedio'} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: '1.25rem', padding: '10px 12px', background: S.bg, borderRadius: 8, fontSize: 11 }}>
-              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Alimentación (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(totalCostoAlim30).toLocaleString('es-AR')}</div></div>
-              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Sanidad (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoSanidad30).toLocaleString('es-AR')}</div></div>
-              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Mano de obra (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoManoObra30).toLocaleString('es-AR')}</div></div>
-              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Gastos (30d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoGastos30).toLocaleString('es-AR')}</div></div>
-              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Existencia prom.</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>{existenciaProm30 !== null ? Math.round(existenciaProm30) : '—'} anim.</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Alimentación (60d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoAlimV).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Sanidad (60d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoSanidadV).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Mano de obra ({periodoFijos})</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoManoObraMeses).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Gastos ({periodoFijos})</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>${Math.round(costoGastosMeses).toLocaleString('es-AR')}</div></div>
+              <div><div style={{ color: S.hint, textTransform: 'uppercase', marginBottom: 3 }}>Existencia prom. (60d)</div><div style={{ fontFamily: 'monospace', fontWeight: 700 }}>{existenciaPromV !== null ? Math.round(existenciaPromV) : '—'} anim.</div></div>
             </div>
             {gananciaMensual.length > 1 && (() => {
               const maxAbs = Math.max(...gananciaMensual.map(m => Math.abs(m.ganancia)), 1)
