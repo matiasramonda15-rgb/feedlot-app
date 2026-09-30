@@ -475,13 +475,24 @@ export default function Comercial({ usuario }) {
       <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 3 }}>Comercial</div>
       <div style={{ fontSize: 12, color: S.muted, fontFamily: 'monospace', marginBottom: '1.5rem' }}>Caja 1 · Caja 2 · cheques · contactos</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.25rem' }}>
-        {[
+      {/* Tarjetas de arriba: saldo de cada caja y cheques en cartera (recibidos
+          que todavía no se depositaron ni se entregaron) de cada caja y total.
+          La tarjeta "Vencen en 7 días" se sacó: los vencimientos se van a
+          reorganizar aparte. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: '1.25rem' }}>
+        {(() => {
+          const suma = arr => arr.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+          const carteraOf = chOficialRec.filter(c => c.estado === 'en_cartera')
+          const carteraPar = chParaleloRec.filter(c => c.estado === 'en_cartera')
+          const fmtCant = n => `${n} cheque${n !== 1 ? 's' : ''}`
+          return [
           { label: 'Saldo Caja 1', val: `$${((coIng - coEg) / 1000000).toFixed(1)}M`, sub: `+${(coIng/1000000).toFixed(1)}M / -${(coEg/1000000).toFixed(1)}M`, color: coIng - coEg >= 0 ? S.green : S.red },
           { label: 'Saldo Caja 2', val: `$${((cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `+${(cpIng/1000000).toFixed(1)}M / -${(cpEg/1000000).toFixed(1)}M`, color: cpIng - cpEg >= 0 ? S.green : S.red, purple: true },
-          { label: 'Cheques en cartera', val: (chOficialRec.filter(c => c.estado === 'en_cartera').length + chParaleloRec.filter(c => c.estado === 'en_cartera').length), sub: `$${(chOficialRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0) + chParaleloRec.filter(c => c.estado === 'en_cartera').reduce((s,c) => s+(c.monto||0), 0)).toLocaleString('es-AR')}`, color: S.amber },
-          { label: 'Vencen en 7 días', val: (chVence7Of.length + chVence7Par.length), sub: (chVence7Of.length + chVence7Par.length) > 0 ? `⚠ $${(chVence7Of.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0) + chVence7Par.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)).toLocaleString('es-AR')}` : '✓ Sin vencimientos', color: (chVence7Of.length + chVence7Par.length) > 0 ? S.red : S.green },
-        ].map((m, i) => (
+          { label: 'Cheques Caja 1', val: `$${(suma(carteraOf) / 1000000).toFixed(1)}M`, sub: `${fmtCant(carteraOf.length)} en cartera · $${suma(carteraOf).toLocaleString('es-AR')}`, color: S.amber },
+          { label: 'Cheques Caja 2', val: `$${(suma(carteraPar) / 1000000).toFixed(1)}M`, sub: `${fmtCant(carteraPar.length)} en cartera · $${suma(carteraPar).toLocaleString('es-AR')}`, color: S.amber, purple: true },
+          { label: 'Cheques en cartera (total)', val: carteraOf.length + carteraPar.length, sub: `$${(suma(carteraOf) + suma(carteraPar)).toLocaleString('es-AR')}`, color: S.amber },
+          ]
+        })().map((m, i) => (
           <div key={i} style={{ background: m.purple ? S.purpleLight : S.surface, border: `1px solid ${m.purple ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: m.purple ? S.purple : S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
             <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
