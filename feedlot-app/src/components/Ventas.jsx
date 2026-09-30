@@ -2514,7 +2514,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                                         }
                                       }
                                       if (esCheque && fp.fecha_vencimiento_cheque) {
-                                        const { error: eCheq } = await supabase.from('cheques').insert({ tipo: 'recibido', numero: fp.numero_cheque || null, banco: fp.banco || null, monto, fecha_emision: fp.fecha, fecha_cobro: fp.fecha_cobro_cheque || null, fecha_vencimiento: fp.fecha_vencimiento_cheque, librador: (fp.subtipo_cheque === 'tercero' ? fp.librador_real : v.comprador) || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: fp.forma_pago === 'e-cheq', pago_venta_id: pagoId, caja_oficial_id: cajaOficialId, caja_paralela_id: cajaParalelaId })
+                                        const { error: eCheq } = await supabase.from('cheques').insert({ tipo: 'recibido', numero: fp.numero_cheque || null, banco: fp.banco || null, monto, fecha_emision: fp.fecha, fecha_cobro: fp.fecha_cobro_cheque || null, fecha_vencimiento: fp.fecha_vencimiento_cheque, librador: (fp.subtipo_cheque === 'tercero' ? fp.librador_real : v.comprador) || null, recibido_de: v.comprador || null, estado: 'en_cartera', es_paralelo: esParalela, es_electronico: fp.forma_pago === 'e-cheq', pago_venta_id: pagoId, caja_oficial_id: cajaOficialId, caja_paralela_id: cajaParalelaId })
                                         // Antes esto no revisaba ningún error — si fallaba, la caja quedaba
                                         // cargada pero el cheque se perdía sin ningún aviso. Ahora se corta
                                         // el pago si no se puede guardar el cheque.

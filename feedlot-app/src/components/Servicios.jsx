@@ -410,9 +410,15 @@ export default function Servicios({ usuario, mobile, nav }) {
         if ((p.tipo === 'cheque' || p.tipo === 'e-cheq') && p.cheque_propio?.fecha_vencimiento) {
           const { error: eCheq } = await supabase.from('cheques').insert({
             tipo: 'recibido', numero: p.cheque_propio.numero || null, banco: p.cheque_propio.banco || null,
-            monto, fecha_emision: formPago.fecha, fecha_vencimiento: p.cheque_propio.fecha_vencimiento,
-            fecha_cobro: p.cheque_propio.fecha_cobro || null,
-            librador: serviciosSel[0].s.cliente || null, estado: 'en_cartera', es_paralelo: p.es_paralelo || false,
+            // El formulario pide "Fecha de pago (cuándo se cobra)": esa es la
+            // fecha de COBRO del cheque, y vence 30 días después. (Antes se
+            // guardaba como vencimiento y el cheque figuraba 30 días corrido.)
+            monto, fecha_emision: formPago.fecha,
+            fecha_cobro: p.cheque_propio.fecha_vencimiento,
+            fecha_vencimiento: (() => { const d = new Date(p.cheque_propio.fecha_vencimiento + 'T12:00:00'); d.setDate(d.getDate() + 30); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })(),
+            librador: (p.cheque_propio.librador || '').trim() || serviciosSel[0].s.cliente || null,
+            recibido_de: (p.cheque_propio.recibido_de || '').trim() || serviciosSel[0].s.cliente || null,
+            estado: 'en_cartera', es_paralelo: p.es_paralelo || false,
             es_electronico: p.tipo === 'e-cheq', caja_oficial_id, caja_paralela_id,
           })
           // Antes esto solo avisaba y seguía — el cobro quedaba confirmado
@@ -1751,6 +1757,11 @@ export default function Servicios({ usuario, mobile, nav }) {
                               </div>
                             )}
                           </div>
+                          {/* Quién firmó el cheque y de quién lo recibimos (puede ser
+                              un cheque de otro que el cliente nos endosó). Vacíos =
+                              el cliente. */}
+                          <div><Lbl>Librador (quién lo firma)</Lbl><input type="text" value={p.cheque_propio?.librador || ''} placeholder={servicios.find(x => x.id === seleccionadas[0])?.cliente || 'El cliente'} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, librador: e.target.value } } : x); setFormPago({ ...formPago, pagos }) }} style={inp} /></div>
+                          <div><Lbl>Recibido de</Lbl><input type="text" value={p.cheque_propio?.recibido_de || ''} placeholder={servicios.find(x => x.id === seleccionadas[0])?.cliente || 'El cliente'} onChange={e => { const pagos = formPago.pagos.map((x, i) => i === pi ? { ...x, cheque_propio: { ...x.cheque_propio, recibido_de: e.target.value } } : x); setFormPago({ ...formPago, pagos }) }} style={inp} /></div>
                         </div>
                       )}
                     </div>

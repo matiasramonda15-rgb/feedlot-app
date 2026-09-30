@@ -33,10 +33,11 @@ export function armarDetalleChequesTercero(ids, chequesCartera) {
   }).filter(Boolean)
 }
 
-export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [], anticiposDisponibles = [] }) {
+export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inputStyle, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [], anticiposDisponibles = [], modoCobro = false, contraparte = '' }) {
   const inp = inputStyle || inpDefault
   const set = (campo, valor) => onChange({ ...pago, [campo]: valor })
   const setChequePropio = (campo, valor) => onChange({ ...pago, cheque_propio: { ...(pago.cheque_propio || {}), [campo]: valor } })
+  const setChequeRecibido = (campo, valor) => onChange({ ...pago, cheque_recibido: { ...(pago.cheque_recibido || {}), [campo]: valor } })
   const esCheque = pago.tipo === 'cheque' || pago.tipo === 'e-cheq'
   const [mostrarNuevaDeuda, setMostrarNuevaDeuda] = useState(false)
   const [nuevaDeudaInsumo, setNuevaDeudaInsumo] = useState('')
@@ -223,7 +224,39 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
         </div>
       )}
 
-      {esCheque && (
+      {/* COBRO: el cheque lo estamos RECIBIENDO — se cargan sus datos para
+          que entre a la cartera: quién lo firmó (librador) y de quién lo
+          recibimos (puede ser otra persona, si nos lo endosaron). */}
+      {esCheque && modoCobro && (
+        <div style={{ marginTop: 8, background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '8px 10px' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.green, textTransform: 'uppercase', marginBottom: 6 }}>📥 Cheque recibido — entra a la cartera</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>N° cheque</div>
+              <input type="text" value={pago.cheque_recibido?.numero || ''} onChange={e => setChequeRecibido('numero', e.target.value)} style={inp} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Banco</div>
+              <input type="text" value={pago.cheque_recibido?.banco || ''} onChange={e => setChequeRecibido('banco', e.target.value)} style={inp} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, textTransform: 'uppercase', marginBottom: 3 }}>Fecha de cobro *</div>
+              <input type="date" value={pago.cheque_recibido?.fecha_cobro || ''} onChange={e => setChequeRecibido('fecha_cobro', e.target.value)} style={{ ...inp, border: `1px solid ${S.amber}` }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Librador (quién lo firma)</div>
+              <input type="text" value={pago.cheque_recibido?.librador || ''} placeholder={contraparte || 'Nombre'} onChange={e => setChequeRecibido('librador', e.target.value)} style={inp} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Recibido de</div>
+              <input type="text" value={pago.cheque_recibido?.recibido_de || ''} placeholder={contraparte || 'Nombre'} onChange={e => setChequeRecibido('recibido_de', e.target.value)} style={inp} />
+            </div>
+          </div>
+          {contraparte && <div style={{ fontSize: 10, color: S.hint, marginTop: 4 }}>Si lo dejás vacío, se usa "{contraparte}".</div>}
+        </div>
+      )}
+
+      {esCheque && !modoCobro && (
         <div style={{ marginTop: 8 }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: pago.subtipo_cheque ? 10 : 0 }}>
             {(soloTerceroSiParalelo && pago.es_paralelo ? ['tercero'] : ['propio', 'tercero']).map(t => (
@@ -305,12 +338,12 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
 
 // Lista completa de pagos: varias FilaPago + botón de agregar + resumen del
 // total cargado contra el monto objetivo (si se pasa).
-export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [], anticiposDisponibles = [] }) {
+export function ListaPagos({ pagos, onChangePagos, montoObjetivo, chequesCartera = [], S, mostrarCanje = true, mostrarParalelo = true, soloTerceroSiParalelo = false, opcionesExtra = [], deudasPendientes = [], onCrearDeuda = null, opcionesInsumo = [], anticiposDisponibles = [], modoCobro = false, contraparte = '' }) {
   const totalPagos = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
   return (
     <div>
       {pagos.map((pago, idx) => (
-        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra} deudasPendientes={deudasPendientes} onCrearDeuda={onCrearDeuda} opcionesInsumo={opcionesInsumo} anticiposDisponibles={anticiposDisponibles}
+        <FilaPago key={idx} pago={pago} S={S} chequesCartera={chequesCartera} mostrarCanje={mostrarCanje} mostrarParalelo={mostrarParalelo} soloTerceroSiParalelo={soloTerceroSiParalelo} opcionesExtra={opcionesExtra} deudasPendientes={deudasPendientes} onCrearDeuda={onCrearDeuda} opcionesInsumo={opcionesInsumo} anticiposDisponibles={anticiposDisponibles} modoCobro={modoCobro} contraparte={contraparte}
           onChange={p => onChangePagos(pagos.map((pp, i) => i === idx ? p : pp))}
           onRemove={pagos.length > 1 ? () => onChangePagos(pagos.filter((_, i) => i !== idx)) : null}
         />

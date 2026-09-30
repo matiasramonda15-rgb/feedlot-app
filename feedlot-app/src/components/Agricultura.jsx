@@ -2703,6 +2703,8 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   }
 
   async function guardarCobro(venta) {
+    const sinFecha = formCobro.pagos.find(p => ['cheque', 'e-cheq'].includes(p.tipo) && (parseFloat(p.monto) || 0) > 0 && !p.cheque_recibido?.fecha_cobro)
+    if (sinFecha) { alert('Poné la fecha de cobro del cheque'); return }
     setGuardando(true)
     const pagosDetalle = [...(venta.pagos_detalle || [])]
     for (const pago of formCobro.pagos) {
@@ -2737,15 +2739,33 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
         continue
       }
       const desc = `Cobro venta ${venta.cultivo} — ${venta.comprador || 'sin comprador'} · ${(venta.kg / 1000).toLocaleString('es-AR')} tn`
+      const esChequeRecibido = ['cheque', 'e-cheq'].includes(pago.tipo)
+      let cajaOfId = null, cajaParId = null
       if (pago.es_paralelo) {
-        const { error } = await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha, tipo: 'ingreso', descripcion: desc, monto })
+        const { data: cp, error } = await supabase.from('caja_paralela').insert({ fecha: formCobro.fecha, tipo: 'ingreso', descripcion: desc, monto }).select().single()
         if (error) { alert('Error al registrar el cobro en Caja 2: ' + error.message); setGuardando(false); return }
+        cajaParId = cp?.id || null
       } else {
-        const { error } = await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto, forma_pago: pago.subtipo_cheque || pago.tipo })
+        const { data: co, error } = await supabase.from('caja_oficial').insert({ fecha: formCobro.fecha, tipo: 'ingreso', categoria: 'Venta cereales', descripcion: desc, monto, forma_pago: esChequeRecibido ? pago.tipo : (pago.subtipo_cheque || pago.tipo) }).select().single()
         if (error) { alert('Error al registrar el cobro: ' + error.message); setGuardando(false); return }
-        if (pago.subtipo_cheque === 'tercero' && pago.cheque_tercero_ids?.length > 0) {
-          for (const chId of pago.cheque_tercero_ids) await supabase.from('cheques').update({ estado: 'depositado' }).eq('id', parseInt(chId))
-        }
+        cajaOfId = co?.id || null
+      }
+      // Cheque recibido: entra a la CARTERA (antes el cobro de granos con
+      // cheque cargaba la plata en caja pero el cheque no quedaba registrado).
+      // Librador = quién lo firmó; recibido de = quién nos lo dio.
+      if (esChequeRecibido) {
+        const cr = pago.cheque_recibido || {}
+        const fv = new Date(cr.fecha_cobro + 'T12:00:00'); fv.setDate(fv.getDate() + 30)
+        const { error: eCh } = await supabase.from('cheques').insert({
+          tipo: 'recibido', numero: cr.numero || null, banco: cr.banco || null, monto,
+          fecha_emision: formCobro.fecha, fecha_cobro: cr.fecha_cobro,
+          fecha_vencimiento: `${fv.getFullYear()}-${String(fv.getMonth() + 1).padStart(2, '0')}-${String(fv.getDate()).padStart(2, '0')}`,
+          librador: (cr.librador || '').trim() || venta.comprador || null,
+          recibido_de: (cr.recibido_de || '').trim() || venta.comprador || null,
+          estado: 'en_cartera', es_paralelo: !!pago.es_paralelo, es_electronico: pago.tipo === 'e-cheq',
+          caja_oficial_id: cajaOfId, caja_paralela_id: cajaParId,
+        })
+        if (eCh) alert(`El cobro se registró en caja, pero el cheque N° ${cr.numero || '(sin número)'} no se pudo guardar en la cartera: ${eCh.message}. Cargalo a mano en Comercial.`)
       }
       pagosDetalle.push({ ...pago, monto, fecha: pago.fecha || formCobro.fecha })
     }
@@ -3119,6 +3139,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
               <div><Label>Fecha</Label><input type="date" value={formCobro.fecha} onChange={e => setFormCobro({...formCobro, fecha: e.target.value})} style={{...inputStyle, marginBottom: 12}} /></div>
               <Label>Formas de cobro</Label>
               <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} deudasPendientes={deudasContacto}
+                modoCobro contraparte={venta.comprador || ''}
                 opcionesInsumo={[
                   ...stockAgro.map(s => ({ tabla: 'agro', id: s.id, nombre: s.insumo, unidad: s.unidad })),
                   ...stockInsumosAlim.map(s => ({ tabla: 'alimentacion', id: s.id, nombre: s.insumo, unidad: s.unidad })),

@@ -105,12 +105,12 @@ function TablaCheques({ items, filtro, setFiltro, filtroEstado, setFiltroEstado,
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead><tr style={{ background: S.bg }}>
-                {['Tipo', 'Medio', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Librador/Beneficiario', 'Estado', ''].map(h => (
+                {['Tipo', 'Medio', 'N° Cheque', 'Banco', 'Monto', 'Emisión', 'Fecha cobro', 'Librador', 'Recibido de → Entregado a', 'Estado', ''].map(h => (
                   <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
-                {items.length === 0 && <tr><td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cheques.</td></tr>}
+                {items.length === 0 && <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay cheques.</td></tr>}
                 {items.map(c => {
                   const ec = ESTADOS_CHEQUE[c.estado] || ESTADOS_CHEQUE.en_cartera
                   const fCobro = fechaCobroCheque(c)
@@ -144,8 +144,15 @@ function TablaCheques({ items, filtro, setFiltro, filtroEstado, setFiltroEstado,
                         {alCobro && <span style={{ fontSize: 10, marginLeft: 4, color: S.green, fontWeight: 600 }}>al cobro</span>}
                         {vencidoEnCartera && <span style={{ fontSize: 10, marginLeft: 4 }}>vencido</span>}
                       </td>
+                      {/* Librador = quién firmó el cheque. En los propios, somos nosotros. */}
                       <td style={{ padding: '9px 12px', fontSize: 12 }}>
-                        {c.librador && c.beneficiario ? `${c.librador} / ${c.beneficiario}` : (c.librador || c.beneficiario || '—')}
+                        {c.tipo === 'emitido' ? <span style={{ color: S.muted }}>Propio</span> : (c.librador || '—')}
+                      </td>
+                      {/* De quién lo recibimos (recibidos) → a quién se lo dimos. */}
+                      <td style={{ padding: '9px 12px', fontSize: 12 }}>
+                        {c.tipo === 'recibido' && <div>{c.recibido_de || c.librador || '—'}</div>}
+                        {c.beneficiario && <div style={{ color: S.purple }}>→ {c.beneficiario}</div>}
+                        {c.tipo === 'emitido' && !c.beneficiario && '—'}
                       </td>
                       <td style={{ padding: '9px 12px' }}>
                         <select value={c.estado} onChange={e => cambiarEstadoCheque(c.id, e.target.value)}
@@ -209,7 +216,7 @@ export default function Comercial({ usuario }) {
   const [showFormPar, setShowFormPar] = useState(false)
   const [showFormContacto, setShowFormContacto] = useState(false)
 
-  const [formOf, setFormOf] = useState({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', beneficiario: '' })
+  const [formOf, setFormOf] = useState({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', recibido_de: '', beneficiario: '' })
   const [formPar, setFormPar] = useState({ fecha: hoyLocal(), tipo: 'ingreso', descripcion: '', monto: '', observaciones: '' })
   const [formContacto, setFormContacto] = useState({ nombre: '', tipo: 'comprador_hacienda', cuit: '', telefono: '', email: '', banco: '', cbu: '', observaciones: '' })
 
@@ -340,8 +347,14 @@ export default function Comercial({ usuario }) {
         tipo: formOf.tipo === 'ingreso' ? 'recibido' : 'emitido',
         numero: formOf.numero_cheque || null, banco: formOf.banco_cheque || null,
         monto: parseFloat(formOf.monto), fecha_emision: formOf.fecha,
-        fecha_vencimiento: formOf.fecha_vencimiento_cheque,
-        librador: formOf.tipo === 'ingreso' ? (formOf.librador || null) : null,
+        // Recibido: la fecha cargada es la de COBRO y vence 30 días después.
+        // Emitido (propio): se guarda como siempre (la fecha de pago va en
+        // fecha_vencimiento, igual que en el resto del sistema).
+        ...(formOf.tipo === 'ingreso'
+          ? { fecha_cobro: formOf.fecha_vencimiento_cheque, fecha_vencimiento: sumarDias(formOf.fecha_vencimiento_cheque, 30) }
+          : { fecha_cobro: formOf.fecha, fecha_vencimiento: formOf.fecha_vencimiento_cheque }),
+        librador: formOf.tipo === 'ingreso' ? (formOf.librador || contactos.find(ct => String(ct.id) === String(formOf.contacto_id))?.nombre || null) : null,
+        recibido_de: formOf.tipo === 'ingreso' ? ((formOf.recibido_de || '').trim() || contactos.find(ct => String(ct.id) === String(formOf.contacto_id))?.nombre || formOf.librador || null) : null,
         beneficiario: formOf.tipo === 'egreso' ? (formOf.beneficiario || null) : null,
         estado: 'en_cartera', caja_oficial_id: mov?.id || null, registrado_por: usuario?.id,
         es_electronico: formOf.forma_pago === 'e-cheq',
@@ -350,7 +363,7 @@ export default function Comercial({ usuario }) {
     }
     await cargar()
     setShowFormOf(false)
-    setFormOf({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', beneficiario: '' })
+    setFormOf({ fecha: hoyLocal(), tipo: 'ingreso', categoria: 'Cobro venta hacienda', descripcion: '', monto: '', forma_pago: 'transferencia', comprobante: '', contacto_id: '', numero_cheque: '', fecha_vencimiento_cheque: '', banco_cheque: '', librador: '', recibido_de: '', beneficiario: '' })
     setGuardando(false)
   }
 
@@ -466,7 +479,22 @@ export default function Comercial({ usuario }) {
     if (chequeArchivado(c)) return false
     return f === 'vigentes' || c.estado === f
   }
-  const ordenarPorCobro = arr => [...arr].sort((a, b) => (fechaCobroCheque(a) || '9999').localeCompare(fechaCobroCheque(b) || '9999'))
+  // Orden: arriba los que se cobran de hoy en adelante, del más cercano al más
+  // lejano; debajo, los que ya pasaron su fecha de cobro, del más reciente al
+  // más viejo. Sin fecha, al final.
+  const ordenarPorCobro = arr => {
+    const hoy = hoyISO()
+    const clave = c => {
+      const f = fechaCobroCheque(c)
+      if (!f) return [2, '']
+      return f >= hoy ? [0, f] : [1, f]
+    }
+    return [...arr].sort((a, b) => {
+      const [ga, fa] = clave(a), [gb, fb] = clave(b)
+      if (ga !== gb) return ga - gb
+      return ga === 1 ? fb.localeCompare(fa) : fa.localeCompare(fb)
+    })
+  }
   const chFiltradosOf = ordenarPorCobro((filtroCheque === 'todos' ? chOficial : filtroCheque === 'recibidos' ? chOficialRec : chOficialEm)
     .filter(c => pasaFiltroEstado(c, filtroEstadoCheque)))
   const chFiltradosPar = ordenarPorCobro((filtroChequePar === 'todos' ? chParalelo : filtroChequePar === 'recibidos' ? chParaleloRec : chParaleloEm)
@@ -614,7 +642,7 @@ export default function Comercial({ usuario }) {
                   return (
                     <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, padding: '4px 0', borderTop: `1px solid #F5D5D5` }}>
                       <span>
-                        <b style={{ color: c._caja === 'Caja 2' ? S.purple : S.text }}>{c._caja}</b> · #{c.numero || 's/n'} · {c.banco || '—'} · {c.librador || '—'}
+                        <b style={{ color: c._caja === 'Caja 2' ? S.purple : S.text }}>{c._caja}</b> · #{c.numero || 's/n'} · {c.banco || '—'} · {c.librador || '—'}{c.recibido_de && c.recibido_de !== c.librador ? ` (recibido de ${c.recibido_de})` : ''}
                       </span>
                       <span style={{ whiteSpace: 'nowrap' }}>
                         <b style={{ fontFamily: 'monospace' }}>${(parseFloat(c.monto) || 0).toLocaleString('es-AR')}</b>
@@ -768,8 +796,9 @@ export default function Comercial({ usuario }) {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                       <div><Label>N° cheque</Label><input type="text" value={formOf.numero_cheque} onChange={e => setFormOf({...formOf, numero_cheque: e.target.value})} style={inputStyle} /></div>
                       <div><Label>Banco</Label><input type="text" value={formOf.banco_cheque} onChange={e => setFormOf({...formOf, banco_cheque: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Fecha vencimiento *</Label><input type="date" value={formOf.fecha_vencimiento_cheque} onChange={e => setFormOf({...formOf, fecha_vencimiento_cheque: e.target.value})} style={{ ...inputStyle, borderColor: S.amber }} /></div>
-                      {formOf.tipo === 'ingreso' && <div><Label>Librador</Label><input type="text" value={formOf.librador} onChange={e => setFormOf({...formOf, librador: e.target.value})} style={inputStyle} /></div>}
+                      <div><Label>{formOf.tipo === 'ingreso' ? 'Fecha de cobro *' : 'Fecha de pago (cuándo se cobra) *'}</Label><input type="date" value={formOf.fecha_vencimiento_cheque} onChange={e => setFormOf({...formOf, fecha_vencimiento_cheque: e.target.value})} style={{ ...inputStyle, borderColor: S.amber }} /></div>
+                      {formOf.tipo === 'ingreso' && <div><Label>Librador (quién lo firma)</Label><input type="text" value={formOf.librador} onChange={e => setFormOf({...formOf, librador: e.target.value})} style={inputStyle} /></div>}
+                      {formOf.tipo === 'ingreso' && <div><Label>Recibido de</Label><input type="text" value={formOf.recibido_de} placeholder={contactos.find(ct => String(ct.id) === String(formOf.contacto_id))?.nombre || 'Nombre'} onChange={e => setFormOf({...formOf, recibido_de: e.target.value})} style={inputStyle} /></div>}
                       {formOf.tipo === 'egreso' && <div><Label>Beneficiario</Label><input type="text" value={formOf.beneficiario} onChange={e => setFormOf({...formOf, beneficiario: e.target.value})} style={inputStyle} /></div>}
                     </div>
                   </div>
