@@ -463,7 +463,10 @@ export default function Reportes({ usuario }) {
   // sumaban en la cantidad de animales — daba una ganancia negativa falsa).
   // Si el IVA todavía no está cargado en esa venta puntual, no se resta
   // nada — mejor un poco de IVA de más en esa venta que perderla entera.
-  const ingresoVentaNeto = v => (v.total || 0) - (v.iva_monto || 0) - (v.retencion_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+  // La retención (Ganancias/IIBB) NO se resta: es un pago a cuenta de
+  // impuestos que se recupera, no plata que se pierde en la venta. Antes se
+  // restaba y bajaba el ingreso unos $12.000 por animal.
+  const ingresoVentaNeto = v => (v.total || 0) - (v.iva_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
 
   const ventasV = ventas.filter(v => v.cantidad > 0 && enVentana(v.creado_en, VENTANA_VENTAS))
   const totalAnimVendidosV = ventasV.reduce((s, v) => s + v.cantidad, 0)
