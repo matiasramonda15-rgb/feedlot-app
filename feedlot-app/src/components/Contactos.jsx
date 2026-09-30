@@ -783,6 +783,21 @@ export default function Contactos({ usuario }) {
     transaccionesPorNombre[nombre].ventasActivos.push(va)
   })
 
+  // Nombres escritos distinto que son el mismo contacto (mayúsculas, acentos,
+  // espacios de más: "ENRIQUE ALVAREZ" = "Enrique Álvarez"): se juntan con el
+  // contacto cargado, así no aparece dos veces. Pasaba con registros viejos,
+  // de cuando el proveedor se escribía a mano en vez de elegirse de la lista.
+  const claveNombre = n => (n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+  const nombrePorClave = {}
+  contactos.forEach(c => { if (c.nombre) nombrePorClave[claveNombre(c.nombre)] = c.nombre })
+  Object.keys(transaccionesPorNombre).forEach(variante => {
+    const oficial = nombrePorClave[claveNombre(variante)]
+    if (!oficial || oficial === variante) return
+    const destino = transaccionesPorNombre[oficial] || (transaccionesPorNombre[oficial] = { ventas: [], lotes: [], comprasInsumos: [], ventasActivos: [], gastosGenerales: [], serviciosTerceros: [], ordenesTrabajo: [], ventasGranos: [], fletes: [], creditos: [], retirosSocios: [], arriendos: [] })
+    Object.entries(transaccionesPorNombre[variante]).forEach(([k, arr]) => { destino[k] = [...(destino[k] || []), ...(arr || [])] })
+    delete transaccionesPorNombre[variante]
+  })
+
   // Lista unificada de contactos (de tabla + de transacciones)
   const nombresContactos = new Set(contactos.map(c => c.nombre))
   const todosLosNombres = new Set([...Object.keys(transaccionesPorNombre), ...contactos.map(c => c.nombre)])
