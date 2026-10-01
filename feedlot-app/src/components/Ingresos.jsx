@@ -8,6 +8,7 @@ import { siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
 import { parsearReporteCaravanas, guardarLecturasCaravana, parsearListaSenasa, guardarCaravanasSenasa, compararCaravanasSenasaCampo } from '../shared/caravanasLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import { traerTodo } from '../shared/traerTodo'
 import SelectBuscable from './SelectBuscable'
 
 // Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
@@ -126,7 +127,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
              { data: fletesCompra }, { data: lotesConComision }, { data: ventasConComision }] = await Promise.all([
         supabase.from('lotes').select('cantidad, fecha_ingreso, kg_bascula'),
         supabase.from('ventas').select('cantidad, kg_vivo_total, creado_en, total'),
-        supabase.from('raciones_app').select('kg_total, kg_rollo_extra, solo_rollo, mezclador, tipo_dieta, fecha'),
+        traerTodo(() => supabase.from('raciones_app').select('id, kg_total, kg_rollo_extra, solo_rollo, mezclador, tipo_dieta, fecha').order('id')),
         supabase.from('stock_insumos').select('insumo, pct_ms'),
         supabase.from('formulas_mixer').select('dieta, etapa, ingrediente, kg'),
         supabase.from('compras_insumos').select('total, fecha').eq('insumo_tipo', 'alimentacion').gte('fecha', hace6MesesISO),

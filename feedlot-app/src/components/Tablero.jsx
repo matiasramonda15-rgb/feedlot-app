@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
+import { traerTodo } from '../shared/traerTodo'
 
 // Peso de referencia (punto medio) de cada rango de clasificación — se usa
 // para estimar el peso actual de un corral que todavía no tiene pesadas
@@ -97,7 +98,7 @@ export default function Tablero({ usuario }) {
       supabase.from('stock_insumos').select('*'),
       supabase.from('lotes').select('id, procedencia, cantidad, monto_total_con_iva, fecha_vencimiento_pago, estado_pago, categoria').not('fecha_vencimiento_pago', 'is', null).eq('estado_pago', 'pendiente').order('fecha_vencimiento_pago'),
       supabase.from('lotes').select('cantidad, kg_bascula, fecha_ingreso').limit(1000),
-      supabase.from('raciones_app').select('corral_id, kg_total, creado_en, tipo_dieta, mezclador, solo_rollo, kg_rollo_extra, cantidad_animales, corrales(animales)').order('creado_en', { ascending: false }).limit(2000),
+      traerTodo(() => supabase.from('raciones_app').select('id, corral_id, kg_total, creado_en, tipo_dieta, mezclador, solo_rollo, kg_rollo_extra, cantidad_animales, corrales(animales)').gte('creado_en', (() => { const d = new Date(); d.setMonth(d.getMonth() - 13); return d.toISOString() })()).order('creado_en', { ascending: false }).order('id', { ascending: false })),
       supabase.from('formulas_mixer').select('*'),
     ])
 

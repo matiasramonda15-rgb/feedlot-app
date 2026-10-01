@@ -4,6 +4,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import Conciliacion from './Conciliacion'
 import { buscarOrigenesDeCaja, validarDeshacerOrigen, deshacerPagosDeOrigen, mensajeDeshacerPago, mensajeCajaBloqueada, mensajeErrorDeshacer } from '../shared/pagosLogic'
+import { traerTodo } from '../shared/traerTodo'
 import SelectBuscable from './SelectBuscable'
 
 const S = {
@@ -227,9 +228,10 @@ export default function Comercial({ usuario }) {
   async function cargar() {
     try {
     const [{ data: co }, { data: cp }, { data: ch }, { data: vt }, { data: lt }, { data: ct }, { data: dol }, { data: ret }] = await Promise.all([
-      supabase.from('caja_oficial').select('*, contactos(nombre)').order('fecha', { ascending: false }),
-      supabase.from('caja_paralela').select('*').order('fecha', { ascending: false }),
-      supabase.from('cheques').select('*').order('fecha_vencimiento', { ascending: true }),
+      // De a páginas: Supabase corta en 1000 filas y el saldo saldría mal cuando la caja pase ese número.
+      traerTodo(() => supabase.from('caja_oficial').select('*, contactos(nombre)').order('fecha', { ascending: false }).order('id', { ascending: false })),
+      traerTodo(() => supabase.from('caja_paralela').select('*').order('fecha', { ascending: false }).order('id', { ascending: false })),
+      traerTodo(() => supabase.from('cheques').select('*').order('fecha_vencimiento', { ascending: true }).order('id', { ascending: true })),
       supabase.from('ventas').select('*, corrales(numero), pagos_ventas(monto)').order('creado_en', { ascending: false }),
       supabase.from('lotes').select('*, pagos_compras(monto)').order('created_at', { ascending: false }),
       supabase.from('contactos').select('*').eq('activo', true).order('nombre'),

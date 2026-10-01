@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { Loader } from './UI'
 import { calcularIndicadoresFeedlot, promMovil } from '../shared/gdpLogic'
 import { emparejarCaravanas } from '../shared/caravanasLogic'
+import { traerTodo } from '../shared/traerTodo'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6', borderStrong: '#C8C2B8',
@@ -63,7 +64,8 @@ export default function Reportes({ usuario }) {
     const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
-      supabase.from('raciones_app').select('*, corrales(numero, animales)').order('creado_en', { ascending: false }).limit(2000),
+      // Todas las raciones de los últimos 13 meses (de a páginas: Supabase corta en 1000)
+      traerTodo(() => supabase.from('raciones_app').select('*, corrales(numero, animales)').gte('creado_en', (() => { const d = new Date(); d.setMonth(d.getMonth() - 13); return d.toISOString() })()).order('creado_en', { ascending: false }).order('id', { ascending: false })),
       supabase.from('stock_insumos').select('*'),
       supabase.from('lotes').select('*').order('created_at', { ascending: false }),
       supabase.from('ventas').select('*, corrales(numero)').order('creado_en', { ascending: false }),
@@ -904,7 +906,7 @@ export default function Reportes({ usuario }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                   <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
                   <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`${mesActual.cabVendidas} animales`} />
-                  <Stat label="Existencia promedio (feedlot)" val={Math.round(mesActual.existenciaPromedio)} sub={`total de cabezas · inicio: ${mesActual.stockInicial} → fin: ${mesActual.stockFinal}`} />
+                  <Stat label="Existencia promedio (feedlot)" val={Math.round(mesActual.existenciaPromedio)} sub={`total de cabezas · inicio: ${Math.round(mesActual.stockInicial)} → fin: ${Math.round(mesActual.stockFinal)}`} />
                   <Stat label="Ganancia por ternero" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'} sub="promedios de 60 días y 3 meses cerrados" color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
                 </div>
               </div>
