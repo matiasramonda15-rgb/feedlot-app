@@ -147,7 +147,7 @@ function Topbar({ titulo, sub, onBack, onLogout }) {
 function Scroll({ children }) {
   return <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>{children}</div>
 }
-function Home({ usuario, nav, onLogout, datos }) {
+function Home({ usuario, nav, onLogout, datos, onReload }) {
   const { proximaPesada, alertas, corrales, stockBajo, stockSanitario, remitosSinPrecio, insumosSinRetirar } = datos
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasPesada = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null

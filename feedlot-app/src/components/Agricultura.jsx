@@ -278,7 +278,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} soloAlfalfa={soloAlfalfa} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ordenes={ordenes} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} soloAlfalfa={soloAlfalfa} />}
-      {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} />}
+      {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} />}
       {tab === 'lluvias' && <TabLluvias usuario={usuario} />}
@@ -3176,7 +3176,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
 }
 
 // ── TAB GASTOS ──
-function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
+function TabGastos({ gastos, campos, campanas, campanaActiva, cargar, contactos = [] }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: hoyLocal(), proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
   const [guardando, setGuardando] = useState(false)

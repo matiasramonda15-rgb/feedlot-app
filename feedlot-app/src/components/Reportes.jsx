@@ -36,6 +36,9 @@ function SectionHeader({ title, sub }) {
 
 export default function Reportes({ usuario }) {
   const [tab, setTab] = useState('gdp')
+  // La pestaña "Calculadora" no está en el menú, pero su código usa este
+  // estado: se define para que no quede una referencia rota.
+  const [calc, setCalc] = useState({})
   const [loading, setLoading] = useState(true)
   const [corrales, setCorrales] = useState([])
   const [pesadas, setPesadas] = useState([])
@@ -1716,6 +1719,95 @@ export default function Reportes({ usuario }) {
           </div>
         </div>
       )}
+
+      {/* Caravanas: este bloque había quedado por error adentro de la sección
+          Comparativa (donde "tab" no existe) — por eso la Comparativa quedaba en
+          blanco y la pestaña Caravanas no mostraba nada. */}
+      {tab === 'caravanas' && (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>📡 Permanencia y GDP reales, por caravana electrónica</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>
+            Medido animal por animal (ingreso → venta), no estimado por flujo — se arma solo cuando el mismo número de
+            caravana aparece en una lectura de ingreso y una de venta.
+          </div>
+
+          {totalPares === 0 ? (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '3rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>
+              Todavía no hay ningún par ingreso→venta completo.
+              {(lecturasIngresoSinPar > 0 || lecturasVentaSinPar > 0) && (
+                <div style={{ marginTop: 8, fontSize: 12 }}>
+                  Hay {lecturasIngresoSinPar} lecturas de ingreso y {lecturasVentaSinPar} de venta cargadas, esperando su otra mitad.
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+                <Stat label="Animales con par completo" val={totalPares} sub={`${lecturasIngresoSinPar} ingresos y ${lecturasVentaSinPar} ventas todavía sin su par`} />
+                <Stat label="Permanencia real promedio" val={permanenciaPromReal !== null ? `${Math.round(permanenciaPromReal)} días` : '—'}
+                  sub={permanenciaPromedio ? `estimada por flujo: ${Math.round(permanenciaPromedio)} días` : 'sin estimación para comparar'} color={S.accent} />
+                <Stat label="GDP real promedio" val={gdpPromReal !== null ? `${gdpPromReal.toFixed(2)} kg/día` : '—'}
+                  sub={gdpEstimado ? `estimado por flujo: ${gdpEstimado.toFixed(2)} kg/día` : 'sin estimación para comparar'} color={S.green} />
+                <Stat label="GDP real — mediana" val={gdpMedianaReal !== null ? `${gdpMedianaReal.toFixed(2)} kg/día` : '—'} sub="la mitad de los animales está arriba, la mitad abajo" />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>GDP real según peso de ingreso</div>
+                  {gdpPorBandaIngreso.filter(b => b.cantidad > 0).length === 0 ? (
+                    <div style={{ fontSize: 12, color: S.hint }}>Sin datos suficientes todavía.</div>
+                  ) : gdpPorBandaIngreso.filter(b => b.cantidad > 0).map(b => (
+                    <div key={b.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${S.border}`, fontSize: 12 }}>
+                      <span>{b.label} <span style={{ color: S.hint }}>({b.cantidad})</span></span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{b.gdpProm.toFixed(2)} kg/día</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>GDP real por procedencia</div>
+                  {Object.keys(porProcedenciaCarav).length === 0 ? (
+                    <div style={{ fontSize: 12, color: S.hint }}>Sin datos suficientes todavía.</div>
+                  ) : Object.entries(porProcedenciaCarav).map(([proc, arr]) => (
+                    <div key={proc} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${S.border}`, fontSize: 12 }}>
+                      <span>{proc} <span style={{ color: S.hint }}>({arr.length})</span></span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(arr.reduce((s, p) => s + p.gdpIndividual, 0) / arr.length).toFixed(2)} kg/día</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Detalle por animal</div>
+                <div style={{ maxHeight: 420, overflowY: 'auto', border: `1px solid ${S.border}`, borderRadius: 8 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: S.bg, position: 'sticky', top: 0 }}>
+                        {['Caravana', 'Procedencia', 'Ingreso', 'Kg ing.', 'Venta', 'Kg vta.', 'Días', 'GDP'].map(h => (
+                          <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Caravana' || h === 'Procedencia' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...paresCaravana].sort((a, b) => new Date(b.fechaVenta) - new Date(a.fechaVenta)).map(p => (
+                        <tr key={p.numero_caravana} style={{ borderBottom: `1px solid ${S.border}` }}>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 10 }}>...{p.numero_caravana.slice(-6)}</td>
+                          <td style={{ padding: '7px 10px' }}>{p.procedencia || '—'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{new Date(p.fechaIngreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.pesoIngreso}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{new Date(p.fechaVenta + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.pesoVenta}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.dias}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{p.gdpIndividual.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       </>)}
 
       {actividadVista === 'agricultura' && (
@@ -1966,91 +2058,6 @@ function SeccionComparativa({ S, anio, actividades, ingresoTotal, inversionTotal
           ))}
         </div>
       </div>
-      {tab === 'caravanas' && (
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>📡 Permanencia y GDP reales, por caravana electrónica</div>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>
-            Medido animal por animal (ingreso → venta), no estimado por flujo — se arma solo cuando el mismo número de
-            caravana aparece en una lectura de ingreso y una de venta.
-          </div>
-
-          {totalPares === 0 ? (
-            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '3rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>
-              Todavía no hay ningún par ingreso→venta completo.
-              {(lecturasIngresoSinPar > 0 || lecturasVentaSinPar > 0) && (
-                <div style={{ marginTop: 8, fontSize: 12 }}>
-                  Hay {lecturasIngresoSinPar} lecturas de ingreso y {lecturasVentaSinPar} de venta cargadas, esperando su otra mitad.
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
-                <Stat label="Animales con par completo" val={totalPares} sub={`${lecturasIngresoSinPar} ingresos y ${lecturasVentaSinPar} ventas todavía sin su par`} />
-                <Stat label="Permanencia real promedio" val={permanenciaPromReal !== null ? `${Math.round(permanenciaPromReal)} días` : '—'}
-                  sub={permanenciaPromedio ? `estimada por flujo: ${Math.round(permanenciaPromedio)} días` : 'sin estimación para comparar'} color={S.accent} />
-                <Stat label="GDP real promedio" val={gdpPromReal !== null ? `${gdpPromReal.toFixed(2)} kg/día` : '—'}
-                  sub={gdpEstimado ? `estimado por flujo: ${gdpEstimado.toFixed(2)} kg/día` : 'sin estimación para comparar'} color={S.green} />
-                <Stat label="GDP real — mediana" val={gdpMedianaReal !== null ? `${gdpMedianaReal.toFixed(2)} kg/día` : '—'} sub="la mitad de los animales está arriba, la mitad abajo" />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>GDP real según peso de ingreso</div>
-                  {gdpPorBandaIngreso.filter(b => b.cantidad > 0).length === 0 ? (
-                    <div style={{ fontSize: 12, color: S.hint }}>Sin datos suficientes todavía.</div>
-                  ) : gdpPorBandaIngreso.filter(b => b.cantidad > 0).map(b => (
-                    <div key={b.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${S.border}`, fontSize: 12 }}>
-                      <span>{b.label} <span style={{ color: S.hint }}>({b.cantidad})</span></span>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{b.gdpProm.toFixed(2)} kg/día</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>GDP real por procedencia</div>
-                  {Object.keys(porProcedenciaCarav).length === 0 ? (
-                    <div style={{ fontSize: 12, color: S.hint }}>Sin datos suficientes todavía.</div>
-                  ) : Object.entries(porProcedenciaCarav).map(([proc, arr]) => (
-                    <div key={proc} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${S.border}`, fontSize: 12 }}>
-                      <span>{proc} <span style={{ color: S.hint }}>({arr.length})</span></span>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{(arr.reduce((s, p) => s + p.gdpIndividual, 0) / arr.length).toFixed(2)} kg/día</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Detalle por animal</div>
-                <div style={{ maxHeight: 420, overflowY: 'auto', border: `1px solid ${S.border}`, borderRadius: 8 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ background: S.bg, position: 'sticky', top: 0 }}>
-                        {['Caravana', 'Procedencia', 'Ingreso', 'Kg ing.', 'Venta', 'Kg vta.', 'Días', 'GDP'].map(h => (
-                          <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Caravana' || h === 'Procedencia' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...paresCaravana].sort((a, b) => new Date(b.fechaVenta) - new Date(a.fechaVenta)).map(p => (
-                        <tr key={p.numero_caravana} style={{ borderBottom: `1px solid ${S.border}` }}>
-                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 10 }}>...{p.numero_caravana.slice(-6)}</td>
-                          <td style={{ padding: '7px 10px' }}>{p.procedencia || '—'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{new Date(p.fechaIngreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.pesoIngreso}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{new Date(p.fechaVenta + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.pesoVenta}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.dias}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: S.green }}>{p.gdpIndividual.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
     </div>
   )
 }

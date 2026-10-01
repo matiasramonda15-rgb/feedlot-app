@@ -389,9 +389,9 @@ export default function Insumos({ usuario }) {
                       El proveedor ya cobró (se lo pagó la financiera) — la deuda queda registrada en Créditos, y esta compra queda marcada como pagada.
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                      <div><Label>Entidad (banco/financiera)</Label><input type="text" value={formPagoGrupal.credito_entidad || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_entidad: e.target.value})} style={inputStyle} placeholder="ej. Banco Macro" /></div>
-                      <div><Label>Cant. de cuotas</Label><input type="number" value={formPagoGrupal.credito_cuotas || '1'} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_cuotas: e.target.value})} style={inputStyle} /></div>
-                      <div><Label>Vencimiento (1ra cuota)</Label><input type="date" value={formPagoGrupal.credito_vencimiento || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_vencimiento: e.target.value})} style={inputStyle} /></div>
+                      <div><Lbl>Entidad (banco/financiera)</Lbl><input type="text" value={formPagoGrupal.credito_entidad || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_entidad: e.target.value})} style={inp} placeholder="ej. Banco Macro" /></div>
+                      <div><Lbl>Cant. de cuotas</Lbl><input type="number" value={formPagoGrupal.credito_cuotas || '1'} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_cuotas: e.target.value})} style={inp} /></div>
+                      <div><Lbl>Vencimiento (1ra cuota)</Lbl><input type="date" value={formPagoGrupal.credito_vencimiento || ''} onChange={e => setFormPagoGrupal({...formPagoGrupal, credito_vencimiento: e.target.value})} style={inp} /></div>
                     </div>
                   </div>
                 )}
@@ -702,7 +702,7 @@ export default function Insumos({ usuario }) {
             </div>
           </div>
         )}
-        <StockTable items={stockAlim} tipo="alimentacion" onCargar={cargar} ingresosStock={ingresosStock} />
+        <StockTable items={stockAlim} tipo="alimentacion" onCargar={cargar} contactos={contactos} ingresosStock={ingresosStock} />
         </div>
       )}
 
@@ -769,14 +769,14 @@ export default function Insumos({ usuario }) {
             </div>
           </div>
         )}
-        <StockTable items={stockSan} tipo="sanitario" onCargar={cargar} historialIngresos={historialIngresosSan} historialUso={historialUsoSan} />
+        <StockTable items={stockSan} tipo="sanitario" onCargar={cargar} contactos={contactos} historialIngresos={historialIngresosSan} historialUso={historialUsoSan} />
         </div>
       )}
     </div>
   )
 }
 
-function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngresos = [], historialUso = [] }) {
+function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngresos = [], historialUso = [], contactos = [] }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nombre: '', tipo: 'Vacuna', lab: '', car: '', unidad: tipo === 'alimentacion' ? 'kg' : 'ml', minimo: '' })
   const [guardando, setGuardando] = useState(false)

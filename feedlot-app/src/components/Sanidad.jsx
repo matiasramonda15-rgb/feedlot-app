@@ -1478,7 +1478,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                           await supabase.from('corrales').update({ rol: 'acumulacion' }).eq('id', corral.id)
                           await supabase.from('movimientos').insert({ fecha: new Date().toISOString(), tipo: 'cambio_rol', corral_destino_id: corral.id, cantidad: l.cantidad, motivo: 'Fin cuarentena — pase a acumulación', registrado_por: usuario?.id })
                         }
-                        await cargar()
+                        await cargarDatos()
                       }} style={{ marginTop: 8, padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                         ✓ Confirmar pasaje a acumulación
                       </button>

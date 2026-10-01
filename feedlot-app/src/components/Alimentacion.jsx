@@ -1253,7 +1253,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
 
 
 
-          <StockABM stockDB={stockDB} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} historialInsumos={historialInsumos} />
+          <StockABM stockDB={stockDB} contactos={contactos} onReload={cargarDatos} onShowIngreso={() => setShowFormIngreso(true)} historial={historial} formulas={formulas} formulaActiva={formulaActiva} historialInsumos={historialInsumos} />
         </div>
       )}
 
@@ -1544,7 +1544,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
   )
 }
 
-function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formulaActiva, historialInsumos = [] }) {
+function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formulaActiva, historialInsumos = [], contactos = [] }) {
   const kgDiaPorInsumo = {}
   if (historial && historial.length > 0 && formulas && formulaActiva) {
     const porFecha = {}
