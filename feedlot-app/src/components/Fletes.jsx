@@ -194,6 +194,16 @@ export default function Fletes({ usuario }) {
   }
 
   const transportistas = [...new Set(fletes.map(f => f.transportista).filter(Boolean))].sort()
+  // Costo del flete por kg de animal (monto ÷ kg que trajo el camión).
+  const costoPorKg = f => (parseFloat(f.monto) > 0 && parseFloat(f.kg_bruto) > 0) ? parseFloat(f.monto) / parseFloat(f.kg_bruto) : null
+  // Promedio ponderado de un grupo de fletes: total pagado ÷ total de kg.
+  const promedioPorKg = lista => {
+    const validos = lista.filter(f => costoPorKg(f) != null)
+    const monto = validos.reduce((s, f) => s + parseFloat(f.monto), 0)
+    const kg = validos.reduce((s, f) => s + parseFloat(f.kg_bruto), 0)
+    return kg > 0 ? { porKg: monto / kg, monto, kg, viajes: validos.length } : null
+  }
+
   const fletesFiltrados = fletes.filter(f => {
     if (filtroEstado && f.estado_pago !== filtroEstado) return false
     if (filtroTransportista && f.transportista !== filtroTransportista) return false
@@ -341,19 +351,44 @@ export default function Fletes({ usuario }) {
         )
       })()}
 
+      {/* Costo de flete por kg de animal — promedio de los últimos 60 días.
+          Promedio ponderado: total pagado ÷ total de kg traídos (así un viaje
+          grande pesa más que uno chico). Solo cuentan los fletes que ya
+          tienen monto y kg cargados. */}
+      {(() => {
+        const desde = new Date(); desde.setDate(desde.getDate() - 60)
+        const desdeStr = `${desde.getFullYear()}-${String(desde.getMonth() + 1).padStart(2, '0')}-${String(desde.getDate()).padStart(2, '0')}`
+        const ult60 = fletes.filter(f => f.fecha && f.fecha >= desdeStr)
+        const r = promedioPorKg(ult60)
+        const sinMonto = ult60.filter(f => costoPorKg(f) == null).length
+        const fmt2 = n => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: '1rem' }}>
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderLeft: `4px solid ${S.accent}`, borderRadius: 8, padding: '.9rem 1.1rem', minWidth: 260 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Flete por kg de animal · últimos 60 días</div>
+              <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'monospace', color: S.accent, margin: '4px 0' }}>{r ? `$${fmt2(r.porKg)}/kg` : '—'}</div>
+              <div style={{ fontSize: 11, color: S.hint }}>
+                {r ? `${r.viajes} viaje${r.viajes !== 1 ? 's' : ''} · ${r.kg.toLocaleString('es-AR')} kg · $${Math.round(r.monto).toLocaleString('es-AR')}` : 'Sin fletes con monto y kg en los últimos 60 días'}
+                {sinMonto > 0 ? ` · ${sinMonto} sin monto (no cuentan)` : ''}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Tabla */}
       <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: S.bg }}>
-              {['', 'Fecha', 'Transportista', 'Lote', 'Procedencia', 'Animales', 'Kg bruto', 'N° Factura', 'Monto', 'Estado', ''].map(h => (
+              {['', 'Fecha', 'Transportista', 'Lote', 'Procedencia', 'Animales', 'Kg bruto', 'N° Factura', 'Monto', '$/kg', 'Estado', ''].map(h => (
                 <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {fletesFiltrados.length === 0 && (
-              <tr><td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay fletes registrados.</td></tr>
+              <tr><td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay fletes registrados.</td></tr>
             )}
             {fletesFiltrados.map(f => (
               <>
@@ -374,6 +409,10 @@ export default function Fletes({ usuario }) {
                   <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right' }}>{f.kg_bruto ? `${f.kg_bruto.toLocaleString('es-AR')} kg` : '—'}</td>
                   <td style={{ padding: '9px 12px', color: S.muted, fontSize: 12 }}>{f.numero_factura || '—'}</td>
                   <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, textAlign: 'right' }}>{f.monto ? `$${f.monto.toLocaleString('es-AR')}` : '—'}</td>
+                  {/* Costo del flete por kg de animal = monto ÷ kg que trajo el camión */}
+                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right', color: S.accent, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {costoPorKg(f) != null ? `$${costoPorKg(f).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                  </td>
                   <td style={{ padding: '9px 12px' }}>
                     <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: f.estado_pago === 'pagado' ? S.greenLight : S.amberLight, color: f.estado_pago === 'pagado' ? S.green : S.amber }}>
                       {f.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
@@ -416,7 +455,7 @@ export default function Fletes({ usuario }) {
                 {/* Form edición */}
                 {editandoId === f.id && (
                   <tr key={`edit-${f.id}`} style={{ background: S.accentLight }}>
-                    <td colSpan={11} style={{ padding: '1rem' }}>
+                    <td colSpan={12} style={{ padding: '1rem' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
                         <div>
                           <Label>Transportista</Label>
@@ -443,7 +482,7 @@ export default function Fletes({ usuario }) {
                 {/* Form pago */}
                 {pagandoId === f.id && (
                   <tr key={`pago-${f.id}`} style={{ background: S.greenLight }}>
-                    <td colSpan={11} style={{ padding: '1rem' }}>
+                    <td colSpan={12} style={{ padding: '1rem' }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: S.green, marginBottom: '1rem' }}>💳 Registrar pago — {f.transportista}</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 12, marginBottom: '1rem' }}>
                         <div>
@@ -490,11 +529,17 @@ export default function Fletes({ usuario }) {
               <tr style={{ background: S.accentLight }}>
                 <td colSpan={5} style={{ padding: '9px 12px', fontWeight: 700 }}>Total filtrado</td>
                 <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right', fontWeight: 700 }}>
+                  {fletesFiltrados.reduce((s,f) => s+(f.cantidad||0),0).toLocaleString('es-AR')}
+                </td>
+                <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right', fontWeight: 700 }}>
                   {fletesFiltrados.reduce((s,f) => s+(f.kg_bruto||0),0).toLocaleString('es-AR')} kg
                 </td>
                 <td></td>
                 <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right', fontWeight: 700 }}>
                   ${fletesFiltrados.reduce((s,f) => s+(f.monto||0),0).toLocaleString('es-AR')}
+                </td>
+                <td style={{ padding: '9px 12px', fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: S.accent, whiteSpace: 'nowrap' }}>
+                  {(() => { const r = promedioPorKg(fletesFiltrados); return r ? `$${r.porKg.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—' })()}
                 </td>
                 <td colSpan={2}></td>
               </tr>
