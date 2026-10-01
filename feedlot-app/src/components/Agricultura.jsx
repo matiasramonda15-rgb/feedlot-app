@@ -20,6 +20,11 @@ const S = {
 
 const inputStyle = { width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", color: S.text }
 
+// Hectáreas que se TRABAJAN en un campo o lote (órdenes, siembra). Si no se
+// cargó un valor propio, son las del contrato. Las del contrato
+// (superficie_ha) se siguen usando solo para el alquiler.
+const haTrabajables = x => x ? (parseFloat(x.superficie_trabajable_ha) || parseFloat(x.superficie_ha) || 0) : 0
+
 function Label({ children }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{children}</div>
 }
@@ -110,7 +115,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
   // ── MODO CELULAR ──
   if (mobile) {
     if (pantAgroM === 'orden') {
-      return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} />
+      return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} planes={planes} mobile={true} nav={() => setPantAgroM('home')} />
     }
     if (pantAgroM === 'stock') {
       return <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} cotizacionDolar={cotizacionDolar} />
@@ -275,7 +280,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
       {tab === 'campos' && <TabCampos campos={campos} campanas={campanas} planes={planes} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} />}
       {tab === 'arriendos' && <TabArriendos campos={campos} cargar={cargar} contactos={contactos} usuario={usuario} />}
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
-      {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} soloAlfalfa={soloAlfalfa} />}
+      {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} soloAlfalfa={soloAlfalfa} planes={planes} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ordenes={ordenes} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} soloAlfalfa={soloAlfalfa} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} />}
@@ -294,18 +299,18 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' })
+  const [form, setForm] = useState({ nombre: '', superficie_ha: '', superficie_trabajable_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' })
   const [editando, setEditando] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [selectedCampo, setSelectedCampo] = useState(null)
   const [showLoteForm, setShowLoteForm] = useState(false)
   const [editandoLote, setEditandoLote] = useState(null)
-  const [formLote, setFormLote] = useState({ numero: '', superficie_ha: '', imagen_url: '' })
+  const [formLote, setFormLote] = useState({ numero: '', superficie_ha: '', superficie_trabajable_ha: '', imagen_url: '' })
 
   async function guardar() {
     if (!form.nombre) { alert('Ingresá el nombre del campo'); return }
     setGuardando(true)
-    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, propietario: form.propietario || null, arrendamiento_tn_ha: parseFloat(form.arrendamiento_tn_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, fecha_vencimiento_contrato: form.fecha_vencimiento_contrato || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
+    const campoData = { nombre: form.nombre, superficie_ha: parseFloat(form.superficie_ha) || null, superficie_trabajable_ha: parseFloat(form.superficie_trabajable_ha) || null, propietario: form.propietario || null, arrendamiento_tn_ha: parseFloat(form.arrendamiento_tn_ha) || null, forma_pago_arriendo: form.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: parseInt(form.dia_vencimiento_arriendo) || null, fecha_vencimiento_contrato: form.fecha_vencimiento_contrato || null, ubicacion: form.ubicacion || null, imagen_url: form.imagen_url || null }
     const { error } = editando
       ? await supabase.from('campos').update(campoData).eq('id', editando)
       : await supabase.from('campos').insert({ ...campoData, activo: true })
@@ -313,13 +318,13 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' })
+    setForm({ nombre: '', superficie_ha: '', superficie_trabajable_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' })
     setGuardando(false)
   }
 
   async function guardarLote() {
     if (!formLote.numero) { alert('Ingresá el número de lote'); return }
-    const datos = { numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null, imagen_url: formLote.imagen_url || null }
+    const datos = { numero: formLote.numero, superficie_ha: parseFloat(formLote.superficie_ha) || null, superficie_trabajable_ha: parseFloat(formLote.superficie_trabajable_ha) || null, imagen_url: formLote.imagen_url || null }
     const { error } = editandoLote
       ? await supabase.from('lotes_agricolas').update(datos).eq('id', editandoLote)
       : await supabase.from('lotes_agricolas').insert({ campo_id: selectedCampo.id, ...datos })
@@ -327,7 +332,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
     await cargar()
     setShowLoteForm(false)
     setEditandoLote(null)
-    setFormLote({ numero: '', superficie_ha: '', imagen_url: '' })
+    setFormLote({ numero: '', superficie_ha: '', superficie_trabajable_ha: '', imagen_url: '' })
   }
 
   async function eliminarLote(id) {
@@ -341,7 +346,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Campos arrendados</div>
-        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ nombre: '', superficie_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' }) }}
+        <button onClick={() => { setShowForm(!showForm); setEditando(null); setForm({ nombre: '', superficie_ha: '', superficie_trabajable_ha: '', propietario: '', arrendamiento_tn_ha: '', forma_pago_arriendo: 'semestral', dia_vencimiento_arriendo: '', fecha_vencimiento_contrato: '', ubicacion: '', imagen_url: '' }) }}
           style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Nuevo campo
         </button>
@@ -351,7 +356,10 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
         <Card titulo={editando ? 'Editar campo' : 'Nuevo campo'}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div><Label>Nombre del campo *</Label><input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Superficie total (ha)</Label><input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Ha de contrato</Label><input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} />
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Se usan para calcular el alquiler.</div></div>
+            <div><Label>Ha trabajables</Label><input type="number" value={form.superficie_trabajable_ha} onChange={e => setForm({...form, superficie_trabajable_ha: e.target.value})} placeholder={form.superficie_ha ? `${form.superficie_ha} (igual al contrato)` : ''} style={inputStyle} />
+              <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Las reales, para órdenes y siembra. Vacío = igual al contrato.</div></div>
             <div><Label>Propietario</Label>
               <SelectBuscable value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} style={inputStyle}>
                 <option value="">— Seleccioná —</option>
@@ -406,6 +414,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{c.nombre}</div>
                 <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>
                   {c.superficie_ha ? `${c.superficie_ha.toLocaleString('es-AR')} ha` : '—'}
+                  {c.superficie_trabajable_ha && parseFloat(c.superficie_trabajable_ha) !== parseFloat(c.superficie_ha) ? <span style={{ fontSize: 11, color: S.muted, fontWeight: 400 }}> · {parseFloat(c.superficie_trabajable_ha).toLocaleString('es-AR')} trabajables</span> : null}
                   {c.propietario && ` · ${c.propietario}`}
                   {c.ubicacion && ` · ${c.ubicacion}`}
                 </div>
@@ -435,7 +444,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
                     })()}
                   </div>
                 )}
-                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', propietario: c.propietario || '', arrendamiento_tn_ha: c.arrendamiento_tn_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', fecha_vencimiento_contrato: c.fecha_vencimiento_contrato || '', ubicacion: c.ubicacion || '', imagen_url: c.imagen_url || '' }); setShowForm(true); setSelectedCampo(null) }}
+                <button onClick={() => { setEditando(c.id); setForm({ nombre: c.nombre, superficie_ha: c.superficie_ha || '', superficie_trabajable_ha: c.superficie_trabajable_ha || '', propietario: c.propietario || '', arrendamiento_tn_ha: c.arrendamiento_tn_ha || '', forma_pago_arriendo: c.forma_pago_arriendo || 'semestral', dia_vencimiento_arriendo: c.dia_vencimiento_arriendo || '', fecha_vencimiento_contrato: c.fecha_vencimiento_contrato || '', ubicacion: c.ubicacion || '', imagen_url: c.imagen_url || '' }); setShowForm(true); setSelectedCampo(null) }}
                   style={{ padding: '5px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                   Editar
                 </button>
@@ -463,7 +472,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
               <div style={{ padding: '1rem 1.25rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: S.muted }}>Lotes</div>
-                  <button onClick={() => { setShowLoteForm(!showLoteForm); setEditandoLote(null); setFormLote({ numero: '', superficie_ha: '', imagen_url: '' }) }}
+                  <button onClick={() => { setShowLoteForm(!showLoteForm); setEditandoLote(null); setFormLote({ numero: '', superficie_ha: '', superficie_trabajable_ha: '', imagen_url: '' }) }}
                     style={{ padding: '4px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                     + Agregar lote
                   </button>
@@ -477,15 +486,19 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
                       <input type="text" value={formLote.numero} onChange={e => setFormLote({...formLote, numero: e.target.value})} placeholder="ej. 1, 2A" style={{...inputStyle, fontSize: 12}} />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <Label>Superficie (ha)</Label>
+                      <Label>Ha de contrato</Label>
                       <input type="number" value={formLote.superficie_ha} onChange={e => setFormLote({...formLote, superficie_ha: e.target.value})} style={{...inputStyle, fontSize: 12}} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Label>Ha trabajables</Label>
+                      <input type="number" value={formLote.superficie_trabajable_ha} onChange={e => setFormLote({...formLote, superficie_trabajable_ha: e.target.value})} placeholder="= contrato" style={{...inputStyle, fontSize: 12}} />
                     </div>
                     <div style={{ flex: 2 }}>
                       <Label>Link del mapa (URL)</Label>
                       <input type="url" value={formLote.imagen_url} onChange={e => setFormLote({...formLote, imagen_url: e.target.value})} placeholder="https://..." style={{...inputStyle, fontSize: 12}} />
                     </div>
                     <button onClick={guardarLote} style={{ padding: '9px 14px', fontSize: 12, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{editandoLote ? 'Guardar cambios' : 'Guardar'}</button>
-                    <button onClick={() => { setShowLoteForm(false); setEditandoLote(null); setFormLote({ numero: '', superficie_ha: '', imagen_url: '' }) }} style={{ padding: '9px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                    <button onClick={() => { setShowLoteForm(false); setEditandoLote(null); setFormLote({ numero: '', superficie_ha: '', superficie_trabajable_ha: '', imagen_url: '' }) }} style={{ padding: '9px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
                     </div>
                   </div>
                 )}
@@ -494,14 +507,14 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
                     <div key={l.id} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600 }}>Lote {l.numero}</div>
-                        {l.superficie_ha && <div style={{ fontSize: 11, color: S.muted }}>{l.superficie_ha} ha</div>}
+                        {l.superficie_ha && <div style={{ fontSize: 11, color: S.muted }}>{l.superficie_ha} ha{l.superficie_trabajable_ha && parseFloat(l.superficie_trabajable_ha) !== parseFloat(l.superficie_ha) ? ` · ${l.superficie_trabajable_ha} trabajables` : ''}</div>}
                       </div>
                       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                         {l.imagen_url && (
                           <a href={l.imagen_url} target="_blank" rel="noopener noreferrer"
                             style={{ fontSize: 11, color: '#1A3D6B', textDecoration: 'none' }}>🗺</a>
                         )}
-                        <button onClick={() => { setEditandoLote(l.id); setFormLote({ numero: l.numero || '', superficie_ha: l.superficie_ha || '', imagen_url: l.imagen_url || '' }); setShowLoteForm(true) }}
+                        <button onClick={() => { setEditandoLote(l.id); setFormLote({ numero: l.numero || '', superficie_ha: l.superficie_ha || '', superficie_trabajable_ha: l.superficie_trabajable_ha || '', imagen_url: l.imagen_url || '' }); setShowLoteForm(true) }}
                           style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 12 }}>✏</button>
                         <button onClick={() => eliminarLote(l.id)} style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 12 }}>✕</button>
                       </div>
@@ -662,7 +675,8 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
                   <select value={formPlan.campo_id} onChange={e => {
                     const campo = campos.find(c => c.id === parseInt(e.target.value))
                     setLotesDeCampo(campo?.lotes_agricolas || [])
-                    setFormPlan({...formPlan, campo_id: e.target.value, lote_id: ''})
+                    // La superficie sembrada arranca con las ha trabajables del campo (editable)
+                    setFormPlan({...formPlan, campo_id: e.target.value, lote_id: '', superficie_ha: campo ? String(haTrabajables(campo) || '') : ''})
                   }} style={inputStyle}>
                     <option value="">— Seleccioná —</option>
                     {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
@@ -670,9 +684,13 @@ function TabCampanas({ campanas, campos, setCampanaActiva, campanaActiva, cargar
                 </div>
                 <div>
                   <Label>Lote (opcional)</Label>
-                  <select value={formPlan.lote_id} onChange={e => setFormPlan({...formPlan, lote_id: e.target.value})} style={inputStyle}>
+                  <select value={formPlan.lote_id} onChange={e => {
+                    const lote = lotesDeCampo.find(l => l.id === parseInt(e.target.value))
+                    const campoP = campos.find(c => c.id === parseInt(formPlan.campo_id))
+                    setFormPlan({...formPlan, lote_id: e.target.value, superficie_ha: String(haTrabajables(lote || campoP) || '')})
+                  }} style={inputStyle}>
                     <option value="">Todo el campo</option>
-                    {lotesDeCampo.map(l => <option key={l.id} value={l.id}>Lote {l.numero} — {l.superficie_ha} ha</option>)}
+                    {lotesDeCampo.map(l => <option key={l.id} value={l.id}>Lote {l.numero} — {haTrabajables(l)} ha</option>)}
                   </select>
                 </div>
                 <div>
@@ -744,7 +762,7 @@ const PAGO_INIT_ARR = PAGO_INIT
 
 function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
-  const superficie = orden.superficie_ha_real || lote?.superficie_ha || campo?.superficie_ha || '—'
+  const superficie = orden.superficie_ha_real || haTrabajables(lote) || haTrabajables(campo) || '—'
   const productos = orden.productos || []
 
   const filasProductos = productos.map(p => {
@@ -938,7 +956,7 @@ async function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro
     // (la de contrato), que a veces no coincide con la hectárea trabajable
     // real y hacía que el recibo mostrara un número distinto al que se
     // había cargado a mano al hacer la orden.
-    const superficie = o.superficie_ha_real || lote?.superficie_ha || campo?.superficie_ha || '—'
+    const superficie = o.superficie_ha_real || haTrabajables(lote) || haTrabajables(campo) || '—'
     return `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;">${o.tipo} — ${campo?.nombre || ''}${lote ? ` Lote ${lote.numero}` : ''} · ${superficie} ha${campana ? ` · ${campana.nombre}` : ''}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(o.costo_total || 0).toLocaleString('es-AR')}</td>
@@ -1022,7 +1040,7 @@ async function generarReciboOrden(ordenOrdenes, camposLista, campanas, stockAgro
 
 function generarRemitoOrden(orden, campo, campana, stockAgro) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
-  const superficie = orden.superficie_ha_real || campo?.superficie_ha || '—'
+  const superficie = orden.superficie_ha_real || haTrabajables(campo) || '—'
   const productos = orden.productos || []
   const pagos = orden.pagos_detalle || []
 
@@ -1148,7 +1166,7 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 }
 
 // ── TAB ÓRDENES DE TRABAJO ──
-function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario, mobile, nav, soloAlfalfa }) {
+function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario, mobile, nav, soloAlfalfa, planes = [] }) {
   // Los productos de agro se cargan y consumen en cantidades grandes — no
   // hace falta (ni tiene sentido en la práctica) manejar más de un decimal.
   // Se redondea siempre al medio kg/litro más cercano.
@@ -1157,7 +1175,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     campo_ids: [], campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(),
-    descripcion: '', proveedor: '', es_propia: false, lote_ids: [], superficie_ha: '',
+    descripcion: '', proveedor: '', es_propia: false, lote_ids: [], superficie_ha: '', ha_por_destino: {}, guardar_ha_trabajables: true,
     productos: [], gastos_propios: [],
     costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false, cantidad_rollos: '',
   })
@@ -1202,21 +1220,64 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // (un campo terminaba con más hectáreas de las que tiene en total). Ahora
   // se arma exactamente igual que lotesAProcesar: lotes elegidos + campos
   // sin ningún lote propio marcado, cada uno con su superficie real.
+  // Destinos de la orden: cada lote elegido, más cada campo elegido que no
+  // tenga ningún lote marcado ("todo el campo"). Cada uno lleva SUS
+  // hectáreas, editables una por una. Por defecto:
+  //   1) lo sembrado en el plan de la campaña para ese campo/lote,
+  //   2) si no hay plan, las ha trabajables del campo/lote,
+  //   3) si no se cargaron, las del contrato.
+  // Antes había un solo total que se repartía en proporción a las ha de
+  // contrato, y no se podía corregir un campo en particular.
   const camposConLoteSel = new Set(lotesSeleccionados.map(l => l.campo_id))
-  const superficieBase = lotesSeleccionados.reduce((s, l) => s + (parseFloat(l.superficie_ha) || 0), 0)
-    + camposSeleccionados.filter(c => !camposConLoteSel.has(c.id)).reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0)
-  const superficie = parseFloat(form.superficie_ha) || superficieBase || 0
-
-  // Antes esto solo se mostraba como sugerencia gris (placeholder) cuando el
-  // campo estaba vacío — se veía como si ya tuviera un valor cargado, pero
-  // si nadie tocaba el campo, en realidad estaba vacío y el sistema usaba
-  // el de contrato igual al guardar. Ahora se completa con un valor real
-  // (editable) apenas se elige el campo/lote, para que no quede ambiguo.
-  const camposIdsKey = (form.campo_ids || []).join(',')
-  const lotesIdsKey = (form.lote_ids || []).join(',')
-  useEffect(() => {
-    if (superficieBase > 0 && !form.superficie_ha) setForm(prev => ({ ...prev, superficie_ha: String(superficieBase) }))
-  }, [camposIdsKey, lotesIdsKey])
+  const destinos = [
+    ...lotesSeleccionados.map(l => ({ campoId: l.campo_id, lote: l })),
+    ...camposSeleccionados.filter(c => !camposConLoteSel.has(c.id)).map(c => ({ campoId: c.id, lote: null })),
+  ].map(d => {
+    const campoD = campos.find(c => c.id === d.campoId)
+    const key = `${d.campoId}-${d.lote ? d.lote.id : 'todo'}`
+    const planesD = planes.filter(p => String(p.campana_id) === String(form.campana_id) && p.campo_id === d.campoId && (d.lote ? p.lote_id === d.lote.id : !p.lote_id))
+    const haPlan = planesD.reduce((sum, p) => sum + (parseFloat(p.superficie_ha) || 0), 0)
+    const haTrab = haTrabajables(d.lote || campoD)
+    const haDefault = haPlan || haTrab
+    const origen = haPlan ? 'sembrado en la campaña' : (parseFloat((d.lote || campoD)?.superficie_trabajable_ha) ? 'trabajables' : 'contrato')
+    const editado = form.ha_por_destino?.[key]
+    const ha = editado !== undefined && editado !== '' ? (parseFloat(editado) || 0) : haDefault
+    return { ...d, key, campo: campoD, nombre: `${campoD?.nombre || ''}${d.lote ? ` · Lote ${d.lote.numero}` : ''}`, haDefault, haTrab, origen, ha, editado }
+  })
+  const superficieBase = destinos.reduce((sum, d) => sum + d.haDefault, 0)
+  const superficie = destinos.reduce((sum, d) => sum + d.ha, 0)
+  const setHaDestino = (key, valor) => setForm(prev => ({ ...prev, ha_por_destino: { ...(prev.ha_por_destino || {}), [key]: valor } }))
+  // Tabla de hectáreas por destino (la usan el formulario de PC y el del celular)
+  const tablaHectareas = (est = {}) => {
+    const c = { muted: est.muted || S.muted, hint: est.hint || S.hint, border: est.border || S.border, text: est.text || S.text, accent: est.accent || S.green, bg: est.bg || 'transparent', input: est.input || {} }
+    if (!destinos.length) return <div style={{ fontSize: 12, color: c.hint }}>Elegí uno o más campos/lotes.</div>
+    const corregidos = destinos.filter(d => d.editado !== undefined && d.editado !== '' && Math.abs(d.ha - d.haTrab) > 0.001)
+    return (
+      <div>
+        <div style={{ border: `1px solid ${c.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          {destinos.map(d => (
+            <div key={d.key} style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, alignItems: 'center', padding: '7px 10px', borderBottom: `1px solid ${c.border}` }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>{d.nombre}</div>
+                <div style={{ fontSize: 10, color: c.hint }}>{d.haDefault.toLocaleString('es-AR')} ha {d.origen}</div>
+              </div>
+              <input type="number" step="0.1" value={d.editado !== undefined ? d.editado : String(d.haDefault || '')} onChange={e => setHaDestino(d.key, e.target.value)}
+                style={{ width: '100%', padding: '7px 8px', border: `1px solid ${d.editado !== undefined && d.editado !== '' && Math.abs(d.ha - d.haDefault) > 0.001 ? c.accent : c.border}`, borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 600, textAlign: 'right', boxSizing: 'border-box', ...c.input }} />
+            </div>
+          ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, padding: '8px 10px', background: c.bg, fontWeight: 700, fontSize: 13, color: c.text }}>
+            <span>Total</span><span style={{ textAlign: 'right', fontFamily: 'monospace', color: c.accent }}>{superficie.toLocaleString('es-AR')} ha</span>
+          </div>
+        </div>
+        {corregidos.length > 0 && (
+          <label style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginTop: 6, fontSize: 11, color: c.muted, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.guardar_ha_trabajables !== false} onChange={e => setForm({ ...form, guardar_ha_trabajables: e.target.checked })} />
+            <span>Guardar estas hectáreas como "ha trabajables" de {corregidos.map(d => d.nombre).join(', ')}, para que la próxima orden ya arranque con ese número (el alquiler sigue con las de contrato).</span>
+          </label>
+        )}
+      </div>
+    )
+  }
 
   function addProducto() { setForm(prev => ({...prev, productos: [...prev.productos, { id: '', dosis: '', unidad: '', total: '' }]})) }
   function updProducto(idx, updates) { setForm(prev => ({...prev, productos: prev.productos.map((p, i) => i === idx ? {...p, ...updates} : p)})) }
@@ -1228,6 +1289,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
   async function guardar() {
     if (!camposSeleccionados.length || !form.tipo) { alert('Seleccioná al menos un campo y el tipo'); return }
+    if (!(superficie > 0) && form.tipo !== 'Confeccion de rollo' && !confirm('La orden quedó sin hectáreas. ¿Guardarla igual?')) return
     setGuardando(true)
     const costoNum = parseFloat(form.costo_total) || totalGastosPropios || null
     const costoHa = costoNum && superficie ? Math.round(costoNum / superficie) : (parseFloat(form.costo_ha) || null)
@@ -1269,38 +1331,18 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     // una orden con ESE campo; y por cada campo elegido que no tenga ningún
     // lote propio marcado, va una orden para "todo ese campo". Así se puede
     // mezclar, por ejemplo, dos lotes de un campo con el campo entero de otro.
-    const lotesAProcesar = []
-    if (lotesSeleccionados.length > 0) {
-      lotesAProcesar.push(...lotesSeleccionados.map(l => ({ campoId: l.campo_id, lote: l })))
-      const camposConLote = new Set(lotesSeleccionados.map(l => l.campo_id))
-      camposSeleccionados.filter(c => !camposConLote.has(c.id)).forEach(c => lotesAProcesar.push({ campoId: c.id, lote: null }))
-    } else {
-      camposSeleccionados.forEach(c => lotesAProcesar.push({ campoId: c.id, lote: null }))
-    }
-
-    // Se crea UNA orden por cada (campo, lote) — mismos productos, proveedor,
-    // fecha, etc. — cada una con su propia superficie real y su parte
-    // proporcional del costo, para que la rentabilidad quede bien
-    // discriminada por campo/lote.
+    const lotesAProcesar = destinos
     const ordenesInsertadas = []
-    for (const { campoId, lote } of lotesAProcesar) {
+
+    for (const { campoId, lote, ha: haDestino } of lotesAProcesar) {
       const campoDeEsteItem = campos.find(c => c.id === campoId)
       // Antes esto iba directo a buscar la hectárea del contrato (lote o
       // campo), ignorando por completo si el usuario había corregido el
       // total arriba (ej. "31,5 de contrato, pero 35 trabajables") — la
       // orden individual quedaba siempre con el número del contrato. Ahora
-      // se prorratea usando el total real que se cargó arriba, mantiende
-      // la misma proporción entre lotes si hay varios.
-      const superficieContrato = lote ? (parseFloat(lote.superficie_ha) || 0) : (parseFloat(campoDeEsteItem?.superficie_ha) || 0)
-      // Si es un solo campo/lote (el caso de lejos más común), no hace
-      // falta ningún reparto proporcional — todo el total cargado arriba es
-      // para ese único destino. Se usa directo, sin pasar por la cuenta de
-      // "superficieContrato / superficieBase", que es donde se coló un
-      // valor equivocado alguna vez (terminó usando la hectárea del campo
-      // entero en vez de la del lote elegido, en un caso real).
-      const superficieItem = lotesAProcesar.length === 1
-        ? superficie
-        : (superficieBase > 0 ? Math.round((superficieContrato / superficieBase) * superficie * 100) / 100 : superficie)
+      // cada campo/lote tiene sus propias hectáreas en la tabla del
+      // formulario (editables una por una): se usan tal cual.
+      const superficieItem = haDestino
       const costoItem = costoNum == null ? null : (superficie > 0 ? Math.round(costoNum * (superficieItem / superficie)) : costoNum)
       // La dosis es por hectárea (no cambia), pero el "total" de cada
       // producto sí tiene que recalcularse con la superficie DE ESTE lote —
@@ -1363,7 +1405,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (!mobile) await cargar() // en el celular, la recarga se hace recién al volver al inicio (ver más abajo), para no remontar el formulario y perder la confirmación
     setShowForm(false)
     if (mobile) setOrdenGuardadaM(ordenInsertada)
-    setForm({ campo_ids: [], campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(), descripcion: '', proveedor: '', es_propia: false, lote_ids: [], superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false, cantidad_rollos: '' })
+    // Hectáreas corregidas → quedan como "ha trabajables" del campo/lote.
+    if (form.guardar_ha_trabajables !== false) {
+      for (const d of destinos) {
+        if (d.editado === undefined || d.editado === '' || !(d.ha > 0) || Math.abs(d.ha - d.haTrab) <= 0.001) continue
+        if (d.lote) await supabase.from('lotes_agricolas').update({ superficie_trabajable_ha: d.ha }).eq('id', d.lote.id)
+        else await supabase.from('campos').update({ superficie_trabajable_ha: d.ha }).eq('id', d.campoId)
+      }
+    }
+    setForm({ campo_ids: [], campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(), descripcion: '', proveedor: '', es_propia: false, lote_ids: [], ha_por_destino: {}, guardar_ha_trabajables: true, superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false, cantidad_rollos: '' })
     setGuardando(false)
   }
 
@@ -1545,7 +1595,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 })}
               </div>
               {(lotesSeleccionados.length > 1 || camposSeleccionados.length > 1) && (
-                <div style={{ fontSize: 11, color: CM.blue, marginTop: 4 }}>Se va a crear una orden por cada {lotesSeleccionados.length > 0 ? 'lote' : 'campo'} elegido, con los mismos productos y datos — {superficieBase.toLocaleString('es-AR')} ha en total.</div>
+                <div style={{ fontSize: 11, color: CM.blue, marginTop: 4 }}>Se va a crear una orden por cada {lotesSeleccionados.length > 0 ? 'lote' : 'campo'} elegido, con los mismos productos y datos — {superficie.toLocaleString('es-AR')} ha en total.</div>
               )}
               {lotesSeleccionados.length === 1 && lotesSeleccionados[0]?.imagen_url && (
                 <img src={lotesSeleccionados[0].imagen_url} alt={`Mapa lote ${lotesSeleccionados[0].numero}`}
@@ -1575,10 +1625,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             </div>
           </div>
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Superficie trabajada (ha)</div>
-            <input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})}
-              placeholder={superficieBase ? String(superficieBase) : 'ej. 45'}
-              style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.green}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Hectáreas a trabajar</div>
+            {tablaHectareas({ muted: CM.muted, hint: CM.muted, border: CM.border, text: CM.text, accent: CM.green, bg: CM.surface, input: { background: CM.surface, color: CM.green } })}
           </div>
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -1788,7 +1836,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   </div>
                   {(lotesSeleccionados.length > 1 || camposSeleccionados.length > 1) && (
                     <div style={{ fontSize: 11, color: S.accent, marginTop: 4 }}>
-                      Se va a crear una orden por cada {lotesSeleccionados.length > 0 ? 'lote' : 'campo'} elegido, con los mismos productos y datos — {superficieBase.toLocaleString('es-AR')} ha en total.
+                      Se va a crear una orden por cada {lotesSeleccionados.length > 0 ? 'lote' : 'campo'} elegido, con los mismos productos y datos — {superficie.toLocaleString('es-AR')} ha en total.
                     </div>
                   )}
                   {lotesSeleccionados.length === 1 && lotesSeleccionados[0]?.imagen_url && (
@@ -1802,9 +1850,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     </a>
                   )}
                 </div>
-                <div>
-                  <Label>Hectáreas a trabajar</Label>
-                  <input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} placeholder={String(superficieBase || '')} />
+                <div style={{ gridColumn: '1/-1' }}>
+                  <Label>Hectáreas a trabajar (una línea por campo/lote, se pueden corregir)</Label>
+                  {tablaHectareas({ bg: S.bg })}
                 </div>
                 {form.tipo === 'Confeccion de rollo' && (
                   <div>
@@ -2101,7 +2149,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           <button onClick={() => generarOrdenTrabajo(o, campoO, loteO, stockAgro)}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>📋 Orden</button>
                           <button onClick={async () => {
-                            const superficie = o.superficie_ha_real || loteO?.superficie_ha || campoO?.superficie_ha || '—'
+                            const superficie = o.superficie_ha_real || haTrabajables(loteO) || haTrabajables(campoO) || '—'
                             const fecha = o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'
                             const productos = (o.productos || []).map(p => {
                               const item = stockAgro.find(s => String(s.id) === String(p.id))
@@ -2336,7 +2384,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
     setGuardando(true)
     const campo = campos.find(c => c.id === parseInt(form.campo_id))
     const lote = campo?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
-    const supRef = lote?.superficie_ha || campo?.superficie_ha
+    const supRef = haTrabajables(lote) || haTrabajables(campo)
     // La base sigue guardando en kg (la usa Contactos para "Mercadería
     // entregada"), pero acá se carga y se ve todo en toneladas — se
     // convierte solo, sin que haga falta tocar nada más.
@@ -2432,7 +2480,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
                 placeholder={(() => {
                   const campoSel = campos.find(c => c.id === parseInt(form.campo_id))
                   const loteSel = campoSel?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))
-                  const sup = loteSel?.superficie_ha || campoSel?.superficie_ha
+                  const sup = haTrabajables(loteSel) || haTrabajables(campoSel)
                   return (form.tn_totales && sup) ? (parseFloat(form.tn_totales) / sup).toFixed(2) : ''
                 })()} style={inputStyle} />
             </div>
@@ -2857,7 +2905,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
           const campoO = campos.find(c => c.id === o.campo_id)
           const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
           const key = o.campo_id
-          if (!porCampo[key]) porCampo[key] = { nombre: campoO?.nombre || '—', ha: loteO?.superficie_ha || campoO?.superficie_ha || 0, hechos: 0 }
+          if (!porCampo[key]) porCampo[key] = { nombre: campoO?.nombre || '—', ha: haTrabajables(loteO) || haTrabajables(campoO) || 0, hechos: 0 }
           porCampo[key].hechos += parseFloat(o.cantidad_rollos) || 0
         })
         const transferencias = (ventas || []).filter(v => v.cantidad_rollos > 0)
@@ -4568,7 +4616,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
   const filas = Object.values(grupos).map(g => {
     const campo = campos.find(c => c.id === g.campo_id)
     const lote = g.lote_id ? campo?.lotes_agricolas?.find(l => l.id === g.lote_id) : null
-    const ha = lote?.superficie_ha || campo?.superficie_ha || 0
+    const ha = haTrabajables(lote) || haTrabajables(campo) || 0
     if (!ha) return null
     if (filtroLote && String(g.lote_id || '') !== String(filtroLote)) return null
 
