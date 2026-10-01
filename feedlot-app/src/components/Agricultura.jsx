@@ -2590,15 +2590,54 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
+  const [form, setForm] = useState({ contrato_id: '', precio_usd_tn: '', cotizacion_usd: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState(null)
 
   const totalVendido = ventas.reduce((s, v) => s + (v.kg || 0), 0)
   const totalIngresos = ventas.reduce((s, v) => s + (v.total || 0), 0)
 
+  // ── Contratos a futuro ──────────────────────────────────────────────────
+  // Venta de grano que todavía no se entregó (ej. trigo vendido antes de la
+  // cosecha) a precio fijo en USD/tn. Cada entrega se carga como una venta
+  // normal "contra" el contrato: ahí se pone el dólar del día y el precio en
+  // pesos sale solo. Lo pendiente de entregar queda "comprometido" y se
+  // descuenta del disponible para vender.
+  const [contratos, setContratos] = useState([])
+  const [showFormContrato, setShowFormContrato] = useState(false)
+  const [editandoContrato, setEditandoContrato] = useState(null)
+  const CONTRATO_INIT = { fecha: hoyLocal(), campana_id: campanaActiva?.id || '', cultivo: '', comprador: '', numero_contrato: '', toneladas: '', precio_usd_tn: '', entrega_desde: '', entrega_hasta: '', lugar_entrega: '', observaciones: '' }
+  const [formContrato, setFormContrato] = useState(CONTRATO_INIT)
+  const [verContratosCerrados, setVerContratosCerrados] = useState(false)
+  async function cargarContratos() {
+    const { data } = await supabase.from('contratos_granos').select('*, campanas(nombre)').order('entrega_desde', { ascending: true, nullsFirst: false }).order('id')
+    setContratos(data || [])
+  }
+  useEffect(() => { cargarContratos() }, [ventas.length])
+  const tnEntregadas = c => ventas.filter(v => v.contrato_id === c.id).reduce((s, v) => s + (parseFloat(v.kg) || 0), 0) / 1000
+  const tnPendientes = c => c.estado === 'abierto' ? Math.max(0, (parseFloat(c.toneladas) || 0) - tnEntregadas(c)) : 0
+  async function guardarContrato() {
+    const f = formContrato
+    if (!f.cultivo || !(parseFloat(f.toneladas) > 0) || !(parseFloat(f.precio_usd_tn) > 0)) { alert('Completá cultivo, toneladas y precio en USD/tn'); return }
+    const datos = {
+      fecha: f.fecha || hoyLocal(), campana_id: parseInt(f.campana_id) || null, cultivo: f.cultivo, comprador: f.comprador || null,
+      numero_contrato: f.numero_contrato || null, toneladas: parseFloat(f.toneladas), precio_usd_tn: parseFloat(f.precio_usd_tn),
+      entrega_desde: f.entrega_desde || null, entrega_hasta: f.entrega_hasta || null, lugar_entrega: f.lugar_entrega || null, observaciones: f.observaciones || null,
+    }
+    const { error } = editandoContrato
+      ? await supabase.from('contratos_granos').update(datos).eq('id', editandoContrato)
+      : await supabase.from('contratos_granos').insert({ ...datos, registrado_por: usuario?.id || null })
+    if (error) { alert('No se pudo guardar el contrato: ' + error.message); return }
+    setShowFormContrato(false); setEditandoContrato(null); setFormContrato(CONTRATO_INIT)
+    await cargarContratos()
+  }
+
   async function guardar() {
     if (!form.cultivo || !form.tn) { alert('Completá cultivo y toneladas'); return }
+    if (form.contrato_id && !(parseFloat(form.cotizacion_usd) > 0)) { alert('Esta entrega es de un contrato en dólares: cargá el dólar del día'); return }
+    const camposContrato = form.contrato_id
+      ? { contrato_id: parseInt(form.contrato_id), precio_usd_tn: parseFloat(form.precio_usd_tn) || null, cotizacion_usd: parseFloat(form.cotizacion_usd) || null }
+      : { contrato_id: null, precio_usd_tn: null, cotizacion_usd: null }
     if (form.esVentaInternaFeedlot && !form.stock_insumo_id) { alert('Elegí a qué insumo del stock de Alimentación va este grano (ej. Maíz grano seco)'); return }
     setGuardando(true)
     // La venta de granos no se ata a un campo/lote puntual — cuando se manda
@@ -2668,6 +2707,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
       const upd = {
         campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
         precio_tn: precioTn || null, comprador: form.comprador || null, observaciones: form.observaciones || null,
+        ...camposContrato,
       }
       if (precioTn) { upd.total = total; upd.monto_facturado = total }
       const { error } = await supabase.from('ventas_granos').update(upd).eq('id', editando)
@@ -2680,14 +2720,21 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
       const { error } = await supabase.from('ventas_granos').insert({
         campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
         precio_tn: precioTn || null, total, comprador: form.comprador || null, observaciones: form.observaciones || null,
-        estado: 'pactada',
+        estado: 'pactada', ...camposContrato,
       })
       if (error) { alert('Error al guardar la venta: ' + error.message); setGuardando(false); return }
+    }
+    // Si con esta entrega se completó el contrato, queda cumplido solo.
+    if (form.contrato_id) {
+      const c = contratos.find(x => String(x.id) === String(form.contrato_id))
+      const { data: entregas } = await supabase.from('ventas_granos').select('kg').eq('contrato_id', parseInt(form.contrato_id))
+      const tn = (entregas || []).reduce((s, v) => s + (parseFloat(v.kg) || 0), 0) / 1000
+      if (c && c.estado === 'abierto' && tn >= (parseFloat(c.toneladas) || 0) * 0.995) await supabase.from('contratos_granos').update({ estado: 'cumplido' }).eq('id', c.id)
     }
     await cargar()
     setShowForm(false)
     setEditando(null)
-    setForm({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
+    setForm({ contrato_id: '', precio_usd_tn: '', cotizacion_usd: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
     setGuardando(false)
   }
 
@@ -2845,6 +2892,102 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
         </button>
       </div>
 
+      {/* ── Contratos a futuro ── */}
+      {!soloAlfalfa && (() => {
+        const abiertos = contratos.filter(c => c.estado === 'abierto')
+        const cerrados = contratos.filter(c => c.estado !== 'abierto')
+        const lista = verContratosCerrados ? contratos : abiertos
+        const fmtF = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
+        const inp2 = { ...inputStyle }
+        return (
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: (lista.length || showFormContrato) ? 10 : 0 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>📑 Contratos a futuro</div>
+                <div style={{ fontSize: 12, color: S.muted }}>Grano vendido a precio fijo en USD/tn que se entrega más adelante. Cada entrega se carga como una venta, eligiendo el contrato.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {cerrados.length > 0 && <button onClick={() => setVerContratosCerrados(!verContratosCerrados)} style={{ padding: '6px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>{verContratosCerrados ? 'Ocultar cumplidos' : `Ver cumplidos (${cerrados.length})`}</button>}
+                <button onClick={() => { setShowFormContrato(!showFormContrato); setEditandoContrato(null); setFormContrato(CONTRATO_INIT) }} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>+ Nuevo contrato</button>
+              </div>
+            </div>
+            {showFormContrato && (
+              <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+                  <div><Label>Cultivo *</Label><select value={formContrato.cultivo} onChange={e => setFormContrato({ ...formContrato, cultivo: e.target.value })} style={inp2}><option value="">— Seleccioná —</option>{CULTIVOS.map(c => <option key={c}>{c}</option>)}</select></div>
+                  <div><Label>Campaña</Label><select value={formContrato.campana_id} onChange={e => setFormContrato({ ...formContrato, campana_id: e.target.value })} style={inp2}><option value="">—</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+                  <div><Label>Comprador / Acopio</Label>
+                    <SelectBuscable value={formContrato.comprador} onChange={e => setFormContrato({ ...formContrato, comprador: e.target.value })} style={inp2}>
+                      <option value="">— Seleccioná —</option>
+                      {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </SelectBuscable>
+                  </div>
+                  <div><Label>Fecha del contrato</Label><input type="date" value={formContrato.fecha} onChange={e => setFormContrato({ ...formContrato, fecha: e.target.value })} style={inp2} /></div>
+                  <div><Label>Toneladas *</Label><input type="number" step="0.01" value={formContrato.toneladas} onChange={e => setFormContrato({ ...formContrato, toneladas: e.target.value })} style={inp2} /></div>
+                  <div><Label>Precio USD/tn *</Label><input type="number" step="0.01" value={formContrato.precio_usd_tn} onChange={e => setFormContrato({ ...formContrato, precio_usd_tn: e.target.value })} style={inp2} /></div>
+                  <div><Label>Entrega desde</Label><input type="date" value={formContrato.entrega_desde} onChange={e => setFormContrato({ ...formContrato, entrega_desde: e.target.value })} style={inp2} /></div>
+                  <div><Label>Entrega hasta</Label><input type="date" value={formContrato.entrega_hasta} onChange={e => setFormContrato({ ...formContrato, entrega_hasta: e.target.value })} style={inp2} /></div>
+                  <div><Label>N° de contrato</Label><input type="text" value={formContrato.numero_contrato} onChange={e => setFormContrato({ ...formContrato, numero_contrato: e.target.value })} style={inp2} /></div>
+                  <div><Label>Lugar de entrega</Label><input type="text" value={formContrato.lugar_entrega} onChange={e => setFormContrato({ ...formContrato, lugar_entrega: e.target.value })} placeholder="ej. Planta Arroyito" style={inp2} /></div>
+                  <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={formContrato.observaciones} onChange={e => setFormContrato({ ...formContrato, observaciones: e.target.value })} style={inp2} /></div>
+                </div>
+                {formContrato.toneladas && formContrato.precio_usd_tn && (
+                  <div style={{ marginTop: 8, fontSize: 13, color: S.accent }}>Total del contrato: <strong>USD {(parseFloat(formContrato.toneladas) * parseFloat(formContrato.precio_usd_tn)).toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong></div>
+                )}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button onClick={guardarContrato} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{editandoContrato ? 'Guardar cambios' : 'Guardar contrato'}</button>
+                  <button onClick={() => { setShowFormContrato(false); setEditandoContrato(null); setFormContrato(CONTRATO_INIT) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                </div>
+              </div>
+            )}
+            {lista.length === 0 && !showFormContrato && <div style={{ fontSize: 12, color: S.hint, marginTop: 6 }}>No hay contratos abiertos.</div>}
+            {lista.map(c => {
+              const entregadas = tnEntregadas(c)
+              const total = parseFloat(c.toneladas) || 0
+              const avance = total ? Math.min(100, entregadas / total * 100) : 0
+              const entregas = ventas.filter(v => v.contrato_id === c.id)
+              const vencido = c.estado === 'abierto' && c.entrega_hasta && c.entrega_hasta < hoyLocal() && entregadas < total
+              return (
+                <div key={c.id} style={{ border: `1px solid ${vencido ? S.amber : S.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8, opacity: c.estado === 'abierto' ? 1 : 0.65 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{c.cultivo} · {c.comprador || 'sin comprador'}{c.numero_contrato ? <span style={{ fontWeight: 400, color: S.muted }}> · #{c.numero_contrato}</span> : null}</div>
+                      <div style={{ fontSize: 12, color: S.muted }}>
+                        {total.toLocaleString('es-AR')} tn × USD {Number(c.precio_usd_tn).toLocaleString('es-AR')}/tn = <strong>USD {(total * c.precio_usd_tn).toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong>
+                        {' · '}entrega {fmtF(c.entrega_desde)} → {fmtF(c.entrega_hasta)}{c.lugar_entrega ? ` · ${c.lugar_entrega}` : ''}{c.campanas?.nombre ? ` · ${c.campanas.nombre}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: c.estado === 'cumplido' ? S.green : c.estado === 'anulado' ? S.hint : vencido ? S.amber : S.accent }}>
+                        {c.estado === 'cumplido' ? '✓ Cumplido' : c.estado === 'anulado' ? 'Anulado' : vencido ? '⚠ Venció el plazo de entrega' : `Faltan ${tnPendientes(c).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn`}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
+                        <button onClick={() => { setEditandoContrato(c.id); setShowFormContrato(true); setFormContrato({ fecha: c.fecha || hoyLocal(), campana_id: c.campana_id || '', cultivo: c.cultivo || '', comprador: c.comprador || '', numero_contrato: c.numero_contrato || '', toneladas: String(c.toneladas || ''), precio_usd_tn: String(c.precio_usd_tn || ''), entrega_desde: c.entrega_desde || '', entrega_hasta: c.entrega_hasta || '', lugar_entrega: c.lugar_entrega || '', observaciones: c.observaciones || '' }) }}
+                          style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
+                        {c.estado === 'abierto'
+                          ? <button onClick={async () => { if (!confirm(entregadas > 0 ? `¿Dar el contrato por cumplido? Se entregaron ${entregadas.toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')} tn y lo que falta deja de figurar como comprometido.` : '¿Anular este contrato? No tiene entregas.')) return; await supabase.from('contratos_granos').update({ estado: entregadas > 0 ? 'cumplido' : 'anulado' }).eq('id', c.id); cargarContratos() }}
+                              style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>{entregadas > 0 ? 'Dar por cumplido' : 'Anular'}</button>
+                          : <button onClick={async () => { await supabase.from('contratos_granos').update({ estado: 'abierto' }).eq('id', c.id); cargarContratos() }}
+                              style={{ padding: '3px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>Reabrir</button>}
+                        {entregas.length === 0 && <button onClick={async () => { if (!confirm('¿Eliminar este contrato?')) return; const { error } = await supabase.from('contratos_granos').delete().eq('id', c.id); if (error) alert(error.message); cargarContratos() }}
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ height: 6, background: S.bg, borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
+                    <div style={{ width: `${avance}%`, height: '100%', background: c.estado === 'cumplido' ? S.green : S.accent }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>
+                    Entregado {entregadas.toLocaleString('es-AR', { maximumFractionDigits: 2 })} de {total.toLocaleString('es-AR')} tn
+                    {entregas.length > 0 && ` · ${entregas.length} entrega${entregas.length !== 1 ? 's' : ''}: ` + entregas.map(v => `${fmtF(v.fecha)} ${(v.kg / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn${v.cotizacion_usd ? ` (dólar $${Number(v.cotizacion_usd).toLocaleString('es-AR')})` : ''}`).join(' · ')}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
       {/* Disponible para vender — conectado a Cosechas: sube cuando se
           cosecha, baja cuando se vende. Separado en lo que sigue en bolsa
           (en el campo, sin mover) y lo que ya se entregó en algún acopio.
@@ -2863,7 +3006,14 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
           if (!porCultivo[v.cultivo].vendido) porCultivo[v.cultivo].vendido = 0
           porCultivo[v.cultivo].vendido += parseFloat(v.kg) || 0
         })
-        const cultivosConDatos = Object.keys(porCultivo).filter(c => porCultivo[c].cosechado > 0)
+        // Lo vendido a futuro y todavía no entregado está comprometido.
+        contratos.forEach(c => {
+          const pend = tnPendientes(c) * 1000
+          if (!pend) return
+          if (!porCultivo[c.cultivo]) porCultivo[c.cultivo] = { bolsa: 0, acopio: 0, cosechado: 0 }
+          porCultivo[c.cultivo].comprometido = (porCultivo[c.cultivo].comprometido || 0) + pend
+        })
+        const cultivosConDatos = Object.keys(porCultivo).filter(c => porCultivo[c].cosechado > 0 || porCultivo[c].comprometido > 0)
         if (cultivosConDatos.length === 0) return null
         return (
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(cultivosConDatos.length, 3)}, 1fr)`, gap: 12, marginBottom: '1.5rem' }}>
@@ -2871,6 +3021,8 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
               const d = porCultivo[cultivo]
               const vendido = d.vendido || 0
               const disponible = Math.max(0, d.cosechado - vendido)
+              const comprometido = d.comprometido || 0
+              const libre = disponible - comprometido
               return (
                 <div key={cultivo} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem' }}>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>🌾 {cultivo}</div>
@@ -2882,6 +3034,14 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                     <span>📦 En bolsa: <strong style={{ color: S.text }}>{(d.bolsa / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong></span>
                     <span>🚛 Entregado: <strong style={{ color: S.text }}>{(d.acopio / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong></span>
                   </div>
+                  {comprometido > 0 && (
+                    <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, background: libre < 0 ? S.amberLight : S.bg, fontSize: 12 }}>
+                      📑 Comprometido en contratos: <strong>{(comprometido / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong>
+                      <div style={{ color: libre < 0 ? S.amber : S.green, fontWeight: 600 }}>
+                        {libre >= 0 ? `Libre para vender: ${(libre / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn` : `Falta cosechar ${(-libre / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn para cumplir los contratos`}
+                      </div>
+                    </div>
+                  )}
                   <div style={{ fontSize: 10, color: S.hint, marginTop: 6 }}>Cosechado: {(d.cosechado/1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn · Vendido: {(vendido/1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</div>
                 </div>
               )
@@ -2976,6 +3136,34 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
 
       {showForm && (
         <Card titulo={editando ? 'Editar venta' : 'Nueva venta de granos'}>
+          {!form.esVentaInternaFeedlot && !form.esVentaEnNegro && contratos.some(c => c.estado === 'abierto' || String(c.id) === String(form.contrato_id)) && (
+            <div style={{ background: S.accentLight || '#E8EFF8', border: `1px solid ${S.accent}`, borderRadius: 8, padding: '10px 12px', marginBottom: '1rem' }}>
+              <Label>¿Es una entrega de un contrato a futuro?</Label>
+              <select value={form.contrato_id} onChange={e => {
+                const c = contratos.find(x => String(x.id) === e.target.value)
+                if (!c) { setForm({ ...form, contrato_id: '', precio_usd_tn: '', cotizacion_usd: '' }); return }
+                const pend = tnPendientes(c)
+                const dolar = parseFloat(form.cotizacion_usd) || 0
+                setForm({ ...form, contrato_id: String(c.id), cultivo: c.cultivo, comprador: c.comprador || form.comprador, campana_id: c.campana_id || form.campana_id,
+                  precio_usd_tn: String(c.precio_usd_tn), tn: form.tn || (pend ? String(Math.round(pend * 100) / 100) : ''),
+                  precio_tn: dolar ? String(Math.round(c.precio_usd_tn * dolar)) : form.precio_tn })
+              }} style={inputStyle}>
+                <option value="">No, es una venta suelta</option>
+                {contratos.filter(c => c.estado === 'abierto' || String(c.id) === String(form.contrato_id)).map(c => (
+                  <option key={c.id} value={c.id}>{c.cultivo} · {c.comprador || 'sin comprador'} · USD {Number(c.precio_usd_tn).toLocaleString('es-AR')}/tn · faltan {tnPendientes(c).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn{c.numero_contrato ? ` · #${c.numero_contrato}` : ''}</option>
+                ))}
+              </select>
+              {form.contrato_id && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 10, marginTop: 10, alignItems: 'end' }}>
+                  <div><Label>Precio USD/tn</Label><input type="number" value={form.precio_usd_tn} onChange={e => { const u = e.target.value; const d = parseFloat(form.cotizacion_usd) || 0; setForm({ ...form, precio_usd_tn: u, precio_tn: d && u ? String(Math.round(parseFloat(u) * d)) : form.precio_tn }) }} style={inputStyle} /></div>
+                  <div><Label>Dólar del día $ *</Label><input type="number" value={form.cotizacion_usd} onChange={e => { const d = e.target.value; const u = parseFloat(form.precio_usd_tn) || 0; setForm({ ...form, cotizacion_usd: d, precio_tn: d && u ? String(Math.round(u * parseFloat(d))) : form.precio_tn }) }} placeholder="ej. 1350" style={{ ...inputStyle, borderColor: S.amber }} /></div>
+                  <div style={{ fontSize: 12, color: S.accent }}>
+                    {form.precio_usd_tn && form.cotizacion_usd ? <>Precio en pesos: <strong>${Math.round(parseFloat(form.precio_usd_tn) * parseFloat(form.cotizacion_usd)).toLocaleString('es-AR')}/tn</strong> (ya cargado abajo)</> : 'Cargá el dólar del día y el precio en pesos se calcula solo.'}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <Label>Cultivo *</Label>
@@ -3083,7 +3271,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={guardar} disabled={guardando} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
-            <button onClick={() => { setShowForm(false); setEditando(null); setForm({ campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={() => { setShowForm(false); setEditando(null); setForm({ contrato_id: '', precio_usd_tn: '', cotizacion_usd: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' }) }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
           </div>
         </Card>
       )}
@@ -3120,7 +3308,10 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                     : <span style={{ padding: '2px 8px', borderRadius: 4, background: S.greenLight, color: S.green, fontSize: 11, fontWeight: 600 }}>✓ Confirmada</span>}
                 </td>
                 <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.comprador || '—'}</td>
-                <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>{v.numero_contrato || '—'}</td>
+                <td style={{ padding: '8px 12px', fontSize: 12, color: S.muted }}>
+                  {v.numero_contrato || '—'}
+                  {v.contrato_id && <div style={{ fontSize: 10, color: S.accent }}>📑 entrega de contrato a futuro{v.precio_usd_tn ? ` · USD ${Number(v.precio_usd_tn).toLocaleString('es-AR')}/tn` : ''}</div>}
+                </td>
                 <td style={{ padding: '8px 12px', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   {v.estado === 'pactada' && (
                     <button onClick={() => { setCompletandoId(v.id); setFormCompletar({ total_facturado: v.total ? String(v.total) : '', numero_contrato: '' }) }}
@@ -3134,7 +3325,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                     <button onClick={() => { setCobrandoId(v.id); setFormCobro({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO, monto: String(pendiente) }] }); cargarDeudasContacto(v.comprador) }}
                       style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>💰 Registrar cobro</button>
                   )}
-                  <button onClick={() => { setEditando(v.id); setForm({ campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', tn: v.kg ? String(v.kg / 1000) : '', precio_tn: v.precio_tn || '', comprador: v.comprador || '', observaciones: v.observaciones || '', esVentaInternaFeedlot: false, stock_insumo_id: '' }); setShowForm(true) }}
+                  <button onClick={() => { setEditando(v.id); setForm({ contrato_id: v.contrato_id ? String(v.contrato_id) : '', precio_usd_tn: v.precio_usd_tn ? String(v.precio_usd_tn) : '', cotizacion_usd: v.cotizacion_usd ? String(v.cotizacion_usd) : '', campana_id: v.campana_id || '', cultivo: v.cultivo || '', fecha: v.fecha || '', tn: v.kg ? String(v.kg / 1000) : '', precio_tn: v.precio_tn || '', comprador: v.comprador || '', observaciones: v.observaciones || '', esVentaInternaFeedlot: false, stock_insumo_id: '' }); setShowForm(true) }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                   <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('ventas_granos').delete().eq('id', v.id); cargar() }}
                     style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
