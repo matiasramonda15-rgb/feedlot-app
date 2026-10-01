@@ -4,6 +4,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Btn, Loader } from './UI'
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
 import SelectBuscable from './SelectBuscable'
+import AnalisisConsumo from './AnalisisConsumo'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -924,6 +925,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     { key: 'formulas', label: 'Formulas de mixer' },
     { key: 'stock', label: 'Stock de insumos' },
     { key: 'historial', label: 'Historial' },
+    { key: 'consumo', label: '📈 Análisis de consumo' },
   ]
 
   // Costo total del día
@@ -946,6 +948,8 @@ export default function Alimentacion({ usuario, mobile, nav }) {
           </button>
         ))}
       </div>
+
+      {tab === 'consumo' && <AnalisisConsumo S={S} />}
 
       {/* ── FORMULAS ── */}
       {tab === 'formulas' && (
