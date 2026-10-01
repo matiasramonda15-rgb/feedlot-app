@@ -5,6 +5,7 @@ import { hoyLocal } from '../shared/dateUtils'
 import { generarOrdenDePago } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { validarDeshacerGasto, revertirEfectosDeGasto } from '../shared/pagosLogic'
+import SelectBuscable from './SelectBuscable'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -564,13 +565,13 @@ export default function Gastos({ usuario }) {
             <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Datos del proveedor (para el recibo)</div>
             <div style={{ marginBottom: 10 }}>
               <Label>Proveedor</Label>
-              <select value={form.proveedor} onChange={e => {
+              <SelectBuscable value={form.proveedor} onChange={e => {
                 const ct = contactos.find(c => c.nombre === e.target.value)
                 setForm({...form, proveedor: e.target.value, domicilio: ct?.banco || '', localidad: ct?.localidad || '', cuit: ct?.cuit || '', iva: ct?.iva || '', cbu: ct?.cbu || '', detalleOcasional: e.target.value === NOMBRE_OCASIONAL ? form.detalleOcasional : ''})
               }} style={inputStyle}>
                 <option value="">— Seleccionar contacto —</option>
                 {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes(form.actividad)).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-              </select>
+              </SelectBuscable>
               <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               {form.proveedor === NOMBRE_OCASIONAL && (
                 <div style={{ marginTop: 10 }}>

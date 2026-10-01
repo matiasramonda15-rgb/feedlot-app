@@ -4,6 +4,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { registrarServicioTercero } from '../shared/serviciosLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { generarReciboDeCobro } from '../shared/reciboLogic'
+import SelectBuscable from './SelectBuscable'
 
 const CM = { bg: '#0D1B2A', surface: '#1A2D3D', surface2: '#243447', border: '#2D4357', text: '#E8F0F8', muted: '#7A9AB8', accent: '#5BB8F5', green: '#4CAF82', greenLight: '#1A3D2E', amber: '#F5A623', amberLight: '#3D2E1A', red: '#F55B5B', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -736,10 +737,10 @@ export default function Servicios({ usuario, mobile, nav }) {
               {formM.tipo_servicio === 'tercero' && (
                 <>
                   <label style={lblM}>Cliente *</label>
-                  <select value={formM.cliente} onChange={e => setFormM({...formM, cliente: e.target.value})} style={inpM}>
+                  <SelectBuscable value={formM.cliente} onChange={e => setFormM({...formM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Seleccioná —</option>
                     {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                  </select>
+                  </SelectBuscable>
                   <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
                 </>
               )}
@@ -863,10 +864,10 @@ export default function Servicios({ usuario, mobile, nav }) {
                           <label style={lblM}>N° Lote</label>
                           <input type="text" value={editSvcM.nro_lote} onChange={e => setEditSvcM({...editSvcM, nro_lote: e.target.value})} style={inpM} />
                           <label style={lblM}>Cliente</label>
-                          <select value={editSvcM.cliente} onChange={e => setEditSvcM({...editSvcM, cliente: e.target.value})} style={inpM}>
+                          <SelectBuscable value={editSvcM.cliente} onChange={e => setEditSvcM({...editSvcM, cliente: e.target.value})} style={inpM}>
                             <option value="">— Sin especificar —</option>
                             {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                          </select>
+                          </SelectBuscable>
                           <label style={lblM}>Servicio</label>
                           <select value={editSvcM.labor} onChange={e => setEditSvcM({...editSvcM, labor: e.target.value})} style={inpM}>
                             {LABORES.map(l => <option key={l}>{l}</option>)}
@@ -954,10 +955,10 @@ export default function Servicios({ usuario, mobile, nav }) {
                     </>
                   )}
                   <label style={lblM}>Cliente/Propietario</label>
-                  <select value={formRegM.cliente} onChange={e => setFormRegM({...formRegM, cliente: e.target.value})} style={inpM}>
+                  <SelectBuscable value={formRegM.cliente} onChange={e => setFormRegM({...formRegM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Sin especificar —</option>
                     {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                  </select>
+                  </SelectBuscable>
                   <label style={lblM}>N° Lote</label>
                   <input type="text" value={formRegM.nro_lote} onChange={e => setFormRegM({...formRegM, nro_lote: e.target.value})} style={inpM} placeholder="ej. Lote 3" />
                   <label style={lblM}>Cultivo</label>
@@ -1239,10 +1240,10 @@ export default function Servicios({ usuario, mobile, nav }) {
                 {form.tipo_servicio === 'tercero' && (
                   <div style={{ gridColumn: '1 / 3' }}>
                     <Lbl>Cliente *</Lbl>
-                    <select value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} style={inp}>
+                    <SelectBuscable value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} style={inp}>
                       <option value="">— Seleccioná —</option>
                       {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                    </select>
+                    </SelectBuscable>
                     <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                   </div>
                 )}
@@ -1427,7 +1428,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                           <div><Lbl>Servicio</Lbl><select value={formEdit.labor} onChange={e => setFormEdit({ ...formEdit, labor: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{LABORES.map(l => <option key={l}>{l}</option>)}</select></div>
                           <div><Lbl>Cultivo</Lbl><select value={formEdit.cultivo} onChange={e => setFormEdit({ ...formEdit, cultivo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{CULTIVOS.map(c => <option key={c}>{c}</option>)}</select></div>
                           <div><Lbl>Fecha</Lbl><input type="date" value={formEdit.fecha} onChange={e => setFormEdit({ ...formEdit, fecha: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
-                          <div><Lbl>Cliente</Lbl><select value={formEdit.cliente} onChange={e => setFormEdit({ ...formEdit, cliente: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Seleccioná —</option>{contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></div>
+                          <div><Lbl>Cliente</Lbl><SelectBuscable value={formEdit.cliente} onChange={e => setFormEdit({ ...formEdit, cliente: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Seleccioná —</option>{contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</SelectBuscable></div>
                           <div><Lbl>Campo</Lbl><input type="text" value={formEdit.campo || ''} onChange={e => setFormEdit({ ...formEdit, campo: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>N° Lote</Lbl><input type="text" value={formEdit.nro_lote || ''} onChange={e => setFormEdit({ ...formEdit, nro_lote: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>Hectáreas</Lbl><input type="number" value={formEdit.hectareas} onChange={e => setFormEdit({ ...formEdit, hectareas: e.target.value })} style={{ ...inpMono, padding: '6px 8px' }} /></div>
@@ -2260,10 +2261,10 @@ export default function Servicios({ usuario, mobile, nav }) {
                 </div>
                 <div>
                   <Lbl>Cliente/Propietario</Lbl>
-                  <select value={formReg.cliente} onChange={e => setFormReg({ ...formReg, cliente: e.target.value })} style={inp}>
+                  <SelectBuscable value={formReg.cliente} onChange={e => setFormReg({ ...formReg, cliente: e.target.value })} style={inp}>
                     <option value="">— Sin especificar —</option>
                     {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                  </select>
+                  </SelectBuscable>
                 </div>
                 <div><Lbl>N° Lote</Lbl><input type="text" value={formReg.nro_lote} onChange={e => setFormReg({ ...formReg, nro_lote: e.target.value })} placeholder="ej. Lote 3" style={inp} /></div>
                 <div><Lbl>Cultivo</Lbl><select value={formReg.cultivo} onChange={e => setFormReg({ ...formReg, cultivo: e.target.value })} style={inp}>{CULTIVOS.map(c => <option key={c}>{c}</option>)}</select></div>

@@ -4,6 +4,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { abrirReciboDoble, generarOrdenDePago } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import SelectBuscable from './SelectBuscable'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -354,10 +355,10 @@ export default function Activos({ usuario }) {
               </div>
               <div style={{ marginBottom: 8 }}>
                 <Label>Comprador</Label>
-                <select value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})} style={inputStyle}>
+                <SelectBuscable value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})} style={inputStyle}>
                   <option value="">— Seleccioná —</option>
                   {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                </select>
+                </SelectBuscable>
                 <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -515,10 +516,10 @@ export default function Activos({ usuario }) {
                       <div style={{ fontSize: 11, fontWeight: 700, color: S.green, marginBottom: 8 }}>💰 Registrar venta de {a.nombre}</div>
                       <div style={{ marginBottom: 8 }}>
                         <Label>Comprador</Label>
-                        <select value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})} style={inputStyle}>
+                        <SelectBuscable value={formVentaActivo.comprador} onChange={e => setFormVentaActivo({...formVentaActivo, comprador: e.target.value})} style={inputStyle}>
                           <option value="">— Seleccioná —</option>
                           {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                        </select>
+                        </SelectBuscable>
                         <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -689,10 +690,10 @@ export default function Activos({ usuario }) {
                     <>
                       <div style={{ marginBottom: 10 }}>
                         <Label>¿A quién le va a pagar?</Label>
-                        <select value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle}>
+                        <SelectBuscable value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle}>
                           <option value="">— Seleccioná —</option>
                           {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                        </select>
+                        </SelectBuscable>
                         <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                       </div>
                       <div style={{ fontSize: 11, color: S.hint }}>
@@ -713,10 +714,10 @@ export default function Activos({ usuario }) {
                   <>
                     <div style={{ marginBottom: 10 }}>
                       <Label>A quién le pagó el socio</Label>
-                      <select value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle}>
+                      <SelectBuscable value={formRetiro.tercero} onChange={e => setFormRetiro({...formRetiro, tercero: e.target.value})} style={inputStyle}>
                         <option value="">— Seleccioná —</option>
                         {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                      </select>
+                      </SelectBuscable>
                       <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                     </div>
                     <div style={{ fontSize: 11, color: S.hint }}>

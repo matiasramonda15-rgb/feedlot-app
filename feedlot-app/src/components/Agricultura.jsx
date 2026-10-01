@@ -6,6 +6,7 @@ import { abrirReciboDoble, siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 import { registrarPagos, unirIds, mensajeErrorPago, validarDeshacerGasto, revertirPagoDeGasto } from '../shared/pagosLogic'
+import SelectBuscable from './SelectBuscable'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -352,10 +353,10 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
             <div><Label>Nombre del campo *</Label><input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} style={inputStyle} /></div>
             <div><Label>Superficie total (ha)</Label><input type="number" value={form.superficie_ha} onChange={e => setForm({...form, superficie_ha: e.target.value})} style={inputStyle} /></div>
             <div><Label>Propietario</Label>
-              <select value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} style={inputStyle}>
+              <SelectBuscable value={form.propietario} onChange={e => setForm({...form, propietario: e.target.value})} style={inputStyle}>
                 <option value="">— Seleccioná —</option>
                 {(contactos || []).filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Agricultura')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-              </select>
+              </SelectBuscable>
               <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
             </div>
             <div><Label>Arrendamiento tn soja/ha/año</Label><input type="number" value={form.arrendamiento_tn_ha} onChange={e => setForm({...form, arrendamiento_tn_ha: e.target.value})} placeholder="ej. 9" style={inputStyle} /></div>
@@ -1590,11 +1591,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             </div>
             {!form.es_propia && (
               <>
-                <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})}
+                <SelectBuscable value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})}
                   style={{ width: '100%', marginTop: 8, background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }}>
                   <option value="">— Seleccioná el contratista —</option>
                   {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                </select>
+                </SelectBuscable>
                 <div style={{ fontSize: 11, color: CM.muted, marginTop: 4 }}>¿No aparece? Cargalo primero en Contactos, desde la compu.</div>
               </>
             )}
@@ -1818,10 +1819,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 {!form.es_propia ? (
                   <div>
                     <Label>Proveedor (contratista)</Label>
-                    <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle}>
+                    <SelectBuscable value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle}>
                       <option value="">— Seleccioná —</option>
                       {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                    </select>
+                    </SelectBuscable>
                     <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
                   </div>
                 ) : (
@@ -2268,10 +2269,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Datos del contratista (para el recibo)</div>
                     <div style={{ marginBottom: 10 }}>
                       <Label>Seleccionar de contactos</Label>
-                      <select onChange={e => { const ct = contactos.find(c => String(c.id) === e.target.value); if (ct) setFormPagoGrupal({...formPagoGrupal, domicilio: ct.banco||'', localidad: ct.localidad||'', cuit: ct.cuit||'', iva: ct.iva||'', cbu: ct.cbu||''}) }} style={inputStyle} defaultValue="">
+                      <SelectBuscable onChange={e => { const ct = contactos.find(c => String(c.id) === e.target.value); if (ct) setFormPagoGrupal({...formPagoGrupal, domicilio: ct.banco||'', localidad: ct.localidad||'', cuit: ct.cuit||'', iva: ct.iva||'', cbu: ct.cbu||''}) }} style={inputStyle} defaultValue="">
                         <option value="">— Seleccionar contacto —</option>
                         {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                      </select>
+                      </SelectBuscable>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                       <div><Label>Localidad</Label><input type="text" value={formPagoGrupal.localidad} onChange={e => setFormPagoGrupal({...formPagoGrupal, localidad: e.target.value})} style={inputStyle} /></div>
@@ -2449,10 +2450,10 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
             {form.destino === 'acopio' && (
               <div>
                 <Label>Acopio / Comprador</Label>
-                <select value={form.acopio} onChange={e => setForm({...form, acopio: e.target.value})} style={inputStyle}>
+                <SelectBuscable value={form.acopio} onChange={e => setForm({...form, acopio: e.target.value})} style={inputStyle}>
                   <option value="">— Seleccioná —</option>
                   {(contactos || []).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                </select>
+                </SelectBuscable>
                 <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
               </div>
             )}
@@ -3007,10 +3008,10 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
               <>
                 <div>
                   <Label>Comprador / Acopio</Label>
-                  <select value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle}>
+                  <SelectBuscable value={form.comprador} onChange={e => setForm({...form, comprador: e.target.value})} style={inputStyle}>
                     <option value="">— Seleccioná —</option>
                     {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                  </select>
+                  </SelectBuscable>
                   <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
                 </div>
                 {form.esVentaEnNegro && (
@@ -3261,10 +3262,10 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar }) {
             <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
             <div>
               <Label>Proveedor</Label>
-              <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle}>
+              <SelectBuscable value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle}>
                 <option value="">— Sin proveedor —</option>
                 {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-              </select>
+              </SelectBuscable>
             </div>
           </div>
           {!editando && (
@@ -4219,18 +4220,18 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 10 }}>Proveedor (para el recibo)</div>
             <div style={{ marginBottom: 10 }}>
               <Label>Seleccionar de contactos</Label>
-              <select onChange={e => { const ct = contactos.find(c => String(c.id) === e.target.value); if (ct) setFormCompra({...formCompra, proveedor: ct.nombre, cuit: ct.cuit || '', localidad: ct.localidad || '', iva: ct.iva || '', cbu: ct.cbu || ''}) }} style={inputStyle} defaultValue="">
+              <SelectBuscable onChange={e => { const ct = contactos.find(c => String(c.id) === e.target.value); if (ct) setFormCompra({...formCompra, proveedor: ct.nombre, cuit: ct.cuit || '', localidad: ct.localidad || '', iva: ct.iva || '', cbu: ct.cbu || ''}) }} style={inputStyle} defaultValue="">
                 <option value="">— Seleccionar contacto —</option>
                 {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-              </select>
+              </SelectBuscable>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               <div>
                 <Label>Proveedor</Label>
-                <select value={formCompra.proveedor} onChange={e => setFormCompra({...formCompra, proveedor: e.target.value})} style={inputStyle}>
+                <SelectBuscable value={formCompra.proveedor} onChange={e => setFormCompra({...formCompra, proveedor: e.target.value})} style={inputStyle}>
                   <option value="">— Seleccioná —</option>
                   {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                </select>
+                </SelectBuscable>
                 <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               </div>
               <div><Label>Localidad</Label><input type="text" value={formCompra.localidad} onChange={e => setFormCompra({...formCompra, localidad: e.target.value})} style={inputStyle} /></div>

@@ -4,6 +4,7 @@ import { hoyLocal } from '../shared/dateUtils'
 import { PAGO_INIT, ListaPagos, armarDetalleChequesTercero } from './PagoFormulario'
 import { registrarPagos, unirIds, mensajeErrorPago, buscarFletesDelMismoPago, validarDeshacerFlete, revertirPagoDeFletes } from '../shared/pagosLogic'
 import { generarOrdenDePago } from '../shared/reciboLogic'
+import SelectBuscable from './SelectBuscable'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -246,10 +247,10 @@ export default function Fletes({ usuario }) {
             </div>
             <div>
               <Label>Transportista *</Label>
-              <select value={formNuevo.transportista} onChange={e => setFormNuevo({...formNuevo, transportista: e.target.value})} style={inp()}>
+              <SelectBuscable value={formNuevo.transportista} onChange={e => setFormNuevo({...formNuevo, transportista: e.target.value})} style={inp()}>
                 <option value="">— Seleccioná —</option>
                 {contactos.filter(c => c.tipos?.includes('transportista')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-              </select>
+              </SelectBuscable>
               <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo en Contactos con tipo "Transportista".</div>
             </div>
             <div><Label>Fecha</Label><input type="date" value={formNuevo.fecha} onChange={e => setFormNuevo({...formNuevo, fecha: e.target.value})} style={inp()} /></div>
@@ -322,10 +323,10 @@ export default function Fletes({ usuario }) {
               </div>
               <div>
                 <Label>Contacto (opcional)</Label>
-                <select value={formPago.contacto_id} onChange={e => setFormPago({ ...formPago, contacto_id: e.target.value })} style={inp()}>
+                <SelectBuscable value={formPago.contacto_id} onChange={e => setFormPago({ ...formPago, contacto_id: e.target.value })} style={inp()}>
                   <option value="">— Sin vincular —</option>
                   {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
+                </SelectBuscable>
               </div>
             </div>
             <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({ ...formPago, pagos: n })} chequesCartera={chequesCartera} S={S} />
@@ -419,10 +420,10 @@ export default function Fletes({ usuario }) {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
                         <div>
                           <Label>Transportista</Label>
-                          <select value={formEdit.transportista} onChange={e => setFormEdit({...formEdit, transportista: e.target.value})} style={inp()}>
+                          <SelectBuscable value={formEdit.transportista} onChange={e => setFormEdit({...formEdit, transportista: e.target.value})} style={inp()}>
                             <option value="">— Seleccioná —</option>
                             {contactos.filter(c => c.tipos?.includes('transportista')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                          </select>
+                          </SelectBuscable>
                         </div>
                         <div><Label>Fecha</Label><input type="date" value={formEdit.fecha} onChange={e => setFormEdit({...formEdit, fecha: e.target.value})} style={inp()} /></div>
                         <div><Label>Cantidad</Label><input type="number" value={formEdit.cantidad} onChange={e => setFormEdit({...formEdit, cantidad: e.target.value})} style={inp()} /></div>
@@ -447,11 +448,11 @@ export default function Fletes({ usuario }) {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 12, marginBottom: '1rem' }}>
                         <div>
                           <Label>Contacto / Transportista</Label>
-                          <select value={formPago.contacto_id} onChange={e => setFormPago({...formPago, contacto_id: e.target.value})}
+                          <SelectBuscable value={formPago.contacto_id} onChange={e => setFormPago({...formPago, contacto_id: e.target.value})}
                             style={inp({ border: `1px solid ${S.accent}` })}>
                             <option value="">— Sin contacto —</option>
                             {contactos.map(ct => <option key={ct.id} value={ct.id}>{ct.nombre}{ct.localidad ? ` (${ct.localidad})` : ''}</option>)}
-                          </select>
+                          </SelectBuscable>
                         </div>
                         <div>
                           <Label>Fecha</Label>

@@ -8,6 +8,7 @@ import { siguienteNumeroRecibo } from '../shared/reciboLogic'
 import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
 import { parsearReporteCaravanas, guardarLecturasCaravana, parsearListaSenasa, guardarCaravanasSenasa, compararCaravanasSenasaCampo } from '../shared/caravanasLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
+import SelectBuscable from './SelectBuscable'
 
 // Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
@@ -492,11 +493,11 @@ export default function Ingresos({ usuario, mobile, nav }) {
           {prom && <div style={{ background: CM.surface2, borderRadius: 8, padding: '.75rem', marginBottom: '.85rem', fontSize: 13, color: CM.green, fontFamily: CM.mono }}>Peso prom: <strong>{prom} kg/animal</strong></div>}
           <div style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Transportista (opcional)</div>
-            <select value={form.transportista} onChange={e => setForm({...form, transportista: e.target.value})}
+            <SelectBuscable value={form.transportista} onChange={e => setForm({...form, transportista: e.target.value})}
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans, boxSizing: 'border-box' }}>
               <option value="">— Seleccioná —</option>
               {contactos.filter(c => c.tipos?.includes('transportista')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-            </select>
+            </SelectBuscable>
             <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Cargalo en Contactos con tipo "Transportista".</div>
           </div>
           <div style={{ marginBottom: '1rem' }}>
@@ -587,10 +588,10 @@ export default function Ingresos({ usuario, mobile, nav }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <Lbl>Procedencia / Vendedor</Lbl>
-              <select value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value})} style={inp}>
+              <SelectBuscable value={form.procedencia} onChange={e => setForm({...form, procedencia: e.target.value})} style={inp}>
                 <option value="">— Seleccioná —</option>
                 {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-              </select>
+              </SelectBuscable>
               <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
             </div>
             <div>
@@ -864,11 +865,11 @@ export default function Ingresos({ usuario, mobile, nav }) {
                         {(editandoPrecio.sublotes||[]).map((prov, pi) => (
                           <div key={pi} style={{ border: `1px solid ${S.border}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8 }}>
-                              <select value={prov.vendedor||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],vendedor:e.target.value, nuevaProcedencia:''}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
+                              <SelectBuscable value={prov.vendedor||''} onChange={e => { const n=[...editandoPrecio.sublotes]; n[pi]={...n[pi],vendedor:e.target.value, nuevaProcedencia:''}; setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
                                 style={{ border: `1px solid ${S.border}`, borderRadius: 5, padding: '6px 9px', fontSize: 12, fontWeight: 600, boxSizing: 'border-box' }}>
                                 <option value="">— Vendedor / proveedor —</option>
                                 {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                              </select>
+                              </SelectBuscable>
                               <button onClick={() => { const n=editandoPrecio.sublotes.filter((_,i)=>i!==pi); setEditandoPrecio({...editandoPrecio,sublotes:n}) }}
                                 style={{ background: 'none', border: 'none', color: S.red, cursor: 'pointer', fontSize: 14 }} title="Quitar proveedor">✕</button>
                             </div>
@@ -935,11 +936,11 @@ export default function Ingresos({ usuario, mobile, nav }) {
                     {!editandoPrecio.sublotes?.length && (
                     <div style={{ marginBottom: 12 }}>
                       <Lbl>Procedencia / Vendedor</Lbl>
-                      <select value={editandoPrecio.procedencia || ''} onChange={e => setEditandoPrecio({...editandoPrecio, procedencia: e.target.value})}
+                      <SelectBuscable value={editandoPrecio.procedencia || ''} onChange={e => setEditandoPrecio({...editandoPrecio, procedencia: e.target.value})}
                         style={inp}>
                         <option value="">— Seleccioná —</option>
                         {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                      </select>
+                      </SelectBuscable>
                       <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                     </div>
                     )}
@@ -1923,7 +1924,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
           return (
             <div key={fi} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 7, padding: 10, marginBottom: 8 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px auto', gap: 8, marginBottom: 8 }}>
-                <select value={f.proveedor || ''} onChange={e => {
+                <SelectBuscable value={f.proveedor || ''} onChange={e => {
                   const nombre = e.target.value
                   const ct = (contactos || []).find(c => c.nombre === nombre)
                   set(ct ? { proveedor: nombre, cuit: ct.cuit || f.cuit, localidad: ct.localidad || f.localidad, condicion_iva: ct.iva || f.condicion_iva, cbu: ct.cbu || f.cbu } : { proveedor: nombre })
@@ -1931,7 +1932,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                   <option value="">— Proveedor de esta factura —</option>
                   {nombresProveedoresTropas.map(n => <option key={n} value={n}>{n} (tropa del ingreso)</option>)}
                   {(contactos || []).filter(c => !nombresProveedoresTropas.includes(c.nombre)).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                </select>
+                </SelectBuscable>
                 <input placeholder="CUIT" value={f.cuit || ''} onChange={e => set({ cuit: e.target.value })} style={{...inp, fontSize: 12}} />
                 <button onClick={() => setFormFactura({...formFactura, facturas: facturas.filter((_, i) => i !== fi)})}
                   style={{ padding: '5px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕ Quitar factura</button>

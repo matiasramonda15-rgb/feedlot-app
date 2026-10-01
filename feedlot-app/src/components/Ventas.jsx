@@ -5,6 +5,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { registrarVenta } from '../shared/ventasLogic'
 import { parsearReporteCaravanas, guardarLecturasCaravana } from '../shared/caravanasLogic'
+import SelectBuscable from './SelectBuscable'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 
@@ -693,11 +694,11 @@ export default function Ventas({ usuario, mobile, nav }) {
 
           <div style={{ marginBottom: '.85rem' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Comprador</div>
-            <select value={compradorM} onChange={e => setCompradorM(e.target.value)}
+            <SelectBuscable value={compradorM} onChange={e => setCompradorM(e.target.value)}
               style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
               <option value="">— Seleccioná —</option>
               {(compradores || []).map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
+            </SelectBuscable>
             <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
           </div>
 
@@ -880,11 +881,11 @@ export default function Ventas({ usuario, mobile, nav }) {
           </div>
           <div>
             <Lbl>Comprador</Lbl>
-            <select value={editandoVenta?.comprador || ''} onChange={e => setEditandoVenta({...editandoVenta, comprador: e.target.value})}
+            <SelectBuscable value={editandoVenta?.comprador || ''} onChange={e => setEditandoVenta({...editandoVenta, comprador: e.target.value})}
               style={{ ...inp, fontFamily: 'inherit' }}>
               <option value="">— Sin comprador —</option>
               {compradores.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </SelectBuscable>
             <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
           </div>
           <div>
@@ -1302,11 +1303,11 @@ export default function Ventas({ usuario, mobile, nav }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Historial de ventas</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select value={filtroVentas} onChange={e => setFiltroVentas(e.target.value)}
+                <SelectBuscable value={filtroVentas} onChange={e => setFiltroVentas(e.target.value)}
                   style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface, color: filtroVentas ? S.accent : S.muted, fontWeight: filtroVentas ? 600 : 400 }}>
                   <option value="">Todos los compradores</option>
                   {compradoresEnHistorial.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                </SelectBuscable>
                 {filtroVentas && <button onClick={() => setFiltroVentas('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>}
                 <button onClick={() => { setTab('nueva-venta'); setPaso(1); setVentaConfirmada(null) }}
                   style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
@@ -1991,10 +1992,10 @@ export default function Ventas({ usuario, mobile, nav }) {
                       <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Precio y condiciones comerciales</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                         <Campo label="Comprador">
-                          <select value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value })} style={inputStyle}>
+                          <SelectBuscable value={form.comprador} onChange={e => setForm({ ...form, comprador: e.target.value })} style={inputStyle}>
                             <option value="">— Seleccioná —</option>
                             {compradores.map(o => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          </SelectBuscable>
                           <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                         </Campo>
                         <Campo label="Precio $/kg neto">
@@ -2195,11 +2196,11 @@ export default function Ventas({ usuario, mobile, nav }) {
 
 
           <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <select value={filtroGestion} onChange={e => setFiltroGestion(e.target.value)}
+            <SelectBuscable value={filtroGestion} onChange={e => setFiltroGestion(e.target.value)}
               style={{ padding: '7px 12px', fontSize: 12, border: '1px solid #E2DDD6', borderRadius: 6, background: '#fff', color: filtroGestion ? '#1A3D6B' : '#6B6760', fontWeight: filtroGestion ? 600 : 400 }}>
               <option value="">Todos los compradores</option>
               {compradoresEnHistorial.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </SelectBuscable>
             {filtroGestion && <button onClick={() => setFiltroGestion('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: '1px solid #E2DDD6', color: '#6B6760', borderRadius: 6, cursor: 'pointer' }}>✕</button>}
           </div>
           <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'auto' }}>

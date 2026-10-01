@@ -5,6 +5,7 @@ import { Loader } from './UI'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { generarOrdenDePago } from '../shared/reciboLogic'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
+import SelectBuscable from './SelectBuscable'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -367,11 +368,11 @@ export default function Insumos({ usuario }) {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 12, marginBottom: '1rem' }}>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Contacto / Proveedor</div>
-                    <select value={formPagoGrupal.contacto_id} onChange={e => setFormPagoGrupal({...formPagoGrupal, contacto_id: e.target.value})}
+                    <SelectBuscable value={formPagoGrupal.contacto_id} onChange={e => setFormPagoGrupal({...formPagoGrupal, contacto_id: e.target.value})}
                       style={{ ...inp, border: `1px solid ${S.accent}` }}>
                       <option value="">— Sin contacto —</option>
                       {contactos.map(ct => <option key={ct.id} value={ct.id}>{ct.nombre}{ct.localidad ? ` (${ct.localidad})` : ''}</option>)}
-                    </select>
+                    </SelectBuscable>
                   </div>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Fecha de pago</div>
@@ -674,10 +675,10 @@ export default function Insumos({ usuario }) {
               </div>
               <div>
                 <Lbl>Proveedor</Lbl>
-                <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
+                <SelectBuscable value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
                   <option value="">— Seleccioná —</option>
                   {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                </select>
+                </SelectBuscable>
                 <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               </div>
               <div>
@@ -741,10 +742,10 @@ export default function Insumos({ usuario }) {
               </div>
               <div>
                 <Lbl>Proveedor</Lbl>
-                <select value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
+                <SelectBuscable value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inp}>
                   <option value="">— Seleccioná —</option>
                   {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}{c.cuit ? ` · ${c.cuit}` : ''}</option>)}
-                </select>
+                </SelectBuscable>
                 <div style={{ fontSize: 11, color: S.hint, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos.</div>
               </div>
               <div>
@@ -1045,11 +1046,11 @@ function StockTable({ items, tipo, onCargar, ingresosStock = [], historialIngres
                                   </div>
                                   <div>
                                     <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Proveedor</div>
-                                    <select value={formIng.proveedor} onChange={e => setFormIng({ ...formIng, proveedor: e.target.value })}
+                                    <SelectBuscable value={formIng.proveedor} onChange={e => setFormIng({ ...formIng, proveedor: e.target.value })}
                                       style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' }}>
                                       <option value="">— Sin proveedor —</option>
                                       {contactos.filter(c => !c.actividades || c.actividades.length === 0 || c.actividades.includes('Feedlot')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                                    </select>
+                                    </SelectBuscable>
                                   </div>
                                   <button onClick={async () => {
                                     const nuevaCant = parseFloat(formIng.cantidad_kg) || ing.cantidad_kg

@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Btn, Loader } from './UI'
 import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso, confirmarRevisionBisemanal, procesarEnfermosCorral } from '../shared/sanidadLogic'
+import SelectBuscable from './SelectBuscable'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -1902,11 +1903,11 @@ export default function Sanidad({ usuario, mobile, nav }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>Proveedor</div>
-                  <select value={formStockSan.proveedor} onChange={e => setFormStockSan({...formStockSan, proveedor: e.target.value})}
+                  <SelectBuscable value={formStockSan.proveedor} onChange={e => setFormStockSan({...formStockSan, proveedor: e.target.value})}
                     style={{ width: '100%', padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, boxSizing: 'border-box' }}>
                     <option value="">— Seleccioná —</option>
                     {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                  </select>
+                  </SelectBuscable>
                   <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                 </div>
                 <div>

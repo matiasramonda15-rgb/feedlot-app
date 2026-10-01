@@ -4,6 +4,7 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import Conciliacion from './Conciliacion'
 import { buscarOrigenesDeCaja, validarDeshacerOrigen, deshacerPagosDeOrigen, mensajeDeshacerPago, mensajeCajaBloqueada, mensajeErrorDeshacer } from '../shared/pagosLogic'
+import SelectBuscable from './SelectBuscable'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -783,10 +784,10 @@ export default function Comercial({ usuario }) {
                   </select>
                 </div>
                 <div><Label>Contacto</Label>
-                  <select value={formOf.contacto_id} onChange={e => setFormOf({...formOf, contacto_id: e.target.value})} style={inputStyle}>
+                  <SelectBuscable value={formOf.contacto_id} onChange={e => setFormOf({...formOf, contacto_id: e.target.value})} style={inputStyle}>
                     <option value="">— Sin contacto —</option>
                     {contactos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                  </select>
+                  </SelectBuscable>
                 </div>
                 <div style={{ gridColumn: '1/3' }}><Label>Descripción</Label><input type="text" value={formOf.descripcion} onChange={e => setFormOf({...formOf, descripcion: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Comprobante</Label><input type="text" value={formOf.comprobante} onChange={e => setFormOf({...formOf, comprobante: e.target.value})} style={inputStyle} placeholder="N° factura..." /></div>
