@@ -104,7 +104,8 @@ export default function PresupuestoCampana({ S, Label, inputStyle, CULTIVOS, cam
       ;(o.productos || []).forEach(pr => {
         const item = stockAgro.find(s => s.id === parseInt(pr.id))
         const qty = n(pr.total) * factor
-        const precioU = n(item?.precio_referencia_usd) || (n(item?.precio_referencia) / d)
+        // Precio guardado en la orden (el del momento); si no lo tiene, el del stock
+        const precioU = n(pr.precio_usd) || n(item?.precio_referencia_usd) || (n(item?.precio_referencia) / d)
         real[rubroDeInsumo(item?.tipo)] += qty * precioU
       })
       real[/cosecha/i.test(o.tipo || '') ? 'cosecha' : 'labores'] += n(o.costo_total) * factor / d

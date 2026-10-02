@@ -1371,7 +1371,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         // se sacó de stock de verdad.
         const descontadoReal = descontadoRealPorProducto[p.id]
         const descontadoRealItem = (descontadoReal != null && superficie > 0) ? Math.round((descontadoReal * (superficieItem / superficie)) * 10000) / 10000 : undefined
-        return { ...p, total: p.dosis ? String(redondearMedio(parseFloat(p.dosis) * superficieItem, dosisChica)) : p.total, descontado_real: descontadoRealItem }
+        // Precio del producto AL MOMENTO de la orden (queda guardado en la
+        // orden): así el costo no cambia cuando después se actualiza el
+        // precio del stock. En USD: su precio en dólares si lo tiene; si no,
+        // el de pesos al dólar de la orden.
+        const itemStock = stockAgro.find(s => String(s.id) === String(p.id))
+        const dolarOrden = parseFloat(form.cotizacion_usd) || cotizacionDolar || null
+        const precioArs = parseFloat(itemStock?.precio_referencia) || null
+        const precioUsd = parseFloat(itemStock?.precio_referencia_usd) || (precioArs && dolarOrden ? Math.round(precioArs / dolarOrden * 10000) / 10000 : null)
+        return { ...p, total: p.dosis ? String(redondearMedio(parseFloat(p.dosis) * superficieItem, dosisChica)) : p.total, descontado_real: descontadoRealItem, precio_ars: precioArs, precio_usd: precioUsd }
       })
       const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
         campo_id: campoId, campana_id: parseInt(form.campana_id) || null,
@@ -4028,6 +4036,31 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [tab, setTab] = useState('stock')
   const [showForm, setShowForm] = useState(false)
   const [editandoStock, setEditandoStock] = useState(null)
+  // Ajuste por conteo físico: se carga lo que se contó y el motivo; la
+  // diferencia queda registrada (antes había que editar el número a mano y
+  // no quedaba rastro de por qué cambió).
+  const [ajustando, setAjustando] = useState(null) // { id, contado, motivo, obs }
+  const [verAjustes, setVerAjustes] = useState(false)
+  const [ajustes, setAjustes] = useState([])
+  const MOTIVOS_AJUSTE = ['Conteo físico', 'Rotura / derrame', 'Vencido / descarte', 'Préstamo o devolución', 'Error de carga', 'Otro']
+  async function cargarAjustes() {
+    const { data } = await supabase.from('ajustes_stock_agro').select('*').order('creado_en', { ascending: false }).limit(200)
+    setAjustes(data || [])
+  }
+  useEffect(() => { if (verAjustes) cargarAjustes() }, [verAjustes])
+  async function guardarAjuste(s) {
+    const contado = parseFloat(String(ajustando?.contado ?? '').replace(',', '.'))
+    if (isNaN(contado) || contado < 0) { alert('Poné la cantidad contada'); return }
+    const anterior = parseFloat(s.cantidad) || 0
+    const diferencia = Math.round((contado - anterior) * 10000) / 10000
+    if (diferencia === 0) { setAjustando(null); return }
+    if (!confirm(`${s.insumo}: el sistema tiene ${anterior.toLocaleString('es-AR')} ${s.unidad} y contaste ${contado.toLocaleString('es-AR')}.\n\n¿Ajustar ${diferencia > 0 ? '+' : ''}${diferencia.toLocaleString('es-AR')} ${s.unidad} (${ajustando.motivo})?`)) return
+    const { error: e1 } = await supabase.from('ajustes_stock_agro').insert({ stock_agro_id: s.id, insumo: s.insumo, cantidad_anterior: anterior, cantidad_nueva: contado, diferencia, motivo: ajustando.motivo, observaciones: ajustando.obs || null, registrado_por: usuario?.id || null })
+    if (e1) { alert('No se pudo registrar el ajuste: ' + e1.message); return }
+    const { error: e2 } = await supabase.from('stock_agro').update({ cantidad: contado, actualizado_en: new Date().toISOString() }).eq('id', s.id)
+    if (e2) { alert('Se registró el ajuste pero no se pudo actualizar el stock: ' + e2.message); return }
+    setAjustando(null); cargar(); if (verAjustes) cargarAjustes()
+  }
   const [formStock, setFormStock] = useState({ insumo: '', tipo: '', cantidad: '', unidad: 'litros', minimo_stock: '', precio_referencia: '', precio_referencia_usd: '', dosis_chica: false })
   const [showFormCompra, setShowFormCompra] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -4185,7 +4218,15 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           : precioUnit
         upd.precio_ultima_compra = precioUnit
       }
-      if (precioUnitUsd) upd.precio_referencia_usd = precioUnitUsd
+      // Precio en USD: el de la compra si fue en dólares; si fue en pesos, al
+      // dólar de Stock. También como promedio ponderado.
+      const usdCompra = precioUnitUsd || (precioUnit && cotizacionDolar ? precioUnit / cotizacionDolar : null)
+      if (usdCompra) {
+        const usdAnterior = parseFloat(item.precio_referencia_usd) || (precioAnterior && cotizacionDolar ? precioAnterior / cotizacionDolar : usdCompra)
+        upd.precio_referencia_usd = cantidadTotal > 0
+          ? Math.round(((cantidadAnterior * usdAnterior) + (cantidad * usdCompra)) / cantidadTotal * 10000) / 10000
+          : usdCompra
+      }
       await supabase.from('stock_agro').update(upd).eq('id', item.id)
     } else if (item && precioUnit) {
       const upd = { precio_ultima_compra: precioUnit, actualizado_en: new Date().toISOString() }
@@ -4194,6 +4235,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       // se marque como retirado (ahí se sabe cuánto entra de verdad).
       if (!item.precio_referencia) upd.precio_referencia = precioUnit
       if (precioUnitUsd) upd.precio_referencia_usd = precioUnitUsd
+      else if (!parseFloat(item.precio_referencia_usd) && cotizacionDolar) upd.precio_referencia_usd = Math.round(precioUnit / cotizacionDolar * 10000) / 10000
       await supabase.from('stock_agro').update(upd).eq('id', item.id)
     }
 
@@ -4287,7 +4329,11 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               const nuevoPromedio = cantidadTotal > 0
                 ? Math.round(((cantidadAnterior * precioAnterior) + (cantidadEstaCompra * precioFinal)) / cantidadTotal * 100) / 100
                 : precioFinal
-              await supabase.from('stock_agro').update({ precio_referencia: nuevoPromedio, precio_ultima_compra: precioFinal, actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
+              // También en USD (al dólar de Stock), promedio ponderado.
+              const usdCompra = cotizacionDolar ? precioFinal / cotizacionDolar : null
+              const usdAnterior = parseFloat(item?.precio_referencia_usd) || (cotizacionDolar ? precioAnterior / cotizacionDolar : usdCompra)
+              const nuevoPromUsd = usdCompra == null ? undefined : (cantidadTotal > 0 ? Math.round(((cantidadAnterior * usdAnterior) + (cantidadEstaCompra * usdCompra)) / cantidadTotal * 10000) / 10000 : usdCompra)
+              await supabase.from('stock_agro').update({ precio_referencia: nuevoPromedio, precio_ultima_compra: precioFinal, ...(nuevoPromUsd != null ? { precio_referencia_usd: nuevoPromUsd } : {}), actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
             },
           })
           if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
@@ -4588,7 +4634,35 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               {[...new Set(stock.map(s => s.tipo).filter(Boolean))].sort().map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             {filtroTipoStock && <button onClick={() => setFiltroTipoStock('')} style={{ padding: '6px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>✕</button>}
+            <button onClick={() => setVerAjustes(!verAjustes)} style={{ marginLeft: 'auto', padding: '6px 10px', fontSize: 11, background: verAjustes ? S.amberLight : 'transparent', border: `1px solid ${verAjustes ? S.amber : S.border}`, color: verAjustes ? S.amber : S.muted, borderRadius: 6, cursor: 'pointer' }}>
+              {verAjustes ? 'Ocultar ajustes' : '📋 Historial de ajustes'}
+            </button>
           </div>
+        {verAjustes && (
+          <div style={{ border: `1px solid ${S.amber}`, borderRadius: 8, padding: '10px 12px', marginBottom: 12, background: S.surface }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Ajustes de stock</div>
+            {ajustes.length === 0 ? <div style={{ fontSize: 12, color: S.hint }}>Todavía no hay ajustes registrados.</div> : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead><tr>{['Fecha', 'Insumo', 'Antes', 'Contado', 'Diferencia', 'Motivo', 'Obs.'].map(h => <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {ajustes.map(a => (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '6px 8px', fontFamily: 'monospace' }}>{new Date(a.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                        <td style={{ padding: '6px 8px', fontWeight: 600 }}>{a.insumo}</td>
+                        <td style={{ padding: '6px 8px', fontFamily: 'monospace' }}>{Number(a.cantidad_anterior).toLocaleString('es-AR')}</td>
+                        <td style={{ padding: '6px 8px', fontFamily: 'monospace' }}>{Number(a.cantidad_nueva).toLocaleString('es-AR')}</td>
+                        <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 700, color: a.diferencia >= 0 ? S.green : S.red }}>{a.diferencia > 0 ? '+' : ''}{Number(a.diferencia).toLocaleString('es-AR')}</td>
+                        <td style={{ padding: '6px 8px' }}>{a.motivo}</td>
+                        <td style={{ padding: '6px 8px', color: S.muted }}>{a.observaciones || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead><tr style={{ background: S.bg }}>
@@ -4601,7 +4675,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               {stock.filter(s => !filtroTipoStock || s.tipo === filtroTipoStock).map(s => {
                 const bajo = s.minimo_stock > 0 && s.cantidad <= s.minimo_stock
                 return (
-                  <tr key={s.id} style={{ borderBottom: `1px solid ${S.border}`, background: bajo ? S.redLight : 'transparent' }}>
+                  <React.Fragment key={s.id}>
+                  <tr style={{ borderBottom: `1px solid ${S.border}`, background: bajo ? S.redLight : 'transparent' }}>
                     <td style={{ padding: '8px 12px', fontWeight: 600 }}>{s.insumo}</td>
                     <td style={{ padding: '8px 12px' }}>{s.tipo ? <span style={{ padding: '2px 8px', borderRadius: 4, background: S.accentLight, color: S.accent, fontSize: 11 }}>{s.tipo}</span> : '—'}</td>
                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: bajo ? S.red : S.green }}>{s.cantidad?.toLocaleString('es-AR', s.dosis_chica ? {} : { maximumFractionDigits: 1 })}</td>
@@ -4622,11 +4697,30 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button onClick={() => { setEditandoStock(s.id); setFormStock({ insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'', dosis_chica: s.dosis_chica || false }); setShowForm(true); setShowFormCompra(false) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
+                        <button onClick={() => setAjustando(ajustando?.id === s.id ? null : { id: s.id, contado: String(s.cantidad ?? ''), motivo: 'Conteo físico', obs: '' })}
+                          title="Ajustar por conteo físico (queda registrado)"
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 5, cursor: 'pointer' }}>Contar</button>
                         <button onClick={async () => { if (!confirm('¿Eliminar?')) return; await supabase.from('stock_agro').delete().eq('id', s.id); cargar() }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>
                       </div>
                     </td>
                   </tr>
+                  {ajustando?.id === s.id && (
+                    <tr style={{ background: S.amberLight }}>
+                      <td colSpan={8} style={{ padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                          <div style={{ fontSize: 12 }}>Sistema: <b>{(parseFloat(s.cantidad) || 0).toLocaleString('es-AR')} {s.unidad}</b></div>
+                          <div style={{ width: 130 }}><Label>Contado</Label><input type="number" step="0.01" autoFocus value={ajustando.contado} onChange={e => setAjustando({ ...ajustando, contado: e.target.value })} style={inputStyle} /></div>
+                          <div style={{ width: 190 }}><Label>Motivo</Label><select value={ajustando.motivo} onChange={e => setAjustando({ ...ajustando, motivo: e.target.value })} style={inputStyle}>{MOTIVOS_AJUSTE.map(m => <option key={m}>{m}</option>)}</select></div>
+                          <div style={{ flex: 1, minWidth: 160 }}><Label>Observaciones</Label><input value={ajustando.obs} onChange={e => setAjustando({ ...ajustando, obs: e.target.value })} style={inputStyle} /></div>
+                          {(() => { const d = (parseFloat(ajustando.contado) || 0) - (parseFloat(s.cantidad) || 0); return <div style={{ fontSize: 12, fontWeight: 700, color: d === 0 ? S.muted : d > 0 ? S.green : S.red }}>{d === 0 ? 'Sin diferencia' : `${d > 0 ? '+' : ''}${d.toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${s.unidad}`}</div> })()}
+                          <button onClick={() => guardarAjuste(s)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.amber, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>Ajustar</button>
+                          <button onClick={() => setAjustando(null)} style={{ padding: '7px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 )
               })}
             </tbody>
@@ -4882,9 +4976,11 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
         // Insumos: en USD se usa su precio en dólares si lo tiene (los
         // agroquímicos se compran en USD); si no, el precio en pesos al
         // dólar de la orden.
+        // Precio guardado en la orden (el del momento); las órdenes viejas sin
+        // ese dato usan el precio actual del stock.
         const precio = moneda === 'USD'
-          ? (parseFloat(item?.precio_referencia_usd) || (item?.precio_referencia ? item.precio_referencia / dolarDe(o.fecha, o.cotizacion_usd) : 0))
-          : (item?.precio_referencia || 0)
+          ? (parseFloat(p.precio_usd) || parseFloat(item?.precio_referencia_usd) || (item?.precio_referencia ? item.precio_referencia / dolarDe(o.fecha, o.cotizacion_usd) : 0))
+          : (parseFloat(p.precio_ars) || item?.precio_referencia || 0)
         const subtotal = qty * precio
         costoInsumos += subtotal
         if (qty > 0) {
