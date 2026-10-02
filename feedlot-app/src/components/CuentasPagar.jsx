@@ -54,7 +54,7 @@ export default function CuentasPagar({ usuario, setModulo }) {
       supabase.from('lotes').select('*').neq('estado_pago', 'pagado').eq('marcado_resuelto', false).order('fecha_ingreso', { ascending: true }),
       // Órdenes de trabajo de Agricultura a contratistas (labores, confección
       // de rollo, etc.) — las propias (es_propia) no le deben nada a nadie.
-      supabase.from('ordenes_trabajo').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).eq('es_propia', false).order('fecha', { ascending: true }),
+      supabase.from('ordenes_trabajo').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).eq('es_propia', false).or('estado.is.null,estado.neq.emitida').order('fecha', { ascending: true }),
     ])
 
     const filas = []

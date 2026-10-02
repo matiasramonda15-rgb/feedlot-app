@@ -119,7 +119,7 @@ async function cargarDatosActividad(actividad, fechaDesde, idsCredito) {
     const [{ data: ventasG }, { data: compras }, { data: ordenes }, { data: gastosAgro }, { data: pagosEmp }, { data: gastosGen }] = await Promise.all([
       supabase.from('ventas_granos').select('total, monto_negro, fecha, comprador, estado, pagos_detalle').gte('fecha', fechaDesde).neq('estado', 'pactada'),
       supabase.from('compras_insumos').select('id, total, fecha, proveedor, pagos_detalle').gte('fecha', fechaDesde).eq('insumo_tipo', 'agro'),
-      supabase.from('ordenes_trabajo').select('costo_total, fecha, proveedor, tipo, pagos_detalle').gte('fecha', fechaDesde).eq('es_propia', false),
+      supabase.from('ordenes_trabajo').select('costo_total, fecha, proveedor, tipo, pagos_detalle').gte('fecha', fechaDesde).or('estado.is.null,estado.neq.emitida').eq('es_propia', false),
       supabase.from('gastos_generales').select('monto, fecha, categoria, pagos_detalle').gte('fecha', fechaDesde).eq('actividad', 'Agricultura'),
       supabase.from('pagos_empleados').select('monto, fecha, creado_en, empleados(actividad)').gte('fecha', fechaDesde),
       supabase.from('gastos_generales').select('monto, fecha, categoria, pagos_detalle').gte('fecha', fechaDesde).eq('actividad', 'General'),

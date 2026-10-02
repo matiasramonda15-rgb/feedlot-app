@@ -113,7 +113,7 @@ export default function Contactos({ usuario }) {
       supabase.from('ventas_granos').select('*'),
       supabase.from('gastos_generales').select('*').order('fecha', { ascending: false }),
       supabase.from('servicios_terceros').select('*').eq('tipo_servicio', 'tercero').order('fecha', { ascending: false }),
-      supabase.from('ordenes_trabajo').select('*').eq('es_propia', false).order('fecha', { ascending: false }),
+      supabase.from('ordenes_trabajo').select('*').eq('es_propia', false).or('estado.is.null,estado.neq.emitida').order('fecha', { ascending: false }), // las emitidas (sin hacer) todavía no son deuda
       supabase.from('fletes').select('*').order('fecha', { ascending: false }),
       supabase.from('creditos').select('*').order('fecha_inicio', { ascending: false }),
       supabase.from('pagos_creditos').select('*').order('fecha'),

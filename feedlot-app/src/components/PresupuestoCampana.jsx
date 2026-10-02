@@ -98,10 +98,10 @@ export default function PresupuestoCampana({ S, Label, inputStyle, CULTIVOS, cam
 
     // Real
     const real = { semilla: 0, fertilizantes: 0, agroquimicos: 0, labores: 0, cosecha: 0, alquiler: 0, otros: 0 }
-    ordenes.filter(o => String(o.campana_id) === String(campanaId) && o.campo_id === p.campo_id && (o.lote_id ? o.lote_id === p.lote_id : true)).forEach(o => {
+    ordenes.filter(o => o.estado !== 'emitida' && String(o.campana_id) === String(campanaId) && o.campo_id === p.campo_id && (o.lote_id ? o.lote_id === p.lote_id : true)).forEach(o => {
       const factor = o.lote_id ? 1 : (haTrab(campo) ? ha / haTrab(campo) : 1)
       const d = dolar(o.fecha, o.cotizacion_usd)
-      ;(o.productos || []).forEach(pr => {
+      ;(o.productos || []).filter(pr => !pr.aporta_contratista).forEach(pr => {
         const item = stockAgro.find(s => s.id === parseInt(pr.id))
         const qty = n(pr.total) * factor
         // Precio guardado en la orden (el del momento); si no lo tiene, el del stock
