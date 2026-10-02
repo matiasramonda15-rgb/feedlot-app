@@ -7,6 +7,7 @@ import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 import { registrarPagos, unirIds, mensajeErrorPago, validarDeshacerGasto, revertirPagoDeGasto } from '../shared/pagosLogic'
 import SelectBuscable from './SelectBuscable'
+import PresupuestoCampana from './PresupuestoCampana'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -208,6 +209,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
     { key: 'ventas', label: 'Ventas de granos' },
     { key: 'gastos', label: 'Gastos' },
     { key: 'stock', label: 'Stock general' },
+    { key: 'presupuesto', label: '📋 Presupuesto' },
     { key: 'rentabilidad', label: '📊 Rentabilidad por lote' },
     { key: 'lluvias', label: '🌧️ Lluvias' },
   ]
@@ -297,6 +299,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ordenes={ordenes} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} soloAlfalfa={soloAlfalfa} cotizacionDolar={cotizacionDolar} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} cotizacionDolar={cotizacionDolar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
+      {tab === 'presupuesto' && <PresupuestoCampana S={S} Label={Label} inputStyle={inputStyle} CULTIVOS={CULTIVOS} campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} cotizacionDolar={cotizacionDolar} cargar={cargar} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} cotizacionDolar={cotizacionDolar} />}
       {tab === 'lluvias' && <TabLluvias usuario={usuario} />}
     </div>
