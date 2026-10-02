@@ -25,6 +25,18 @@ const inputStyle = { width: '100%', padding: '9px 12px', border: `1px solid ${S.
 // (superficie_ha) se siguen usando solo para el alquiler.
 const haTrabajables = x => x ? (parseFloat(x.superficie_trabajable_ha) || parseFloat(x.superficie_ha) || 0) : 0
 
+// Dólar del día de una operación. Si se deja vacío, se usa la cotización
+// general de Agricultura (la que se actualiza en Stock), que se muestra como
+// sugerencia. Sirve para ver costos y resultados en USD.
+function CampoDolar({ value, onChange, sugerido, style, etiqueta = 'Dólar del día $' }) {
+  return (
+    <div>
+      <Label>{etiqueta}</Label>
+      <input type="number" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={sugerido ? `${Number(sugerido).toLocaleString('es-AR')} (cotización de Stock)` : 'ej. 1350'} style={style} />
+    </div>
+  )
+}
+
 function Label({ children }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{children}</div>
 }
@@ -115,7 +127,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
   // ── MODO CELULAR ──
   if (mobile) {
     if (pantAgroM === 'orden') {
-      return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} planes={planes} mobile={true} nav={() => setPantAgroM('home')} />
+      return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} planes={planes} cotizacionDolar={cotizacionDolar} mobile={true} nav={() => setPantAgroM('home')} />
     }
     if (pantAgroM === 'stock') {
       return <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} mobile={true} nav={() => setPantAgroM('home')} cotizacionDolar={cotizacionDolar} />
@@ -278,14 +290,14 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
 
       {/* ── CAMPOS ── */}
       {tab === 'campos' && <TabCampos campos={campos} campanas={campanas} planes={planes} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} />}
-      {tab === 'arriendos' && <TabArriendos campos={campos} cargar={cargar} contactos={contactos} usuario={usuario} />}
+      {tab === 'arriendos' && <TabArriendos campos={campos} cargar={cargar} contactos={contactos} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
-      {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} soloAlfalfa={soloAlfalfa} planes={planes} />}
+      {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} soloAlfalfa={soloAlfalfa} planes={planes} cotizacionDolar={cotizacionDolar} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
-      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ordenes={ordenes} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} soloAlfalfa={soloAlfalfa} />}
-      {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} />}
+      {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ordenes={ordenes} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} soloAlfalfa={soloAlfalfa} cotizacionDolar={cotizacionDolar} />}
+      {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} cotizacionDolar={cotizacionDolar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
-      {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} />}
+      {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} cotizacionDolar={cotizacionDolar} />}
       {tab === 'lluvias' && <TabLluvias usuario={usuario} />}
     </div>
   )
@@ -1166,7 +1178,7 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 }
 
 // ── TAB ÓRDENES DE TRABAJO ──
-function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario, mobile, nav, soloAlfalfa, planes = [] }) {
+function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario, mobile, nav, soloAlfalfa, planes = [], cotizacionDolar }) {
   // Los productos de agro se cargan y consumen en cantidades grandes — no
   // hace falta (ni tiene sentido en la práctica) manejar más de un decimal.
   // Se redondea siempre al medio kg/litro más cercano.
@@ -1362,6 +1374,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         campo_id: campoId, campana_id: parseInt(form.campana_id) || null,
         lote_id: lote ? lote.id : null,
         superficie_ha_real: superficieItem || null,
+        cotizacion_usd: parseFloat(form.cotizacion_usd) || cotizacionDolar || null,
         tipo: form.tipo, fecha: form.fecha, descripcion: form.descripcion || null,
         proveedor: form.proveedor || null, es_propia: form.es_propia,
         productos: productosDeEsteItem.length ? productosDeEsteItem : null,
@@ -1864,6 +1877,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 <div><Label>Campaña</Label><select value={form.campana_id} onChange={e => setForm({...form, campana_id: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
                 <div><Label>Tipo de trabajo *</Label><select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS_ORDEN.map(t => <option key={t}>{t}</option>)}</select></div>
                 <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
+                <CampoDolar value={form.cotizacion_usd} onChange={v => setForm({ ...form, cotizacion_usd: v })} sugerido={cotizacionDolar} style={inputStyle} />
                 {!form.es_propia ? (
                   <div>
                     <Label>Proveedor (contratista)</Label>
@@ -2583,7 +2597,7 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
 }
 
 // ── TAB VENTAS DE GRANOS ──
-function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ordenes, cargar, stockInsumosAlim, stockAgro, usuario, contactos, soloAlfalfa }) {
+function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ordenes, cargar, stockInsumosAlim, stockAgro, usuario, contactos, soloAlfalfa, cotizacionDolar }) {
   const [showForm, setShowForm] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
@@ -2637,7 +2651,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
     if (form.contrato_id && !(parseFloat(form.cotizacion_usd) > 0)) { alert('Esta entrega es de un contrato en dólares: cargá el dólar del día'); return }
     const camposContrato = form.contrato_id
       ? { contrato_id: parseInt(form.contrato_id), precio_usd_tn: parseFloat(form.precio_usd_tn) || null, cotizacion_usd: parseFloat(form.cotizacion_usd) || null }
-      : { contrato_id: null, precio_usd_tn: null, cotizacion_usd: null }
+      : { contrato_id: null, precio_usd_tn: null, cotizacion_usd: parseFloat(form.cotizacion_usd) || cotizacionDolar || null }
     if (form.esVentaInternaFeedlot && !form.stock_insumo_id) { alert('Elegí a qué insumo del stock de Alimentación va este grano (ej. Maíz grano seco)'); return }
     setGuardando(true)
     // La venta de granos no se ata a un campo/lote puntual — cuando se manda
@@ -2658,7 +2672,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
         precio_tn: precioTn || null, total, monto_facturado: 0, monto_negro: total,
         cantidad_rollos: form.cantidadRollosTransferidos ? parseFloat(form.cantidadRollosTransferidos) : null,
         comprador: 'Ramonda Hnos SA', numero_contrato: null, observaciones: `Traspaso interno Agricultura → Feedlot${form.observaciones ? ' — ' + form.observaciones : ''}`,
-        estado: 'confirmado',
+        estado: 'confirmado', cotizacion_usd: parseFloat(form.cotizacion_usd) || cotizacionDolar || null,
       }
       const { data: vg, error: errVg } = await supabase.from('ventas_granos').insert(data).select().single()
       if (errVg) { alert('Error al guardar la venta: ' + errVg.message); setGuardando(false); return }
@@ -2691,7 +2705,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
         campana_id: parseInt(form.campana_id) || null, cultivo: form.cultivo, fecha: form.fecha, kg,
         precio_tn: precioTn || null, total: totalNegro, monto_facturado: 0, monto_negro: totalNegro,
         comprador: form.comprador || null, numero_contrato: null, observaciones: form.observaciones || null,
-        estado: 'confirmado',
+        estado: 'confirmado', cotizacion_usd: parseFloat(form.cotizacion_usd) || cotizacionDolar || null,
       })
       if (errVg) { alert('Error al guardar la venta: ' + errVg.message); setGuardando(false); return }
       const desc = `Venta ${form.cultivo} (en negro) — ${form.comprador || 'sin comprador'} · ${(kg / 1000).toLocaleString('es-AR')} tn`
@@ -3191,6 +3205,9 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
               <Label>Precio $/tn</Label>
               <input type="number" value={form.precio_tn} onChange={e => setForm({...form, precio_tn: e.target.value})} style={inputStyle} />
             </div>
+            {!form.contrato_id && (
+              <CampoDolar value={form.cotizacion_usd} onChange={v => setForm({ ...form, cotizacion_usd: v })} sugerido={cotizacionDolar} style={inputStyle} />
+            )}
             {form.precio_tn && form.tn && (
               <div style={{ gridColumn: '1/-1', background: S.greenLight, border: '1px solid #97C459', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: S.green }}>
                 Total operación: <strong>${Math.round(parseFloat(form.tn) * parseFloat(form.precio_tn)).toLocaleString('es-AR')}</strong>
@@ -3415,7 +3432,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
 }
 
 // ── TAB GASTOS ──
-function TabGastos({ gastos, campos, campanas, campanaActiva, cargar, contactos = [] }) {
+function TabGastos({ gastos, campos, campanas, campanaActiva, cargar, contactos = [], cotizacionDolar }) {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: hoyLocal(), proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
   const [guardando, setGuardando] = useState(false)
@@ -3450,6 +3467,7 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar, contactos 
     }
 
     const data = {
+      cotizacion_usd: parseFloat(form.cotizacion_usd) || cotizacionDolar || null,
       campo_id: parseInt(form.campo_id) || null, campana_id: parseInt(form.campana_id) || null,
       categoria: form.concepto, descripcion: form.concepto, monto, fecha: form.fecha,
       proveedor: form.proveedor || null, actividad: 'Agricultura',
@@ -3499,6 +3517,7 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar, contactos 
             <div><Label>Concepto *</Label><input type="text" value={form.concepto} onChange={e => setForm({...form, concepto: e.target.value})} placeholder="ej. Seguro, Análisis de suelo, etc." style={inputStyle} /></div>
             <div><Label>Monto $ *</Label><input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} /></div>
             <div><Label>Fecha</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
+            <CampoDolar value={form.cotizacion_usd} onChange={v => setForm({ ...form, cotizacion_usd: v })} sugerido={cotizacionDolar} style={inputStyle} />
             <div>
               <Label>Proveedor</Label>
               <SelectBuscable value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} style={inputStyle}>
@@ -3639,7 +3658,7 @@ async function generarReciboArriendo(v, campo, pagos) {
 }
 
 
-function TabArriendos({ campos, cargar, contactos, usuario }) {
+function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
   const [vencimientos, setVencimientos] = useState([])
   const [showForm, setShowForm] = useState(null)
   const [formVenc, setFormVenc] = useState({ fecha_vencimiento: '', tn_ha: '', precio_pizarra: '', observaciones: '' })
@@ -3711,6 +3730,7 @@ function TabArriendos({ campos, cargar, contactos, usuario }) {
       monto_total: montoCalc || totalPagos,
       caja_oficial_id: reg.cajaOficialIds[0] || null, caja_paralela_id: reg.cajaParalelaIds[0] || null,
       caja_oficial_ids: unirIds(reg.cajaOficialIds), caja_paralela_ids: unirIds(reg.cajaParalelaIds), cheque_emitido_ids: unirIds(reg.chequeEmitidoIds),
+      cotizacion_usd: cotizacionDolar || null,
       pagos_detalle: reg.lineas,
       forma_pago: reg.lineas.map(p => p.subtipo_cheque || p.tipo).join('+'),
     }).eq('id', v.id)
@@ -4726,7 +4746,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
 } 
 
 // ── TAB RENTABILIDAD POR LOTE ──
-function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, ventasGranos, stockAgro, planes, gastos }) {
+function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, ventasGranos, stockAgro, planes, gastos, cotizacionDolar }) {
   const [vencimientos, setVencimientos] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroCampana, setFiltroCampana] = useState(campanaActiva?.id ? String(campanaActiva.id) : '')
@@ -4734,6 +4754,11 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
   const [filtroLote, setFiltroLote] = useState('')
   const [filtroCultivo, setFiltroCultivo] = useState('')
   const [detalleAbierto, setDetalleAbierto] = useState(null)
+  // Moneda del cuadro. En USD cada monto se pasa a dólares con el dólar del
+  // día de SU operación (el que se cargó al hacerla); si una operación vieja
+  // no lo tiene, se usa el dólar cargado más cercano en fecha (o la
+  // cotización actual) y se avisa cuántos montos quedaron estimados.
+  const [moneda, setMoneda] = useState('USD')
 
   useEffect(() => {
     supabase.from('vencimientos_arriendo').select('*').eq('estado', 'pagado').order('fecha_vencimiento')
@@ -4745,6 +4770,27 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
   const campana = campanas.find(c => String(c.id) === String(filtroCampana))
   const campoFiltro = campos.find(c => String(c.id) === String(filtroCampo))
   const numAR = (n, dec = 0) => (n || n === 0) ? n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : '—'
+  const M = moneda === 'USD' ? 'USD ' : '$'
+  // Dólares conocidos por fecha (de todas las operaciones de agricultura que lo tienen)
+  const serieDolar = [
+    ...ventasGranos.map(v => [v.fecha, v.cotizacion_usd]),
+    ...ordenes.map(o => [o.fecha, o.cotizacion_usd]),
+    ...(gastos || []).map(g => [g.fecha, g.cotizacion_usd]),
+    ...vencimientos.map(v => [v.fecha_pago || v.fecha_vencimiento, v.cotizacion_usd]),
+  ].filter(([f, c]) => f && parseFloat(c) > 0).map(([f, c]) => [f, parseFloat(c)]).sort((a, b) => a[0].localeCompare(b[0]))
+  let estimados = 0
+  const dolarDe = (fecha, propio) => {
+    if (parseFloat(propio) > 0) return parseFloat(propio)
+    estimados++
+    if (fecha && serieDolar.length) {
+      const antes = serieDolar.filter(([f]) => f <= fecha)
+      if (antes.length) return antes[antes.length - 1][1]
+      return serieDolar[0][1]
+    }
+    return cotizacionDolar || 1
+  }
+  // Pasa un monto en pesos a la moneda elegida
+  const conv = (pesos, fecha, propio) => moneda === 'USD' ? (pesos || 0) / dolarDe(fecha, propio) : (pesos || 0)
 
   // Precio de referencia $/tn: promedio de lo efectivamente vendido (de ese campo si hay, sino de todos los campos con ese cultivo/campaña)
   function precioReferencia(cultivo) {
@@ -4756,7 +4802,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     // mezclarlas con las reales daría un promedio incorrecto.
     const pool = ventasGranos.filter(v => v.cultivo === cultivo && v.estado !== 'pactada' && (!filtroCampana || v.campana_id === parseInt(filtroCampana)) && v.kg && v.total)
     const kgTot = pool.reduce((s, v) => s + (v.kg || 0), 0)
-    const monTot = pool.reduce((s, v) => s + (v.total || 0), 0)
+    const monTot = pool.reduce((s, v) => s + conv(v.total || 0, v.fecha, v.cotizacion_usd), 0)
     return kgTot > 0 ? (monTot / (kgTot / 1000)) : null
   }
 
@@ -4823,12 +4869,17 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     const detalleInsumos = []
     const detalleOrdenes = []
     ordenesRel.forEach(o => {
-      const factor = o.lote_id ? 1 : (campo?.superficie_ha ? ha / campo.superficie_ha : 1)
+      const factor = o.lote_id ? 1 : (haTrabajables(campo) ? ha / haTrabajables(campo) : 1)
       const insumosOrden = []
       ;(o.productos || []).forEach(p => {
         const item = stockAgro.find(s => s.id === parseInt(p.id))
         const qty = (parseFloat(p.total) || 0) * factor
-        const precio = item?.precio_referencia || 0
+        // Insumos: en USD se usa su precio en dólares si lo tiene (los
+        // agroquímicos se compran en USD); si no, el precio en pesos al
+        // dólar de la orden.
+        const precio = moneda === 'USD'
+          ? (parseFloat(item?.precio_referencia_usd) || (item?.precio_referencia ? item.precio_referencia / dolarDe(o.fecha, o.cotizacion_usd) : 0))
+          : (item?.precio_referencia || 0)
         const subtotal = qty * precio
         costoInsumos += subtotal
         if (qty > 0) {
@@ -4837,7 +4888,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
           insumosOrden.push(fila)
         }
       })
-      const costoLaboresOrden = (o.costo_total || 0) * factor
+      const costoLaboresOrden = conv((o.costo_total || 0) * factor, o.fecha, o.cotizacion_usd)
       costoLabores += costoLaboresOrden
       const totalInsumosOrden = insumosOrden.reduce((s, i) => s + i.subtotal, 0)
       detalleOrdenes.push({
@@ -4853,20 +4904,22 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
       new Date(v.fecha_vencimiento).getFullYear() >= (campana.año_inicio || 0) &&
       new Date(v.fecha_vencimiento).getFullYear() <= (campana.año_fin || 9999)
     )))
-    const totalArriendoCampo = arriendosCampo.reduce((s, v) => s + (v.monto_total || 0), 0)
-    const costoAlquiler = campo?.superficie_ha ? totalArriendoCampo * (ha / campo.superficie_ha) : 0
-    const detalleArriendo = arriendosCampo.map(v => ({
-      fecha: v.fecha_vencimiento, montoTotal: v.monto_total || 0, estadoPago: v.estado,
-      montoProrrateado: campo?.superficie_ha ? (v.monto_total || 0) * (ha / campo.superficie_ha) : (v.monto_total || 0),
-    }))
+    // El alquiler se reparte según las ha de CONTRATO (es lo que se paga):
+    // la parte de este lote es su contrato sobre el del campo entero.
+    const partAlquiler = lote ? ((parseFloat(lote.superficie_ha) || 0) / (parseFloat(campo?.superficie_ha) || 1)) : 1
+    const detalleArriendo = arriendosCampo.map(v => {
+      const montoTotal = conv(v.monto_total || 0, v.fecha_pago || v.fecha_vencimiento, v.cotizacion_usd)
+      return { fecha: v.fecha_vencimiento, montoTotal, estadoPago: v.estado, montoProrrateado: montoTotal * partAlquiler }
+    })
+    const costoAlquiler = detalleArriendo.reduce((s, a) => s + a.montoProrrateado, 0)
 
     // Gastos puntuales de este campo (los que se cargaron con campo elegido en
     // "Gastos" — seguro de ese campo, análisis de suelo, etc.), prorrateados
     // por hectárea igual que el arriendo. Los gastos generales (sin campo) no
     // entran acá, solo cuentan para el total de la actividad en Reportes.
     const gastosCampo = (gastos || []).filter(gg => gg.campo_id === g.campo_id && (!filtroCampana || gg.campana_id === parseInt(filtroCampana)))
-    const totalGastosCampo = gastosCampo.reduce((s, gg) => s + (gg.monto || 0), 0)
-    const costoGastos = campo?.superficie_ha ? totalGastosCampo * (ha / campo.superficie_ha) : 0
+    const totalGastosCampo = gastosCampo.reduce((s, gg) => s + conv(gg.monto || 0, gg.fecha, gg.cotizacion_usd), 0)
+    const costoGastos = haTrabajables(campo) ? totalGastosCampo * (ha / haTrabajables(campo)) : 0
 
     const costosDirectos = costoInsumos + costoLabores + costoAlquiler + costoGastos
     const sinCosechaAun = g.kg === 0
@@ -4893,8 +4946,16 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
   return (
     <div>
       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Rentabilidad por lote</div>
-      <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.25rem' }}>
-        Insumos desde las Órdenes de trabajo de cada lote · Alquiler prorrateado por hectárea · Precio de venta proyectado sobre lo efectivamente vendido
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+        <div style={{ fontSize: 12, color: S.muted }}>
+          Insumos desde las Órdenes de trabajo de cada lote · Alquiler prorrateado por hectárea · Precio de venta proyectado sobre lo efectivamente vendido
+          {moneda === 'USD' && <div style={{ marginTop: 4 }}>En dólares: cada monto se convierte con el dólar del día de su operación{estimados > 0 ? <span style={{ color: S.amber }}> · {estimados} monto{estimados !== 1 ? 's' : ''} sin dólar cargado (se usó el más cercano en fecha)</span> : ''}.</div>}
+        </div>
+        <div style={{ display: 'flex', border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
+          {['USD', 'ARS'].map(m => (
+            <button key={m} onClick={() => setMoneda(m)} style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: moneda === m ? S.accent : S.surface, color: moneda === m ? '#fff' : S.muted }}>{m === 'USD' ? 'USD' : 'Pesos'}</button>
+          ))}
+        </div>
       </div>
 
       {/* Filtros */}
@@ -4955,9 +5016,9 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: abierto ? '1.25rem' : 0 }}>
               {[
                 { label: 'Rendimiento', val: f.sinCosechaAun ? 'Sin cosechar' : `${numAR(f.rtoQqHa, 1)} tn/ha`, sub: f.sinCosechaAun ? '—' : `${numAR(f.kg / 1000, 1)} tn totales` },
-                { label: 'Ingresos (proy.)', val: f.sinCosechaAun ? '—' : (f.precioTn ? `$${numAR(f.ingresos)}` : 'Sin precio ref.'), sub: f.sinCosechaAun ? 'todavía no hay cosecha' : (f.precioTn ? `$${numAR(f.precioTn)}/tn` : 'cargá una venta de este cultivo'), color: S.green },
-                { label: 'Costos directos', val: `$${numAR(f.costosDirectos)}`, sub: `Insumos $${numAR(f.costoInsumos)} · Labores $${numAR(f.costoLabores)} · Alquiler $${numAR(f.costoAlquiler)}${f.costoGastos ? ' · Gastos $' + numAR(f.costoGastos) : ''}`, color: S.red },
-                { label: 'Margen Bruto', val: f.mb === null ? '—' : `$${numAR(f.mb)}`, sub: f.mb === null ? 'a definir con la cosecha' : `$${numAR(f.mbHa)}/ha`, color: f.mb === null ? S.muted : (f.mb >= 0 ? S.green : S.red) },
+                { label: 'Ingresos (proy.)', val: f.sinCosechaAun ? '—' : (f.precioTn ? `${M}${numAR(f.ingresos)}` : 'Sin precio ref.'), sub: f.sinCosechaAun ? 'todavía no hay cosecha' : (f.precioTn ? `${M}${numAR(f.precioTn)}/tn` : 'cargá una venta de este cultivo'), color: S.green },
+                { label: 'Costos directos', val: `${M}${numAR(f.costosDirectos)}`, sub: `Insumos ${M}${numAR(f.costoInsumos)} · Labores ${M}${numAR(f.costoLabores)} · Alquiler ${M}${numAR(f.costoAlquiler)}${f.costoGastos ? ' · Gastos $' + numAR(f.costoGastos) : ''}`, color: S.red },
+                { label: 'Margen Bruto', val: f.mb === null ? '—' : `${M}${numAR(f.mb)}`, sub: f.mb === null ? 'a definir con la cosecha' : `${M}${numAR(f.mbHa)}/ha`, color: f.mb === null ? S.muted : (f.mb >= 0 ? S.green : S.red) },
               ].map((m, i) => (
                 <div key={i} style={{ background: S.bg, borderRadius: 8, padding: '.75rem .9rem' }}>
                   <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{m.label}</div>
@@ -4989,7 +5050,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
                       {f.detalleArriendo.map((a, i) => (
                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', fontSize: 12, borderBottom: i < f.detalleArriendo.length - 1 ? `1px solid ${S.border}` : 'none' }}>
                           <span>{a.fecha ? new Date(a.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '—'} {a.estadoPago === 'pendiente' && <span style={{ color: S.amber, fontWeight: 600 }}> · pendiente de pago</span>}</span>
-                          <span style={{ fontFamily: 'monospace' }}>${numAR(a.montoTotal)} total <strong style={{ marginLeft: 8 }}>${numAR(a.montoProrrateado)} en este lote</strong></span>
+                          <span style={{ fontFamily: 'monospace' }}>{M}{numAR(a.montoTotal)} total <strong style={{ marginLeft: 8 }}>{M}{numAR(a.montoProrrateado)} en este lote</strong></span>
                         </div>
                       ))}
                     </div>
@@ -5008,8 +5069,8 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
                           {o.estadoPago === 'pendiente' && <span style={{ color: S.amber, fontWeight: 600, fontSize: 11, marginLeft: 8 }}>⏳ pendiente de pago</span>}
                         </div>
                         <div style={{ textAlign: 'right', fontSize: 13 }}>
-                          <strong style={{ fontFamily: 'monospace' }}>${numAR(o.costoTotal)}</strong>
-                          <div style={{ fontSize: 10, color: S.muted }}>labor ${numAR(o.costoLabores)} + insumos ${numAR(o.costoInsumos)}</div>
+                          <strong style={{ fontFamily: 'monospace' }}>{M}{numAR(o.costoTotal)}</strong>
+                          <div style={{ fontSize: 10, color: S.muted }}>labor {M}{numAR(o.costoLabores)} + insumos {M}{numAR(o.costoInsumos)}</div>
                         </div>
                       </div>
                       {o.insumos.length > 0 && (
@@ -5020,8 +5081,8 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
                                 <td style={{ padding: '5px 12px', fontWeight: 600 }}>{d.nombre}</td>
                                 <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{d.cantHa ? `${numAR(d.cantHa, 2)} ${d.unidad}/ha` : ''}</td>
                                 <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{numAR(d.cantTotal, 2)} {d.unidad}</td>
-                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{d.precio ? `$${numAR(d.precio, 2)}` : <span style={{ color: S.amber }}>sin precio ref.</span>}</td>
-                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>${numAR(d.subtotal)}</td>
+                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{d.precio ? `${M}${numAR(d.precio, 2)}` : <span style={{ color: S.amber }}>sin precio ref.</span>}</td>
+                                <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{M}{numAR(d.subtotal)}</td>
                               </tr>
                             ))}
                           </tbody>
