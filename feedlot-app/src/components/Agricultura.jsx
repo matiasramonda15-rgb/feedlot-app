@@ -3074,7 +3074,9 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
           de lo que YA se pesó y transfirió, multiplicado por el total de
           rollos hechos en el año (pesados o no todavía), para no tener que
           esperar a pesar cada rollo individualmente. */}
-      {(() => {
+      {/* Solo en la pestaña Alfalfa: en Agricultura → Ventas de granos se
+          repetía con lo que ya muestra Alfalfa. */}
+      {soloAlfalfa && (() => {
         const ordenesRollo = (ordenes || []).filter(o => o.tipo === 'Confeccion de rollo' && o.cantidad_rollos > 0)
         if (ordenesRollo.length === 0) return null
         const porCampo = {}
