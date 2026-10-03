@@ -13,7 +13,26 @@ import { registrarPagos, unirIds } from '../shared/pagosLogic'
 // sistema calcula el precio por unidad) — útil porque a veces el total real
 // de la factura no coincide exacto con cantidad × precio unitario (redondeos,
 // gastos incluidos, etc.), y así se puede cargar el número real tal cual está.
-export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSeleccionadas, precios, setPrecios, facturas, setFacturas, S, cotizacionDolar, monedas, setMonedas, modos, setModos }) {
+// IVA de una compra al ponerle precio: el precio por unidad se carga SIN IVA
+// (es el costo: va al stock); el total (lo que se paga) es CON IVA. En modo
+// "total factura" lo que se carga es el total con IVA. ivaPct vacío o 0 =
+// sin IVA (compra sin factura, monotributo o venta interna).
+export function calcularPrecioCompra(c, valorIngresado, { esUsd, cotizacionDolar, modo, ivaPct }) {
+  const f = 1 + (parseFloat(ivaPct) || 0) / 100
+  const valorEnPesos = esUsd ? valorIngresado * cotizacionDolar : valorIngresado
+  let precioNeto, total
+  if (modo === 'total') {
+    total = Math.round(valorEnPesos)
+    precioNeto = c.cantidad ? Math.round(total / f / c.cantidad * 100) / 100 : Math.round(total / f)
+  } else {
+    precioNeto = Math.round(valorEnPesos * 100) / 100
+    total = Math.round((c.cantidad || 0) * precioNeto * f)
+  }
+  const neto = Math.round(total / f * 100) / 100
+  return { precioNeto, total, neto, ivaMonto: Math.round((total - neto) * 100) / 100, ivaPct: parseFloat(ivaPct) || 0 }
+}
+
+export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSeleccionadas, precios, setPrecios, facturas, setFacturas, S, cotizacionDolar, monedas, setMonedas, modos, setModos, ivas, setIvas, ivaSugerido }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {pendientes.map(c => {
@@ -24,10 +43,11 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
         const valorEnPesos = esUsd ? valorIngresado * cotizacionDolar : valorIngresado
         // Si el modo es "total", lo que se cargó ya es el total de la
         // factura — el precio por unidad sale de dividir por la cantidad.
-        const montoCalc = precios[c.id] && c.cantidad
-          ? (modo === 'total' ? Math.round(valorEnPesos) : Math.round(valorEnPesos * c.cantidad))
-          : null
-        const precioUnitCalc = (modo === 'total' && montoCalc && c.cantidad) ? montoCalc / c.cantidad : null
+        const ivaC = ivas?.[c.id] ?? (ivaSugerido ? String(ivaSugerido(c)) : '0')
+        const calc = precios[c.id] && c.cantidad ? calcularPrecioCompra(c, valorIngresado, { esUsd, cotizacionDolar, modo, ivaPct: ivaC }) : null
+        const montoCalc = calc ? calc.total : null
+        const precioUnitCalc = calc ? calc.precioNeto : null
+        void valorEnPesos
         return (
           <div key={c.id} style={{ border: `1px solid ${sel ? '#EF9F27' : S.border}`, borderRadius: 6, background: sel ? '#FFF8EC' : S.surface }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}>
@@ -65,7 +85,7 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: S.amber, whiteSpace: 'nowrap' }}>
-                  {modo === 'total' ? (esUsd ? 'US$ total:' : '$ total:') : `${esUsd ? 'US$' : '$'}/${c.unidad || 'u'}:`}
+                  {modo === 'total' ? (esUsd ? 'US$ total con IVA:' : '$ total con IVA:') : `${esUsd ? 'US$' : '$'}/${c.unidad || 'u'} sin IVA:`}
                 </div>
                 <input type="number" value={precios[c.id] || ''} onChange={e => setPrecios({...precios, [c.id]: e.target.value})}
                   placeholder={modo === 'total' ? 'ej. 815000' : 'ej. 850'} style={{ padding: '5px 8px', border: `1px solid ${S.amber}`, borderRadius: 5, fontSize: 12, fontFamily: 'monospace', width: 120 }} />
@@ -79,10 +99,17 @@ export function ChecklistComprasPendientes({ pendientes, seleccionadas, setSelec
                     ))}
                   </div>
                 )}
+                {setIvas && (
+                  <select value={ivaC} onChange={e => setIvas({ ...(ivas || {}), [c.id]: e.target.value })}
+                    title="IVA de la factura" style={{ padding: '4px 6px', border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 11 }}>
+                    <option value="0">Sin IVA / sin factura</option><option value="10.5">IVA 10,5%</option><option value="21">IVA 21%</option><option value="27">IVA 27%</option>
+                  </select>
+                )}
                 {montoCalc != null && (
                   <span style={{ fontSize: 12, color: S.green, fontWeight: 600 }}>
                     = ${montoCalc.toLocaleString('es-AR')}{esUsd ? ` (a $${cotizacionDolar.toLocaleString('es-AR')})` : ''}
-                    {modo === 'total' && precioUnitCalc != null && ` · $${precioUnitCalc.toLocaleString('es-AR', { maximumFractionDigits: 2 })}/${c.unidad || 'u'}`}
+                    {calc && calc.ivaPct > 0 && <span style={{ fontWeight: 400, color: S.muted }}> (neto ${Math.round(calc.neto).toLocaleString('es-AR')} + IVA ${Math.round(calc.ivaMonto).toLocaleString('es-AR')})</span>}
+                    {modo === 'total' && precioUnitCalc != null && ` · $${precioUnitCalc.toLocaleString('es-AR', { maximumFractionDigits: 2 })}/${c.unidad || 'u'} sin IVA`}
                   </span>
                 )}
                 {setFacturas && !c.numero_factura && (
@@ -131,8 +158,9 @@ export async function pagarComprasPendientes(supabase, {
   seleccionadas, pendientes, precios, facturas, pagos, fecha,
   descripcion, contactoId, contactoNombre, registradoPor, actualizarPrecioReferencia,
   creditoEntidad, creditoCuotas, creditoVencimiento, creditoEsDolares, cotizacionDolarCredito, creditoMontoUsd, monedas, cotizacionDolar, modos,
-  categoriaCaja = 'Compra insumos',
+  categoriaCaja = 'Compra insumos', ivas = {}, ivaSugerido = null,
 }) {
+  const ivaDe = c => ivas?.[c.id] ?? (ivaSugerido ? String(ivaSugerido(c)) : '0')
   // Caja + cheques de cada forma de pago: la función compartida (la misma de
   // Personal y Fletes). Devuelve las líneas ya marcadas y TODOS los ids.
   const reg = await registrarPagos(supabase, pagos, {
@@ -214,11 +242,8 @@ export async function pagarComprasPendientes(supabase, {
       continue
     }
     if (!precios[id]) { totalesFinales[id] = 0; continue }
-    const valorIngresado = parseFloat(precios[id])
     const esUsd = monedas?.[id] === 'USD' && cotizacionDolar
-    const valorEnPesos = esUsd ? valorIngresado * cotizacionDolar : valorIngresado
-    const esModoTotal = modos?.[id] === 'total'
-    totalesFinales[id] = esModoTotal ? Math.round(valorEnPesos) : Math.round((c.cantidad || 0) * Math.round(valorEnPesos * 100) / 100)
+    totalesFinales[id] = calcularPrecioCompra(c, parseFloat(precios[id]), { esUsd, cotizacionDolar, modo: modos?.[id], ivaPct: ivaDe(c) }).total
   }
   const totalCombinado = Object.values(totalesFinales).reduce((s, t) => s + t, 0)
 
@@ -259,20 +284,13 @@ export async function pagarComprasPendientes(supabase, {
     if (!(c.total || c.precio_unitario) && precios[id]) {
       const valorIngresado = parseFloat(precios[id])
       const esUsd = monedas?.[id] === 'USD' && cotizacionDolar
-      const valorEnPesos = esUsd ? valorIngresado * cotizacionDolar : valorIngresado
       const esModoTotal = modos?.[id] === 'total'
-      let precioFinal, totalFinal
-      if (esModoTotal) {
-        // Lo que se cargó ya es el total real de la factura — el precio por
-        // unidad sale de dividir por la cantidad, en vez de al revés.
-        totalFinal = Math.round(valorEnPesos)
-        precioFinal = c.cantidad ? Math.round((totalFinal / c.cantidad) * 100) / 100 : totalFinal
-      } else {
-        precioFinal = Math.round(valorEnPesos * 100) / 100
-        totalFinal = Math.round((c.cantidad || 0) * precioFinal)
-      }
+      // Precio por unidad SIN IVA (va al stock) y total CON IVA (se paga).
+      const calc = calcularPrecioCompra(c, valorIngresado, { esUsd, cotizacionDolar, modo: modos?.[id], ivaPct: ivaDe(c) })
+      const precioFinal = calc.precioNeto, totalFinal = calc.total
       upd.precio_unitario = precioFinal
       upd.total = totalFinal
+      upd.iva_pct = calc.ivaPct; upd.neto = calc.neto; upd.iva_monto = calc.ivaMonto
       totalDeEstaCompra = totalFinal
       if (esUsd) { upd.precio_unitario_usd = esModoTotal ? null : valorIngresado; upd.cotizacion_dolar = cotizacionDolar }
       if (facturas?.[id]) upd.numero_factura = facturas[id]

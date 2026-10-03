@@ -4394,6 +4394,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [preciosPend, setPreciosPend] = useState({})
   const [monedasPend, setMonedasPend] = useState({})
   const [modosPend, setModosPend] = useState({})
+  const [ivasPend, setIvasPend] = useState({})
+  const ivaSugeridoAgro = c => { const it = stock.find(x => x.id === c.insumo_id); return it?.iva_pct != null ? it.iva_pct : (['Semilla', 'Fertilizante'].includes(it?.tipo) ? 10.5 : 21) }
   const [formCompra, setFormCompra] = useState({
     agroquimico_id: '', iva_pct: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
     fecha: hoyLocal(), proveedor: '',
@@ -4640,7 +4642,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           }).filter(Boolean)
           const { error } = await pagarComprasPendientes(supabase, {
             seleccionadas, pendientes, precios: preciosPend, facturas: null,
-            monedas: monedasPend, cotizacionDolar, modos: modosPend,
+            monedas: monedasPend, cotizacionDolar, modos: modosPend, ivas: ivasPend, ivaSugerido: ivaSugeridoAgro,
             pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha,
             descripcion: 'Pago compras insumos Agricultura', registradoPor: usuario?.id,
             categoriaCaja: 'Compra insumos Agricultura',
@@ -4690,7 +4692,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               </button>
             </div>
             <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
-              precios={preciosPend} setPrecios={setPreciosPend} S={S} cotizacionDolar={cotizacionDolar} monedas={monedasPend} setMonedas={setMonedasPend} modos={modosPend} setModos={setModosPend} />
+              precios={preciosPend} setPrecios={setPreciosPend} S={S} cotizacionDolar={cotizacionDolar} monedas={monedasPend} setMonedas={setMonedasPend} modos={modosPend} setModos={setModosPend}
+              ivas={ivasPend} setIvas={setIvasPend} ivaSugerido={ivaSugeridoAgro} />
             {showPagosPend && seleccionadas.length > 0 && (
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: '1rem' }}>

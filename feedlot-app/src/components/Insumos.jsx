@@ -55,6 +55,10 @@ export default function Insumos({ usuario }) {
   const [seleccionadas, setSeleccionadas] = useState([])
   const [preciosGrupal, setPreciosGrupal] = useState({})
   const [modosGrupal, setModosGrupal] = useState({})
+  // IVA por compra al ponerle precio. Por defecto: sanitarios 21%; el resto
+  // (alimento) sin IVA — el maíz y los rollos propios o sin factura no llevan.
+  const [ivasGrupal, setIvasGrupal] = useState({})
+  const ivaSugeridoInsumo = c => c.insumo_tipo === 'sanitario' ? 21 : (/urea/i.test(c.insumo_nombre || '') ? 10.5 : 0)
   const [facturasGrupal, setFacturasGrupal] = useState({})
   const [showPagosPend, setShowPagosPend] = useState(false)
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
@@ -136,7 +140,7 @@ export default function Insumos({ usuario }) {
     const saldo = c.total ? Math.max(0, c.total - yaPagado) : null
     const contacto = c.proveedor ? contactos.find(ct => ct.nombre === c.proveedor) : null
     setSeleccionadas([c.id])
-    setPreciosGrupal({}); setModosGrupal({}); setFacturasGrupal({})
+    setPreciosGrupal({}); setModosGrupal({}); setFacturasGrupal({}); setIvasGrupal({})
     setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT, monto: saldo ? String(saldo) : '' }], contacto_id: contacto ? String(contacto.id) : '', credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
     setShowPagosPend(true)
     setTimeout(() => document.getElementById('form-pago-compras')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
@@ -300,7 +304,8 @@ export default function Insumos({ usuario }) {
                     🏷️ {sinPrecioLista.length} compra{sinPrecioLista.length !== 1 ? 's' : ''} sin precio todavía — hay que definirlo antes de poder pagarlas
                   </div>
                   <ChecklistComprasPendientes pendientes={sinPrecioLista} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
-                    precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} modos={modosGrupal} setModos={setModosGrupal} />
+                    precios={preciosGrupal} setPrecios={setPreciosGrupal} facturas={facturasGrupal} setFacturas={setFacturasGrupal} S={S} modos={modosGrupal} setModos={setModosGrupal}
+                    ivas={ivasGrupal} setIvas={setIvasGrupal} ivaSugerido={ivaSugeridoInsumo} />
                 </div>
               )}
               {conPrecioLista.length > 0 && (
@@ -420,7 +425,7 @@ export default function Insumos({ usuario }) {
                       const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
                       const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`
                       const { error } = await pagarComprasPendientes(supabase, {
-                        seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal, modos: modosGrupal,
+                        seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal, modos: modosGrupal, ivas: ivasGrupal, ivaSugerido: ivaSugeridoInsumo,
                         pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha, descripcion: desc,
                         contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
                         creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
@@ -434,7 +439,7 @@ export default function Insumos({ usuario }) {
                       if (error) { alert('Error al guardar el precio: ' + error.message); setGuardandoPago(false); return }
                       setSeleccionadas([])
                       setPreciosGrupal({})
-                      setModosGrupal({})
+                      setModosGrupal({}); setIvasGrupal({})
                       setFacturasGrupal({})
                       setShowPagosPend(false)
                       setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '', credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
@@ -460,7 +465,7 @@ export default function Insumos({ usuario }) {
                     const contactoNombre = contactos.find(x => String(x.id) === formPagoGrupal.contacto_id)?.nombre
                     const desc = `Pago insumos${contactoNombre ? ' — ' + contactoNombre : ''}`
                     const { error } = await pagarComprasPendientes(supabase, {
-                      seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal, modos: modosGrupal,
+                      seleccionadas, pendientes: compras, precios: preciosGrupal, facturas: facturasGrupal, modos: modosGrupal, ivas: ivasGrupal, ivaSugerido: ivaSugeridoInsumo,
                       pagos: formPagoGrupal.pagos, fecha: formPagoGrupal.fecha, descripcion: desc,
                       contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
                       creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
@@ -497,7 +502,7 @@ export default function Insumos({ usuario }) {
                     }
                     setSeleccionadas([])
                     setPreciosGrupal({})
-                    setModosGrupal({})
+                    setModosGrupal({}); setIvasGrupal({})
                     setFacturasGrupal({})
                     setShowPagosPend(false)
                     setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '', credito_entidad: '', credito_cuotas: '', credito_vencimiento: '' })
