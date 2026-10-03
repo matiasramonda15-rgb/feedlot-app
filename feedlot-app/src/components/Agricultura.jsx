@@ -9,6 +9,7 @@ import { registrarPagos, unirIds, mensajeErrorPago, validarDeshacerGasto, revert
 import SelectBuscable from './SelectBuscable'
 import PresupuestoCampana from './PresupuestoCampana'
 import GranosUbicaciones from './GranosUbicaciones'
+import PlanTanques from './PlanTanques'
 import { useBorrador } from '../shared/useBorrador'
 
 const S = {
@@ -1366,6 +1367,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // realmente se usó, y recién ahí se descuenta el stock (y se registra el
   // gasto propio, si lo hay).
   const [confirmando, setConfirmando] = useState(null) // { id, fecha, ha, productos }
+  const [mostrarPlanTanques, setMostrarPlanTanques] = useState(false)
   async function confirmarRealizada(o) {
     const c = confirmando
     const ha = parseFloat(c.ha) || parseFloat(o.superficie_ha_real) || 0
@@ -2244,6 +2246,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               </Card>
             )
           })()}
+          {/* Plan de tanques: órdenes con la misma mezcla en una hoja para el pulverizador */}
+          {!mostrarPlanTanques
+            ? <div style={{ marginBottom: 10 }}><button onClick={() => setMostrarPlanTanques(true)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.surface, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>🚜 Plan de tanques (agrupar campos con la misma mezcla)</button></div>
+            : <PlanTanques ordenes={ordenes} campos={campos} stockAgro={stockAgro} S={S} Label={Label} inputStyle={inputStyle} onCerrar={() => setMostrarPlanTanques(false)} />}
           {ordenesParaCombinar.length >= 2 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: S.purpleLight, border: `1px solid ${S.purple}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: S.purple, fontWeight: 600 }}>{ordenesParaCombinar.length} órdenes marcadas para combinar</span>
