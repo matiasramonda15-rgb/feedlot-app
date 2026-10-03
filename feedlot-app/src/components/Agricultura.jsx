@@ -1242,10 +1242,18 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // Los productos de agro se cargan y consumen en cantidades grandes — no
   // hace falta (ni tiene sentido en la práctica) manejar más de un decimal.
   // Se redondea siempre al medio kg/litro más cercano.
-  const redondearMedio = (n, dosisChica) => dosisChica ? Math.round(n * 10000) / 10000 : Math.round(n * 2) / 2
+  // Totales: de a medio litro/kilo, salvo dosis chica (4 decimales). Si un
+  // producto de dosis baja no está marcado como "dosis chica" y el redondeo
+  // da 0 (ej. 0,19 kg → 0), se usa el valor exacto: antes quedaba en 0 y no
+  // se reservaba ni descontaba nada.
+  const redondearMedio = (n, dosisChica) => {
+    if (dosisChica) return Math.round(n * 10000) / 10000
+    const r = Math.round(n * 2) / 2
+    return (r === 0 && n > 0) ? Math.round(n * 10000) / 10000 : r
+  }
   // Dosis por ha: 3 decimales; 4 para los productos de dosis muy baja
   // (marcados "dosis chica" en Stock, ej. metsulfurón).
-  const redondearDosis = (n, item) => item?.dosis_chica ? Math.round(n * 10000) / 10000 : Math.round(n * 1000) / 1000
+  const redondearDosis = (n, item) => (item?.dosis_chica || Math.abs(n) < 0.01) ? Math.round(n * 10000) / 10000 : Math.round(n * 1000) / 1000
   const [tabInner, setTabInner] = useState('ordenes')
   const [showForm, setShowForm] = useBorrador('agro-orden-abierta', false)
   const [form, setForm] = useBorrador('agro-orden-form', {
