@@ -2809,12 +2809,13 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   async function cargarContratos() {
     const [{ data }, { data: cc }] = await Promise.all([
       supabase.from('contratos_granos').select('*, campanas(nombre)').order('entrega_desde', { ascending: true, nullsFirst: false }).order('id'),
-      supabase.from('compras_insumos').select('id, fecha, insumo_nombre, cantidad, unidad, total, precio_unitario, precio_unitario_usd, cotizacion_dolar, proveedor, estado_pago, contrato_id, canje_usd').or('contrato_id.not.is.null,estado_pago.eq.pendiente').order('fecha'),
+      supabase.from('compras_insumos').select('id, fecha, insumo_nombre, cantidad, unidad, total, precio_unitario, precio_unitario_usd, cotizacion_dolar, proveedor, estado_pago, contrato_id, canje_usd, iva_pct').or('contrato_id.not.is.null,estado_pago.eq.pendiente').order('fecha'),
     ])
     setContratos(data || []); setComprasCanje(cc || [])
   }
   // USD de una compra a cuenta (capital) y su interés hasta una fecha
-  const usdCompra = c => parseFloat(c.canje_usd) || (parseFloat(c.precio_unitario_usd) ? parseFloat(c.precio_unitario_usd) * (parseFloat(c.cantidad) || 0) : (parseFloat(c.total) || 0) / (parseFloat(c.cotizacion_dolar) || cotizacionDolar || 1))
+  // En USD CON IVA: el canje cancela la factura completa del acopio
+  const usdCompra = c => parseFloat(c.canje_usd) || (parseFloat(c.precio_unitario_usd) ? parseFloat(c.precio_unitario_usd) * (parseFloat(c.cantidad) || 0) * (1 + (parseFloat(c.iva_pct) || 0) / 100) : (parseFloat(c.total) || 0) / (parseFloat(c.cotizacion_dolar) || cotizacionDolar || 1))
   const tasaAnual = ct => (parseFloat(ct?.canje_tasa_pct) || 0) * (ct?.canje_tasa_periodo === 'mensual' ? 12 : 1)
   const diasEntre = (a, b) => Math.max(0, Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000))
   const interesUsd = (c, ct, hasta) => usdCompra(c) * tasaAnual(ct) / 100 * diasEntre(c.fecha || hasta, hasta) / 365
@@ -4372,7 +4373,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [monedasPend, setMonedasPend] = useState({})
   const [modosPend, setModosPend] = useState({})
   const [formCompra, setFormCompra] = useState({
-    agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
+    agroquimico_id: '', iva_pct: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
     fecha: hoyLocal(), proveedor: '',
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
     numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
@@ -4446,6 +4447,13 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     setGuardando(false)
   }
 
+  // IVA: los precios del stock y de las compras se cargan SIN IVA (es el costo
+  // real: el IVA se recupera como crédito fiscal). El total de la compra (lo
+  // que se paga y queda como deuda) es CON IVA.
+  const ivaDefault = item => item?.iva_pct != null ? item.iva_pct : (['Semilla', 'Fertilizante'].includes(item?.tipo) ? 10.5 : 21)
+  const factorIva = () => 1 + (parseFloat(formCompra.iva_pct) || 0) / 100
+  const totalConIva = (cant, precio, f = factorIva()) => (cant && precio) ? String(Math.round(parseFloat(cant) * parseFloat(precio) * f)) : null
+
   async function guardarCompra() {
     if (!formCompra.agroquimico_id || !formCompra.cantidad) { alert('Completá insumo y cantidad'); return }
     // Si se cargó precio en dólares, el precio unitario en pesos se calcula
@@ -4459,7 +4467,9 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     // pide confirmar antes de seguir.
     if (cantidad > 500000 && !confirm(`${cantidad.toLocaleString('es-AR')} es una cantidad muy grande para una sola compra — ¿es correcto, o se pasó algún cero de más?`)) return
     const precioUnit = precioUnitDesdeUsd || (formCompra.precio_unitario ? parseFloat(formCompra.precio_unitario) : null)
-    const total = precioUnit ? (formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit)) : null
+    const total = precioUnit ? (formCompra.total ? parseFloat(formCompra.total) : Math.round(cantidad * precioUnit * factorIva())) : null
+    const ivaPct = parseFloat(formCompra.iva_pct) || 0
+    const neto = total != null ? Math.round(total / (1 + ivaPct / 100) * 100) / 100 : null
     const totalPagos = formCompra.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
     if (pagarAhora && Math.abs(total - totalPagos) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${total.toLocaleString('es-AR')})`); return }
     setGuardando(true)
@@ -4475,6 +4485,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     const { data: compraInsertada, error: errIngresoAgro } = await supabase.from('compras_insumos').insert({
       insumo_id: parseInt(formCompra.agroquimico_id), insumo_tipo: 'agro', insumo_nombre: formCompra.insumo_nombre, unidad: formCompra.unidad || null,
       cantidad, precio_unitario: precioUnit, total,
+      iva_pct: ivaPct, neto, iva_monto: total != null ? Math.round((total - neto) * 100) / 100 : null,
       precio_unitario_usd: precioUnitUsd, cotizacion_dolar: precioUnitUsd ? cotizacionDolar : null,
       proveedor: formCompra.proveedor || null, domicilio: formCompra.domicilio || null, localidad: formCompra.localidad || null,
       cuit: formCompra.cuit || null, iva: formCompra.iva || null, cbu: formCompra.cbu || null,
@@ -4556,7 +4567,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     }
 
     setShowFormCompra(false)
-    setFormCompra({ agroquimico_id: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '', credito_es_dolares: false, credito_monto_usd: '' })
+    setFormCompra({ agroquimico_id: '', iva_pct: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '', credito_es_dolares: false, credito_monto_usd: '' })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
@@ -4781,8 +4792,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             <div><Label>Tipo</Label><select value={formStock.tipo} onChange={e => setFormStock({...formStock, tipo: e.target.value})} style={inputStyle}><option value="">— Seleccioná —</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select></div>
             <div><Label>Unidad</Label><select value={formStock.unidad} onChange={e => setFormStock({...formStock, unidad: e.target.value})} style={inputStyle}>{UNIDADES.map(u => <option key={u}>{u}</option>)}</select></div>
             <div><Label>Cantidad inicial</Label><input type="number" value={formStock.cantidad} onChange={e => setFormStock({...formStock, cantidad: e.target.value})} style={inputStyle} /></div>
-            <div><Label>Precio en USD (si aplica)</Label><input type="number" value={formStock.precio_referencia_usd} onChange={e => setFormStock({...formStock, precio_referencia_usd: e.target.value})} placeholder="ej. 8.5" style={{...inputStyle, borderColor: '#97C459'}} /></div>
-            <div><Label>Precio en $ {formStock.precio_referencia_usd ? '(calculado)' : ''}</Label><input type="number" value={formStock.precio_referencia_usd ? Math.round(parseFloat(formStock.precio_referencia_usd) * cotizacionDolar) : formStock.precio_referencia} onChange={e => setFormStock({...formStock, precio_referencia: e.target.value})} disabled={!!formStock.precio_referencia_usd} style={{...inputStyle, background: formStock.precio_referencia_usd ? S.bg : '#fff'}} /></div>
+            <div><Label>Precio en USD sin IVA (si aplica)</Label><input type="number" value={formStock.precio_referencia_usd} onChange={e => setFormStock({...formStock, precio_referencia_usd: e.target.value})} placeholder="ej. 8.5" style={{...inputStyle, borderColor: '#97C459'}} /></div>
+            <div><Label>Precio en $ sin IVA {formStock.precio_referencia_usd ? '(calculado)' : ''}</Label><input type="number" value={formStock.precio_referencia_usd ? Math.round(parseFloat(formStock.precio_referencia_usd) * cotizacionDolar) : formStock.precio_referencia} onChange={e => setFormStock({...formStock, precio_referencia: e.target.value})} disabled={!!formStock.precio_referencia_usd} style={{...inputStyle, background: formStock.precio_referencia_usd ? S.bg : '#fff'}} /></div>
             <div><Label>Stock mínimo alerta</Label><input type="number" value={formStock.minimo_stock} onChange={e => setFormStock({...formStock, minimo_stock: e.target.value})} style={inputStyle} /></div>
             <div><Label>Presentación</Label>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -4812,21 +4823,29 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               <Label>Insumo *</Label>
               <select value={formCompra.agroquimico_id} onChange={e => {
                 const item = stock.find(s => s.id === parseInt(e.target.value))
-                setFormCompra({...formCompra, agroquimico_id: e.target.value, insumo_nombre: item?.insumo || '', unidad: item?.unidad || ''})
+                const ivaN = ivaDefault(item)
+                setFormCompra({...formCompra, agroquimico_id: e.target.value, insumo_nombre: item?.insumo || '', unidad: item?.unidad || '', iva_pct: String(ivaN), total: totalConIva(formCompra.cantidad, formCompra.precio_unitario, 1 + ivaN / 100) || formCompra.total})
               }} style={inputStyle}>
                 <option value="">— Seleccioná —</option>
                 {stock.map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
               </select>
             </div>
-            <div><Label>Cantidad</Label><input type="number" value={formCompra.cantidad} onChange={e => { const c = e.target.value; const t = c && formCompra.precio_unitario ? String(Math.round(parseFloat(c) * parseFloat(formCompra.precio_unitario))) : formCompra.total; setFormCompra({...formCompra, cantidad: c, total: t}) }} style={inputStyle} /></div>
-            <div><Label>Precio en USD (opcional)</Label><input type="number" value={formCompra.precio_unitario_usd} onChange={e => {
+            <div><Label>Cantidad</Label><input type="number" value={formCompra.cantidad} onChange={e => { const c = e.target.value; const t = totalConIva(c, formCompra.precio_unitario) || formCompra.total; setFormCompra({...formCompra, cantidad: c, total: t}) }} style={inputStyle} /></div>
+            <div><Label>Precio en USD sin IVA (opcional)</Label><input type="number" value={formCompra.precio_unitario_usd} onChange={e => {
               const pu = e.target.value
               const puArs = pu ? String(Math.round(parseFloat(pu) * cotizacionDolar)) : ''
-              const t = puArs && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(puArs))) : formCompra.total
+              const t = totalConIva(formCompra.cantidad, puArs) || formCompra.total
               setFormCompra({...formCompra, precio_unitario_usd: pu, precio_unitario: puArs || formCompra.precio_unitario, total: t})
             }} placeholder="ej. 8.5" style={{...inputStyle, borderColor: '#97C459'}} /></div>
-            <div><Label>Precio unitario $ {formCompra.precio_unitario_usd ? '(calculado)' : (!pagarAhora && <span style={{ fontWeight: 400, textTransform: 'none', color: S.hint }}>(opcional, si aún no llegó la factura)</span>)}</Label><input type="number" value={formCompra.precio_unitario} disabled={!!formCompra.precio_unitario_usd} onChange={e => { const p = e.target.value; const t = p && formCompra.cantidad ? String(Math.round(parseFloat(formCompra.cantidad) * parseFloat(p))) : formCompra.total; setFormCompra({...formCompra, precio_unitario: p, total: t}) }} style={{...inputStyle, background: formCompra.precio_unitario_usd ? S.bg : '#fff'}} placeholder={pagarAhora ? '' : 'se puede cargar después, al pagar'} /></div>
-            <div><Label>Total $</Label><input type="number" value={formCompra.total} onChange={e => setFormCompra({...formCompra, total: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Precio unitario $ sin IVA {formCompra.precio_unitario_usd ? '(calculado)' : (!pagarAhora && <span style={{ fontWeight: 400, textTransform: 'none', color: S.hint }}>(opcional, si aún no llegó la factura)</span>)}</Label><input type="number" value={formCompra.precio_unitario} disabled={!!formCompra.precio_unitario_usd} onChange={e => { const p = e.target.value; const t = totalConIva(formCompra.cantidad, p) || formCompra.total; setFormCompra({...formCompra, precio_unitario: p, total: t}) }} style={{...inputStyle, background: formCompra.precio_unitario_usd ? S.bg : '#fff'}} placeholder={pagarAhora ? '' : 'se puede cargar después, al pagar'} /></div>
+            <div><Label>IVA %</Label>
+              <select value={formCompra.iva_pct} onChange={e => { const f = 1 + (parseFloat(e.target.value) || 0) / 100; setFormCompra({ ...formCompra, iva_pct: e.target.value, total: totalConIva(formCompra.cantidad, formCompra.precio_unitario, f) || formCompra.total }) }} style={inputStyle}>
+                <option value="">—</option><option value="21">21%</option><option value="10.5">10,5%</option><option value="27">27%</option><option value="0">Sin IVA (exento / monotributo)</option>
+              </select>
+            </div>
+            <div><Label>Total con IVA $</Label><input type="number" value={formCompra.total} onChange={e => setFormCompra({...formCompra, total: e.target.value})} style={inputStyle} />
+              {formCompra.total && parseFloat(formCompra.iva_pct) > 0 && (() => { const t = parseFloat(formCompra.total) || 0; const ne = t / (1 + parseFloat(formCompra.iva_pct) / 100); return <div style={{ fontSize: 10, color: S.muted, marginTop: 3 }}>Neto ${Math.round(ne).toLocaleString('es-AR')} + IVA ${Math.round(t - ne).toLocaleString('es-AR')}</div> })()}
+            </div>
             <div><Label>Fecha</Label><input type="date" value={formCompra.fecha} onChange={e => setFormCompra({...formCompra, fecha: e.target.value})} style={inputStyle} /></div>
             <div><Label>N° Factura</Label><input type="text" value={formCompra.numero_factura} onChange={e => setFormCompra({...formCompra, numero_factura: e.target.value})} style={inputStyle} /></div>
           </div>
@@ -4972,7 +4991,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead><tr style={{ background: S.bg }}>
-              {['Insumo', 'Tipo', 'Stock', 'Unidad', 'Precio ref.', 'Mínimo', 'Estado', ''].map(h => (
+              {['Insumo', 'Tipo', 'Stock', 'Unidad', 'Precio s/IVA', 'Mínimo', 'Estado', ''].map(h => (
                 <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
               ))}
             </tr></thead>
