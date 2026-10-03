@@ -46,6 +46,21 @@ function enPresentaciones(cant, item) {
   return partes.join(' + ')
 }
 
+// Ingreso SIN IVA de una venta de granos (el total cargado es lo cobrado: con
+// IVA y con retenciones descontadas):
+//  1) el neto de la liquidación, si se cargó;
+//  2) venta interna (al feedlot): no lleva IVA → el total;
+//  3) si el precio pactado × kg no es el total, ese precio es el neto;
+//  4) si no, el total sin el IVA de granos (10,5%) — estimado.
+function netoVentaGrano(v) {
+  if (parseFloat(v.neto) > 0) return parseFloat(v.neto)
+  const total = parseFloat(v.total) || 0
+  if (/ramonda hnos/i.test(v.comprador || '') || /traspaso interno/i.test(v.observaciones || '')) return total
+  const pactado = (parseFloat(v.precio_tn) || 0) * (parseFloat(v.kg) || 0) / 1000
+  if (pactado > 0 && total > 0 && Math.abs(pactado - total) / total > 0.01) return pactado
+  return total / (1 + (parseFloat(v.iva_pct) || 10.5) / 100)
+}
+
 function CampoDolar({ value, onChange, sugerido, style, etiqueta = 'Dólar del día $' }) {
   return (
     <div>
@@ -2963,7 +2978,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   // Paso 2: cuando llega el contrato, se completa el monto final a cobrar y
   // el N° de contrato — recién ahí se registra el ingreso real en caja.
   const [completandoId, setCompletandoId] = useState(null)
-  const [formCompletar, setFormCompletar] = useState({ total_facturado: '', numero_contrato: '' })
+  const [formCompletar, setFormCompletar] = useState({ total_facturado: '', neto: '', numero_contrato: '' })
 
   async function guardarCompletar(venta) {
     const montoLiquidacion = parseFloat(formCompletar.total_facturado)
@@ -2978,9 +2993,13 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
     const contratoFinal = esLiquidacionAdicional
       ? [venta.numero_contrato, formCompletar.numero_contrato].filter(Boolean).join(' + ')
       : (formCompletar.numero_contrato || null)
+    // Neto sin IVA de la liquidación (subtotal): es el ingreso real para la
+    // rentabilidad; el total cobrado trae IVA y retenciones.
+    const netoLiq = parseFloat(formCompletar.neto) || null
+    const netoFinal = netoLiq != null ? (esLiquidacionAdicional ? (parseFloat(venta.neto) || 0) + netoLiq : netoLiq) : (esLiquidacionAdicional ? venta.neto : null)
     const { error } = await supabase.from('ventas_granos').update({
       total: totalFinal, monto_facturado: totalFinal, monto_negro: 0,
-      numero_contrato: contratoFinal, estado: 'confirmado',
+      numero_contrato: contratoFinal, estado: 'confirmado', neto: netoFinal,
     }).eq('id', venta.id)
     if (error) { alert('Error al completar la venta: ' + error.message); setGuardando(false); return }
     // El cobro ya no se registra acá de una sola vez — queda "confirmado,
@@ -2988,7 +3007,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
     // "💰 Registrar cobro", igual que el resto de los módulos.
     await cargar()
     setCompletandoId(null)
-    setFormCompletar({ total_facturado: '', numero_contrato: '' })
+    setFormCompletar({ total_facturado: '', neto: '', numero_contrato: '' })
     setGuardando(false)
   }
 
@@ -3654,6 +3673,9 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
               <Label>{venta.estado === 'confirmado' ? 'Monto de esta liquidación $ (ya con retenciones descontadas)' : 'Total facturado $ (ya con retenciones descontadas)'}</Label>
               <input type="number" value={formCompletar.total_facturado} onChange={e => setFormCompletar({...formCompletar, total_facturado: e.target.value})}
                 placeholder={venta.estado !== 'confirmado' && venta.total ? String(venta.total) : ''} style={{...inputStyle, marginBottom: 12}} autoFocus />
+              <Label>Subtotal sin IVA de la liquidación $ (neto)</Label>
+              <input type="number" value={formCompletar.neto} onChange={e => setFormCompletar({...formCompletar, neto: e.target.value})} placeholder="precio × kg − gastos comerciales" style={{...inputStyle, marginBottom: 4}} />
+              <div style={{ fontSize: 11, color: S.hint, marginBottom: 12 }}>Es el ingreso real de la venta (sin IVA ni retenciones). Se usa en Rentabilidad y Presupuesto. Si lo dejás vacío, se estima.</div>
               <Label>N° Contrato {venta.estado === 'confirmado' ? 'de esta liquidación' : ''}</Label>
               <input type="text" value={formCompletar.numero_contrato} onChange={e => setFormCompletar({...formCompletar, numero_contrato: e.target.value})} style={{...inputStyle, marginBottom: 16}} />
               <div style={{ display: 'flex', gap: 8 }}>
@@ -5236,7 +5258,11 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     // mezclarlas con las reales daría un promedio incorrecto.
     const pool = ventasGranos.filter(v => v.cultivo === cultivo && v.estado !== 'pactada' && (!filtroCampana || v.campana_id === parseInt(filtroCampana)) && v.kg && v.total)
     const kgTot = pool.reduce((s, v) => s + (v.kg || 0), 0)
-    const monTot = pool.reduce((s, v) => s + conv(v.total || 0, v.fecha, v.cotizacion_usd), 0)
+    // Ingreso SIN IVA: el total cargado es lo cobrado (con IVA). Se usa el
+    // precio pactado × kg (los precios de grano son sin IVA); si no hay
+    // precio, el total menos el IVA (10,5% en granos).
+    const netoVenta = v => netoVentaGrano(v)
+    const monTot = pool.reduce((s, v) => s + conv(netoVenta(v), v.fecha, v.cotizacion_usd), 0)
     return kgTot > 0 ? (monTot / (kgTot / 1000)) : null
   }
 

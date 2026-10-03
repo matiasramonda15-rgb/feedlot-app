@@ -78,7 +78,15 @@ export default function PresupuestoCampana({ S, Label, inputStyle, CULTIVOS, cam
   const precioRealUsd = cultivo => {
     const pool = ventasGranos.filter(v => v.cultivo === cultivo && v.estado !== 'pactada' && String(v.campana_id) === String(campanaId) && n(v.kg) && n(v.total))
     const tn = pool.reduce((s, v) => s + n(v.kg) / 1000, 0)
-    const u = pool.reduce((s, v) => s + n(v.total) / dolar(v.fecha, v.cotizacion_usd), 0)
+    // Sin IVA: precio pactado × kg (si no hay precio, total − IVA 10,5%)
+    const neto = v => {
+      if (n(v.neto) > 0) return n(v.neto)
+      if (/ramonda hnos/i.test(v.comprador || '') || /traspaso interno/i.test(v.observaciones || '')) return n(v.total)
+      const pactado = n(v.precio_tn) * n(v.kg) / 1000
+      if (pactado > 0 && n(v.total) > 0 && Math.abs(pactado - n(v.total)) / n(v.total) > 0.01) return pactado
+      return n(v.total) / (1 + (n(v.iva_pct) || 10.5) / 100)
+    }
+    const u = pool.reduce((s, v) => s + neto(v) / dolar(v.fecha, v.cotizacion_usd), 0)
     return tn ? u / tn : null
   }
 
