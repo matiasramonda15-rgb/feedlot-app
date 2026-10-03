@@ -5,6 +5,7 @@ import { registrarServicioTercero } from '../shared/serviciosLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { generarReciboDeCobro } from '../shared/reciboLogic'
 import SelectBuscable from './SelectBuscable'
+import { useBorrador } from '../shared/useBorrador'
 
 const CM = { bg: '#0D1B2A', surface: '#1A2D3D', surface2: '#243447', border: '#2D4357', text: '#E8F0F8', muted: '#7A9AB8', accent: '#5BB8F5', green: '#4CAF82', greenLight: '#1A3D2E', amber: '#F5A623', amberLight: '#3D2E1A', red: '#F55B5B', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -101,8 +102,8 @@ export default function Servicios({ usuario, mobile, nav }) {
   const [filtros, setFiltros] = useState({ campania: '', cliente: '', labor: '', cultivo: '', tipo: '', estado: '', empleado: '' })
 
   // Form nuevo servicio
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
+  const [showForm, setShowForm] = useBorrador('servicio-abierto', false)
+  const [form, setForm] = useBorrador('servicio-form', { campania: campanas[0]?.nombre || '2025/26', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
   const [guardando, setGuardando] = useState(false)
 
   // Mano de obra
@@ -128,7 +129,7 @@ export default function Servicios({ usuario, mobile, nav }) {
   const reciboRef = useRef(null)
 
   // Editar
-  const [editandoId, setEditandoId] = useState(null)
+  const [editandoId, setEditandoId] = useBorrador('servicio-editando', null)
   const [formEdit, setFormEdit] = useState({})
 
   // Descargas mercadería

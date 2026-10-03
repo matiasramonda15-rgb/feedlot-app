@@ -6,6 +6,7 @@ import { generarOrdenDePago } from '../shared/reciboLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { validarDeshacerGasto, revertirEfectosDeGasto } from '../shared/pagosLogic'
 import SelectBuscable from './SelectBuscable'
+import { useBorrador } from '../shared/useBorrador'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -98,13 +99,13 @@ export default function Gastos({ usuario }) {
   const [chequesCartera, setChequesCartera] = useState([])
   const [contactos, setContactos] = useState([])
   const [anticiposDisponibles, setAnticiposDisponibles] = useState([])
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useBorrador('gasto-abierto', false)
   const [guardando, setGuardando] = useState(false)
   const [filtroActividad, setFiltroActividad] = useState('')
   const [filtroAnio, setFiltroAnio] = useState(String(new Date().getFullYear()))
-  const [form, setForm] = useState(FORM_INIT)
-  const [pagarAhora, setPagarAhora] = useState(true)
-  const [editandoId, setEditandoId] = useState(null)
+  const [form, setForm] = useBorrador('gasto-form', FORM_INIT)
+  const [pagarAhora, setPagarAhora] = useBorrador('gasto-pagar-ahora', true)
+  const [editandoId, setEditandoId] = useBorrador('gasto-editando', null)
 
   useEffect(() => { cargar() }, [])
 

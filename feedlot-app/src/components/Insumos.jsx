@@ -6,6 +6,7 @@ import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { generarOrdenDePago } from '../shared/reciboLogic'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 import SelectBuscable from './SelectBuscable'
+import { useBorrador } from '../shared/useBorrador'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -47,7 +48,7 @@ export default function Insumos({ usuario }) {
   const [chequesCartera, setChequesCartera] = useState([])
   const [contactos, setContactos] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useBorrador('insumo-abierto', false)
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [retirandoId, setRetirandoId] = useState(null)
@@ -66,7 +67,7 @@ export default function Insumos({ usuario }) {
   // Traba contra el doble clic: el estado "guardandoPago" tarda un render en
   // deshabilitar el botón, y un doble clic rápido alcanzaba a pagar dos veces.
   const pagandoRef = React.useRef(false)
-  const [form, setForm] = useState({
+  const [form, setForm] = useBorrador('insumo-form', {
     fecha: hoyLocal(),
     tipo: 'alimentacion',
     insumo_id: '',

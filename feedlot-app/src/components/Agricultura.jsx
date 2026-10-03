@@ -9,6 +9,7 @@ import { registrarPagos, unirIds, mensajeErrorPago, validarDeshacerGasto, revert
 import SelectBuscable from './SelectBuscable'
 import PresupuestoCampana from './PresupuestoCampana'
 import GranosUbicaciones from './GranosUbicaciones'
+import { useBorrador } from '../shared/useBorrador'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -421,6 +422,7 @@ function TabCampos({ campos, campanas, planes, campanaActiva, cargar, contactos 
               <Label>Forma de pago arriendo</Label>
               <select value={form.forma_pago_arriendo} onChange={e => setForm({...form, forma_pago_arriendo: e.target.value})} style={inputStyle}>
                 <option value="mensual">Mensual</option>
+                <option value="trimestral">Trimestral</option>
                 <option value="cuatrimestral">Cuatrimestral</option>
                 <option value="semestral">Semestral</option>
                 <option value="anual">Anual</option>
@@ -1245,8 +1247,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // (marcados "dosis chica" en Stock, ej. metsulfurón).
   const redondearDosis = (n, item) => item?.dosis_chica ? Math.round(n * 10000) / 10000 : Math.round(n * 1000) / 1000
   const [tabInner, setTabInner] = useState('ordenes')
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({
+  const [showForm, setShowForm] = useBorrador('agro-orden-abierta', false)
+  const [form, setForm] = useBorrador('agro-orden-form', {
     campo_ids: [], campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(),
     descripcion: '', proveedor: '', es_propia: false, lote_ids: [], superficie_ha: '', ha_por_destino: {}, guardar_ha_trabajables: true,
     productos: [], gastos_propios: [],
@@ -2559,14 +2561,14 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
 
 function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar, contactos }) {
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useBorrador('agro-cosecha-abierta', false)
   const [editandoCosecha, setEditandoCosecha] = useState(null)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
+  const [form, setForm] = useBorrador('agro-cosecha-form', { campo_id: '', campana_id: campanaActiva?.id || '', lote_id: '', cultivo: '', fecha: hoyLocal(), tn_totales: '', rendimiento_tn_ha: '', humedad_pct: '', destino: '', acopio: '', observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [registrosMercaderia, setRegistrosMercaderia] = useState([])
 
@@ -2795,15 +2797,15 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
 
 // ── TAB VENTAS DE GRANOS ──
 function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, ordenes, cargar, stockInsumosAlim, stockAgro, usuario, contactos, soloAlfalfa, cotizacionDolar }) {
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useBorrador('agro-venta-abierta', false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagos, setShowPagos] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [form, setForm] = useState({ contrato_id: '', precio_usd_tn: '', cotizacion_usd: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
+  const [form, setForm] = useBorrador('agro-venta-form', { contrato_id: '', precio_usd_tn: '', cotizacion_usd: '', campana_id: campanaActiva?.id || '', cultivo: '', fecha: hoyLocal(), tn: '', precio_tn: '', comprador: '', observaciones: '', esVentaInternaFeedlot: false, stock_insumo_id: '', esVentaEnNegro: false, total_negro: '' })
   const [guardando, setGuardando] = useState(false)
-  const [editando, setEditando] = useState(null)
+  const [editando, setEditando] = useBorrador('agro-venta-editando', null)
 
   const totalVendido = ventas.reduce((s, v) => s + (v.kg || 0), 0)
   const totalIngresos = ventas.reduce((s, v) => s + (v.total || 0), 0)
@@ -3770,10 +3772,10 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
 
 // ── TAB GASTOS ──
 function TabGastos({ gastos, campos, campanas, campanaActiva, cargar, contactos = [], cotizacionDolar }) {
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: hoyLocal(), proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
+  const [showForm, setShowForm] = useBorrador('agro-gasto-abierto', false)
+  const [form, setForm] = useBorrador('agro-gasto-form', { campo_id: '', campana_id: campanaActiva?.id || '', concepto: '', monto: '', fecha: hoyLocal(), proveedor: '', observaciones: '', pagos: [{ ...PAGO_INIT }] })
   const [guardando, setGuardando] = useState(false)
-  const [editando, setEditando] = useState(null)
+  const [editando, setEditando] = useBorrador('agro-gasto-editando', null)
   const [chequesCartera, setChequesCartera] = useState([])
 
   useEffect(() => {
@@ -4093,22 +4095,24 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
     const freq = c.forma_pago_arriendo || 'mensual'
     const proximas = []
 
-    if (freq === 'mensual') {
-      // Próximos 2 meses
-      for (let i = 0; i <= 1; i++) {
-        const fecha = new Date(hoy.getFullYear(), hoy.getMonth() + i, dia)
-        if (fecha >= hoy) proximas.push(fecha)
-      }
-    } else if (freq === 'semestral') {
-      for (let i = 0; i <= 6; i++) {
-        const fecha = new Date(hoy.getFullYear(), hoy.getMonth() + i, dia)
-        if (fecha >= hoy) { proximas.push(fecha); break }
-      }
-    } else if (freq === 'anual') {
-      const fecha = new Date(hoy.getFullYear(), hoy.getMonth(), dia)
-      if (fecha < hoy) fecha.setFullYear(fecha.getFullYear() + 1)
-      proximas.push(fecha)
+    // Cada cuántos meses se paga. El próximo vencimiento sale del último
+    // registrado de ese campo + el período; si todavía no hay ninguno, es el
+    // próximo día de vencimiento del mes. (Antes semestral/cuatrimestral solo
+    // tomaban el mes siguiente y trimestral no existía.)
+    const MESES = { mensual: 1, trimestral: 3, cuatrimestral: 4, semestral: 6, anual: 12 }
+    const periodo = MESES[freq] || 1
+    const ultimo = vencimientos.filter(v => v.campo_id === c.id && v.fecha_vencimiento).map(v => v.fecha_vencimiento).sort().pop()
+    let fecha
+    if (ultimo) {
+      const u = new Date(ultimo + 'T12:00:00')
+      fecha = new Date(u.getFullYear(), u.getMonth() + periodo, dia)
+      while (fecha < new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())) fecha = new Date(fecha.getFullYear(), fecha.getMonth() + periodo, dia)
+    } else {
+      fecha = new Date(hoy.getFullYear(), hoy.getMonth(), dia)
+      if (fecha < new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())) fecha = new Date(hoy.getFullYear(), hoy.getMonth() + 1, dia)
     }
+    proximas.push(fecha)
+    if (periodo === 1) proximas.push(new Date(fecha.getFullYear(), fecha.getMonth() + 1, dia))
 
     return proximas.map(fecha => ({
       campo: c,
@@ -4210,7 +4214,7 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
                               {v.pagos_detalle && <button onClick={() => generarReciboArriendo(v, campo, v.pagos_detalle)}
                                 style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo</button>}
                             </div>
-                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
+                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: ({ mensual: 1, trimestral: 3, cuatrimestral: 4, semestral: 6, anual: 12 })[campo?.forma_pago_arriendo] || 1, pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
                               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                               💳 Registrar pago
                             </button>
@@ -4240,7 +4244,7 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
                           <div>
                             <Label>Meses a pagar</Label>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                              {[1,2,3,6,12].map(m => (
+                              {[1,2,3,4,6,12].map(m => (
                                 <button key={m} onClick={() => {
                                   const pp = parseFloat(formPago.precio_pizarra) || 0
                                   const tnMes = (campo.arrendamiento_tn_ha || 0) / 12
@@ -4399,7 +4403,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [modosPend, setModosPend] = useState({})
   const [ivasPend, setIvasPend] = useState({})
   const ivaSugeridoAgro = c => { const it = stock.find(x => x.id === c.insumo_id); return it?.iva_pct != null ? it.iva_pct : (['Semilla', 'Fertilizante'].includes(it?.tipo) ? 10.5 : 21) }
-  const [formCompra, setFormCompra] = useState({
+  const [formCompra, setFormCompra] = useBorrador('agro-compra-form', {
     agroquimico_id: '', iva_pct: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
     fecha: hoyLocal(), proveedor: '',
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',

@@ -6,6 +6,7 @@ import { Loader } from './UI'
 import { registrarVenta } from '../shared/ventasLogic'
 import { parsearReporteCaravanas, guardarLecturasCaravana } from '../shared/caravanasLogic'
 import SelectBuscable from './SelectBuscable'
+import { useBorrador } from '../shared/useBorrador'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 
@@ -196,7 +197,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [chequesParalelos, setChequesParalelos] = useState([])
   // Nueva venta - pasos
   const [paso, setPaso] = useState(1)
-  const [form, setForm] = useState({
+  const [form, setForm] = useBorrador('venta-form', {
     fecha: hoyLocal(),
     corral_id: '', cantidad: '', kg_vivo: '', desbaste: '8',
     precio_kg: '', comprador: '', remito: '', forma_pago: 'Contado', observaciones: '',

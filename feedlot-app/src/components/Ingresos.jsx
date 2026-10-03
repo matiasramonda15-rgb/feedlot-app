@@ -10,6 +10,7 @@ import { parsearReporteCaravanas, guardarLecturasCaravana, parsearListaSenasa, g
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { traerTodo } from '../shared/traerTodo'
 import SelectBuscable from './SelectBuscable'
+import { useBorrador } from '../shared/useBorrador'
 
 // Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
@@ -80,13 +81,13 @@ export default function Ingresos({ usuario, mobile, nav }) {
   const [contactos, setContactos] = useState([])
   const [ventasSinGuia, setVentasSinGuia] = useState([])
   const [loading, setLoading] = useState(true)
-  const [vista, setVista] = useState('lista') // 'lista' | 'nuevo' | 'editar'
+  const [vista, setVista] = useBorrador('ing-vista', 'lista') // 'lista' | 'nuevo' | 'editar'
   const [filtroListaIngresos, setFiltroListaIngresos] = useState('')
-  const [editandoLote, setEditandoLote] = useState(null)
+  const [editandoLote, setEditandoLote] = useBorrador('ing-editando', null)
   const [guardando, setGuardando] = useState(false)
 
   // Nuevo ingreso form
-  const [form, setForm] = useState({
+  const [form, setForm] = useBorrador('ing-form', {
     procedencia: '', otraProcedencia: '', categoria: 'Novillos 2-3 años',
     cantidad: '', kg_bascula: '', observaciones: '', corral_cuarentena_id: '', transportista: '',
   })

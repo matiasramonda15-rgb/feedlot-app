@@ -5,6 +5,7 @@ import { PAGO_INIT, ListaPagos, armarDetalleChequesTercero } from './PagoFormula
 import { registrarPagos, unirIds, mensajeErrorPago, buscarFletesDelMismoPago, validarDeshacerFlete, revertirPagoDeFletes } from '../shared/pagosLogic'
 import { generarOrdenDePago } from '../shared/reciboLogic'
 import SelectBuscable from './SelectBuscable'
+import { useBorrador } from '../shared/useBorrador'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -36,8 +37,8 @@ export default function Fletes({ usuario }) {
   const [filtroTransportista, setFiltroTransportista] = useState('')
   const [editandoId, setEditandoId] = useState(null)
   const [formEdit, setFormEdit] = useState({})
-  const [showNuevo, setShowNuevo] = useState(false)
-  const [formNuevo, setFormNuevo] = useState({ lote_id: '', transportista: '', fecha: hoyLocal(), cantidad: '', kg_bruto: '', monto: '', numero_factura: '', observaciones: '' })
+  const [showNuevo, setShowNuevo] = useBorrador('flete-abierto', false)
+  const [formNuevo, setFormNuevo] = useBorrador('flete-form', { lote_id: '', transportista: '', fecha: hoyLocal(), cantidad: '', kg_bruto: '', monto: '', numero_factura: '', observaciones: '' })
   const [pagandoId, setPagandoId] = useState(null)
   const [seleccionados, setSeleccionados] = useState([])
   const [formPago, setFormPago] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT }], contacto_id: '' })
