@@ -960,7 +960,7 @@ export default function Comercial({ usuario }) {
       )}
 
 
-      {tab === 'conciliacion' && <Conciliacion cajaOficial={cajaOficial} cajaParalela={cajaParalela} cheques={cheques} S={S} />}
+      {tab === 'conciliacion' && <Conciliacion cajaOficial={cajaOficial} cajaParalela={cajaParalela} cheques={cheques} S={S} onCambio={cargar} usuario={usuario} />}
 
       {tab === 'dolares' && (() => {
         const saldoUSD = dolares.reduce((a, d) => a + (d.tipo === 'ingreso' ? (d.monto_usd || 0) : -(d.monto_usd || 0)), 0)

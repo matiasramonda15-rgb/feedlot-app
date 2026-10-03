@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { supabase } from '../supabase'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conciliación de cajas: compara lo que dice el sistema a una fecha de corte
@@ -31,7 +32,50 @@ const fmtF = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { da
 const saldoAl = (movs, corte) => movs.filter(m => m.fecha && m.fecha <= corte)
   .reduce((s, m) => s + (m.tipo === 'ingreso' ? 1 : -1) * (parseFloat(m.monto) || 0), 0)
 
-export default function Conciliacion({ cajaOficial, cajaParalela, cheques, S }) {
+export default function Conciliacion({ cajaOficial, cajaParalela, cheques, S, onCambio, usuario }) {
+  // ── Cierres de caja ─────────────────────────────────────────────────────
+  // Al cerrar, se registra un movimiento de ajuste a la fecha de corte por la
+  // diferencia (real − sistema) y el saldo de esa fecha queda FIJO: si
+  // después se carga, corrige o borra un movimiento con fecha anterior al
+  // cierre, la base recalcula sola ese ajuste (así no se vuelve a desfasar,
+  // como pasó con la conciliación del 11/09).
+  const [cierres, setCierres] = useState([])
+  const [cerrando, setCerrando] = useState(false)
+  async function cargarCierres() {
+    const { data } = await supabase.from('cierres_caja').select('*').order('fecha', { ascending: false }).order('id', { ascending: false })
+    setCierres(data || [])
+  }
+  useEffect(() => { cargarCierres() }, [])
+  const ultimoCierre = caja => cierres.find(c => c.caja === caja)
+  async function cerrarCaja(caja, saldoReal, saldoSistema) {
+    const nombre = caja === 'oficial' ? 'Caja 1' : 'Caja 2'
+    const previo = ultimoCierre(caja)
+    if (previo && previo.fecha >= corte) { alert(`${nombre} ya tiene un cierre al ${fmtF(previo.fecha)}. El nuevo cierre tiene que ser posterior.`); return }
+    const dif = Math.round((saldoReal - saldoSistema) * 100) / 100
+    if (!confirm(`¿Cerrar ${nombre} al ${fmtF(corte)}?\n\nSaldo real: ${$(saldoReal)}\nSegún el sistema: ${$(saldoSistema)}\nAjuste: ${dif > 0 ? '+' : ''}${$(dif)}\n\nEl saldo a esa fecha queda fijo.`)) return
+    setCerrando(true)
+    const desc = `Ajuste de conciliación — cierre de ${nombre} al ${fmtF(corte)}. Saldo real: ${$(saldoReal)}`
+    const fila = { fecha: corte, tipo: dif >= 0 ? 'ingreso' : 'egreso', descripcion: desc, monto: Math.abs(dif) }
+    const { data: aj, error } = caja === 'oficial'
+      ? await supabase.from('caja_oficial').insert({ ...fila, categoria: 'Ajuste', forma_pago: 'ajuste' }).select().single()
+      : await supabase.from('caja_paralela').insert(fila).select().single()
+    if (error) { alert('No se pudo registrar el ajuste: ' + error.message); setCerrando(false); return }
+    const { error: e2 } = await supabase.from('cierres_caja').insert({ caja, fecha: corte, saldo_real: saldoReal, ajuste_id: aj.id, observaciones: real.notas || null, registrado_por: usuario?.id || null })
+    if (e2) { await supabase.from(caja === 'oficial' ? 'caja_oficial' : 'caja_paralela').delete().eq('id', aj.id); alert('No se pudo registrar el cierre: ' + e2.message); setCerrando(false); return }
+    await supabase.rpc('recalcular_cierre_caja', { p_caja: caja })
+    setCerrando(false)
+    await cargarCierres()
+    onCambio && onCambio()
+  }
+  async function deshacerCierre(c) {
+    const nombre = c.caja === 'oficial' ? 'Caja 1' : 'Caja 2'
+    if (!confirm(`¿Deshacer el cierre de ${nombre} al ${fmtF(c.fecha)}? Se borra su movimiento de ajuste.`)) return
+    await supabase.from('cierres_caja').delete().eq('id', c.id)
+    if (c.ajuste_id) await supabase.from(c.caja === 'oficial' ? 'caja_oficial' : 'caja_paralela').delete().eq('id', c.ajuste_id)
+    await cargarCierres()
+    onCambio && onCambio()
+  }
+
   const [corte, setCorte] = useState(hoyISO())
   const clave = `conciliacion:${corte}`
   const vacio = { banco: '', efectivo1: '', efectivo2: '', otrosCh1: '', otrosCh2: '', noTengo: [], yaDebitado: [], notas: '' }
@@ -185,6 +229,38 @@ export default function Conciliacion({ cajaOficial, cajaParalela, cheques, S }) 
         <div><div style={{ fontSize: 12, color: S.muted }}>Disponibilidad según el sistema</div><div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace' }}>{$(totalSis)}</div></div>
         <div><div style={{ fontSize: 12, color: S.muted }}>Disponibilidad real</div><div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace' }}>{ambos ? $(totalReal) : '—'}</div></div>
         <div><div style={{ fontSize: 12, color: S.muted }}>Diferencia total</div><div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: !ambos ? S.hint : Math.abs(totalReal - totalSis) < 1 ? S.green : S.amber }}>{ambos ? `${totalReal - totalSis > 0 ? '+' : ''}${$(totalReal - totalSis)}` : 'Completá las dos cajas'}</div></div>
+      </div>
+
+      {/* ── Cerrar la caja ── */}
+      <div style={{ marginTop: 16, background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem 1.25rem' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>🔒 Cerrar la caja al {fmtF(corte)}</div>
+        <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
+          Registra un movimiento de ajuste por la diferencia y deja <b>fijo</b> el saldo a esa fecha: si después alguien carga o corrige algo con fecha anterior, el ajuste se recalcula solo y el saldo de hoy no se corre.
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {[{ caja: 'oficial', nombre: 'Caja 1', r: r1, sis: datos.c1.saldo, color: S.accent }, { caja: 'paralela', nombre: 'Caja 2', r: r2, sis: datos.c2.saldo, color: S.purple }].map(x => {
+            const prev = ultimoCierre(x.caja)
+            const dif = x.r.total - x.sis
+            return (
+              <button key={x.caja} disabled={!x.r.cargado || cerrando} onClick={() => cerrarCaja(x.caja, x.r.total, x.sis)}
+                style={{ padding: '9px 14px', borderRadius: 8, border: `2px solid ${x.r.cargado ? x.color : S.border}`, background: S.surface, cursor: x.r.cargado ? 'pointer' : 'default', textAlign: 'left', opacity: x.r.cargado ? 1 : 0.6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: x.color }}>Cerrar {x.nombre}</div>
+                <div style={{ fontSize: 11, color: S.muted }}>{x.r.cargado ? `ajuste ${dif > 0 ? '+' : ''}${$(dif)}` : 'cargá lo real primero'}{prev ? ` · último cierre ${fmtF(prev.fecha)}` : ''}</div>
+              </button>
+            )
+          })}
+        </div>
+        {cierres.length > 0 && (
+          <div style={{ marginTop: 12, fontSize: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Cierres hechos</div>
+            {cierres.slice(0, 8).map((c, i) => (
+              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '4px 0', borderTop: `1px solid ${S.border}` }}>
+                <span>{c.caja === 'oficial' ? 'Caja 1' : 'Caja 2'} · {fmtF(c.fecha)} · saldo fijo <b>{$(parseFloat(c.saldo_real))}</b></span>
+                {ultimoCierre(c.caja)?.id === c.id && <button onClick={() => deshacerCierre(c)} style={{ padding: '2px 8px', fontSize: 11, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 5, cursor: 'pointer' }}>Deshacer</button>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 16 }}>

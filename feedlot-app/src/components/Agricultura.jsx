@@ -2802,9 +2802,37 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   const CONTRATO_INIT = { fecha: hoyLocal(), campana_id: campanaActiva?.id || '', cultivo: '', comprador: '', numero_contrato: '', toneladas: '', precio_usd_tn: '', entrega_desde: '', entrega_hasta: '', lugar_entrega: '', observaciones: '' }
   const [formContrato, setFormContrato] = useState(CONTRATO_INIT)
   const [verContratosCerrados, setVerContratosCerrados] = useState(false)
+  // Compras a cuenta de un contrato (canje) y las pendientes que se pueden
+  // vincular (se pagan con la entrega del grano, en USD + interés).
+  const [comprasCanje, setComprasCanje] = useState([])
+  const [vinculando, setVinculando] = useState(null) // id del contrato
   async function cargarContratos() {
-    const { data } = await supabase.from('contratos_granos').select('*, campanas(nombre)').order('entrega_desde', { ascending: true, nullsFirst: false }).order('id')
-    setContratos(data || [])
+    const [{ data }, { data: cc }] = await Promise.all([
+      supabase.from('contratos_granos').select('*, campanas(nombre)').order('entrega_desde', { ascending: true, nullsFirst: false }).order('id'),
+      supabase.from('compras_insumos').select('id, fecha, insumo_nombre, cantidad, unidad, total, precio_unitario, precio_unitario_usd, cotizacion_dolar, proveedor, estado_pago, contrato_id, canje_usd').or('contrato_id.not.is.null,estado_pago.eq.pendiente').order('fecha'),
+    ])
+    setContratos(data || []); setComprasCanje(cc || [])
+  }
+  // USD de una compra a cuenta (capital) y su interés hasta una fecha
+  const usdCompra = c => parseFloat(c.canje_usd) || (parseFloat(c.precio_unitario_usd) ? parseFloat(c.precio_unitario_usd) * (parseFloat(c.cantidad) || 0) : (parseFloat(c.total) || 0) / (parseFloat(c.cotizacion_dolar) || cotizacionDolar || 1))
+  const tasaAnual = ct => (parseFloat(ct?.canje_tasa_pct) || 0) * (ct?.canje_tasa_periodo === 'mensual' ? 12 : 1)
+  const diasEntre = (a, b) => Math.max(0, Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000))
+  const interesUsd = (c, ct, hasta) => usdCompra(c) * tasaAnual(ct) / 100 * diasEntre(c.fecha || hasta, hasta) / 365
+  const canjeDeContrato = (ct, hasta) => {
+    const pend = comprasCanje.filter(c => c.contrato_id === ct.id && c.estado_pago === 'pendiente')
+    const capital = pend.reduce((t, c) => t + usdCompra(c), 0)
+    const interes = pend.reduce((t, c) => t + interesUsd(c, ct, hasta), 0)
+    return { pend, capital, interes, total: capital + interes, tn: ct.precio_usd_tn ? (capital + interes) / ct.precio_usd_tn : 0 }
+  }
+  async function vincularCompra(c, ct) {
+    const usd = usdCompra(c)
+    const { error } = await supabase.from('compras_insumos').update({ contrato_id: ct.id, canje_usd: Math.round(usd * 100) / 100 }).eq('id', c.id)
+    if (error) { alert('No se pudo vincular: ' + error.message); return }
+    cargarContratos()
+  }
+  async function desvincularCompra(c) {
+    await supabase.from('compras_insumos').update({ contrato_id: null, canje_usd: null }).eq('id', c.id)
+    cargarContratos()
   }
   useEffect(() => { cargarContratos() }, [ventas.length])
   const tnEntregadas = c => ventas.filter(v => v.contrato_id === c.id).reduce((s, v) => s + (parseFloat(v.kg) || 0), 0) / 1000
@@ -3025,6 +3053,24 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
             await supabase.from('fletes').update({ estado_pago: 'pagado' }).eq('id', id)
           }
         }
+        // Canje del contrato: lo que el canje cubre por encima de las compras
+        // (en pesos al dólar de su fecha) es interés + diferencia de cambio.
+        // Queda como gasto financiero de Agricultura, pagado con el mismo canje.
+        if (pago.canje_contrato) {
+          const cc = pago.canje_contrato
+          const dif = Math.round(monto - (cc.pesos_deudas || 0))
+          if (dif) {
+            const { error: eG } = await supabase.from('gastos_generales').insert({
+              fecha: formCobro.fecha, actividad: 'Agricultura', categoria: 'Intereses y diferencia de cambio',
+              descripcion: `Canje contrato ${venta.cultivo} ${venta.comprador || ''}: interés USD ${cc.interes_usd} + diferencia de cambio`,
+              monto: dif, proveedor: venta.comprador || null, campana_id: venta.campana_id || null,
+              estado_pago: 'pagado', forma_pago: 'canje', cotizacion_usd: cc.dolar || null,
+              pagos_detalle: [{ tipo: 'canje', monto: dif, canje_detalle: `Incluido en el canje de la venta ${venta.cultivo}` }],
+            })
+            if (eG) alert('El canje se registró, pero no se pudo cargar el interés como gasto: ' + eG.message)
+          }
+          await supabase.from('compras_insumos').update({ contrato_id: cc.contrato_id }).in('id', (pago.canje_deuda_ids || []).map(x => parseInt(x.split('-')[1])))
+        }
         continue
       }
       const desc = `Cobro venta ${venta.cultivo} — ${venta.comprador || 'sin comprador'} · ${(venta.kg / 1000).toLocaleString('es-AR')} tn`
@@ -3170,6 +3216,62 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                   <div style={{ height: 6, background: S.bg, borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
                     <div style={{ width: `${avance}%`, height: '100%', background: c.estado === 'cumplido' ? S.green : S.accent }} />
                   </div>
+                  {(() => {
+                    // ── Insumos a cuenta (canje) ──
+                    const vinc = comprasCanje.filter(x => x.contrato_id === c.id)
+                    const libres = comprasCanje.filter(x => !x.contrato_id && x.estado_pago === 'pendiente' && c.comprador && x.proveedor === c.comprador)
+                    if (!vinc.length && !libres.length && vinculando !== c.id) return null
+                    const hoyS = hoyLocal()
+                    const cj = canjeDeContrato(c, hoyS)
+                    const u = v => `USD ${v.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+                    return (
+                      <div style={{ marginTop: 10, padding: '8px 10px', background: S.bg, borderRadius: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700 }}>🔁 Insumos a cuenta (canje)</div>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11 }}>
+                            Tasa
+                            <input type="number" step="0.01" defaultValue={c.canje_tasa_pct || ''} placeholder="0" onBlur={async e => { const v = parseFloat(e.target.value) || null; if (v !== (parseFloat(c.canje_tasa_pct) || null)) { await supabase.from('contratos_granos').update({ canje_tasa_pct: v }).eq('id', c.id); cargarContratos() } }}
+                              style={{ width: 60, padding: '3px 6px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 4 }} />
+                            <select value={c.canje_tasa_periodo || 'anual'} onChange={async e => { await supabase.from('contratos_granos').update({ canje_tasa_periodo: e.target.value }).eq('id', c.id); cargarContratos() }}
+                              style={{ padding: '3px 4px', fontSize: 11, border: `1px solid ${S.border}`, borderRadius: 4 }}>
+                              <option value="anual">% anual</option><option value="mensual">% mensual</option>
+                            </select>
+                            {libres.length > 0 && <button onClick={() => setVinculando(vinculando === c.id ? null : c.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.surface, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Vincular compras</button>}
+                          </div>
+                        </div>
+                        {vinculando === c.id && (
+                          <div style={{ marginTop: 6, padding: '6px 8px', background: S.surface, border: `1px dashed ${S.accent}`, borderRadius: 6 }}>
+                            <div style={{ fontSize: 11, color: S.muted, marginBottom: 4 }}>Compras pendientes de {c.comprador} — tocá las que se pagan con este contrato:</div>
+                            {libres.map(x => (
+                              <div key={x.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '3px 0' }}>
+                                <span>{fmtF(x.fecha)} · {x.insumo_nombre} · {x.cantidad} {x.unidad || ''}</span>
+                                <span>{u(usdCompra(x))} <button onClick={() => vincularCompra(x, c)} style={{ marginLeft: 6, padding: '2px 8px', fontSize: 11, background: S.accent, border: 'none', color: '#fff', borderRadius: 4, cursor: 'pointer' }}>Vincular</button></span>
+                              </div>
+                            ))}
+                            {!libres.length && <div style={{ fontSize: 11, color: S.hint }}>No hay compras pendientes de {c.comprador} para vincular.</div>}
+                          </div>
+                        )}
+                        {vinc.length > 0 && (
+                          <div style={{ marginTop: 6 }}>
+                            {vinc.map(x => (
+                              <div key={x.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '2px 0', color: x.estado_pago === 'pagado' ? S.hint : S.text }}>
+                                <span>{fmtF(x.fecha)} · {x.insumo_nombre}{x.estado_pago === 'pagado' ? ' · ✓ cancelado' : ''}</span>
+                                <span style={{ fontFamily: 'monospace' }}>{u(usdCompra(x))}{x.estado_pago !== 'pagado' && tasaAnual(c) ? ` + int. ${u(interesUsd(x, c, hoyS))}` : ''}
+                                  {x.estado_pago !== 'pagado' && <button onClick={() => desvincularCompra(x)} title="Desvincular" style={{ marginLeft: 6, padding: '0 6px', fontSize: 11, background: 'none', border: 'none', color: S.red, cursor: 'pointer' }}>✕</button>}
+                                </span>
+                              </div>
+                            ))}
+                            {cj.pend.length > 0 && (
+                              <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${S.border}`, fontSize: 12 }}>
+                                A cancelar hoy: <b>{u(cj.total)}</b> ({u(cj.capital)} + interés {u(cj.interes)}) = <b>{cj.tn.toLocaleString('es-AR', { maximumFractionDigits: 1 })} tn</b> de {c.cultivo.toLowerCase()} al precio del contrato
+                                {' · '}quedan <b style={{ color: S.green }}>{Math.max(0, tnPendientes(c) - cj.tn).toLocaleString('es-AR', { maximumFractionDigits: 1 })} tn</b> para cobrar en plata
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>
                     Entregado {entregadas.toLocaleString('es-AR', { maximumFractionDigits: 2 })} de {total.toLocaleString('es-AR')} tn
                     {entregas.length > 0 && ` · ${entregas.length} entrega${entregas.length !== 1 ? 's' : ''}: ` + entregas.map(v => `${fmtF(v.fecha)} ${(v.kg / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn${v.cotizacion_usd ? ` (dólar $${Number(v.cotizacion_usd).toLocaleString('es-AR')})` : ''}`).join(' · ')}
@@ -3575,6 +3677,34 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
               <div style={{ fontSize: 12, color: S.muted, marginBottom: 4 }}>{venta.cultivo} · {(venta.kg / 1000).toLocaleString('es-AR')} tn · {venta.comprador || 'sin comprador'}</div>
               <div style={{ fontSize: 12, color: S.amber, marginBottom: 16 }}>Pendiente de cobro: ${pendiente.toLocaleString('es-AR')} de ${(venta.total || 0).toLocaleString('es-AR')}</div>
               <div><Label>Fecha</Label><input type="date" value={formCobro.fecha} onChange={e => setFormCobro({...formCobro, fecha: e.target.value})} style={{...inputStyle, marginBottom: 12}} /></div>
+              {(() => {
+                // Canje del contrato: insumos a cuenta + interés, en USD al dólar del día
+                const ct = venta.contrato_id ? contratos.find(x => x.id === venta.contrato_id) : null
+                if (!ct) return null
+                const cj = canjeDeContrato(ct, formCobro.fecha || hoyLocal())
+                if (!cj.pend.length) return null
+                const dolar = parseFloat(formCobro.dolar_canje) || parseFloat(venta.cotizacion_usd) || cotizacionDolar || 0
+                const pesos = Math.round(cj.total * dolar)
+                const yaUsado = formCobro.pagos.some(pp => pp.canje_contrato)
+                return (
+                  <div style={{ background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 12 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>🔁 Canje del contrato</div>
+                    <div>{cj.pend.length} compra{cj.pend.length !== 1 ? 's' : ''} a cuenta: USD {cj.capital.toLocaleString('es-AR', { maximumFractionDigits: 2 })} + interés USD {cj.interes.toLocaleString('es-AR', { maximumFractionDigits: 2 })} ({tasaAnual(ct)}% anual hasta el {new Date((formCobro.fecha || hoyLocal()) + 'T12:00:00').toLocaleDateString('es-AR')})</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+                      Dólar <input type="number" value={formCobro.dolar_canje ?? (dolar || '')} onChange={e => setFormCobro({ ...formCobro, dolar_canje: e.target.value })} style={{ width: 90, padding: '4px 6px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 4 }} />
+                      = <b>${pesos.toLocaleString('es-AR')}</b>
+                      <button disabled={yaUsado || !dolar} onClick={() => {
+                        const linea = { ...PAGO_INIT_AGRO, tipo: 'canje', monto: String(pesos), canje_deuda_ids: cj.pend.map(c => `ci-${c.id}`),
+                          canje_detalle: `Canje contrato ${ct.cultivo} ${ct.comprador || ''}: insumos USD ${cj.capital.toFixed(2)} + interés USD ${cj.interes.toFixed(2)} × $${dolar}`,
+                          canje_contrato: { contrato_id: ct.id, capital_usd: Math.round(cj.capital * 100) / 100, interes_usd: Math.round(cj.interes * 100) / 100, dolar, pesos_deudas: cj.pend.reduce((t, c) => t + (parseFloat(c.total) || 0), 0) } }
+                        const resto = formCobro.pagos.filter(pp => parseFloat(pp.monto) > 0)
+                        setFormCobro({ ...formCobro, pagos: [linea, ...resto] })
+                      }} style={{ padding: '5px 10px', fontSize: 12, fontWeight: 600, background: yaUsado ? S.bg : S.accent, border: 'none', color: yaUsado ? S.hint : '#fff', borderRadius: 5, cursor: yaUsado ? 'default' : 'pointer' }}>{yaUsado ? '✓ Agregado' : 'Usar este canje'}</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>Las compras quedan pagadas con canje; el interés y la diferencia de dólar se registran solos como gasto financiero de Agricultura.</div>
+                  </div>
+                )
+              })()}
               <Label>Formas de cobro</Label>
               <ListaPagos pagos={formCobro.pagos} onChangePagos={n => setFormCobro({...formCobro, pagos: n})} chequesCartera={[]} S={S} deudasPendientes={deudasContacto}
                 modoCobro contraparte={venta.comprador || ''}
