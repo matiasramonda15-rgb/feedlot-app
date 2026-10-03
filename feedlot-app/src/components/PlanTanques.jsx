@@ -39,7 +39,7 @@ export function planTanques({ destinos, caldo, tanque, modo }) {
 }
 
 const fmt = (x, d = 1) => (x == null || !isFinite(x)) ? '—' : x.toLocaleString('es-AR', { maximumFractionDigits: d })
-const fmtCant = x => fmt(x, x < 1 ? 3 : (x < 10 ? 2 : 1))
+const fmtCant = x => { const r = Math.round(x * 100) / 100; return fmt(Math.abs(r - Math.round(r)) < 0.011 ? Math.round(r) : r, r < 1 ? 3 : (r < 10 ? 2 : 1)) }
 function enEnvases(cant, item) {
   const p = parseFloat(item?.presentacion_cant), q = parseFloat(cant)
   if (!p || !q) return ''
@@ -74,11 +74,13 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
     const g = {}
     cand.forEach(o => {
       const prods = (o.productos || []).filter(p => p.id && parseFloat(p.dosis) > 0)
-        .map(p => ({ id: String(p.id), dosis: Math.round(parseFloat(p.dosis) * 10000) / 10000, contratista: !!p.aporta_contratista }))
+        .map(p => ({ id: String(p.id), dosis: Math.round(parseFloat(p.dosis) * 10000) / 10000, exacta: parseFloat(p.dosis_exacta) || parseFloat(p.dosis), contratista: !!p.aporta_contratista }))
         .sort((a, b) => a.id.localeCompare(b.id))
       if (!prods.length) return
       const key = `${o.tipo}|` + prods.map(p => `${p.id}:${p.dosis}`).join(',')
-      if (!g[key]) g[key] = { key, tipo: o.tipo, prods, ordenes: [] }
+      // Para calcular cantidades se usa la dosis exacta (la que sale del total
+      // cargado en la orden); la de 3 decimales es solo para mostrar.
+      if (!g[key]) g[key] = { key, tipo: o.tipo, prods: prods.map(p => ({ ...p, dosisMostrar: p.dosis, dosis: p.exacta })), ordenes: [] }
       g[key].ordenes.push(o)
     })
     return Object.values(g).sort((a, b) => b.ordenes.length - a.ordenes.length)
@@ -227,7 +229,7 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ fontSize: 13 }}>
                 <b>Mezcla {gi + 1}</b> <span style={{ color: S.muted }}>· {g.tipo === 'Fertilizacion' ? 'fertilización' : 'pulverización'} · {g.ordenes.length} orden{g.ordenes.length !== 1 ? 'es' : ''}</span>
-                <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>{g.prods.map(p => `${item(p.id)?.insumo || '?'} ${fmtCant(p.dosis)} ${item(p.id)?.unidad === 'kg' ? 'kg' : 'L'}/ha`).join(' · ')}</div>
+                <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>{g.prods.map(p => `${item(p.id)?.insumo || '?'} ${fmtCant(p.dosisMostrar)} ${item(p.id)?.unidad === 'kg' ? 'kg' : 'L'}/ha`).join(' · ')}</div>
               </div>
               <button onClick={() => setGrupoSel(abierto ? null : g.key)} style={btn(abierto)}>{abierto ? 'Ocultar plan' : `Armar plan · ${fmt(ha)} ha`}</button>
             </div>

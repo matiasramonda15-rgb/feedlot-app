@@ -1277,6 +1277,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   }
   // Dosis por ha: 3 decimales; 4 para los productos de dosis muy baja
   // (marcados "dosis chica" en Stock, ej. metsulfurón).
+  // La dosis se MUESTRA con 3 decimales, pero si se cargó el total, la
+  // dosis exacta (total ÷ ha) queda guardada aparte (dosis_exacta) y es la
+  // que se usa para calcular: si no, 10 L en 140 ha daba 0,071 × 140 = 9,94.
+  const dosisCalc = p => parseFloat(p.dosis_exacta) || parseFloat(p.dosis) || 0
   const redondearDosis = (n, item) => (item?.dosis_chica || Math.abs(n) < 0.01) ? Math.round(n * 10000) / 10000 : Math.round(n * 1000) / 1000
   const [tabInner, setTabInner] = useState('ordenes')
   const [showForm, setShowForm] = useBorrador('agro-orden-abierta', false)
@@ -1410,7 +1414,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const dolar = parseFloat(o.cotizacion_usd) || cotizacionDolar || null
       const precioArs = parseFloat(item?.precio_referencia) || null
       const precioUsd = parseFloat(item?.precio_referencia_usd) || (precioArs && dolar ? Math.round(precioArs / dolar * 10000) / 10000 : null)
-      productos.push({ ...p, total: String(tot), dosis: ha ? String(redondearDosis(tot / ha, item)) : p.dosis, descontado_real: descontado, precio_ars: precioArs, precio_usd: precioUsd })
+      productos.push({ ...p, total: String(tot), dosis: ha ? String(redondearDosis(tot / ha, item)) : p.dosis, dosis_exacta: ha ? tot / ha : p.dosis_exacta, descontado_real: descontado, precio_ars: precioArs, precio_usd: precioUsd })
     }
     let cajaId = o.caja_oficial_id || null
     const gp = (o.gastos_propios || []).reduce((s, g) => s + (parseFloat(g.monto) || 0), 0)
@@ -1472,7 +1476,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       if (!p.id || !p.dosis || !superficie || form.emitir || p.aporta_contratista) continue
       const stockItem = stockAgro.find(s => String(s.id) === String(p.id))
       const dosisChica = stockItem?.dosis_chica
-      const usado = redondearMedio(parseFloat(p.dosis) * superficie, dosisChica)
+      const usado = redondearMedio(dosisCalc(p) * superficie, dosisChica)
       const stockDisponible = parseFloat(stockItem?.cantidad) || 0
       if (usado > stockDisponible) {
         if (!confirm(`Ojo: no hay suficiente stock de ${stockItem?.insumo || 'este producto'} — hacían falta ${usado.toLocaleString('es-AR')} y solo hay ${stockDisponible.toLocaleString('es-AR')}. El stock va a quedar en negativo hasta que lo repongas. ¿Seguir igual?`)) { setGuardando(false); return }
@@ -1519,7 +1523,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         const dolarOrden = parseFloat(form.cotizacion_usd) || cotizacionDolar || null
         const precioArs = parseFloat(itemStock?.precio_referencia) || null
         const precioUsd = parseFloat(itemStock?.precio_referencia_usd) || (precioArs && dolarOrden ? Math.round(precioArs / dolarOrden * 10000) / 10000 : null)
-        return { ...p, total: p.dosis ? String(redondearMedio(parseFloat(p.dosis) * superficieItem, dosisChica)) : p.total, descontado_real: descontadoRealItem, precio_ars: precioArs, precio_usd: precioUsd }
+        return { ...p, total: p.dosis ? String(redondearMedio(dosisCalc(p) * superficieItem, dosisChica)) : p.total, descontado_real: descontadoRealItem, precio_ars: precioArs, precio_usd: precioUsd }
       })
       const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
         campo_id: campoId, campana_id: parseInt(form.campana_id) || null,
@@ -1855,7 +1859,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <div>
                     <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Dosis / ha{modo === 'total' ? ' (calculada)' : ''}</div>
                     {modo === 'dosis' ? (
-                      <input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value })}
+                      <input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value, dosis_exacta: null })}
                         placeholder="ej. 1.5" style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
                     ) : (
                       <div style={{ padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.muted, background: CM.surface2, borderRadius: 6, border: `1px solid ${CM.border}` }}>
@@ -1866,7 +1870,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <div>
                     <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Total a usar{modo === 'dosis' ? ' (calculado)' : ''}</div>
                     {modo === 'total' ? (
-                      <input type="number" value={p.total} onChange={e => updProducto(idx, { total: e.target.value, dosis: superficie ? String(redondearDosis((parseFloat(e.target.value)||0) / superficie, item)) : p.dosis })}
+                      <input type="number" value={p.total} onChange={e => updProducto(idx, { total: e.target.value, dosis: superficie ? String(redondearDosis((parseFloat(e.target.value)||0) / superficie, item)) : p.dosis, dosis_exacta: superficie ? (parseFloat(e.target.value) || 0) / superficie : null })}
                         placeholder={`ej. 30 ${p.unidad || item?.unidad || ''}`}
                         style={{ width: '100%', background: CM.surface2, border: `1px solid ${alcanza ? CM.green : CM.red}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: alcanza ? CM.green : CM.red, boxSizing: 'border-box' }} />
                     ) : (
@@ -2078,7 +2082,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                       <div><Label>Dosis/ha</Label><input type="number" value={p.dosis} onChange={e => {
                         const dosis = e.target.value
                         const total = dosis && superficie ? String((parseFloat(dosis) * superficie).toFixed(2)) : ''
-                        updProducto(idx, { dosis, total })
+                        updProducto(idx, { dosis, total, dosis_exacta: null })
                       }} style={inputStyle} placeholder="ej. 1.5" /></div>
                       <div><Label>Unidad</Label><input type="text" value={p.unidad || item?.unidad || ''} onChange={e => updProducto(idx, { unidad: e.target.value })} style={inputStyle} />
                         {!form.es_propia && (
@@ -2095,7 +2099,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           onChange={e => {
                             const total = e.target.value
                             const dosis = total && superficie ? String(redondearDosis(parseFloat(total) / superficie, item)) : ''
-                            updProducto(idx, { total, dosis })
+                            updProducto(idx, { total, dosis, dosis_exacta: total && superficie ? parseFloat(total) / superficie : null })
                           }}
                           style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 600, color: S.green }}
                           placeholder={superficie ? `ej. ${superficie}` : '—'} />
