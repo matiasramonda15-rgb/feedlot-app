@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../supabase'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,12 +81,47 @@ export default function Conciliacion({ cajaOficial, cajaParalela, cheques, S, on
   const vacio = { banco: '', efectivo1: '', efectivo2: '', otrosCh1: '', otrosCh2: '', noTengo: [], yaDebitado: [], notas: '' }
   const [real, setReal] = useState(vacio)
 
-  // Lo cargado se guarda en este navegador, por fecha de corte.
+  // Lo cargado se guarda EN EL SISTEMA (tabla conciliaciones_caja), una
+  // planilla por fecha de corte: se ve desde cualquier computadora y usuario.
+  // (Antes quedaba en el navegador donde se cargó.) Si en este navegador
+  // había una planilla vieja de esa fecha y en el sistema no, se sube sola.
+  const [estadoGuardado, setEstadoGuardado] = useState('') // '', 'guardando', 'guardado', 'error'
+  const [actualizado, setActualizado] = useState(null)
+  const [guardadas, setGuardadas] = useState([])
+  const temporizador = useRef(null)
+  async function cargarGuardadas() {
+    const { data } = await supabase.from('conciliaciones_caja').select('fecha_corte, actualizado_en').order('fecha_corte', { ascending: false }).limit(24)
+    setGuardadas(data || [])
+  }
   useEffect(() => {
-    try { const g = localStorage.getItem(clave); setReal(g ? { ...vacio, ...JSON.parse(g) } : vacio) } catch (e) { setReal(vacio) }
+    let cancelado = false
+    ;(async () => {
+      const { data } = await supabase.from('conciliaciones_caja').select('datos, actualizado_en').eq('fecha_corte', corte).maybeSingle()
+      if (cancelado) return
+      if (data) { setReal({ ...vacio, ...(data.datos || {}) }); setActualizado(data.actualizado_en); setEstadoGuardado('guardado'); return }
+      let local = null
+      try { const g = localStorage.getItem(clave); if (g) local = { ...vacio, ...JSON.parse(g) } } catch (e) { /* sin almacenamiento */ }
+      setReal(local || vacio); setActualizado(null); setEstadoGuardado('')
+      if (local) guardarEnSistema(local)
+    })()
+    cargarGuardadas()
+    return () => { cancelado = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clave])
-  const guardar = (nuevo) => { setReal(nuevo); try { localStorage.setItem(clave, JSON.stringify(nuevo)) } catch (e) { /* sin almacenamiento: queda en pantalla */ } }
+  }, [corte])
+  async function guardarEnSistema(datosNuevos) {
+    setEstadoGuardado('guardando')
+    const ahora = new Date().toISOString()
+    const { error } = await supabase.from('conciliaciones_caja').upsert({ fecha_corte: corte, datos: datosNuevos, actualizado_por: usuario?.id || null, actualizado_en: ahora }, { onConflict: 'fecha_corte' })
+    if (error) { setEstadoGuardado('error'); return }
+    setEstadoGuardado('guardado'); setActualizado(ahora); cargarGuardadas()
+  }
+  // Cada cambio se guarda medio segundo después de dejar de escribir.
+  const guardar = (nuevo) => {
+    setReal(nuevo)
+    clearTimeout(temporizador.current)
+    setEstadoGuardado('guardando')
+    temporizador.current = setTimeout(() => guardarEnSistema(nuevo), 600)
+  }
   const set = (campo, valor) => guardar({ ...real, [campo]: valor })
   const alternar = (campo, id) => guardar({ ...real, [campo]: real[campo].includes(id) ? real[campo].filter(x => x !== id) : [...real[campo], id] })
 
@@ -201,7 +236,7 @@ export default function Conciliacion({ cajaOficial, cajaParalela, cheques, S, on
         <div style={{ maxWidth: 560 }}>
           <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Conciliación de cajas</div>
           <div style={{ fontSize: 13, color: S.muted, lineHeight: 1.5 }}>
-            Cargá lo que tenés en la realidad a la fecha de corte y el sistema te muestra la diferencia de cada caja. No modifica nada: lo que cargás queda guardado en esta computadora.
+            Cargá lo que tenés en la realidad a la fecha de corte y el sistema te muestra la diferencia de cada caja. Lo que cargás se guarda solo en el sistema: se ve desde cualquier computadora y usuario, y no toca las cajas hasta que las cierres.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
@@ -212,6 +247,21 @@ export default function Conciliacion({ cajaOficial, cajaParalela, cheques, S, on
           <button onClick={() => window.print()} style={{ padding: '8px 14px', fontSize: 13, background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, cursor: 'pointer' }}>Imprimir</button>
           <button onClick={() => { if (confirm('¿Borrar todo lo cargado para esta fecha de corte?')) guardar(vacio) }} style={{ padding: '8px 14px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Empezar de cero</button>
         </div>
+      </div>
+
+      {/* Estado de guardado + planillas guardadas */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: -6, marginBottom: '1rem', fontSize: 12 }}>
+        <span style={{ color: estadoGuardado === 'error' ? S.red : estadoGuardado === 'guardando' ? S.muted : S.green }}>
+          {estadoGuardado === 'guardando' ? 'Guardando…' : estadoGuardado === 'error' ? '⚠ No se pudo guardar (revisá la conexión)' : estadoGuardado === 'guardado' ? `✓ Guardado en el sistema${actualizado ? ` · ${new Date(actualizado).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Todavía no hay nada cargado para esta fecha'}
+        </span>
+        {guardadas.filter(g => g.fecha_corte !== corte).length > 0 && (
+          <span style={{ color: S.muted }}>
+            · Otras conciliaciones:{' '}
+            {guardadas.filter(g => g.fecha_corte !== corte).slice(0, 8).map(g => (
+              <button key={g.fecha_corte} onClick={() => setCorte(g.fecha_corte)} style={{ marginLeft: 4, padding: '2px 8px', fontSize: 11, background: S.surface, border: `1px solid ${S.border}`, borderRadius: 5, cursor: 'pointer', color: S.accent }}>{fmtF(g.fecha_corte)}</button>
+            ))}
+          </span>
+        )}
       </div>
 
       {!esHoy && (
