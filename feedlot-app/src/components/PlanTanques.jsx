@@ -44,7 +44,9 @@ function enEnvases(cant, item) {
   const p = parseFloat(item?.presentacion_cant), q = parseFloat(cant)
   if (!p || !q) return ''
   const n = Math.ceil(q / p - 1e-9)
-  return `${n} ${item.presentacion_nombre || 'envase'}${n !== 1 ? (/[aeiou]$/i.test(item.presentacion_nombre || 'envase') ? 's' : 'es') : ''} de ${fmt(p, 1)} ${item.unidad || ''}`.trim()
+  const nom = item.presentacion_nombre || 'envase'
+  const plural = n === 1 ? nom : (/ón$/.test(nom) ? nom.replace(/ón$/, 'ones') : (/[aeiou]$/i.test(nom) ? nom + 's' : nom + 'es'))
+  return `${n} ${plural} de ${fmt(p, 1)} ${item.unidad || ''}`.trim()
 }
 
 export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inputStyle, onCerrar, mobile = false }) {
@@ -89,6 +91,77 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
   const destinos = ordenesGrupo.map(o => ({ nombre: nombreDe(o), ha: parseFloat(o.superficie_ha_real) || 0 }))
   const plan = planTanques({ destinos, caldo, tanque, modo })
   const item = id => stockAgro.find(s => String(s.id) === String(id))
+
+  // ── Hoja como IMAGEN (PNG) para mandar por WhatsApp ─────────────────────
+  // Se dibuja en un canvas (sin librerías) y se comparte con el menú del
+  // celular (WhatsApp, mail…). Si el navegador no puede compartir archivos,
+  // se descarga.
+  const [enviando, setEnviando] = useState(false)
+  async function enviarImagen() {
+    if (!grupo || !plan.tanques.length) return
+    setEnviando(true)
+    try {
+      const W = 1080, M = 56
+      const filas = []
+      const L = (texto, o = {}) => filas.push({ texto, size: 30, peso: 'normal', color: '#222', gap: 8, ...o })
+      const unidad = p => item(p.id)?.unidad === 'kg' ? 'kg' : 'L'
+      const haCarga = modo === 'iguales' ? plan.total / plan.tanques.length : plan.haLleno
+      L(`Plan de tanques — ${grupo.tipo === 'Fertilizacion' ? 'Fertilización' : 'Pulverización'}`, { size: 46, peso: 'bold', color: '#1A3D6B', gap: 6 })
+      L(`${new Date().toLocaleDateString('es-AR')} · ${fmt(plan.total)} ha · caldo ${fmt(parseFloat(caldo), 0)} L/ha · tanque ${fmt(parseFloat(tanque), 0)} L`, { size: 28, color: '#555' })
+      L(modo === 'iguales' ? `${plan.tanques.length} tanques iguales de ${fmt(haCarga)} ha (${fmt(haCarga * parseFloat(caldo), 0)} L)` : `${plan.tanques.length} tanques · ${fmt(plan.haLleno)} ha por tanque lleno`, { size: 30, peso: 'bold', gap: 26 })
+      L('RECORRIDO', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
+      destinos.forEach((d, i) => L(`${i + 1}. ${d.nombre} — ${fmt(d.ha)} ha`, { gap: 4, check: true }))
+      filas[filas.length - 1].gap = 26
+      L(modo === 'iguales' ? 'CARGA DE CADA TANQUE (todos iguales)' : 'CARGA DE CADA TANQUE LLENO', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
+      grupo.prods.forEach(p => L(`${item(p.id)?.insumo || '—'}:  ${fmtCant(p.dosis * haCarga)} ${unidad(p)}${p.contratista ? ' (lo pone el contratista)' : ''}`, { size: 32, peso: 'bold', gap: 4 }))
+      filas[filas.length - 1].gap = 26
+      L('TANQUE POR TANQUE', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 8 })
+      plan.tanques.forEach((t, i) => {
+        L(`Tanque ${i + 1}${t.parcial ? ' — PARCIAL (carga distinta)' : ''} · ${fmt(t.ha)} ha · ${fmt(t.litros, 0)} L`, { size: 30, peso: 'bold', color: t.parcial ? '#B26B00' : '#222', gap: 2, barra: t.parcial ? '#B26B00' : '#1A3D6B', check: true })
+        L(t.partes.map(x => `${x.nombre} ${fmt(x.ha)} ha`).join(' → '), { size: 27, color: '#555', gap: t.parcial ? 2 : 14, barra: t.parcial ? '#B26B00' : '#1A3D6B' })
+        if (t.parcial) { grupo.prods.forEach(p => L(`${item(p.id)?.insumo || '—'}: ${fmtCant(p.dosis * t.ha)} ${unidad(p)}`, { size: 27, color: '#B26B00', gap: 2, barra: '#B26B00' })); filas[filas.length - 1].gap = 14 }
+      })
+      filas[filas.length - 1].gap = 26
+      L('PARA LLEVAR DEL GALPÓN', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
+      grupo.prods.filter(p => !p.contratista).forEach(p => { const it = item(p.id); const tot = p.dosis * plan.total; const env = enEnvases(tot, it); L(`${it?.insumo || '—'}: ${fmtCant(tot)} ${unidad(p)}${env ? `  →  ${env}` : ''}`, { gap: 4 }) })
+
+      // Medir (con cortes de línea) y dibujar
+      const cv = document.createElement('canvas'); const ctx = cv.getContext('2d')
+      const partir = (f) => {
+        ctx.font = `${f.peso} ${f.size}px Arial, sans-serif`
+        const ancho = W - 2 * M - (f.barra ? 24 : 0) - (f.check ? f.size + 12 : 0)
+        const palabras = String(f.texto).split(' '); const lineas = []; let act = ''
+        palabras.forEach(w => { const prueba = act ? act + ' ' + w : w; if (ctx.measureText(prueba).width > ancho && act) { lineas.push(act); act = w } else act = prueba })
+        if (act) lineas.push(act)
+        return lineas
+      }
+      let H = M
+      filas.forEach(f => { f.lineas = partir(f); H += f.lineas.length * f.size * 1.3 + f.gap })
+      H += M
+      cv.width = W; cv.height = Math.ceil(H)
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, cv.height)
+      let y = M
+      filas.forEach(f => {
+        ctx.font = `${f.peso} ${f.size}px Arial, sans-serif`; ctx.fillStyle = f.color; ctx.textBaseline = 'top'
+        const alto = f.lineas.length * f.size * 1.3
+        if (f.barra) { ctx.fillStyle = f.barra; ctx.fillRect(M, y - 2, 8, alto + f.gap); ctx.fillStyle = f.color }
+        const x0 = M + (f.barra ? 24 : 0)
+        if (f.check) { ctx.strokeStyle = f.color; ctx.lineWidth = 3; ctx.strokeRect(x0, y + f.size * 0.08, f.size * 0.85, f.size * 0.85) }
+        f.lineas.forEach((ln, k) => ctx.fillText(ln, x0 + (f.check ? f.size + 12 : 0), y + k * f.size * 1.3))
+        y += alto + f.gap
+      })
+      const blob = await new Promise(r => cv.toBlob(r, 'image/png'))
+      const hoy = new Date()
+      const nombre = `plan-tanques-${String(hoy.getDate()).padStart(2, '0')}-${String(hoy.getMonth() + 1).padStart(2, '0')}.png`
+      const archivo = new File([blob], nombre, { type: 'image/png' })
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        try { await navigator.share({ files: [archivo], title: 'Plan de tanques', text: `Plan de tanques · ${fmt(plan.total)} ha` }) } catch (e) { /* canceló */ }
+      } else {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click(); a.remove()
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+      }
+    } finally { setEnviando(false) }
+  }
 
   function imprimir() {
     if (!grupo || !plan.tanques.length) return
@@ -184,7 +257,10 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
                     <div style={{ fontSize: 13 }}>
                       <b>{fmt(plan.total)} ha</b> · {modo === 'iguales' ? <><b>{plan.tanques.length} tanques iguales</b> de {fmt(plan.total / plan.tanques.length)} ha ({fmt(plan.total / plan.tanques.length * parseFloat(caldo), 0)} L)</> : <><b>{plan.tanques.length} tanques</b> · {fmt(plan.haLleno)} ha por tanque lleno</>}
                     </div>
-                    <button onClick={imprimir} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>🖨 Hoja para el pulverizador</button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={enviarImagen} disabled={enviando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{enviando ? 'Armando…' : '📤 Enviar hoja (imagen)'}</button>
+                      <button onClick={imprimir} style={{ padding: '7px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>🖨 Imprimir</button>
+                    </div>
                   </div>
                   {mobile && plan.tanques.length > 0 && (
                     <div style={{ fontSize: 12, color: S.muted, marginBottom: 6 }}>Tanques hechos: <b style={{ color: S.accent }}>{plan.tanques.filter((_, i) => hechos[`${g.key}-${i}`]).length} de {plan.tanques.length}</b> · tocá ✓ en cada uno cuando lo termines</div>
