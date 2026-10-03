@@ -47,7 +47,9 @@ function enEnvases(cant, item) {
   return `${n} ${item.presentacion_nombre || 'envase'}${n !== 1 ? (/[aeiou]$/i.test(item.presentacion_nombre || 'envase') ? 's' : 'es') : ''} de ${fmt(p, 1)} ${item.unidad || ''}`.trim()
 }
 
-export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inputStyle, onCerrar }) {
+export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inputStyle, onCerrar, mobile = false }) {
+  // En el celular: se puede ir tildando cada tanque a medida que se hace
+  const [hechos, setHechos] = useState({})
   const [caldo, setCaldo] = useState('80')
   const [tanque, setTanque] = useState('3000')
   const [modo, setModo] = useState('llenos')
@@ -184,16 +186,22 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
                     </div>
                     <button onClick={imprimir} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>🖨 Hoja para el pulverizador</button>
                   </div>
+                  {mobile && plan.tanques.length > 0 && (
+                    <div style={{ fontSize: 12, color: S.muted, marginBottom: 6 }}>Tanques hechos: <b style={{ color: S.accent }}>{plan.tanques.filter((_, i) => hechos[`${g.key}-${i}`]).length} de {plan.tanques.length}</b> · tocá ✓ en cada uno cuando lo termines</div>
+                  )}
                   {plan.tanques.map((t, i) => (
-                    <div key={i} style={{ border: `1px solid ${t.parcial ? S.amber : S.border}`, borderRadius: 8, padding: '6px 10px', marginBottom: 6, background: t.parcial ? S.amberLight : 'transparent' }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>Tanque {i + 1}{t.parcial ? ' · parcial' : ''} <span style={{ fontWeight: 400, color: S.muted }}>— {fmt(t.ha)} ha · {fmt(t.litros, 0)} L</span></div>
+                    <div key={i} style={{ border: `1px solid ${t.parcial ? S.amber : S.border}`, borderRadius: 8, padding: mobile ? '10px 12px' : '6px 10px', marginBottom: 6, background: hechos[`${g.key}-${i}`] ? S.bg : (t.parcial ? S.amberLight : 'transparent'), opacity: hechos[`${g.key}-${i}`] ? 0.55 : 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: mobile ? 15 : 13, fontWeight: 600 }}>Tanque {i + 1}{t.parcial ? ' · parcial' : ''} <span style={{ fontWeight: 400, color: S.muted }}>— {fmt(t.ha)} ha · {fmt(t.litros, 0)} L</span></div>
+                        {mobile && <button onClick={() => setHechos({ ...hechos, [`${g.key}-${i}`]: !hechos[`${g.key}-${i}`] })} style={{ minWidth: 44, height: 36, borderRadius: 8, border: `1px solid ${S.accent}`, background: hechos[`${g.key}-${i}`] ? S.accent : 'transparent', color: hechos[`${g.key}-${i}`] ? '#fff' : S.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✓</button>}
+                      </div>
                       <div style={{ fontSize: 12, color: S.muted }}>{t.partes.map(p => `${p.nombre} ${fmt(p.ha)} ha`).join(' → ')}</div>
-                      {(i === 0 || t.parcial) && (
+                      {(mobile || i === 0 || t.parcial) && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '2px 14px', fontSize: 12, marginTop: 4 }}>
                           {g.prods.map(p => <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between' }}><span>{item(p.id)?.insumo}</span><span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{fmtCant(p.dosis * t.ha)} {item(p.id)?.unidad === 'kg' ? 'kg' : 'L'}</span></div>)}
                         </div>
                       )}
-                      {i === 0 && plan.tanques.length > 1 && <div style={{ fontSize: 11, color: S.hint, marginTop: 2 }}>{modo === 'iguales' ? 'Todos los tanques llevan esta misma carga.' : 'Los tanques llenos llevan esta carga; el parcial, la suya.'}</div>}
+                      {!mobile && i === 0 && plan.tanques.length > 1 && <div style={{ fontSize: 11, color: S.hint, marginTop: 2 }}>{modo === 'iguales' ? 'Todos los tanques llevan esta misma carga.' : 'Los tanques llenos llevan esta carga; el parcial, la suya.'}</div>}
                     </div>
                   ))}
                 </>}

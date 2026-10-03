@@ -164,6 +164,24 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
     if (pantAgroM === 'orden') {
       return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} planes={planes} cotizacionDolar={cotizacionDolar} mobile={true} nav={() => setPantAgroM('home')} />
     }
+    if (pantAgroM === 'tanques') {
+      // Plan de tanques en el celular (mismo cálculo que en la PC), con
+      // colores oscuros y para ir tildando cada tanque en el campo.
+      const CMt = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', hint: '#6F876F', accent: '#7EC87E', accentLight: '#2E4A2E', amber: '#F0B45A', amberLight: '#3D3320', green: '#7EC87E' }
+      const inpM = { width: '100%', background: CMt.surface2, border: `1px solid ${CMt.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 16, color: CMt.text, boxSizing: 'border-box' }
+      const LabelM = ({ children }) => <div style={{ fontSize: 11, fontWeight: 600, color: CMt.muted, textTransform: 'uppercase', marginBottom: 4 }}>{children}</div>
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CMt.bg, color: CMt.text, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          <div style={{ background: CMt.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CMt.border}` }}>
+            <button onClick={() => setPantAgroM('home')} style={{ background: 'none', border: 'none', color: CMt.green, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Plan de tanques</div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+            <PlanTanques mobile ordenes={ordenes} campos={campos} stockAgro={stockAgro} S={CMt} Label={LabelM} inputStyle={inpM} onCerrar={() => setPantAgroM('home')} />
+          </div>
+        </div>
+      )
+    }
     if (pantAgroM === 'stock') {
       return <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} ordenes={ordenes} mobile={true} nav={() => setPantAgroM('home')} cotizacionDolar={cotizacionDolar} />
     }
@@ -179,6 +197,11 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
             style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', marginBottom: '.85rem', textAlign: 'left', cursor: 'pointer' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: CM.text, marginBottom: 4 }}>📋 Nueva orden de trabajo</div>
             <div style={{ fontSize: 12, color: CM.muted }}>Siembra, pulverización, cosecha, etc. — con insumos por hectárea</div>
+          </button>
+          <button onClick={() => setPantAgroM('tanques')}
+            style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', marginBottom: '.85rem', textAlign: 'left', cursor: 'pointer' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: CM.text, marginBottom: 4 }}>🚜 Plan de tanques</div>
+            <div style={{ fontSize: 12, color: CM.muted }}>Órdenes con la misma mezcla, tanque por tanque, para el pulverizador</div>
           </button>
           <button onClick={() => setPantAgroM('stock')}
             style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', textAlign: 'left', cursor: 'pointer' }}>
