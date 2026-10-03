@@ -8,6 +8,7 @@ import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPen
 import { registrarPagos, unirIds, mensajeErrorPago, validarDeshacerGasto, revertirPagoDeGasto } from '../shared/pagosLogic'
 import SelectBuscable from './SelectBuscable'
 import PresupuestoCampana from './PresupuestoCampana'
+import GranosUbicaciones from './GranosUbicaciones'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -223,6 +224,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
     { key: 'ordenes', label: 'Órdenes de trabajo' },
     { key: 'cosechas', label: 'Cosechas' },
     { key: 'ventas', label: 'Ventas de granos' },
+    { key: 'granos', label: '🌾 Granos' },
     { key: 'gastos', label: 'Gastos' },
     { key: 'stock', label: 'Stock general' },
     { key: 'presupuesto', label: '📋 Presupuesto' },
@@ -315,6 +317,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ordenes={ordenes} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} soloAlfalfa={soloAlfalfa} cotizacionDolar={cotizacionDolar} />}
       {tab === 'gastos' && <TabGastos gastos={gastosAgro} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} cotizacionDolar={cotizacionDolar} />}
       {tab === 'stock' && <TabStockAgro stock={stockAgro} ingresos={ingresosAgro} contactos={contactos} cargar={cargar} usuario={usuario} ordenes={ordenes} cotizacionDolar={cotizacionDolar} />}
+      {tab === 'granos' && <GranosUbicaciones S={S} Label={Label} inputStyle={inputStyle} CULTIVOS={CULTIVOS} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ventasGranos={ventasGranos} contactos={contactos} usuario={usuario} cargar={cargar} />}
       {tab === 'presupuesto' && <PresupuestoCampana S={S} Label={Label} inputStyle={inputStyle} CULTIVOS={CULTIVOS} campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} cotizacionDolar={cotizacionDolar} cargar={cargar} />}
       {tab === 'rentabilidad' && <TabRentabilidad campos={campos} campanas={campanas} campanaActiva={campanaActiva} ordenes={ordenes} cosechas={cosechas} ventasGranos={ventasGranos} stockAgro={stockAgro} planes={planes} gastos={gastosAgro} cotizacionDolar={cotizacionDolar} />}
       {tab === 'lluvias' && <TabLluvias usuario={usuario} />}
@@ -2579,6 +2582,19 @@ function TabCosechas({ cosechas, campos, campanas, campanaActiva, planes, cargar
       destino: form.destino || null,
       acopio: form.destino === 'acopio' ? (form.acopio || null) : null,
       observaciones: form.observaciones || null,
+    }
+    // Ubicación del grano (pestaña 🌾 Granos): la silobolsa de ese campo y
+    // cultivo, o el acopio, en la campaña. Si no existe, se crea sola.
+    if (form.destino === 'bolsa' || form.destino === 'acopio') {
+      const tipo = form.destino === 'bolsa' ? 'silobolsa' : 'acopio'
+      const nombre = tipo === 'silobolsa' ? `Silobolsa ${campo?.nombre || ''} · ${form.cultivo}` : `Acopio ${form.acopio || 'sin nombre'} · ${form.cultivo}`
+      let q = supabase.from('ubicaciones_grano').select('id').eq('tipo', tipo).eq('cultivo', form.cultivo).eq('activa', true).eq('nombre', nombre)
+      const { data: existentes } = await q
+      if (existentes?.length) datos.ubicacion_id = existentes[0].id
+      else {
+        const { data: nueva } = await supabase.from('ubicaciones_grano').insert({ nombre, tipo, cultivo: form.cultivo, campo_id: tipo === 'silobolsa' ? parseInt(form.campo_id) : null, campana_id: parseInt(form.campana_id) || null }).select().single()
+        if (nueva) datos.ubicacion_id = nueva.id
+      }
     }
     const { error } = editandoCosecha
       ? await supabase.from('cosechas').update(datos).eq('id', editandoCosecha)
