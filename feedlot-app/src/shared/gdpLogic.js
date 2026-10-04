@@ -217,5 +217,13 @@ export function calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, 
   const prom6 = promMovil(mesesGDP, 6)
   const prom12 = promMovil(mesesGDP, 12)
 
-  return { mesesGDP, mesActual, prom3, prom6, prom12, existenciaActualGlobal }
+  // Últimos 30 días corridos (hasta hoy inclusive): la lectura "reciente".
+  // El mes calendario en curso, los primeros días, tiene muy pocos datos
+  // (ej. 3 días y 3 animales vendidos → permanencia de 688 días, GDP 0,38).
+  const inicio30 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 29)
+  const fin30 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1)
+  const r30 = calcMesGDP(lotes || [], ventas || [], raciones || [], inicio30, fin30, existenciaActualGlobal, lookups)
+  const ultimos30 = r30 ? { mes: 'últimos 30 días', fechaInicio: inicio30, ...r30 } : null
+
+  return { mesesGDP, mesActual, ultimos30, prom3, prom6, prom12, existenciaActualGlobal }
 }

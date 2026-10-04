@@ -218,7 +218,10 @@ export default function Reportes({ usuario }) {
 
   // ── GDP, permanencia, conversión y consumo diario — lógica compartida con el
   // Tablero, para que los dos muestren siempre el mismo número. ──
-  const { mesesGDP, mesActual, prom3, prom6, prom12 } = calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, stock, formulasMixer })
+  const { mesesGDP, mesActual: mesCalendario, ultimos30, prom3, prom6, prom12 } = calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, stock, formulasMixer })
+  // El cuadro "reciente" usa los últimos 30 días corridos (no el mes
+  // calendario, que los primeros días da números sin sentido).
+  const mesActual = ultimos30 || mesCalendario
 
   // GDP para display (usa mes actual o prom3 como fallback)
   const gdpFeedlotGlobal = prom6?.gdp || prom3?.gdp || mesActual?.gdp || null
@@ -891,7 +894,7 @@ export default function Reportes({ usuario }) {
               {/* Tarjetas resumen mes actual */}
               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>Mes actual — {mesActual.mes} <span style={{ fontWeight: 400, color: S.muted, fontSize: 11 }}>(referencia — puede tener ruido, ver el promedio de 6 meses de arriba)</span></div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Últimos 30 días — {mesActual.fechaInicio ? `${new Date(mesActual.fechaInicio).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} al ${new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}` : mesActual.mes} <span style={{ fontWeight: 400, color: S.muted, fontSize: 11 }}>(lectura reciente{mesActual.cabVendidas < 20 ? ` — ojo: solo ${mesActual.cabVendidas} animales vendidos, puede tener ruido` : ''}; el dato firme es el promedio de 6 meses de arriba)</span></div>
                   {Math.abs(mesActual.variacionStock) > 20 && (
                     <span style={{ fontSize: 11, padding: '3px 10px', background: S.redLight, color: S.red, borderRadius: 4, fontWeight: 600 }}>⚠ Variación stock {mesActual.variacionStock.toFixed(0)}% — resultado puede tener sesgo</span>
                   )}
@@ -903,7 +906,7 @@ export default function Reportes({ usuario }) {
                   <Stat label="GDP estimado" val={mesActual.gdp ? `${mesActual.gdp.toFixed(3)} kg/d` : '—'} sub="normal" color={mesActual.gdp >= 1.1 ? S.green : mesActual.gdp >= 0.9 ? S.amber : S.red} />
                   {Math.abs(mesActual.variacionStock) > 10 && <Stat label="GDP corregido" val={mesActual.gdpCorregido ? `${mesActual.gdpCorregido.toFixed(3)} kg/d` : '—'} sub="por variación stock" color={S.purple} />}
                   <Stat label="Permanencia" val={`${Math.round(mesActual.permanencia)} días`} sub={`corregida: ${Math.round(mesActual.permanenciaCorregida)} días`} />
-                  <Stat label="Conversión (mes actual)" val={mesActual.conversion ? mesActual.conversion.toFixed(2) : '—'} sub="kg materia seca / kg carne producido" color={mesActual.conversion <= 7 ? S.green : mesActual.conversion <= 9 ? S.amber : S.red} />
+                  <Stat label="Conversión (30 días)" val={mesActual.conversion ? mesActual.conversion.toFixed(2) : '—'} sub="kg materia seca / kg carne producido" color={mesActual.conversion <= 7 ? S.green : mesActual.conversion <= 9 ? S.amber : S.red} />
                   <Stat label="Consumo diario (30 días)" val={consumoDiarioProm30 ? `${consumoDiarioProm30.toFixed(1)} kg/cab/d` : '—'} sub={`promedio móvil · ${diasConDatos30.length} días con datos`} color={S.accent} />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
