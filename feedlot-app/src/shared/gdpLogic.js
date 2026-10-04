@@ -213,9 +213,16 @@ export function calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, 
   }
 
   const mesActual = mesesGDP[mesesGDP.length - 1] || null
-  const prom3 = promMovil(mesesGDP, 3)
-  const prom6 = promMovil(mesesGDP, 6)
-  const prom12 = promMovil(mesesGDP, 12)
+  // Los promedios móviles usan solo MESES CERRADOS: el mes en curso, los
+  // primeros días, da permanencias absurdas (ej. 688 días con 3 días y 3
+  // ventas) y aunque pese poco, corría el promedio (permanencia 3 meses 145 d).
+  const mesEnCurso = mesesGDP.length && mesesGDP[mesesGDP.length - 1].fechaInicio
+    && new Date(mesesGDP[mesesGDP.length - 1].fechaInicio).getMonth() === hoy.getMonth()
+    && new Date(mesesGDP[mesesGDP.length - 1].fechaInicio).getFullYear() === hoy.getFullYear()
+  const mesesCerradosGDP = mesEnCurso ? mesesGDP.slice(0, -1) : mesesGDP
+  const prom3 = promMovil(mesesCerradosGDP, 3)
+  const prom6 = promMovil(mesesCerradosGDP, 6)
+  const prom12 = promMovil(mesesCerradosGDP, 12)
 
   // Últimos 30 días corridos (hasta hoy inclusive): la lectura "reciente".
   // El mes calendario en curso, los primeros días, tiene muy pocos datos

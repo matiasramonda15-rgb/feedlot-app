@@ -960,21 +960,29 @@ export default function Reportes({ usuario }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {[...mesesGDP].reverse().map((m, i) => (
-                          <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: i === 0 ? S.accentLight : 'transparent' }}>
-                            <td style={{ padding: '7px 10px', fontWeight: 600 }}>{m.mes}</td>
+                        {[...mesesGDP].reverse().map((m, i) => {
+                          // Mes en curso: se muestran ingresos, ventas y pesos, pero
+                          // no GDP / permanencia / conversión, que con pocos días no
+                          // tienen sentido (están en "Últimos 30 días").
+                          const hoyR = new Date()
+                          const enCurso = m.fechaInicio && new Date(m.fechaInicio).getMonth() === hoyR.getMonth() && new Date(m.fechaInicio).getFullYear() === hoyR.getFullYear()
+                          const enCursoTxt = <span style={{ color: S.hint, fontSize: 11, fontStyle: 'italic' }}>en curso</span>
+                          return (
+                          <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: enCurso ? S.bg : 'transparent' }}>
+                            <td style={{ padding: '7px 10px', fontWeight: 600 }}>{m.mes}{enCurso && <span style={{ fontWeight: 400, color: S.hint, fontSize: 11 }}> · en curso</span>}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.existenciaPromedio)}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{m.cabIngresadas}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{m.cabVendidas}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.pesoProm_ingreso)} kg</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.pesoProm_venta)} kg</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.permanencia)} d</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.gdp >= 1.1 ? S.green : m.gdp >= 0.9 ? S.amber : S.red }}>{m.gdp?.toFixed(3)}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.purple }}>{Math.abs(m.variacionStock) > 10 ? m.gdpCorregido?.toFixed(3) : '—'}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.conversion <= 7 ? S.green : m.conversion <= 9 ? S.amber : S.red }}>{m.conversion?.toFixed(2) || '—'}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: Math.abs(m.variacionStock) > 20 ? S.red : Math.abs(m.variacionStock) > 10 ? S.amber : S.muted }}>{m.variacionStock.toFixed(0)}%</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{enCurso ? enCursoTxt : `${Math.round(m.permanencia)} d`}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.gdp >= 1.1 ? S.green : m.gdp >= 0.9 ? S.amber : S.red }}>{enCurso ? enCursoTxt : m.gdp?.toFixed(3)}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.purple }}>{!enCurso && Math.abs(m.variacionStock) > 10 ? m.gdpCorregido?.toFixed(3) : '—'}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.conversion <= 7 ? S.green : m.conversion <= 9 ? S.amber : S.red }}>{enCurso ? enCursoTxt : (m.conversion?.toFixed(2) || '—')}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: Math.abs(m.variacionStock) > 20 ? S.red : Math.abs(m.variacionStock) > 10 ? S.amber : S.muted }}>{enCurso ? enCursoTxt : `${m.variacionStock.toFixed(0)}%`}</td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
