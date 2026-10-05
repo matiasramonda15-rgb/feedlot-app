@@ -10,6 +10,7 @@ import SelectBuscable from './SelectBuscable'
 import PresupuestoCampana from './PresupuestoCampana'
 import GranosUbicaciones from './GranosUbicaciones'
 import PlanTanques from './PlanTanques'
+import MapasCampos, { BotonMapa } from './MapasCampos'
 import { useBorrador } from '../shared/useBorrador'
 
 const S = {
@@ -164,6 +165,22 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
     if (pantAgroM === 'orden') {
       return <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} planes={planes} cotizacionDolar={cotizacionDolar} mobile={true} nav={() => setPantAgroM('home')} />
     }
+    if (pantAgroM === 'mapas') {
+      const CMm = { bg: '#1A2E1A', surface: '#243324', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', hint: '#6F876F', accent: '#7EC87E', accentLight: '#2E4A2E', green: '#2E7D32', red: '#F08080', redLight: '#3D2020' }
+      const inpMm = { width: '100%', background: '#2E3F2E', border: `1px solid ${CMm.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 16, color: CMm.text, boxSizing: 'border-box' }
+      const LabelMm = ({ children }) => <div style={{ fontSize: 11, fontWeight: 600, color: CMm.muted, textTransform: 'uppercase', marginBottom: 4 }}>{children}</div>
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: CMm.bg, color: CMm.text, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          <div style={{ background: CMm.surface, padding: '1rem', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: `1px solid ${CMm.border}` }}>
+            <button onClick={() => setPantAgroM('home')} style={{ background: 'none', border: 'none', color: CMm.accent, fontSize: 22, cursor: 'pointer', padding: 0, lineHeight: 1 }}>‹</button>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Mapas de los campos</div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+            <MapasCampos campos={campos} S={CMm} Label={LabelMm} inputStyle={inpMm} usuario={usuario} />
+          </div>
+        </div>
+      )
+    }
     if (pantAgroM === 'tanques') {
       // Plan de tanques en el celular (mismo cálculo que en la PC), con
       // colores oscuros y para ir tildando cada tanque en el campo.
@@ -202,6 +219,11 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
             style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', marginBottom: '.85rem', textAlign: 'left', cursor: 'pointer' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: CM.text, marginBottom: 4 }}>🚜 Plan de tanques</div>
             <div style={{ fontSize: 12, color: CM.muted }}>Órdenes con la misma mezcla, tanque por tanque, para el pulverizador</div>
+          </button>
+          <button onClick={() => setPantAgroM('mapas')}
+            style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', marginBottom: '.85rem', textAlign: 'left', cursor: 'pointer' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: CM.text, marginBottom: 4 }}>🗺 Mapas de los campos</div>
+            <div style={{ fontSize: 12, color: CM.muted }}>Planos con los lotes, para no equivocarse de lote</div>
           </button>
           <button onClick={() => setPantAgroM('stock')}
             style={{ width: '100%', background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1.1rem', textAlign: 'left', cursor: 'pointer' }}>
@@ -262,6 +284,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
     { key: 'arriendos', label: 'Arriendos' },
     { key: 'campanas', label: 'Campaña' },
     { key: 'ordenes', label: 'Órdenes de trabajo' },
+    { key: 'mapas', label: '🗺 Mapas' },
     { key: 'cosechas', label: 'Cosechas' },
     { key: 'ventas', label: 'Ventas de granos' },
     { key: 'granos', label: '🌾 Granos' },
@@ -352,6 +375,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
       {tab === 'campos' && <TabCampos campos={campos} campanas={campanas} planes={planes} campanaActiva={campanaActiva} cargar={cargar} contactos={contactos} />}
       {tab === 'arriendos' && <TabArriendos campos={campos} cargar={cargar} contactos={contactos} usuario={usuario} cotizacionDolar={cotizacionDolar} />}
       {tab === 'campanas' && <TabCampanas campanas={campanas} campos={campos} setCampanaActiva={setCampanaActiva} campanaActiva={campanaActiva} cargar={cargar} />}
+      {tab === 'mapas' && <MapasCampos campos={campos} S={S} Label={Label} inputStyle={inputStyle} usuario={usuario} />}
       {tab === 'ordenes' && <TabOrdenes ordenes={ordenes} campos={campos} campanas={campanas} campanaActiva={campanaActiva} stockAgro={stockAgro} cargar={cargar} contactos={contactos} usuario={usuario} soloAlfalfa={soloAlfalfa} planes={planes} cotizacionDolar={cotizacionDolar} />}
       {tab === 'cosechas' && <TabCosechas cosechas={cosechas} campos={campos} campanas={campanas} campanaActiva={campanaActiva} planes={planes} cargar={cargar} contactos={contactos} />}
       {tab === 'ventas' && <TabVentasGranos ventas={ventasGranos} campos={campos} campanas={campanas} campanaActiva={campanaActiva} cosechas={cosechas} ordenes={ordenes} cargar={cargar} stockInsumosAlim={stockInsumosAlim} stockAgro={stockAgro} usuario={usuario} contactos={contactos} soloAlfalfa={soloAlfalfa} cotizacionDolar={cotizacionDolar} />}
@@ -2007,6 +2031,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                       )
                     })}
                   </div>
+                  {camposSeleccionados.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 6, fontSize: 11, color: S.muted }}>
+                      {camposSeleccionados.map(c => <BotonMapa key={c.id} campoId={c.id} titulo={c.nombre} etiqueta={`🗺 ${c.nombre}`} />)}
+                    </div>
+                  )}
                   {(lotesSeleccionados.length > 1 || camposSeleccionados.length > 1) && (
                     <div style={{ fontSize: 11, color: S.accent, marginTop: 4 }}>
                       Se va a crear una orden por cada {lotesSeleccionados.length > 0 ? 'lote' : 'campo'} elegido, con los mismos productos y datos — {superficie.toLocaleString('es-AR')} ha en total.
@@ -2317,7 +2346,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           onChange={e => setOrdenesParaCombinar(e.target.checked ? [...ordenesParaCombinar, o.id] : ordenesParaCombinar.filter(id => id !== o.id))} />
                       </td>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
-                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>{campoO?.nombre || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>{campoO?.nombre || '—'} <BotonMapa campoId={o.campo_id} titulo={`${campoO?.nombre || ''}${loteO ? ` · Lote ${loteO.numero}` : ''}`} /></td>
                       <td style={{ padding: '8px 12px', color: S.muted }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span>{loteO ? `Lote ${loteO.numero}` : '—'}</span>

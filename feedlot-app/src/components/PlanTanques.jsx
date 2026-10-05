@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../supabase'
+import { BotonMapa, useMapas, mapasDeCampo, archivoDeMapa } from './MapasCampos'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plan de tanques (Agricultura → Órdenes → 🚜 Plan de tanques)
@@ -55,6 +56,7 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
   // Cada orden tiene su contratista; acá se puede cambiar (queda guardado en
   // la orden) y armar un plan por pulverizador, cada uno con el tanque de su
   // máquina (que queda recordado en su contacto).
+  const mapasTodos = useMapas()
   const [provOverride, setProvOverride] = useState({})
   const [pulvSel, setPulvSel] = useState('todos')
   const SIN = '(sin asignar)'
@@ -188,7 +190,13 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
       const hoy = new Date()
       const nombre = `plan-tanques-${String(hoy.getDate()).padStart(2, '0')}-${String(hoy.getMonth() + 1).padStart(2, '0')}.png`
       const archivo = new File([blob], nombre, { type: 'image/png' })
-      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      // Se mandan también los mapas de los campos del plan (si hay)
+      const mapasPlan = [...new Map(ordenesGrupo.flatMap(o => mapasDeCampo(mapasTodos, o.campo_id)).map(m => [m.id, m])).values()]
+      const archivosMapas = (await Promise.all(mapasPlan.map(m => archivoDeMapa(m).catch(() => null)))).filter(Boolean)
+      const todos = [archivo, ...archivosMapas]
+      if (navigator.canShare && navigator.canShare({ files: todos })) {
+        try { await navigator.share({ files: todos, title: 'Plan de tanques', text: `Plan de tanques · ${fmt(plan.total)} ha${archivosMapas.length ? ` + ${archivosMapas.length} mapa${archivosMapas.length !== 1 ? 's' : ''}` : ''}` }) } catch (e) { /* canceló */ }
+      } else if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
         try { await navigator.share({ files: [archivo], title: 'Plan de tanques', text: `Plan de tanques · ${fmt(plan.total)} ha` }) } catch (e) { /* canceló */ }
       } else {
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click(); a.remove()
@@ -278,6 +286,7 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
                       <option value="">— pulverizador —</option>
                       {[...new Set([...contactos.map(c => c.nombre), ...(o.proveedor ? [o.proveedor] : [])])].sort().map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
+                    <BotonMapa campoId={o.campo_id} titulo={nombreDe(o)} />
                     <span style={{ flex: 1 }}>{nombreDe(o)} · {fmt(parseFloat(o.superficie_ha_real) || 0)} ha <span style={{ color: S.hint }}>· {o.estado === 'emitida' ? 'emitida' : 'hecha'} {o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}</span></span>
                     {sel && <>
                       <button disabled={pos === 0} onClick={() => { const a = [...ids]; [a[pos - 1], a[pos]] = [a[pos], a[pos - 1]]; setIds(g, a) }} style={{ ...btn(false), padding: '1px 7px' }} title="Subir en el recorrido">↑</button>
