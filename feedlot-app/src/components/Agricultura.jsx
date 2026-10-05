@@ -1473,7 +1473,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (!camposSeleccionados.length || !form.tipo) { alert('Seleccioná al menos un campo y el tipo'); return }
     if (!(superficie > 0) && form.tipo !== 'Confeccion de rollo' && !confirm('La orden quedó sin hectáreas. ¿Guardarla igual?')) return
     setGuardando(true)
-    const costoNum = parseFloat(form.costo_total) || totalGastosPropios || null
+    // Costo de la labor: el total si se cargó; si no, costo/ha × hectáreas
+    // (antes, con solo el costo/ha la orden quedaba sin costo y no se
+    // registraba el ingreso en Servicios); si no, los gastos propios.
+    const costoNum = parseFloat(form.costo_total) || ((parseFloat(form.costo_ha) || 0) * superficie) || totalGastosPropios || null
     const costoHa = costoNum && superficie ? Math.round(costoNum / superficie) : (parseFloat(form.costo_ha) || null)
 
     // Gastos propios → caja como egreso interno (uno solo, para todos los
