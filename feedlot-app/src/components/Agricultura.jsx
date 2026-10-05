@@ -177,7 +177,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
             <div style={{ fontSize: 15, fontWeight: 600 }}>Plan de tanques</div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
-            <PlanTanques mobile ordenes={ordenes} campos={campos} stockAgro={stockAgro} S={CMt} Label={LabelM} inputStyle={inpM} onCerrar={() => setPantAgroM('home')} />
+            <PlanTanques mobile ordenes={ordenes} campos={campos} stockAgro={stockAgro} contactos={contactos} onCambio={cargar} S={CMt} Label={LabelM} inputStyle={inpM} onCerrar={() => setPantAgroM('home')} />
           </div>
         </div>
       )
@@ -1424,10 +1424,13 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       if (error) { alert('Error al registrar el gasto propio: ' + error.message); return }
       cajaId = co?.id || null
     }
-    const costoTotal = o.costo_ha && ha ? Math.round(parseFloat(o.costo_ha) * ha) : o.costo_total
+    // Contratista que realmente lo hizo (puede no ser el de la orden) y su costo/ha
+    const costoHa = parseFloat(c.costo_ha) > 0 ? parseFloat(c.costo_ha) : (parseFloat(o.costo_ha) || null)
+    const costoTotal = costoHa && ha ? Math.round(costoHa * ha) : o.costo_total
     const { error } = await supabase.from('ordenes_trabajo').update({
       estado: 'completado', fecha: c.fecha, fecha_realizada: c.fecha, superficie_ha_real: ha || o.superficie_ha_real,
-      productos, costo_total: costoTotal, caja_oficial_id: cajaId,
+      productos, costo_total: costoTotal, costo_ha: costoHa, caja_oficial_id: cajaId,
+      ...(o.es_propia ? {} : { proveedor: c.proveedor || o.proveedor || null }),
     }).eq('id', o.id)
     if (error) { alert('El stock se descontó, pero no se pudo actualizar la orden: ' + error.message); return }
     setConfirmando(null)
@@ -2276,7 +2279,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           {/* Plan de tanques: órdenes con la misma mezcla en una hoja para el pulverizador */}
           {!mostrarPlanTanques
             ? <div style={{ marginBottom: 10 }}><button onClick={() => setMostrarPlanTanques(true)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.surface, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>🚜 Plan de tanques (agrupar campos con la misma mezcla)</button></div>
-            : <PlanTanques ordenes={ordenes} campos={campos} stockAgro={stockAgro} S={S} Label={Label} inputStyle={inputStyle} onCerrar={() => setMostrarPlanTanques(false)} />}
+            : <PlanTanques ordenes={ordenes} campos={campos} stockAgro={stockAgro} contactos={contactos} onCambio={cargar} S={S} Label={Label} inputStyle={inputStyle} onCerrar={() => setMostrarPlanTanques(false)} />}
           {ordenesParaCombinar.length >= 2 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: S.purpleLight, border: `1px solid ${S.purple}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: S.purple, fontWeight: 600 }}>{ordenesParaCombinar.length} órdenes marcadas para combinar</span>
@@ -2354,7 +2357,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                       <td style={{ padding: '8px 12px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
                           {emitida && (
-                            <button onClick={() => setConfirmando(confirmando?.id === o.id ? null : { id: o.id, fecha: hoyLocal(), ha: String(o.superficie_ha_real || ''), productos: (o.productos || []).map(p => ({ ...p })) })}
+                            <button onClick={() => setConfirmando(confirmando?.id === o.id ? null : { id: o.id, fecha: hoyLocal(), ha: String(o.superficie_ha_real || ''), proveedor: o.proveedor || '', costo_ha: o.costo_ha != null ? String(o.costo_ha) : '', productos: (o.productos || []).map(p => ({ ...p })) })}
                               style={{ padding: '3px 8px', fontSize: 11, fontWeight: 700, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>✓ Realizada</button>
                           )}
                           <button onClick={() => generarOrdenTrabajo(o, campoO, loteO, stockAgro)}
@@ -2477,6 +2480,23 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                               // Si cambian las ha, los totales se recalculan con la misma dosis
                               setConfirmando({ ...confirmando, ha: e.target.value, productos: confirmando.productos.map(p => ({ ...p, total: haN && p.dosis ? String(Math.round(parseFloat(p.dosis) * haN * 100) / 100) : (haV && haN ? String(Math.round(parseFloat(p.total) / haV * haN * 100) / 100) : p.total) })) })
                             }} style={inputStyle} /></div>
+                            {!o.es_propia && (
+                              <>
+                                <div style={{ minWidth: 220 }}><Label>Lo hizo (contratista)</Label>
+                                  <SelectBuscable value={confirmando.proveedor} onChange={e => {
+                                    // Otro contratista: se propone su último costo/ha de este tipo de labor
+                                    const prov = e.target.value
+                                    const ult = ordenes.filter(x => x.proveedor === prov && x.tipo === o.tipo && parseFloat(x.costo_ha) > 0).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0]
+                                    setConfirmando({ ...confirmando, proveedor: prov, costo_ha: prov !== o.proveedor && ult ? String(ult.costo_ha) : confirmando.costo_ha })
+                                  }} style={inputStyle}>
+                                    <option value="">— Seleccioná —</option>
+                                    {contactos.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                                  </SelectBuscable>
+                                </div>
+                                <div style={{ width: 140 }}><Label>Costo $/ha</Label><input type="number" value={confirmando.costo_ha} onChange={e => setConfirmando({ ...confirmando, costo_ha: e.target.value })} style={inputStyle} /></div>
+                                {confirmando.proveedor !== (o.proveedor || '') && <div style={{ fontSize: 11, color: S.amber, alignSelf: 'center' }}>La deuda pasa a {confirmando.proveedor || '—'}</div>}
+                              </>
+                            )}
                           </div>
                           {confirmando.productos.map((p, i) => {
                             const item = stockAgro.find(x => String(x.id) === String(p.id))

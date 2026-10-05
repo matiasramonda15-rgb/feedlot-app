@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { supabase } from '../supabase'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plan de tanques (Agricultura → Órdenes → 🚜 Plan de tanques)
@@ -49,7 +50,34 @@ function enEnvases(cant, item) {
   return `${n} ${plural} de ${fmt(p, 1)} ${item.unidad || ''}`.trim()
 }
 
-export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inputStyle, onCerrar, mobile = false }) {
+export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inputStyle, onCerrar, mobile = false, contactos = [], onCambio }) {
+  // ── Pulverizador de cada campo ──
+  // Cada orden tiene su contratista; acá se puede cambiar (queda guardado en
+  // la orden) y armar un plan por pulverizador, cada uno con el tanque de su
+  // máquina (que queda recordado en su contacto).
+  const [provOverride, setProvOverride] = useState({})
+  const [pulvSel, setPulvSel] = useState('todos')
+  const SIN = '(sin asignar)'
+  const provDe = o => provOverride[o.id] ?? (o.proveedor || SIN)
+  async function cambiarPulverizador(o, nombre) {
+    setProvOverride(prev => ({ ...prev, [o.id]: nombre || SIN }))
+    const { error } = await supabase.from('ordenes_trabajo').update({ proveedor: nombre || null }).eq('id', o.id)
+    if (error) alert('No se pudo cambiar el pulverizador: ' + error.message)
+    else onCambio && onCambio()
+  }
+  function elegirPulverizador(nombre) {
+    setPulvSel(nombre)
+    const c = contactos.find(x => x.nombre === nombre)
+    if (c && parseFloat(c.tanque_pulverizadora_l) > 0) setTanque(String(c.tanque_pulverizadora_l))
+  }
+  async function recordarTanque() {
+    const c = contactos.find(x => x.nombre === pulvSel)
+    const v = parseFloat(tanque)
+    if (c && v > 0 && v !== parseFloat(c.tanque_pulverizadora_l)) {
+      await supabase.from('contactos').update({ tanque_pulverizadora_l: v }).eq('id', c.id)
+      c.tanque_pulverizadora_l = v
+    }
+  }
   // En el celular: se puede ir tildando cada tanque a medida que se hace
   const [hechos, setHechos] = useState({})
   const [caldo, setCaldo] = useState('80')
@@ -89,7 +117,10 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
   const idsDe = gr => elegidas[gr.key] ?? gr.ordenes.map(o => o.id)
   const setIds = (gr, ids) => setElegidas({ ...elegidas, [gr.key]: ids })
   const grupo = grupos.find(g => g.key === grupoSel) || null
-  const ordenesGrupo = grupo ? idsDe(grupo).map(id => grupo.ordenes.find(o => o.id === id)).filter(Boolean) : []
+  const ordenesGrupoTodas = grupo ? idsDe(grupo).map(id => grupo.ordenes.find(o => o.id === id)).filter(Boolean) : []
+  const pulverizadoresGrupo = [...new Set(ordenesGrupoTodas.map(provDe))]
+  const pulvActivo = pulvSel !== 'todos' && pulverizadoresGrupo.includes(pulvSel) ? pulvSel : 'todos'
+  const ordenesGrupo = pulvActivo === 'todos' ? ordenesGrupoTodas : ordenesGrupoTodas.filter(o => provDe(o) === pulvActivo)
   const destinos = ordenesGrupo.map(o => ({ nombre: nombreDe(o), ha: parseFloat(o.superficie_ha_real) || 0 }))
   const plan = planTanques({ destinos, caldo, tanque, modo })
   const item = id => stockAgro.find(s => String(s.id) === String(id))
@@ -109,6 +140,7 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
       const unidad = p => item(p.id)?.unidad === 'kg' ? 'kg' : 'L'
       const haCarga = modo === 'iguales' ? plan.total / plan.tanques.length : plan.haLleno
       L(`Plan de tanques — ${grupo.tipo === 'Fertilizacion' ? 'Fertilización' : 'Pulverización'}`, { size: 46, peso: 'bold', color: '#1A3D6B', gap: 6 })
+      if (pulvActivo !== 'todos') L(`Pulverizador: ${pulvActivo}`, { size: 32, peso: 'bold', gap: 6 })
       L(`${new Date().toLocaleDateString('es-AR')} · ${fmt(plan.total)} ha · caldo ${fmt(parseFloat(caldo), 0)} L/ha · tanque ${fmt(parseFloat(tanque), 0)} L`, { size: 28, color: '#555' })
       L(modo === 'iguales' ? `${plan.tanques.length} tanques iguales de ${fmt(haCarga)} ha (${fmt(haCarga * parseFloat(caldo), 0)} L)` : `${plan.tanques.length} tanques · ${fmt(plan.haLleno)} ha por tanque lleno`, { size: 30, peso: 'bold', gap: 26 })
       L('RECORRIDO', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
@@ -175,7 +207,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:5px 8px;border-bottom:1p
 .tq{border:1.5px solid #1A3D6B;border-radius:6px;padding:8px 12px;margin-bottom:10px;page-break-inside:avoid}.tq.p{border-color:#B26B00}.chk{display:inline-block;width:14px;height:14px;border:1.5px solid #333;margin-right:6px;vertical-align:-2px}
 @media print{button{display:none}}</style></head><body>
 <button onclick="window.print()" style="float:right;padding:6px 14px">Imprimir</button>
-<h1>Plan de tanques — ${grupo.tipo === 'Fertilizacion' ? 'Fertilización' : 'Pulverización'}</h1>
+<h1>Plan de tanques — ${grupo.tipo === 'Fertilizacion' ? 'Fertilización' : 'Pulverización'}</h1>${pulvActivo !== 'todos' ? `<div style="font-size:15px;font-weight:bold;margin:4px 0">Pulverizador: ${pulvActivo}</div>` : ''}
 <div>${new Date().toLocaleDateString('es-AR')} · ${destinos.length} lotes · <b>${fmt(plan.total)} ha</b> · caldo <b>${fmt(parseFloat(caldo), 0)} L/ha</b> · tanque <b>${fmt(parseFloat(tanque), 0)} L</b> · ${modo === 'iguales' ? `<b>${plan.tanques.length} tanques iguales</b> de ${fmt(plan.total / plan.tanques.length)} ha` : `<b>${plan.tanques.length} tanques</b> (${fmt(plan.haLleno)} ha por tanque lleno)`}</div>
 <h2>Recorrido</h2><table>${destinos.map((d, i) => `<tr><td><span class="chk"></span>${i + 1}. ${d.nombre}</td><td class="n">${fmt(d.ha)} ha</td></tr>`).join('')}</table>
 <h2>${modo === 'iguales' ? 'Carga de cada tanque (todos iguales)' : 'Carga de cada tanque lleno'}</h2>
@@ -204,7 +236,7 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
         <div style={{ width: 140 }}><Label>Caldo (L/ha)</Label><input type="number" value={caldo} onChange={e => setCaldo(e.target.value)} style={inputStyle} /></div>
-        <div style={{ width: 160 }}><Label>Tanque del equipo (L)</Label><input type="number" value={tanque} onChange={e => setTanque(e.target.value)} style={inputStyle} /></div>
+        <div style={{ width: 160 }}><Label>Tanque del equipo (L)</Label><input type="number" value={tanque} onChange={e => setTanque(e.target.value)} onBlur={recordarTanque} style={inputStyle} /></div>
         <div>
           <Label>Cómo repartir</Label>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -241,6 +273,11 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
                   <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '3px 0', color: sel ? S.text : S.hint }}>
                     <input type="checkbox" checked={sel} onChange={() => setIds(g, sel ? ids.filter(x => x !== o.id) : [...ids, o.id])} />
                     <span style={{ width: 22, color: S.muted }}>{sel ? `${pos + 1}.` : ''}</span>
+                    <select value={provDe(o) === SIN ? '' : provDe(o)} onChange={e => cambiarPulverizador(o, e.target.value)} title="Pulverizador que hace este campo"
+                      style={{ maxWidth: mobile ? 120 : 170, padding: '2px 4px', fontSize: 11, borderRadius: 5, border: `1px solid ${S.border}`, background: S.surface, color: S.text }}>
+                      <option value="">— pulverizador —</option>
+                      {[...new Set([...contactos.map(c => c.nombre), ...(o.proveedor ? [o.proveedor] : [])])].sort().map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
                     <span style={{ flex: 1 }}>{nombreDe(o)} · {fmt(parseFloat(o.superficie_ha_real) || 0)} ha <span style={{ color: S.hint }}>· {o.estado === 'emitida' ? 'emitida' : 'hecha'} {o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : ''}</span></span>
                     {sel && <>
                       <button disabled={pos === 0} onClick={() => { const a = [...ids]; [a[pos - 1], a[pos]] = [a[pos], a[pos - 1]]; setIds(g, a) }} style={{ ...btn(false), padding: '1px 7px' }} title="Subir en el recorrido">↑</button>
@@ -254,6 +291,16 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
             {/* Plan */}
             {abierto && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${S.border}` }}>
+                {pulverizadoresGrupo.length > 1 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8, fontSize: 12 }}>
+                    <span style={{ color: S.muted }}>Plan de:</span>
+                    {['todos', ...pulverizadoresGrupo].map(n => (
+                      <button key={n} onClick={() => elegirPulverizador(n)} style={btn(pulvActivo === n)}>
+                        {n === 'todos' ? 'Todos juntos' : `${n} · ${fmt(ordenesGrupoTodas.filter(o => provDe(o) === n).reduce((t, o) => t + (parseFloat(o.superficie_ha_real) || 0), 0))} ha`}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {!plan.tanques.length ? <div style={{ fontSize: 12, color: S.hint }}>Tildá al menos un campo y cargá caldo y tanque.</div> : <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                     <div style={{ fontSize: 13 }}>
@@ -265,13 +312,13 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
                     </div>
                   </div>
                   {mobile && plan.tanques.length > 0 && (
-                    <div style={{ fontSize: 12, color: S.muted, marginBottom: 6 }}>Tanques hechos: <b style={{ color: S.accent }}>{plan.tanques.filter((_, i) => hechos[`${g.key}-${i}`]).length} de {plan.tanques.length}</b> · tocá ✓ en cada uno cuando lo termines</div>
+                    <div style={{ fontSize: 12, color: S.muted, marginBottom: 6 }}>Tanques hechos: <b style={{ color: S.accent }}>{plan.tanques.filter((_, i) => hechos[`${g.key}-${pulvActivo}-${i}`]).length} de {plan.tanques.length}</b> · tocá ✓ en cada uno cuando lo termines</div>
                   )}
                   {plan.tanques.map((t, i) => (
-                    <div key={i} style={{ border: `1px solid ${t.parcial ? S.amber : S.border}`, borderRadius: 8, padding: mobile ? '10px 12px' : '6px 10px', marginBottom: 6, background: hechos[`${g.key}-${i}`] ? S.bg : (t.parcial ? S.amberLight : 'transparent'), opacity: hechos[`${g.key}-${i}`] ? 0.55 : 1 }}>
+                    <div key={i} style={{ border: `1px solid ${t.parcial ? S.amber : S.border}`, borderRadius: 8, padding: mobile ? '10px 12px' : '6px 10px', marginBottom: 6, background: hechos[`${g.key}-${pulvActivo}-${i}`] ? S.bg : (t.parcial ? S.amberLight : 'transparent'), opacity: hechos[`${g.key}-${pulvActivo}-${i}`] ? 0.55 : 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                         <div style={{ fontSize: mobile ? 15 : 13, fontWeight: 600 }}>Tanque {i + 1}{t.parcial ? ' · parcial' : ''} <span style={{ fontWeight: 400, color: S.muted }}>— {fmt(t.ha)} ha · {fmt(t.litros, 0)} L</span></div>
-                        {mobile && <button onClick={() => setHechos({ ...hechos, [`${g.key}-${i}`]: !hechos[`${g.key}-${i}`] })} style={{ minWidth: 44, height: 36, borderRadius: 8, border: `1px solid ${S.accent}`, background: hechos[`${g.key}-${i}`] ? S.accent : 'transparent', color: hechos[`${g.key}-${i}`] ? '#fff' : S.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✓</button>}
+                        {mobile && <button onClick={() => setHechos({ ...hechos, [`${g.key}-${pulvActivo}-${i}`]: !hechos[`${g.key}-${pulvActivo}-${i}`] })} style={{ minWidth: 44, height: 36, borderRadius: 8, border: `1px solid ${S.accent}`, background: hechos[`${g.key}-${pulvActivo}-${i}`] ? S.accent : 'transparent', color: hechos[`${g.key}-${pulvActivo}-${i}`] ? '#fff' : S.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✓</button>}
                       </div>
                       <div style={{ fontSize: 12, color: S.muted }}>{t.partes.map(p => `${p.nombre} ${fmt(p.ha)} ha`).join(' → ')}</div>
                       {(mobile || i === 0 || t.parcial) && (
