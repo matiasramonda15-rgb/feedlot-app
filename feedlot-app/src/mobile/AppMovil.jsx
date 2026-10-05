@@ -322,7 +322,8 @@ function Home({ usuario, nav, onLogout, datos, onReload }) {
             { icon: '💊', label: 'Sanidad', p: 'sanidad' },
             { icon: '💰', label: 'Carga venta', p: 'venta' },
             ...(['matias_eu@hotmail.com','martin@campo.com','braian@campo.com','oscar@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
-            ...(usuario?.rol === 'dueno' || usuario?.rol === 'lectura' ? [{ icon: '🌱', label: 'Agricultura', p: 'agricultura' }] : []),
+            // Agricultura: dueño, lectura y usuarios habilitados por mail (Martín: acceso completo)
+            ...(usuario?.rol === 'dueno' || usuario?.rol === 'lectura' || ['martin@campo.com'].includes(usuario?.email) ? [{ icon: '🌱', label: 'Agricultura', p: 'agricultura' }] : []),
           ].map((a, i) => (
             <div key={i} onClick={() => nav(a.p)}
               style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.85rem', cursor: 'pointer', textAlign: 'center' }}>
