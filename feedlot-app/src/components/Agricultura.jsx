@@ -1498,6 +1498,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   async function guardar() {
     if (!camposSeleccionados.length || !form.tipo) { alert('Seleccioná al menos un campo y el tipo'); return }
     if (!(superficie > 0) && form.tipo !== 'Confeccion de rollo' && !confirm('La orden quedó sin hectáreas. ¿Guardarla igual?')) return
+    // Mismo producto cargado dos veces (ej. se eligió Imazapir 80% en vez de 48%)
+    const repetidos = [...new Set((form.productos || []).filter(p => p.id).map(p => String(p.id)).filter((id, i, arr) => arr.indexOf(id) !== i))]
+    if (repetidos.length) {
+      const nombres = repetidos.map(id => stockAgro.find(x => String(x.id) === id)?.insumo || 'un producto').join(', ')
+      if (!confirm(`Ojo: ${nombres} está cargado más de una vez en la orden. ¿Es correcto? (Si no, tocá Cancelar y corregí el producto.)`)) return
+    }
     setGuardando(true)
     // Costo de la labor: el total si se cargó; si no, costo/ha × hectáreas
     // (antes, con solo el costo/ha la orden quedaba sin costo y no se
