@@ -866,15 +866,31 @@ function htmlCaldoTanques(caldo, tanque, ha, productos, stockAgro) {
   if (!caldo || !ha) return ''
   const totalCaldo = caldo * ha
   const haTanque = tanque ? tanque / caldo : null
-  const tanques = tanque ? Math.ceil(totalCaldo / tanque) : null
-  const filas = haTanque ? productos.filter(p => p.dosis).map(p => {
+  const llenos = tanque ? Math.floor(totalCaldo / tanque + 1e-9) : 0
+  const haResto = tanque ? Math.round((ha - llenos * haTanque) * 100) / 100 : 0
+  const n = tanque ? llenos + (haResto > 0.01 ? 1 : 0) : 0
+  // Cantidades de cada producto para X hectáreas (dosis exacta si la hay)
+  const tabla = haX => `<table style="width:100%;border-collapse:collapse;margin-top:4px;">${productos.filter(p => p.dosis).map(p => {
     const item = stockAgro.find(x => String(x.id) === String(p.id))
-    return `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee;">${item?.insumo || '—'}</td><td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:700;">${(parseFloat(p.dosis) * haTanque).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${item?.unidad || p.unidad || ''}</td></tr>`
-  }).join('') : ''
+    const d = parseFloat(p.dosis_exacta) || parseFloat(p.dosis)
+    return `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee;">${item?.insumo || '—'}</td><td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:700;">${(d * haX).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${item?.unidad || p.unidad || ''}</td></tr>`
+  }).join('')}</table>`
+  // Según cuántos tanques hacen falta: uno solo que no se llena, todos
+  // llenos, o llenos + un último tanque con lo que falta. (Antes siempre
+  // decía "por cada tanque lleno", aunque no alcanzara para llenar uno.)
+  let detalle = ''
+  if (tanque) {
+    if (llenos === 0) {
+      detalle = `<div style="margin-top:8px;font-weight:600;">Un solo tanque, sin llenar: ${Math.round(totalCaldo).toLocaleString('es-AR')} L de agua para ${ha.toLocaleString('es-AR')} ha</div>${tabla(ha)}`
+    } else {
+      detalle = `<div style="margin-top:8px;font-weight:600;">${llenos === 1 ? '1 tanque lleno' : `${llenos} tanques llenos`} (${haTanque.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ha c/u)${llenos > 1 ? ', cada uno con' : ', con'}:</div>${tabla(haTanque)}`
+      if (haResto > 0.01) detalle += `<div style="margin-top:10px;font-weight:600;color:#B26B00;">Último tanque (parcial): ${haResto.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ha · ${Math.round(haResto * caldo).toLocaleString('es-AR')} L de agua</div>${tabla(haResto)}`
+    }
+  }
   return `<div style="margin-top:16px;padding:12px 14px;background:#EEF3FA;border-radius:6px;font-size:13px;">
     <div style="font-size:11px;font-weight:700;color:#1A3D6B;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Caldo y carga del equipo</div>
-    <div>Caldo: <b>${caldo.toLocaleString('es-AR')} L/ha</b> · Total de agua: <b>${Math.round(totalCaldo).toLocaleString('es-AR')} L</b>${tanque ? ` · Tanque de ${tanque.toLocaleString('es-AR')} L → <b>${haTanque.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ha por tanque</b>, <b>${tanques} tanque${tanques !== 1 ? 's' : ''}</b>` : ''}</div>
-    ${filas ? `<div style="margin-top:8px;font-weight:600;">Por cada tanque lleno:</div><table style="width:100%;border-collapse:collapse;margin-top:4px;">${filas}</table>` : ''}
+    <div>Caldo: <b>${caldo.toLocaleString('es-AR')} L/ha</b> · Total de agua: <b>${Math.round(totalCaldo).toLocaleString('es-AR')} L</b>${tanque ? ` · Tanque de ${tanque.toLocaleString('es-AR')} L · <b>${n} tanque${n !== 1 ? 's' : ''}</b>` : ''}</div>
+    ${detalle}
   </div>`
 }
 
