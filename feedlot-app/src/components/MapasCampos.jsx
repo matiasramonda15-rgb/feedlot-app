@@ -98,6 +98,191 @@ export function BotonMapa({ campoId, etiqueta = '🗺', titulo, estilo }) {
   )
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Contornos de lotes sobre el mapa (tabla mapas_lotes). Coordenadas de 0 a 1.
+// ─────────────────────────────────────────────────────────────────────────────
+let cachePol = null
+export async function cargarPoligonos(forzar = false) {
+  if (cachePol && !forzar) return cachePol
+  const { data } = await supabase.from('mapas_lotes').select('*')
+  cachePol = data || []
+  return cachePol
+}
+
+// Opciones para marcar en un mapa: cada lote de sus campos; si el campo no
+// tiene lotes cargados, el campo entero.
+function opcionesDeMapa(mapa, campos) {
+  const ops = []
+  ;(mapa.campo_ids || []).forEach(cid => {
+    const c = campos.find(x => x.id === Number(cid)); if (!c) return
+    const lotes = (c.lotes_agricolas || []).slice().sort((a, b) => String(a.numero).localeCompare(String(b.numero), undefined, { numeric: true }))
+    if (!lotes.length) ops.push({ key: `${c.id}-0`, campo_id: c.id, lote_id: null, nombre: c.nombre })
+    else lotes.forEach(l => ops.push({ key: `${c.id}-${l.id}`, campo_id: c.id, lote_id: l.id, nombre: `${c.nombre} · Lote ${l.numero}` }))
+  })
+  return ops
+}
+
+export function MarcadorLotes({ mapa, campos, onCerrar }) {
+  const [url, setUrl] = useState(null)
+  const [pols, setPols] = useState([])
+  const [sel, setSel] = useState(null)
+  const [partes, setPartes] = useState([[]])   // partes del lote que se está marcando
+  const [zoom, setZoom] = useState(1)
+  const [guardando, setGuardando] = useState(false)
+  const ops = opcionesDeMapa(mapa, campos)
+  useEffect(() => { urlFirmada(mapa.path).then(setUrl); cargarPoligonos(true).then(t => setPols(t.filter(p => p.mapa_id === mapa.id))) }, [mapa.id, mapa.path])
+  const polDe = o => pols.find(p => p.campo_id === o.campo_id && (p.lote_id || null) === (o.lote_id || null))
+  function elegir(o) { setSel(o); const ex = polDe(o); setPartes(ex ? ex.partes.map(pt => pt.slice()) : [[]]) }
+  function tocar(e) {
+    if (!sel) { alert('Primero elegí arriba qué lote vas a marcar'); return }
+    const r = e.currentTarget.getBoundingClientRect()
+    const x = Math.round((e.clientX - r.left) / r.width * 10000) / 10000, y = Math.round((e.clientY - r.top) / r.height * 10000) / 10000
+    setPartes(prev => { const n = prev.map(p => p.slice()); n[n.length - 1].push([x, y]); return n })
+  }
+  async function guardar() {
+    const limpias = partes.filter(p => p.length >= 3)
+    if (!limpias.length) { alert('Marcá al menos 3 esquinas'); return }
+    setGuardando(true)
+    const ex = polDe(sel)
+    const { error } = ex
+      ? await supabase.from('mapas_lotes').update({ partes: limpias }).eq('id', ex.id)
+      : await supabase.from('mapas_lotes').insert({ mapa_id: mapa.id, campo_id: sel.campo_id, lote_id: sel.lote_id, partes: limpias })
+    setGuardando(false)
+    if (error) { alert('No se pudo guardar: ' + error.message); return }
+    const t = await cargarPoligonos(true); setPols(t.filter(p => p.mapa_id === mapa.id))
+    const i = ops.findIndex(o => o.key === sel.key); const sig = ops.slice(i + 1).find(o => !polDe(o))
+    if (sig) elegir(sig); else { setSel(null); setPartes([[]]) }
+  }
+  async function borrar() {
+    const ex = polDe(sel); if (!ex || !confirm(`¿Borrar el contorno de ${sel.nombre}?`)) return
+    await supabase.from('mapas_lotes').delete().eq('id', ex.id)
+    const t = await cargarPoligonos(true); setPols(t.filter(p => p.mapa_id === mapa.id)); setPartes([[]])
+  }
+  const b = (activo) => ({ padding: '7px 12px', fontSize: 13, borderRadius: 7, border: `1px solid ${activo ? '#F2B400' : '#555'}`, background: activo ? '#F2B400' : '#222', color: activo ? '#111' : '#fff', cursor: 'pointer', fontWeight: activo ? 700 : 400 })
+  const puntos = pt => pt.map(([x, y]) => `${x * 1000},${y * 1000}`).join(' ')
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,.9)', display: 'flex', flexDirection: 'column', color: '#fff' }}>
+      <div style={{ padding: '10px 12px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 700, marginRight: 8 }}>✏️ Marcar lotes · {mapa.nombre}</div>
+        {ops.map(o => <button key={o.key} onClick={() => elegir(o)} style={b(sel?.key === o.key)}>{polDe(o) ? '✓ ' : ''}{o.nombre}</button>)}
+        <div style={{ flex: 1 }} />
+        <button style={b(false)} onClick={() => setZoom(z => Math.max(1, z - 0.5))}>−</button>
+        <button style={b(false)} onClick={() => setZoom(z => Math.min(4, z + 0.5))}>+</button>
+        <button style={b(false)} onClick={onCerrar}>Cerrar</button>
+      </div>
+      <div style={{ padding: '0 12px 8px', fontSize: 13, color: '#ddd', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {sel ? <>Marcando <b style={{ color: '#F2B400' }}>{sel.nombre}</b>: tocá las esquinas del lote en orden, siguiendo el borde.
+          <button style={b(false)} onClick={() => setPartes(prev => { const n = prev.map(p => p.slice()); n[n.length - 1].pop(); return n })}>↶ Deshacer punto</button>
+          <button style={b(false)} onClick={() => setPartes(prev => [...prev, []])} title="Si el lote tiene otra parte separada">+ Otra parte</button>
+          <button style={b(false)} onClick={() => setPartes([[]])}>Empezar de nuevo</button>
+          {polDe(sel) && <button style={b(false)} onClick={borrar}>Borrar contorno</button>}
+          <button style={{ ...b(true), background: '#2E7D32', borderColor: '#2E7D32', color: '#fff' }} onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : '✓ Guardar lote'}</button>
+        </> : 'Elegí arriba el lote que vas a marcar. Los que tienen ✓ ya están marcados.'}
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+        {!url ? <div style={{ margin: 'auto', color: '#ccc' }}>Cargando…</div> : (
+          <div style={{ position: 'relative', width: `${zoom * 100}%`, maxWidth: zoom === 1 ? 1200 : 'none', margin: zoom === 1 ? '0 auto' : 0 }}>
+            <img src={url} alt="" style={{ width: '100%', display: 'block', background: '#fff', userSelect: 'none' }} draggable={false} />
+            <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" onClick={tocar} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: sel ? 'crosshair' : 'default' }}>
+              {pols.filter(p => !(sel && p.campo_id === sel.campo_id && (p.lote_id || null) === (sel.lote_id || null))).map(p => p.partes.map((pt, k) => (
+                <polygon key={`${p.id}-${k}`} points={puntos(pt)} fill="rgba(46,125,50,.28)" stroke="#2E7D32" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+              )))}
+              {partes.map((pt, k) => pt.length >= 2 && (
+                <polygon key={`n${k}`} points={puntos(pt)} fill="rgba(242,180,0,.35)" stroke="#F2B400" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+              ))}
+              {partes.flatMap((pt, k) => pt.map(([x, y], i) => <circle key={`c${k}-${i}`} cx={x * 1000} cy={y * 1000} r="5" fill="#F2B400" stroke="#111" strokeWidth="1" vectorEffect="non-scaling-stroke" />))}
+            </svg>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hoja con mapa: los mapas de los campos de una mezcla, con los lotes que se
+// aplican pintados, y el recuadro con hectáreas y receta (como las hojas que
+// se armaban a mano en Paint). Devuelve un archivo PNG.
+//   destinos: [{ campo_id, lote_id }]   ·   receta: [{ nombre, dosis, total, unidad }]
+// ─────────────────────────────────────────────────────────────────────────────
+function cargarImagen(url) {
+  return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = rej; im.src = url })
+}
+const fmtN = (x, d = 3) => (x == null || !isFinite(x)) ? '—' : Number(x).toLocaleString('es-AR', { maximumFractionDigits: d })
+export async function generarHojaConMapa({ titulo, destinos, ha, receta, color = '#FFC800', fecha = new Date() }) {
+  const mapas = await cargarMapas()
+  const pols = await cargarPoligonos(true)
+  const camposIds = [...new Set(destinos.map(d => Number(d.campo_id)))]
+  const mapasUsados = mapas.filter(m => (m.campo_ids || []).some(id => camposIds.includes(Number(id))))
+  if (!mapasUsados.length) throw new Error('Esos campos no tienen mapa cargado')
+  const imagenes = []
+  for (const m of mapasUsados) {
+    const u = await urlFirmada(m.path); const im = await cargarImagen(u)
+    // Recortar el blanco de los bordes del dibujo (Paint deja mucho lienzo vacío)
+    const t = document.createElement('canvas'); t.width = im.naturalWidth; t.height = im.naturalHeight
+    const tc = t.getContext('2d'); tc.drawImage(im, 0, 0)
+    let x1 = im.naturalWidth, y1 = im.naturalHeight, x2 = 0, y2 = 0
+    try {
+      const px = tc.getImageData(0, 0, im.naturalWidth, im.naturalHeight).data
+      for (let yy = 0; yy < im.naturalHeight; yy += 2) for (let xx = 0; xx < im.naturalWidth; xx += 2) {
+        const k = (yy * im.naturalWidth + xx) * 4
+        if (px[k + 3] > 0 && (px[k] < 200 || px[k + 1] < 200 || px[k + 2] < 200)) { if (xx < x1) x1 = xx; if (xx > x2) x2 = xx; if (yy < y1) y1 = yy; if (yy > y2) y2 = yy }
+      }
+    } catch (e) { x1 = 0; y1 = 0; x2 = im.naturalWidth; y2 = im.naturalHeight }
+    if (x2 <= x1 || y2 <= y1) { x1 = 0; y1 = 0; x2 = im.naturalWidth; y2 = im.naturalHeight }
+    const mg = 20
+    const rc = { x: Math.max(0, x1 - mg), y: Math.max(0, y1 - mg) }
+    rc.w = Math.min(im.naturalWidth, x2 + mg) - rc.x; rc.h = Math.min(im.naturalHeight, y2 + mg) - rc.y
+    imagenes.push({ m, im, rc })
+  }
+  const W = Math.max(...imagenes.map(x => x.rc.w), 1000)
+  const lineas = receta.length + 2
+  const altoReceta = 40 + lineas * 34
+  let H = 70; imagenes.forEach(x => { H += x.rc.h * (W / x.rc.w) + 20 })
+  H += altoReceta + 30
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = Math.ceil(H)
+  const ctx = cv.getContext('2d')
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H)
+  ctx.fillStyle = '#111'; ctx.font = 'bold 30px Arial'; ctx.textBaseline = 'top'
+  ctx.fillText(titulo || 'Orden de aplicación', 30, 22)
+  ctx.font = 'bold 26px Arial'; const f = `Fecha: ${fecha.toLocaleDateString('es-AR')}`; ctx.fillText(f, W - 30 - ctx.measureText(f).width, 24)
+  let y = 70
+  const sinMarcar = []
+  for (const { m, im, rc } of imagenes) {
+    const esc = W / rc.w, h = rc.h * esc
+    ctx.drawImage(im, rc.x, rc.y, rc.w, rc.h, 0, y, W, h)
+    // coordenadas guardadas (0 a 1 sobre la imagen entera) → recorte dibujado
+    const aX = px => (px * im.naturalWidth - rc.x) * esc, aY = py => y + (py * im.naturalHeight - rc.y) * esc
+    // Pintar los lotes de esta mezcla en este mapa (multiplicar: el blanco
+    // se vuelve del color y las líneas y textos negros se siguen viendo)
+    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = color
+    destinos.filter(d => (m.campo_ids || []).map(Number).includes(Number(d.campo_id))).forEach(d => {
+      let ps = pols.filter(p => p.mapa_id === m.id && p.campo_id === Number(d.campo_id) && (p.lote_id || null) === (d.lote_id ? Number(d.lote_id) : null))
+      if (!ps.length && !d.lote_id) ps = pols.filter(p => p.mapa_id === m.id && p.campo_id === Number(d.campo_id)) // campo entero: todos sus lotes
+      if (!ps.length) sinMarcar.push(d)
+      ps.forEach(p => p.partes.forEach(pt => {
+        ctx.beginPath(); pt.forEach(([px, py], i) => { const X = aX(px), Y = aY(py); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y) }); ctx.closePath(); ctx.fill()
+      }))
+    })
+    ctx.restore()
+    y += h + 20
+  }
+  // Recuadro de la receta (formato: _0,074 imazapir 48% (7))
+  const x0 = 60
+  ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 6
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0, y + 6, 46, 30, 8) : ctx.rect(x0, y + 6, 46, 30); ctx.stroke()
+  ctx.fillStyle = '#111'; ctx.font = '28px "Times New Roman", serif'
+  ctx.fillText(`${fmtN(ha, 2)} ha`, x0 + 70, y + 6)
+  receta.forEach((r, i) => ctx.fillText(`_${fmtN(r.dosis, r.dosis < 0.01 ? 4 : 3)} ${r.nombre} (${fmtN(r.total, 2)}${r.unidad === 'kg' ? ' kg' : ''})`, x0 + 70, y + 46 + i * 34))
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'))
+  return { archivo: new File([blob], `orden-mapa-${fecha.toLocaleDateString('es-AR').replace(/\//g, '-')}.png`, { type: 'image/png' }), sinMarcar }
+}
+export async function compartirArchivos(archivos, titulo) {
+  if (navigator.canShare && navigator.canShare({ files: archivos })) { try { await navigator.share({ files: archivos, title: titulo }) } catch (e) { /* canceló */ } return }
+  archivos.forEach(f => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove() })
+}
+
 // ── Pestaña de administración ──
 export default function MapasCampos({ campos, S, Label, inputStyle, usuario }) {
   const mapas = useMapas()
@@ -105,6 +290,7 @@ export default function MapasCampos({ campos, S, Label, inputStyle, usuario }) {
   const [form, setForm] = useState(null) // { id?, nombre, campo_ids, archivo }
   const [guardando, setGuardando] = useState(false)
   const [viendo, setViendo] = useState(null)
+  const [marcando, setMarcando] = useState(null)
 
   useEffect(() => {
     mapas.forEach(async m => {
@@ -196,6 +382,7 @@ export default function MapasCampos({ campos, S, Label, inputStyle, usuario }) {
               <div style={{ fontSize: 11, color: S.muted, margin: '2px 0 6px' }}>{(m.campo_ids || []).map(id => campos.find(c => c.id === Number(id))?.nombre).filter(Boolean).join(' · ') || 'sin campos asignados'}</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setViendo(m)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, border: `1px solid ${S.accent}`, background: S.surface, color: S.accent, cursor: 'pointer' }}>Ver</button>
+                <button onClick={() => setMarcando(m)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, border: `1px solid ${S.accent}`, background: S.accentLight, color: S.accent, cursor: 'pointer', fontWeight: 600 }}>✏️ Marcar lotes</button>
                 <button onClick={() => setForm({ id: m.id, nombre: m.nombre, campo_ids: m.campo_ids || [], path: m.path, archivo: null })} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, border: `1px solid ${S.border}`, background: S.surface, color: S.muted, cursor: 'pointer' }}>Editar</button>
                 <button onClick={() => eliminar(m)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, border: '1px solid #F09595', background: S.redLight, color: S.red, cursor: 'pointer' }}>Eliminar</button>
               </div>
@@ -208,6 +395,7 @@ export default function MapasCampos({ campos, S, Label, inputStyle, usuario }) {
         <div style={{ fontSize: 12, color: S.muted, marginTop: 12 }}>Campos sin mapa: {camposSinMapa.map(c => c.nombre).join(', ')}</div>
       )}
       {viendo && <VisorMapa mapa={viendo} onCerrar={() => setViendo(null)} />}
+      {marcando && <MarcadorLotes mapa={marcando} campos={campos} onCerrar={() => setMarcando(null)} />}
     </div>
   )
 }

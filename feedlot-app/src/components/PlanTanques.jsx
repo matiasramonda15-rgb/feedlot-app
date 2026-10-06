@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../supabase'
-import { BotonMapa, useMapas, mapasDeCampo, archivoDeMapa } from './MapasCampos'
+import { BotonMapa, useMapas, mapasDeCampo, archivoDeMapa, generarHojaConMapa, compartirArchivos } from './MapasCampos'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plan de tanques (Agricultura → Órdenes → 🚜 Plan de tanques)
@@ -205,6 +205,22 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
     } finally { setEnviando(false) }
   }
 
+  // ── Hoja con mapa: los lotes de esta mezcla pintados sobre su mapa + receta ──
+  const [armandoMapa, setArmandoMapa] = useState(false)
+  async function hojaConMapa() {
+    if (!grupo || !ordenesGrupo.length) return
+    setArmandoMapa(true)
+    try {
+      const haTot = ordenesGrupo.reduce((t, o) => t + (parseFloat(o.superficie_ha_real) || 0), 0)
+      const receta = grupo.prods.map(p => ({ nombre: (item(p.id)?.insumo || '?').trim().toLowerCase(), dosis: p.dosisMostrar ?? p.dosis, total: Math.round(p.dosis * haTot * 100) / 100, unidad: item(p.id)?.unidad === 'kg' ? 'kg' : 'L' }))
+      const titulo = `${grupo.tipo === 'Fertilizacion' ? 'Fertilización' : 'Pulverización'}${pulvActivo !== 'todos' ? ` — ${pulvActivo}` : ''}`
+      const { archivo, sinMarcar } = await generarHojaConMapa({ titulo, destinos: ordenesGrupo.map(o => ({ campo_id: o.campo_id, lote_id: o.lote_id })), ha: haTot, receta })
+      if (sinMarcar.length) alert(`Ojo: ${sinMarcar.map(d => nombreDe(ordenesGrupo.find(o => o.campo_id === d.campo_id && (o.lote_id || null) === (d.lote_id || null)) || { campo_id: d.campo_id })).join(', ')} no ${sinMarcar.length === 1 ? 'está marcado' : 'están marcados'} en el mapa (🗺 Mapas → ✏️ Marcar lotes), así que no ${sinMarcar.length === 1 ? 'sale pintado' : 'salen pintados'}.`)
+      await compartirArchivos([archivo], titulo)
+    } catch (e) { alert('No se pudo armar la hoja con mapa: ' + (e.message || e)) }
+    finally { setArmandoMapa(false) }
+  }
+
   function imprimir() {
     if (!grupo || !plan.tanques.length) return
     const prods = grupo.prods
@@ -317,6 +333,7 @@ ${plan.tanques.map((t, i) => `<div class="tq${t.parcial ? ' p' : ''}"><b><span c
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={enviarImagen} disabled={enviando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{enviando ? 'Armando…' : '📤 Enviar hoja (imagen)'}</button>
+                      <button onClick={hojaConMapa} disabled={armandoMapa} style={{ padding: '7px 12px', fontSize: 12, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>{armandoMapa ? 'Armando…' : '🖼 Hoja con mapa'}</button>
                       <button onClick={imprimir} style={{ padding: '7px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>🖨 Imprimir</button>
                     </div>
                   </div>
