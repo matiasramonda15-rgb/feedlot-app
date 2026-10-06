@@ -846,7 +846,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                 <tbody>
                   {caravanasVentaGuardadas[v.id].map(c => (
                     <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                      <td style={{ padding: '4px 10px', fontFamily: 'monospace' }}>...{c.numero_caravana.slice(-6)}</td>
+                      <td style={{ padding: '4px 10px', fontFamily: 'monospace', userSelect: 'all' }}>{c.numero_caravana}</td>
                       <td style={{ padding: '4px 10px', fontFamily: 'monospace', textAlign: 'right' }}>{c.peso} kg</td>
                       <td style={{ padding: '4px 10px', color: S.hint, textAlign: 'right' }}>{c.hora || '—'}</td>
                       <td style={{ padding: '4px 10px', textAlign: 'right' }}>

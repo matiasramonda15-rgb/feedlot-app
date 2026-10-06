@@ -1801,7 +1801,7 @@ export default function Reportes({ usuario }) {
                     <tbody>
                       {[...paresCaravana].sort((a, b) => new Date(b.fechaVenta) - new Date(a.fechaVenta)).map(p => (
                         <tr key={p.numero_caravana} style={{ borderBottom: `1px solid ${S.border}` }}>
-                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 10 }}>...{p.numero_caravana.slice(-6)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 10, userSelect: 'all' }}>{p.numero_caravana}</td>
                           <td style={{ padding: '7px 10px' }}>{p.procedencia || '—'}</td>
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{new Date(p.fechaIngreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{p.pesoIngreso}</td>

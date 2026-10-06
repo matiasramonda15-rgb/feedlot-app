@@ -72,6 +72,8 @@ function normalizarSublotes(raw) {
 }
 
 export default function Ingresos({ usuario, mobile, nav }) {
+  // Copia números de caravana completos (uno por línea) para pegarlos en SENASA / guías
+  const copiarCaravanas = async (lista, btn) => { const t = lista.join('\n'); try { await navigator.clipboard.writeText(t) } catch (e) { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove() } if (btn) { const o = btn.textContent; btn.textContent = `✓ ${lista.length} copiadas`; setTimeout(() => { btn.textContent = o }, 1800) } }
   const [tab, setTab] = useState('lista')
   const [showDetalleMeses, setShowDetalleMeses] = useState(false)
   const [showDetallePrecio, setShowDetallePrecio] = useState(false)
@@ -1225,13 +1227,14 @@ export default function Ingresos({ usuario, mobile, nav }) {
                     <div style={{ marginBottom: 12, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                       <div style={{ padding: '6px 10px', background: S.greenLight, fontSize: 11, fontWeight: 600, color: S.green }}>
                         ✓ {caravanasGuardadas[l.id].length} caravanas ya guardadas para este lote
+                        <button onClick={e => copiarCaravanas(caravanasGuardadas[l.id].map(c => c.numero_caravana), e.currentTarget)} style={{ marginLeft: 8, padding: '1px 8px', fontSize: 10, borderRadius: 4, border: '1px solid currentColor', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>📋 Copiar todas</button>
                       </div>
                       <div style={{ maxHeight: 220, overflowY: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                           <tbody>
                             {caravanasGuardadas[l.id].map(c => (
                               <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                                <td style={{ padding: '4px 10px', fontFamily: 'monospace' }}>...{c.numero_caravana.slice(-6)}</td>
+                                <td style={{ padding: '4px 10px', fontFamily: 'monospace', userSelect: 'all' }}>{c.numero_caravana}</td>
                                 <td style={{ padding: '4px 10px', fontFamily: 'monospace', textAlign: 'right' }}>{c.peso} kg</td>
                                 <td style={{ padding: '4px 10px', color: S.hint, textAlign: 'right' }}>{c.hora || '—'}</td>
                                 <td style={{ padding: '4px 10px', textAlign: 'right' }}>
@@ -1291,6 +1294,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
                     <div style={{ marginBottom: 12, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                       <div style={{ padding: '6px 10px', background: S.accentLight, fontSize: 11, fontWeight: 600, color: S.accent }}>
                         🏛️ {senasaGuardadas[l.id].length} caravanas asentadas en SENASA
+                        <button onClick={e => copiarCaravanas(senasaGuardadas[l.id].map(c => c.numero_caravana), e.currentTarget)} style={{ marginLeft: 8, padding: '1px 8px', fontSize: 10, borderRadius: 4, border: '1px solid currentColor', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>📋 Copiar todas</button>
                       </div>
                       {(() => {
                         const { soloSenasa, soloCampo, enAmbos } = compararCaravanasSenasaCampo(senasaGuardadas[l.id], caravanasGuardadas[l.id] || [])
@@ -1300,13 +1304,13 @@ export default function Ingresos({ usuario, mobile, nav }) {
                             {soloSenasa.length > 0 && (
                               <div style={{ marginBottom: 6 }}>
                                 <span style={{ color: S.amber, fontWeight: 600 }}>⚠ {soloSenasa.length} en SENASA pero NO leídas en el campo:</span>
-                                <div style={{ fontFamily: 'monospace', color: S.muted, marginTop: 3, wordBreak: 'break-all' }}>{soloSenasa.map(n => '...' + n.slice(-6)).join(', ')}</div>
+                                <div style={{ fontFamily: 'monospace', color: S.muted, marginTop: 3, wordBreak: 'break-all' }}>{soloSenasa.join(', ')}</div>
                               </div>
                             )}
                             {soloCampo.length > 0 && (
                               <div>
                                 <span style={{ color: S.accent, fontWeight: 600 }}>ℹ {soloCampo.length} leídas en el campo pero NO en SENASA:</span>
-                                <div style={{ fontFamily: 'monospace', color: S.muted, marginTop: 3, wordBreak: 'break-all' }}>{soloCampo.map(n => '...' + n.slice(-6)).join(', ')}</div>
+                                <div style={{ fontFamily: 'monospace', color: S.muted, marginTop: 3, wordBreak: 'break-all' }}>{soloCampo.join(', ')}</div>
                               </div>
                             )}
                           </div>
@@ -1317,7 +1321,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
                           <tbody>
                             {senasaGuardadas[l.id].map(c => (
                               <tr key={c.id} style={{ borderBottom: `1px solid ${S.border}` }}>
-                                <td style={{ padding: '4px 10px', fontFamily: 'monospace' }}>...{c.numero_caravana.slice(-6)}</td>
+                                <td style={{ padding: '4px 10px', fontFamily: 'monospace', userSelect: 'all' }}>{c.numero_caravana}</td>
                                 <td style={{ padding: '4px 10px', textAlign: 'right' }}>
                                   <button onClick={() => borrarCaravanaSenasa(c.id, l.id)} style={{ padding: '2px 7px', fontSize: 10, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 4, cursor: 'pointer' }}>Borrar</button>
                                 </td>
