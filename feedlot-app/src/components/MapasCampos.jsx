@@ -321,6 +321,54 @@ export async function generarHojaConMapa({ titulo, subtitulo, operario, lotes = 
   const blob = await new Promise(r => cv.toBlob(r, 'image/png'))
   return { archivo: new File([blob], `orden-mapa-${fecha.toLocaleDateString('es-AR').replace(/\//g, '-')}.png`, { type: 'image/png' }), sinMarcar }
 }
+// Solo el mapa (recortado) con los lotes pintados, como imagen (data URL),
+// para meterlo dentro de la orden de trabajo. Devuelve null si el campo no
+// tiene mapa.
+export async function mapaPintadoDataURL({ destinos, color = '#FFC800' }) {
+  const mapas = await cargarMapas()
+  const pols = await cargarPoligonos()
+  const camposIds = [...new Set(destinos.map(d => Number(d.campo_id)))]
+  const mapasUsados = mapas.filter(m => (m.campo_ids || []).some(id => camposIds.includes(Number(id))))
+  if (!mapasUsados.length) return null
+  const piezas = []
+  for (const m of mapasUsados) {
+    const im = await cargarImagen(await urlFirmada(m.path))
+    const t = document.createElement('canvas'); t.width = im.naturalWidth; t.height = im.naturalHeight
+    const tc = t.getContext('2d'); tc.drawImage(im, 0, 0)
+    let x1 = im.naturalWidth, y1 = im.naturalHeight, x2 = 0, y2 = 0
+    try {
+      const px = tc.getImageData(0, 0, im.naturalWidth, im.naturalHeight).data
+      for (let yy = 0; yy < im.naturalHeight; yy += 2) for (let xx = 0; xx < im.naturalWidth; xx += 2) {
+        const k = (yy * im.naturalWidth + xx) * 4
+        if (px[k + 3] > 0 && (px[k] < 200 || px[k + 1] < 200 || px[k + 2] < 200)) { if (xx < x1) x1 = xx; if (xx > x2) x2 = xx; if (yy < y1) y1 = yy; if (yy > y2) y2 = yy }
+      }
+    } catch (e) { x1 = 0; y1 = 0; x2 = im.naturalWidth; y2 = im.naturalHeight }
+    if (x2 <= x1 || y2 <= y1) { x1 = 0; y1 = 0; x2 = im.naturalWidth; y2 = im.naturalHeight }
+    const rc = { x: Math.max(0, x1 - 16), y: Math.max(0, y1 - 16) }
+    rc.w = Math.min(im.naturalWidth, x2 + 16) - rc.x; rc.h = Math.min(im.naturalHeight, y2 + 16) - rc.y
+    piezas.push({ m, im, rc })
+  }
+  const W = Math.max(...piezas.map(p => p.rc.w))
+  const H = piezas.reduce((t, p) => t + p.rc.h * (W / p.rc.w) + 10, 0)
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = Math.ceil(H)
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H)
+  let y = 0
+  for (const { m, im, rc } of piezas) {
+    const esc = W / rc.w, h = rc.h * esc
+    ctx.drawImage(im, rc.x, rc.y, rc.w, rc.h, 0, y, W, h)
+    const aX = px => (px * im.naturalWidth - rc.x) * esc, aY = py => y + (py * im.naturalHeight - rc.y) * esc
+    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = color
+    destinos.filter(d => (m.campo_ids || []).map(Number).includes(Number(d.campo_id))).forEach(d => {
+      let ps = pols.filter(p => p.mapa_id === m.id && p.campo_id === Number(d.campo_id) && (p.lote_id || null) === (d.lote_id ? Number(d.lote_id) : null))
+      if (!ps.length && !d.lote_id) ps = pols.filter(p => p.mapa_id === m.id && p.campo_id === Number(d.campo_id))
+      ps.forEach(p => p.partes.forEach(pt => { ctx.beginPath(); pt.forEach(([px, py], i) => { const X = aX(px), Y = aY(py); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y) }); ctx.closePath(); ctx.fill() }))
+    })
+    ctx.restore()
+    y += h + 10
+  }
+  return cv.toDataURL('image/png')
+}
+
 export async function compartirArchivos(archivos, titulo) {
   if (navigator.canShare && navigator.canShare({ files: archivos })) { try { await navigator.share({ files: archivos, title: titulo }) } catch (e) { /* canceló */ } return }
   archivos.forEach(f => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove() })

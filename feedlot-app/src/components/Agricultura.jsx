@@ -10,7 +10,7 @@ import SelectBuscable from './SelectBuscable'
 import PresupuestoCampana from './PresupuestoCampana'
 import GranosUbicaciones from './GranosUbicaciones'
 import PlanTanques from './PlanTanques'
-import MapasCampos, { BotonMapa } from './MapasCampos'
+import MapasCampos, { BotonMapa, mapaPintadoDataURL } from './MapasCampos'
 import { useBorrador } from '../shared/useBorrador'
 
 const S = {
@@ -901,7 +901,7 @@ function htmlCaldoTanques(caldo, tanque, ha, productos, stockAgro) {
   </div>`
 }
 
-function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
+function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const superficie = orden.superficie_ha_real || haTrabajables(lote) || haTrabajables(campo) || '—'
   const productos = orden.productos || []
@@ -943,6 +943,7 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
     <!-- Cuerpo -->
     <div style="border:2px solid #1E5C2E;border-top:none;border-radius:0 0 8px 8px;padding:20px;">
       ${orden.proveedor ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Operario / Equipo:</span> <strong>${orden.proveedor}</strong></div>` : ''}
+      ${mapaUrl ? `<div style="margin-bottom:18px;border:1px solid #e5e5e5;border-radius:6px;padding:6px;"><img src="${mapaUrl}" style="width:100%;display:block;" alt="Mapa del campo"></div>` : ''}
       ${orden.descripcion ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Descripción:</span> ${orden.descripcion}</div>` : ''}
       ${productos.length > 0 ? `
       <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos aplicados</div>
@@ -965,9 +966,71 @@ function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
 </body>
 </html>`
 
+  return html
+}
+
+// Visor de órdenes: muestra la orden (con su mapa) y deja pasar a la
+// anterior / siguiente de la lista filtrada con las flechas (en pantalla o
+// las del teclado).
+const cacheMapasOrden = {}
+function VisorOrdenes({ lista, idInicial, campos, stockAgro, onCerrar }) {
+  const [idx, setIdx] = useState(Math.max(0, lista.findIndex(o => o.id === idInicial)))
+  const [html, setHtml] = useState('')
+  const iframeRef = React.useRef(null)
+  const o = lista[idx]
+  useEffect(() => {
+    if (!o) return
+    let vivo = true
+    const campoO = campos.find(c => c.id === o.campo_id)
+    const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+    setHtml(htmlOrdenTrabajo(o, campoO, loteO, stockAgro, cacheMapasOrden[o.id] || null))
+    if (cacheMapasOrden[o.id] === undefined) {
+      mapaPintadoDataURL({ destinos: [{ campo_id: o.campo_id, lote_id: o.lote_id }] }).catch(() => null).then(url => {
+        cacheMapasOrden[o.id] = url
+        if (vivo && url) setHtml(htmlOrdenTrabajo(o, campoO, loteO, stockAgro, url))
+      })
+    }
+    return () => { vivo = false }
+  }, [idx, o?.id])
+  useEffect(() => {
+    const tecla = e => {
+      if (e.key === 'ArrowLeft') setIdx(i => Math.max(0, i - 1))
+      else if (e.key === 'ArrowRight') setIdx(i => Math.min(lista.length - 1, i + 1))
+      else if (e.key === 'Escape') onCerrar()
+    }
+    window.addEventListener('keydown', tecla)
+    return () => window.removeEventListener('keydown', tecla)
+  }, [lista.length])
+  if (!o) return null
+  const campoO = campos.find(c => c.id === o.campo_id)
+  const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+  const b = (dis) => ({ padding: '8px 14px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: '1px solid #555', background: dis ? '#333' : '#fff', color: dis ? '#777' : '#1F4D35', cursor: dis ? 'default' : 'pointer' })
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,.75)', display: 'flex', flexDirection: 'column' }} onClick={onCerrar}>
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', flexWrap: 'wrap', color: '#fff' }}>
+        <button style={b(idx === 0)} disabled={idx === 0} onClick={() => setIdx(i => i - 1)}>‹ Anterior</button>
+        <div style={{ flex: 1, textAlign: 'center', fontSize: 14 }}>
+          <b>{idx + 1} de {lista.length}</b> · {o.tipo} · {campoO?.nombre || '—'}{loteO ? ` · Lote ${loteO.numero}` : ''} · {o.fecha ? new Date(o.fecha + 'T12:00:00').toLocaleDateString('es-AR') : ''}
+        </div>
+        <button style={b(idx === lista.length - 1)} disabled={idx === lista.length - 1} onClick={() => setIdx(i => i + 1)}>Siguiente ›</button>
+        <button style={b(false)} onClick={() => iframeRef.current?.contentWindow?.print()}>🖨 Imprimir</button>
+        <button style={b(false)} onClick={onCerrar}>✕</button>
+      </div>
+      <div onClick={e => e.stopPropagation()} style={{ flex: 1, padding: '0 14px 14px' }}>
+        <iframe ref={iframeRef} title="Orden de trabajo" srcDoc={html} style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8, background: '#fff' }} />
+      </div>
+    </div>
+  )
+}
+
+// Abre la orden en una ventana nueva (con el mapa y el lote pintado, si hay)
+async function generarOrdenTrabajo(orden, campo, lote, stockAgro) {
   const win = window.open('', '_blank')
-  win.document.write(html)
-  win.document.close()
+  if (win) win.document.write('<p style="font-family:Arial;padding:20px;color:#888">Armando la orden…</p>')
+  let mapa = null
+  try { mapa = await mapaPintadoDataURL({ destinos: [{ campo_id: orden.campo_id, lote_id: orden.lote_id }] }) } catch (e) { mapa = null }
+  const html = htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapa)
+  if (win) { win.document.open(); win.document.write(html); win.document.close() }
 }
 
 // Orden combinada "para la aplicadora" — junta varias órdenes (mismos
@@ -1446,6 +1509,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // gasto propio, si lo hay).
   const [confirmando, setConfirmando] = useState(null) // { id, fecha, ha, productos }
   const [mostrarPlanTanques, setMostrarPlanTanques] = useState(false)
+  const [visorOrden, setVisorOrden] = useState(null)
   async function confirmarRealizada(o) {
     const c = confirmando
     const ha = parseFloat(c.ha) || parseFloat(o.superficie_ha_real) || 0
@@ -2363,6 +2427,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               </Card>
             )
           })()}
+          {visorOrden && <VisorOrdenes lista={ordenesFiltradas} idInicial={visorOrden} campos={campos} stockAgro={stockAgro} onCerrar={() => setVisorOrden(null)} />}
           {/* Plan de tanques: órdenes con la misma mezcla en una hoja para el pulverizador */}
           {!mostrarPlanTanques
             ? <div style={{ marginBottom: 10 }}><button onClick={() => setMostrarPlanTanques(true)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.surface, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>🚜 Plan de tanques (agrupar campos con la misma mezcla)</button></div>
@@ -2447,7 +2512,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                             <button onClick={() => setConfirmando(confirmando?.id === o.id ? null : { id: o.id, fecha: hoyLocal(), ha: String(o.superficie_ha_real || ''), proveedor: o.proveedor || '', costo_ha: o.costo_ha != null ? String(o.costo_ha) : '', productos: (o.productos || []).map(p => ({ ...p })) })}
                               style={{ padding: '3px 8px', fontSize: 11, fontWeight: 700, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>✓ Realizada</button>
                           )}
-                          <button onClick={() => generarOrdenTrabajo(o, campoO, loteO, stockAgro)}
+                          <button onClick={() => setVisorOrden(o.id)}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>📋 Orden</button>
                           {o.estado_pago === 'pagado' && o.costo_total && <button onClick={() => {
                             generarReciboOrden(o, campos, campanas, stockAgro)
