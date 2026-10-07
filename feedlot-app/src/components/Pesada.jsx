@@ -89,6 +89,8 @@ export default function Pesada({ usuario, mobile, nav }) {
   const [pesadaConfirmada, setPesadaConfirmada] = useState(null)
   const [corralLibre1, setCorralLibre1] = useState('')
   const [corralLibre2, setCorralLibre2] = useState('')
+  // Corral elegido para los nuevos de cada rango C–G
+  const [destinosRango, setDestinosRango] = useState({})
   const [editandoFecha, setEditandoFecha] = useState(false)
   // Estado del formulario simple (solo cantidades por rango) que usa el celular
   const [formM, setFormM] = useState({ A: '', B: '', C: '', D: '', E: '', F: '', G: '', menores: '' })
@@ -131,6 +133,45 @@ export default function Pesada({ usuario, mobile, nav }) {
   const corralesLibres = corrales.filter(c => c.rol === 'libre')
   const corralesClasificados = corrales.filter(c => c.rol === 'clasificado')
 
+  // ── Destino de los rangos C–G ──
+  // Los nuevos "C" van a un corral que hoy es A (pasa a C), los "D" a uno que
+  // hoy es B, etc. Si hay más de uno, se elige cuál; también se puede abrir un
+  // corral libre para esa letra.
+  const MAPEO_DESTINO = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
+  const candidatosRango = letra => {
+    const ant = MAPEO_DESTINO[letra]
+    const existentes = corralesClasificados.filter(c => ((c.sub || '').length === 1 ? c.sub : (c.sub || '').charAt(0)) === ant)
+    const usadosLibres = [corralLibre1, corralLibre2, ...Object.entries(destinosRango).filter(([l]) => l !== letra).map(([, v]) => v)].map(String)
+    const libres = corralesLibres.filter(c => !usadosLibres.includes(String(c.id)))
+    return { existentes, libres }
+  }
+  const destinoDe = letra => {
+    if (destinosRango[letra]) return String(destinosRango[letra])
+    const { existentes } = candidatosRango(letra)
+    return existentes.length === 1 ? String(existentes[0].id) : ''
+  }
+  const destinosParaGuardar = cantidades => {
+    const d = {}
+    Object.keys(MAPEO_DESTINO).forEach(l => { if ((cantidades[l] || 0) > 0 && destinoDe(l)) d[l] = parseInt(destinoDe(l)) })
+    return d
+  }
+  const faltaDestino = cantidades => Object.keys(MAPEO_DESTINO).filter(l => (cantidades[l] || 0) > 0 && !destinoDe(l))
+  // Selectores (sirven para la PC y el celular)
+  const selectoresDestino = (cantidades, est) => Object.keys(MAPEO_DESTINO).filter(l => (cantidades[l] || 0) > 0).map(l => {
+    const { existentes, libres } = candidatosRango(l)
+    const val = destinoDe(l)
+    return (
+      <div key={l} style={{ marginBottom: est.gap ?? 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: est.label, textTransform: 'uppercase', marginBottom: 4 }}>Nuevos rango {l} — {cantidades[l]} animales</div>
+        <select value={val} onChange={e => setDestinosRango(prev => ({ ...prev, [l]: e.target.value }))} style={{ ...est.select, borderColor: val ? undefined : '#E0A030' }}>
+          <option value="">— Elegí a qué corral van —</option>
+          {existentes.map(c => <option key={c.id} value={c.id}>Corral {c.numero} — hoy rango {MAPEO_DESTINO[l]}, pasa a {l} ({c.animales || 0} animales)</option>)}
+          {libres.map(c => <option key={c.id} value={c.id}>Corral {c.numero} — libre, arranca un corral {l} nuevo</option>)}
+        </select>
+      </div>
+    )
+  })
+
   const proximaDate = proximaPesada ? new Date(proximaPesada + 'T12:00:00') : null
   const diasRestantes = proximaDate ? Math.ceil((proximaDate - new Date()) / (1000 * 60 * 60 * 24)) : null
 
@@ -138,6 +179,9 @@ export default function Pesada({ usuario, mobile, nav }) {
     if (!corralLibre1 || !corralLibre2) { alert('Seleccioná dos corrales libres para los nuevos rangos A y B.'); return }
     if (corralLibre1 === corralLibre2) { alert('Los corrales para A y B deben ser diferentes.'); return }
     if (clasificables.length === 0) { alert('No hay animales pesados.'); return }
+    const cantPC = Object.fromEntries(Object.entries(conteoRangos).map(([k, arr]) => [k, arr.length]))
+    const faltanPC = faltaDestino(cantPC)
+    if (faltanPC.length) { alert(`Elegí a qué corral van los nuevos de rango ${faltanPC.join(', ')}.`); return }
     setGuardando(true)
 
     // Acá cada rango tiene la lista de pesos individuales cargados; la función
@@ -157,6 +201,7 @@ export default function Pesada({ usuario, mobile, nav }) {
       corralLibre1Id: parseInt(corralLibre1),
       corralLibre2Id: parseInt(corralLibre2),
       usuario,
+      destinos: destinosParaGuardar(cantPC),
     })
     if (error) { alert('Error al guardar la pesada: ' + error.message); setGuardando(false); return }
     if (warning) alert(warning)
@@ -196,6 +241,7 @@ export default function Pesada({ usuario, mobile, nav }) {
     setFilasExtra(0)
     setCorralLibre1('')
     setCorralLibre2('')
+    setDestinosRango({})
     setPaso(1)
     setPesadaConfirmada(null)
     setVista('pesada-activa')
@@ -222,6 +268,9 @@ export default function Pesada({ usuario, mobile, nav }) {
       if (!corralLibre1 || !corralLibre2) { alert('Seleccioná dos corrales libres para A y B'); return }
       if (corralLibre1 === corralLibre2) { alert('Los corrales para A y B deben ser diferentes'); return }
       if (totalClasifM === 0) { alert('Ingresá al menos un animal clasificado'); return }
+      const cantM = Object.fromEntries(ORDEN_RANGOS.map(k => [k, parseInt(formM[k]) || 0]))
+      const faltanM = faltaDestino(cantM)
+      if (faltanM.length) { alert(`Elegí a qué corral van los nuevos de rango ${faltanM.join(', ')}`); return }
       setGuardandoM(true)
       const conteoRangosParaGuardar = {}
       ORDEN_RANGOS.filter(k => k !== 'H').forEach(letra => {
@@ -232,6 +281,7 @@ export default function Pesada({ usuario, mobile, nav }) {
         fecha: fechaPesada, corralAcum, corralesClasificados,
         conteoRangos: conteoRangosParaGuardar, menoresCantidad: menoresM,
         corralLibre1Id: parseInt(corralLibre1), corralLibre2Id: parseInt(corralLibre2), usuario,
+        destinos: destinosParaGuardar(cantM),
       })
       if (error) { alert('Error al guardar: ' + error.message); setGuardandoM(false); return }
       if (warning) alert(warning)
@@ -364,6 +414,10 @@ export default function Pesada({ usuario, mobile, nav }) {
                   ))}
                 </select>
               </div>
+              {selectoresDestino(Object.fromEntries(ORDEN_RANGOS.map(k => [k, parseInt(formM[k]) || 0])), {
+                label: CM.amber, gap: '.85rem',
+                select: { width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans },
+              })}
               {menoresM > 0 && (
                 <div style={{ background: '#3D0A0A', border: `1px solid ${CM.red}`, borderRadius: 8, padding: '10px 12px', marginBottom: '.85rem', fontSize: 13, color: CM.red }}>
                   {menoresM} animales menores de 200 kg vuelven a {corralAcum ? `C-${corralAcum.numero}` : 'acumulación'}.
@@ -837,6 +891,19 @@ export default function Pesada({ usuario, mobile, nav }) {
           {menores.length > 0 && (
             <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 8, padding: '.85rem 1rem', fontSize: 13, color: S.amber, marginBottom: '1rem' }}>
               <strong>{menores.length} animales</strong> menores de 200 kg se quedan en {corralAcum ? `C-${corralAcum.numero}` : 'acumulación'}.
+            </div>
+          )}
+
+          {/* Destino de los rangos C–G (antes se repartían solos entre los corrales de la misma letra) */}
+          {Object.keys(MAPEO_DESTINO).some(l => (conteoRangos[l]?.length || 0) > 0) && (
+            <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '1rem' }}>Asignar corrales para el resto de los rangos</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0 1rem' }}>
+                {selectoresDestino(Object.fromEntries(Object.entries(conteoRangos).map(([k, arr]) => [k, arr.length])), {
+                  label: S.muted,
+                  select: { width: '100%', padding: '9px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface },
+                })}
+              </div>
             </div>
           )}
 

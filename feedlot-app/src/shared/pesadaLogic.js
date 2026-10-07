@@ -56,6 +56,11 @@ export async function confirmarPesadaClasificacion(supabase, {
   fecha, corralAcum, corralesClasificados, conteoRangos,
   menoresCantidad = 0, menoresPesoPromedio = null,
   corralLibre1Id, corralLibre2Id, usuario,
+  // { C: corralId, D: corralId, … }: a qué corral van los nuevos de cada rango.
+  // Puede ser un corral que ya tiene la letra anterior (C-? que pasa de A a C)
+  // o un corral libre (arranca un corral nuevo con esa letra). Si para una
+  // letra no se elige nada, se reparte como antes (proporcional).
+  destinos = {},
 }) {
   const totalClasif = Object.values(conteoRangos).reduce((s, r) => s + (r?.cantidad || 0), 0)
 
@@ -126,12 +131,22 @@ export async function confirmarPesadaClasificacion(supabase, {
   if (cantA > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corralLibre1Id, tipo: esContinuacionA ? 'suma_existente' : 'nuevo_clasificado', animales: cantA, rango_antes: esContinuacionA ? 'A' : 'libre', rango_despues: 'A' })
   if (cantB > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corralLibre2Id, tipo: esContinuacionB ? 'suma_existente' : 'nuevo_clasificado', animales: cantB, rango_antes: esContinuacionB ? 'B' : 'libre', rango_despues: 'B' })
   const mapeoDestino = { C: 'A', D: 'B', E: 'C', F: 'D', G: 'E' }
+  // Reparto de cada rango C–G: al corral elegido, o proporcional si no se eligió
+  const repartoDe = (letraNueva, letraAnterior, cant) => {
+    const elegido = destinos?.[letraNueva] ? Number(destinos[letraNueva]) : null
+    const existentes = mapaRangoCorral[letraAnterior] || []
+    if (elegido) {
+      const ex = existentes.find(c => Number(c.id) === elegido)
+      if (ex) return [{ corral: ex, parte: cant, nuevo: false }]
+      return [{ corral: { id: elegido }, parte: cant, nuevo: true }] // corral libre: arranca con esta letra
+    }
+    return repartirProporcional(cant, existentes).map(x => ({ ...x, nuevo: false }))
+  }
   Object.entries(mapeoDestino).forEach(([letraNueva, letraAnterior]) => {
     const cant = conteoRangos[letraNueva]?.cantidad || 0
     if (!cant) return
-    const corralesDest = mapaRangoCorral[letraAnterior] || []
-    repartirProporcional(cant, corralesDest).forEach(({ corral, parte }) => {
-      if (parte > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corral.id, tipo: 'suma_existente', animales: parte, rango_antes: letraAnterior, rango_despues: letraNueva })
+    repartoDe(letraNueva, letraAnterior, cant).forEach(({ corral, parte, nuevo }) => {
+      if (parte > 0) movimientos.push({ pesada_id: pesada.id, corral_id: corral.id, tipo: nuevo ? 'nuevo_clasificado' : 'suma_existente', animales: parte, rango_antes: nuevo ? 'libre' : letraAnterior, rango_despues: letraNueva })
     })
   })
   if (movimientos.length > 0) await supabase.from('pesada_movimientos').insert(movimientos)
@@ -161,10 +176,12 @@ export async function confirmarPesadaClasificacion(supabase, {
   for (const [letraNueva, letraAnterior] of Object.entries(mapeoDestino)) {
     const cant = conteoRangos[letraNueva]?.cantidad || 0
     if (!cant) continue
-    const corralesDest = mapaRangoCorral[letraAnterior] || []
-    if (corralesDest.length === 0) continue
-    for (const { corral, parte } of repartirProporcional(cant, corralesDest)) {
+    for (const { corral, parte, nuevo } of repartoDe(letraNueva, letraAnterior, cant)) {
       if (parte <= 0) continue
+      if (nuevo) {
+        await supabase.from('corrales').update({ rol: 'clasificado', sub: letraNueva, animales: parte, actualizado: `${fecha}T12:00:00-03:00` }).eq('id', corral.id)
+        continue
+      }
       const { data: corralFresh } = await supabase.from('corrales').select('animales').eq('id', corral.id).single()
       await supabase.from('corrales').update({ animales: (corralFresh?.animales || 0) + parte }).eq('id', corral.id)
     }
