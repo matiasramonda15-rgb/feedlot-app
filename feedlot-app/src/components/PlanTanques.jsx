@@ -212,9 +212,16 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
     setArmandoMapa(true)
     try {
       const haTot = ordenesGrupo.reduce((t, o) => t + (parseFloat(o.superficie_ha_real) || 0), 0)
-      const receta = grupo.prods.map(p => ({ nombre: (item(p.id)?.insumo || '?').trim().toLowerCase(), dosis: p.dosisMostrar ?? p.dosis, total: Math.round(p.dosis * haTot * 100) / 100, unidad: item(p.id)?.unidad === 'kg' ? 'kg' : 'L' }))
-      const titulo = `${grupo.tipo === 'Fertilizacion' ? 'Fertilización' : 'Pulverización'}${pulvActivo !== 'todos' ? ` — ${pulvActivo}` : ''}`
-      const { archivo, sinMarcar } = await generarHojaConMapa({ titulo, destinos: ordenesGrupo.map(o => ({ campo_id: o.campo_id, lote_id: o.lote_id })), ha: haTot, receta })
+      const receta = grupo.prods.map(p => {
+        const it = item(p.id); const total = Math.round(p.dosis * haTot * 100) / 100
+        return { nombre: (it?.insumo || '?').trim(), tipo: it?.tipo || '', dosis: p.dosisMostrar ?? p.dosis, total, unidad: it?.unidad === 'kg' ? 'kg' : 'L', envases: p.contratista ? 'lo pone el contratista' : enEnvases(total, it) }
+      })
+      const titulo = grupo.tipo === 'Fertilizacion' ? 'Fertilización' : 'Pulverización'
+      const provs = [...new Set(ordenesGrupo.map(provDe).filter(x => x && x !== SIN))]
+      const operario = pulvActivo !== 'todos' ? pulvActivo : (provs.length === 1 ? provs[0] : provs.join(' / '))
+      const lotes = ordenesGrupo.map(o => `${nombreDe(o)} — ${fmt(parseFloat(o.superficie_ha_real) || 0)} ha`)
+      const subtitulo = [...new Set(ordenesGrupo.map(o => nombreDe(o).split(' · ')[0]))].join(', ')
+      const { archivo, sinMarcar } = await generarHojaConMapa({ titulo, subtitulo, operario, lotes, destinos: ordenesGrupo.map(o => ({ campo_id: o.campo_id, lote_id: o.lote_id })), ha: haTot, receta })
       if (sinMarcar.length) alert(`Ojo: ${sinMarcar.map(d => nombreDe(ordenesGrupo.find(o => o.campo_id === d.campo_id && (o.lote_id || null) === (d.lote_id || null)) || { campo_id: d.campo_id })).join(', ')} no ${sinMarcar.length === 1 ? 'está marcado' : 'están marcados'} en el mapa (🗺 Mapas → ✏️ Marcar lotes), así que no ${sinMarcar.length === 1 ? 'sale pintado' : 'salen pintados'}.`)
       await compartirArchivos([archivo], titulo)
     } catch (e) { alert('No se pudo armar la hoja con mapa: ' + (e.message || e)) }

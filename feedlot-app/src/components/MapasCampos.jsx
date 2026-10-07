@@ -210,7 +210,7 @@ function cargarImagen(url) {
   return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = rej; im.src = url })
 }
 const fmtN = (x, d = 3) => (x == null || !isFinite(x)) ? '—' : Number(x).toLocaleString('es-AR', { maximumFractionDigits: d })
-export async function generarHojaConMapa({ titulo, destinos, ha, receta, color = '#FFC800', fecha = new Date() }) {
+export async function generarHojaConMapa({ titulo, subtitulo, operario, lotes = [], destinos, ha, receta, color = '#FFC800', fecha = new Date() }) {
   const mapas = await cargarMapas()
   const pols = await cargarPoligonos(true)
   const camposIds = [...new Set(destinos.map(d => Number(d.campo_id)))]
@@ -236,45 +236,88 @@ export async function generarHojaConMapa({ titulo, destinos, ha, receta, color =
     rc.w = Math.min(im.naturalWidth, x2 + mg) - rc.x; rc.h = Math.min(im.naturalHeight, y2 + mg) - rc.y
     imagenes.push({ m, im, rc })
   }
-  const W = Math.max(...imagenes.map(x => x.rc.w), 1000)
-  const lineas = receta.length + 2
-  const altoReceta = 40 + lineas * 34
-  let H = 70; imagenes.forEach(x => { H += x.rc.h * (W / x.rc.w) + 20 })
-  H += altoReceta + 30
+  const W = Math.max(...imagenes.map(x => x.rc.w), 1100)
+  const M = 44                              // margen
+  const ENC = 150                           // encabezado verde
+  const filaProd = r => r.envases ? 82 : 58
+  const altoTabla = 60 + 46 + receta.reduce((t, r) => t + filaProd(r), 0) + 20
+  const altoLotes = lotes.length ? 44 + Math.ceil(lotes.length / 2) * 34 : 0
+  let H = ENC + 20
+  imagenes.forEach(x => { H += x.rc.h * (W / x.rc.w) + 16 })
+  H += 30 + (operario ? 50 : 0) + altoLotes + altoTabla + M
   const cv = document.createElement('canvas'); cv.width = W; cv.height = Math.ceil(H)
   const ctx = cv.getContext('2d')
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H)
-  ctx.fillStyle = '#111'; ctx.font = 'bold 30px Arial'; ctx.textBaseline = 'top'
-  ctx.fillText(titulo || 'Orden de aplicación', 30, 22)
-  ctx.font = 'bold 26px Arial'; const f = `Fecha: ${fecha.toLocaleDateString('es-AR')}`; ctx.fillText(f, W - 30 - ctx.measureText(f).width, 24)
-  let y = 70
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.textBaseline = 'alphabetic'
+
+  // ── Encabezado verde (igual que la orden de trabajo que se imprime por campo) ──
+  const g = ctx.createLinearGradient(0, 0, W, ENC); g.addColorStop(0, '#1F4D35'); g.addColorStop(1, '#2E6B4F')
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, ENC)
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 44px Arial'
+  ctx.fillText(`ORDEN DE TRABAJO — ${(titulo || 'Pulverización').toUpperCase()}`, M, 72)
+  ctx.font = '28px Arial'; ctx.fillStyle = 'rgba(255,255,255,.92)'
+  ctx.fillText(`${subtitulo ? subtitulo + ' · ' : ''}${fmtN(ha, 2)} ha · ${fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`, M, 116)
+
+  // ── Mapas con los lotes pintados ──
+  let y = ENC + 20
   const sinMarcar = []
   for (const { m, im, rc } of imagenes) {
     const esc = W / rc.w, h = rc.h * esc
     ctx.drawImage(im, rc.x, rc.y, rc.w, rc.h, 0, y, W, h)
-    // coordenadas guardadas (0 a 1 sobre la imagen entera) → recorte dibujado
     const aX = px => (px * im.naturalWidth - rc.x) * esc, aY = py => y + (py * im.naturalHeight - rc.y) * esc
-    // Pintar los lotes de esta mezcla en este mapa (multiplicar: el blanco
-    // se vuelve del color y las líneas y textos negros se siguen viendo)
     ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = color
     destinos.filter(d => (m.campo_ids || []).map(Number).includes(Number(d.campo_id))).forEach(d => {
       let ps = pols.filter(p => p.mapa_id === m.id && p.campo_id === Number(d.campo_id) && (p.lote_id || null) === (d.lote_id ? Number(d.lote_id) : null))
-      if (!ps.length && !d.lote_id) ps = pols.filter(p => p.mapa_id === m.id && p.campo_id === Number(d.campo_id)) // campo entero: todos sus lotes
+      if (!ps.length && !d.lote_id) ps = pols.filter(p => p.mapa_id === m.id && p.campo_id === Number(d.campo_id))
       if (!ps.length) sinMarcar.push(d)
       ps.forEach(p => p.partes.forEach(pt => {
         ctx.beginPath(); pt.forEach(([px, py], i) => { const X = aX(px), Y = aY(py); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y) }); ctx.closePath(); ctx.fill()
       }))
     })
     ctx.restore()
-    y += h + 20
+    y += h + 16
   }
-  // Recuadro de la receta (formato: _0,074 imazapir 48% (7))
-  const x0 = 60
-  ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 6
-  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0, y + 6, 46, 30, 8) : ctx.rect(x0, y + 6, 46, 30); ctx.stroke()
-  ctx.fillStyle = '#111'; ctx.font = '28px "Times New Roman", serif'
-  ctx.fillText(`${fmtN(ha, 2)} ha`, x0 + 70, y + 6)
-  receta.forEach((r, i) => ctx.fillText(`_${fmtN(r.dosis, r.dosis < 0.01 ? 4 : 3)} ${r.nombre} (${fmtN(r.total, 2)}${r.unidad === 'kg' ? ' kg' : ''})`, x0 + 70, y + 46 + i * 34))
+  y += 14
+  ctx.strokeStyle = '#DDD'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke()
+  y += 44
+
+  // ── Operario / Equipo ──
+  if (operario) {
+    ctx.font = '28px Arial'; ctx.fillStyle = '#777'; const et = 'Operario / Equipo: '; ctx.fillText(et, M, y)
+    ctx.font = 'bold 28px Arial'; ctx.fillStyle = '#222'; ctx.fillText(operario, M + ctx.measureText(et).width + 4, y)
+    y += 50
+  }
+
+  // ── Lotes a aplicar (con el color del mapa) ──
+  if (lotes.length) {
+    ctx.font = 'bold 22px Arial'; ctx.fillStyle = '#555'; ctx.fillText('LOTES A APLICAR', M, y)
+    ctx.fillStyle = color; ctx.fillRect(M + 240, y - 20, 34, 22); ctx.strokeStyle = '#B08A00'; ctx.lineWidth = 1.5; ctx.strokeRect(M + 240, y - 20, 34, 22)
+    y += 40
+    ctx.font = '26px Arial'; ctx.fillStyle = '#222'
+    lotes.forEach((l, i) => { const col = i % 2, fila = Math.floor(i / 2); ctx.fillText(`• ${l}`, M + col * (W - 2 * M) / 2, y + fila * 34) })
+    y += Math.ceil(lotes.length / 2) * 34 + 10
+  }
+
+  // ── Insumos aplicados (tabla como la orden por campo) ──
+  ctx.font = 'bold 24px Arial'; ctx.fillStyle = '#555'
+  ctx.fillText('I N S U M O S   A P L I C A D O S', M, y); y += 46
+  const cols = [M + 20, M + (W - 2 * M) * 0.36, M + (W - 2 * M) * 0.58, W - M - 20]
+  ctx.font = 'bold 24px Arial'; ctx.fillStyle = '#1F4D35'
+  ctx.fillText('PRODUCTO', cols[0], y); ctx.fillText('TIPO', cols[1], y); ctx.fillText('DOSIS/HA', cols[2], y)
+  const tt = `TOTAL (${fmtN(ha, 2)} HA)`; ctx.fillText(tt, cols[3] - ctx.measureText(tt).width, y)
+  y += 16; ctx.strokeStyle = '#1F4D35'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke()
+  receta.forEach(r => {
+    const alto = filaProd(r)
+    y += 40
+    ctx.font = '28px Arial'; ctx.fillStyle = '#222'; ctx.fillText(r.nombre, cols[0], y)
+    ctx.fillStyle = '#555'; ctx.fillText(r.tipo || '—', cols[1], y)
+    ctx.font = 'bold 28px Arial'; ctx.fillStyle = '#222'
+    ctx.fillText(`${fmtN(r.dosis, r.dosis < 0.01 ? 4 : 3)} ${r.unidad === 'kg' ? 'kg' : 'litros'}/ha`, cols[2], y)
+    ctx.fillStyle = '#1F4D35'; const tv = `${fmtN(r.total, 2)} ${r.unidad === 'kg' ? 'kg' : 'litros'}`; ctx.fillText(tv, cols[3] - ctx.measureText(tv).width, y)
+    if (r.envases) { ctx.font = '22px Arial'; ctx.fillStyle = '#888'; ctx.fillText(`≈ ${r.envases}`, cols[0], y + 26) }
+    y += alto - 40
+    ctx.strokeStyle = '#E5E5E5'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(M, y); ctx.lineTo(W - M, y); ctx.stroke()
+  })
+
   const blob = await new Promise(r => cv.toBlob(r, 'image/png'))
   return { archivo: new File([blob], `orden-mapa-${fecha.toLocaleDateString('es-AR').replace(/\//g, '-')}.png`, { type: 'image/png' }), sinMarcar }
 }

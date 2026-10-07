@@ -233,8 +233,10 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
 
           <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '1.25rem 0 .65rem' }}>Últimas órdenes de trabajo</div>
           {ordenes.length === 0 && <div style={{ fontSize: 13, color: CM.muted, textAlign: 'center', padding: '1rem' }}>Todavía no hay órdenes cargadas.</div>}
-          {ordenes.slice(0, 6).map(o => {
+          {/* Primero las emitidas (sin hacer), después las últimas hechas */}
+          {[...ordenes.filter(o => o.estado === 'emitida'), ...ordenes.filter(o => o.estado !== 'emitida').slice(0, 6)].map(o => {
             const loteO = o.campos?.lotes_agricolas?.find(l => l.id === o.lote_id)
+            const sinHacer = o.estado === 'emitida'
             const expandida = ordenExpandidaM === o.id
             return (
               <div key={o.id} style={{ background: CM.surface, border: `1px solid ${expandida ? CM.green : CM.border}`, borderRadius: 10, padding: '.8rem', marginBottom: 8, cursor: 'pointer' }}
@@ -248,9 +250,14 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
                       {!o.es_propia && o.proveedor ? ` · ${o.proveedor}` : ''}
                     </div>
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: o.estado_pago === 'pagado' ? '#1A3D26' : '#3D2A00', color: o.estado_pago === 'pagado' ? CM.green : '#F5C97A' }}>
-                    {o.estado_pago === 'pagado' ? 'Pagado' : 'Pendiente'}
-                  </span>
+                  {/* Estado del TRABAJO (antes mostraba el estado de pago y las ya hechas
+                      figuraban como "Pendiente" mientras no se le pagara al contratista) */}
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: sinHacer ? '#3D2A00' : '#1A3D26', color: sinHacer ? '#F5C97A' : CM.green }}>
+                      {sinHacer ? '📝 Sin hacer' : '✓ Hecha'}
+                    </span>
+                    {!sinHacer && !o.es_propia && o.estado_pago !== 'pagado' && <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>a pagar</div>}
+                  </div>
                 </div>
                 {expandida && (
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${CM.border}` }} onClick={e => e.stopPropagation()}>
