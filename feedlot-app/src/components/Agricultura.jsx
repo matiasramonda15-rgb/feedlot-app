@@ -5467,6 +5467,19 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     // más abajo, al sumar ordenesRel por campo_id/lote_id sin filtrar por
     // cultivo). Solo se crea una fila "sin cultivo" cuando el campo+lote no
     // tiene NINGUNA fila todavía.
+    // Orden de TODO el campo en un campo que tiene lotes: no va a una fila
+    // "campo" aparte (antes se contaba dos veces: prorrateada en cada lote y
+    // entera en esa fila), sino que se reparte entre sus lotes.
+    const campoO = campos.find(c => c.id === o.campo_id)
+    const lotesCampo = campoO?.lotes_agricolas || []
+    if (!o.lote_id && lotesCampo.length) {
+      lotesCampo.forEach(l => {
+        const existe = Object.values(grupos).some(g => g.campo_id === o.campo_id && g.lote_id === l.id)
+        const k = `${o.campo_id}_${l.id}_sin_cultivo`
+        if (!existe && !grupos[k]) grupos[k] = { campo_id: o.campo_id, lote_id: l.id, cultivo: null, kg: 0 }
+      })
+      return
+    }
     const yaExiste = Object.values(grupos).some(g => g.campo_id === o.campo_id && (g.lote_id || null) === (o.lote_id || null))
     if (!yaExiste && !grupos[key]) grupos[key] = { campo_id: o.campo_id, lote_id: o.lote_id || null, cultivo: null, kg: 0 }
   })
@@ -5490,8 +5503,11 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     let costoInsumos = 0, costoLabores = 0
     const detalleInsumos = []
     const detalleOrdenes = []
+    // Parte de una orden de todo el campo que le toca a este lote: sus ha
+    // sobre la suma de las ha de los lotes del campo (así se reparte el 100%)
+    const haLotesCampo = (campo?.lotes_agricolas || []).reduce((t, l) => t + (haTrabajables(l) || 0), 0)
     ordenesRel.forEach(o => {
-      const factor = o.lote_id ? 1 : (haTrabajables(campo) ? ha / haTrabajables(campo) : 1)
+      const factor = o.lote_id ? 1 : (g.lote_id && haLotesCampo ? ha / haLotesCampo : (haTrabajables(campo) ? ha / haTrabajables(campo) : 1))
       const insumosOrden = []
       ;(o.productos || []).filter(p => !p.aporta_contratista).forEach(p => {
         const item = stockAgro.find(s => s.id === parseInt(p.id))
