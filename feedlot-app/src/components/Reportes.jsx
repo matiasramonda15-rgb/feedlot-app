@@ -531,9 +531,29 @@ export default function Reportes({ usuario }) {
   const costoOperativoDiarioPorAnimal = (costoConsumoDiario != null && costoFijoDiario != null) ? costoConsumoDiario + costoFijoDiario : null
   const costoOperativoCicloCompleto = (costoOperativoDiarioPorAnimal !== null && permanenciaEstable) ? costoOperativoDiarioPorAnimal * permanenciaEstable : null
 
-  const gananciaPromedioPorAnimal = (ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoCicloCompleto != null)
-    ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
-    : null
+  // ── Ganancia esperada por lote de compra ──
+  // Cada lote comprado en los últimos 60 días se lleva hasta el peso de venta
+  // promedio: los DÍAS dependen de su peso de ingreso (kilos a producir ÷ GDP),
+  // así un ternero chico gana por costar menos y producir más kilos, pero paga
+  // los días de más que necesita. (Antes todos usaban la permanencia promedio
+  // y la ganancia saltaba según el tamaño del lote que justo había entrado.)
+  const pesoVentaProm = (() => { const k = ventasV.reduce((t, v) => t + (parseFloat(v.kg_neto) || 0), 0); return totalAnimVendidosV > 0 && k > 0 ? k / totalAnimVendidosV : null })()
+  const gdpCiclo = gdpEstable
+  const gananciaEsperadaLotes = (ingresoPromedioPorAnimalVendido != null && costoOperativoDiarioPorAnimal != null && pesoVentaProm && gdpCiclo > 0)
+    ? lotesV.map(l => {
+        const pesoIng = parseFloat(l.peso_prom_ingreso) || ((parseFloat(l.kg_bascula) || 0) / (l.cantidad || 1))
+        const diasNec = Math.max(0, (pesoVentaProm - pesoIng) / gdpCiclo)
+        const costoAnimal = totalLoteReal(l) / (l.cantidad || 1)
+        const costoMantener = diasNec * costoOperativoDiarioPorAnimal
+        return { lote: l, pesoIng, diasNec, costoAnimal, costoMantener, ganancia: ingresoPromedioPorAnimalVendido - costoAnimal - costoMantener }
+      }).sort((a, b) => (a.lote.fecha_ingreso || '').localeCompare(b.lote.fecha_ingreso || ''))
+    : []
+  const animGanancia = gananciaEsperadaLotes.reduce((t, g) => t + (g.lote.cantidad || 0), 0)
+  const gananciaPromedioPorAnimal = animGanancia > 0
+    ? gananciaEsperadaLotes.reduce((t, g) => t + g.ganancia * (g.lote.cantidad || 0), 0) / animGanancia
+    : ((ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoCicloCompleto != null)
+      ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
+      : null)
 
   // ── Costo de producir un kilo vs precio de venta, por rango de peso ──
   // Sirve para ver hasta qué peso conviene seguir engordando: mientras el
@@ -913,8 +933,34 @@ export default function Reportes({ usuario }) {
                   <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
                   <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`${mesActual.cabVendidas} animales`} />
                   <Stat label="Existencia promedio (feedlot)" val={Math.round(mesActual.existenciaPromedio)} sub={`total de cabezas · inicio: ${Math.round(mesActual.stockInicial)} → fin: ${Math.round(mesActual.stockFinal)}`} />
-                  <Stat label="Ganancia por ternero" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'} sub="promedios de 60 días y 3 meses cerrados" color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
+                  <Stat label="Ganancia por ternero" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'} sub={animGanancia > 0 ? `esperada · compras de 60 días llevadas a ${Math.round(pesoVentaProm)} kg` : 'promedios de 60 días y 3 meses cerrados'} color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
                 </div>
+                {/* Ganancia esperada por lote de compra */}
+                {gananciaEsperadaLotes.length > 0 && (
+                  <div style={{ marginTop: 12, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
+                    <div style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, background: S.bg }}>
+                      Ganancia esperada por lote de compra <span style={{ fontWeight: 400, color: S.muted }}>· últimos 60 días · llevados a {Math.round(pesoVentaProm)} kg con GDP {gdpCiclo.toFixed(2)} kg/día · costo diario ${Math.round(costoOperativoDiarioPorAnimal).toLocaleString('es-AR')}</span>
+                    </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead><tr>{['Lote', 'Ingreso', 'Cab.', 'Peso ingreso', 'Costo por animal', 'Días necesarios', 'Alimento y estructura', 'Ganancia esperada'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Lote' ? 'left' : 'right', fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {gananciaEsperadaLotes.map(g => (
+                          <tr key={g.lote.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                            <td style={{ padding: '6px 10px' }}>{g.lote.procedencia || '—'} <span style={{ color: S.hint }}>{g.lote.codigo}</span></td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right' }}>{g.lote.fecha_ingreso ? new Date(g.lote.fecha_ingreso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right' }}>{g.lote.cantidad}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(g.pesoIng)} kg</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>${Math.round(g.costoAnimal).toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(g.diasNec)}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>${Math.round(g.costoMantener).toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: g.ganancia >= 0 ? S.green : S.red }}>${Math.round(g.ganancia).toLocaleString('es-AR')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ padding: '6px 12px', fontSize: 11, color: S.muted }}>Valor de venta por animal: ${Math.round(ingresoPromedioPorAnimalVendido).toLocaleString('es-AR')} (ventas de los últimos 60 días). La ganancia por ternero de arriba es el promedio de estos lotes, ponderado por cabezas.</div>
+                  </div>
+                )}
               </div>
 
               {/* Promedios móviles */}
