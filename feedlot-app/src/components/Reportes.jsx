@@ -546,7 +546,7 @@ export default function Reportes({ usuario }) {
         const costoAnimal = totalLoteReal(l) / (l.cantidad || 1)
         const costoMantener = diasNec * costoOperativoDiarioPorAnimal
         return { lote: l, pesoIng, diasNec, costoAnimal, costoMantener, ganancia: ingresoPromedioPorAnimalVendido - costoAnimal - costoMantener }
-      }).sort((a, b) => (a.lote.fecha_ingreso || '').localeCompare(b.lote.fecha_ingreso || ''))
+      }).sort((a, b) => (b.lote.fecha_ingreso || '').localeCompare(a.lote.fecha_ingreso || '') || (b.lote.id || 0) - (a.lote.id || 0)) // últimas compras arriba
     : []
   const animGanancia = gananciaEsperadaLotes.reduce((t, g) => t + (g.lote.cantidad || 0), 0)
   const gananciaPromedioPorAnimal = animGanancia > 0
