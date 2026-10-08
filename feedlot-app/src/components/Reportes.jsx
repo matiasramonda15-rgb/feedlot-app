@@ -931,7 +931,7 @@ export default function Reportes({ usuario }) {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                   <Stat label="Peso prom. ingreso" val={`${Math.round(mesActual.pesoProm_ingreso)} kg`} sub={`${mesActual.cabIngresadas} animales`} />
-                  <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`${mesActual.cabVendidas} animales`} />
+                  <Stat label="Peso prom. venta" val={`${Math.round(mesActual.pesoProm_venta)} kg`} sub={`desbastado · ${Math.round(mesActual.pesoProm_venta_vivo || 0)} kg vivo · ${mesActual.cabVendidas} animales`} />
                   <Stat label="Existencia promedio (feedlot)" val={Math.round(mesActual.existenciaPromedio)} sub={`total de cabezas · inicio: ${Math.round(mesActual.stockInicial)} → fin: ${Math.round(mesActual.stockFinal)}`} />
                   <Stat label="Ganancia por ternero" val={gananciaPromedioPorAnimal !== null ? `$${Math.round(gananciaPromedioPorAnimal).toLocaleString('es-AR')}` : '—'} sub={animGanancia > 0 ? `esperada · compras de 60 días llevadas a ${Math.round(pesoVentaProm)} kg` : 'promedios de 60 días y 3 meses cerrados'} color={gananciaPromedioPorAnimal >= 0 ? S.green : S.red} />
                 </div>

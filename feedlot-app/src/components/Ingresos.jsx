@@ -129,7 +129,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
              { data: comprasAlim }, { data: comprasSanit }, { data: gastosGen }, { data: lotesIngresados },
              { data: fletesCompra }, { data: lotesConComision }, { data: ventasConComision }] = await Promise.all([
         supabase.from('lotes').select('cantidad, fecha_ingreso, kg_bascula'),
-        supabase.from('ventas').select('cantidad, kg_vivo_total, creado_en, total'),
+        supabase.from('ventas').select('cantidad, kg_vivo_total, kg_neto, desbaste_pct, creado_en, total'),
         traerTodo(() => supabase.from('raciones_app').select('id, kg_total, kg_rollo_extra, solo_rollo, mezclador, tipo_dieta, fecha').order('id')),
         supabase.from('stock_insumos').select('insumo, pct_ms'),
         supabase.from('formulas_mixer').select('dieta, etapa, ingrediente, kg'),

@@ -84,12 +84,19 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
     return f >= fechaInicio && f < fechaFin
   })
   const cabVendidas = ventasPeriodo.reduce((s, v) => s + (v.cantidad || 0), 0)
-  const kgVendidos = ventasPeriodo.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
+  // Peso de venta DESBASTADO (kg neto), igual que el de ingreso. Antes se
+  // usaba el peso vivo (lleno) contra un ingreso desbastado, y el GDP daba
+  // ~0,25 kg/día de más. Si una venta no tiene kg neto, se desbasta el vivo
+  // con su % de desbaste.
+  const kgNetoVenta = v => (parseFloat(v.kg_neto) > 0) ? parseFloat(v.kg_neto) : (parseFloat(v.kg_vivo_total) || 0) * (1 - (parseFloat(v.desbaste_pct) || 0) / 100)
+  const kgVendidos = ventasPeriodo.reduce((s, v) => s + kgNetoVenta(v), 0)
+  const kgVendidosVivo = ventasPeriodo.reduce((s, v) => s + (parseFloat(v.kg_vivo_total) || 0), 0)
 
   if (cabIngresadas === 0 || cabVendidas === 0 || kgIngresados === 0 || kgVendidos === 0) return null
 
   const pesoProm_ingreso = kgIngresados / cabIngresadas
   const pesoProm_venta = kgVendidos / cabVendidas
+  const pesoProm_venta_vivo = kgVendidosVivo / cabVendidas
 
   // Consumo diario por animal (promedio de kg_dia/animales_ese_dia, por cada día con raciones)
   const racionesPeriodo = (racionesData || []).filter(r => {
@@ -168,7 +175,7 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
 
   return {
     dias, stockInicial, stockFinal, existenciaPromedio, cabIngresadas, kgIngresados,
-    cabVendidas, kgVendidos, pesoProm_ingreso, pesoProm_venta, permanencia, permanenciaCorregida,
+    cabVendidas, kgVendidos, pesoProm_ingreso, pesoProm_venta, pesoProm_venta_vivo, permanencia, permanenciaCorregida,
     variacionStock, gdp, gdpCorregido, consumoDiario, consumoDiarioCalc, kgAlimento, kgAlimentoMS,
     conversion, conversionCorregida, kgProducidos, kgProducidosCorregido,
   }
