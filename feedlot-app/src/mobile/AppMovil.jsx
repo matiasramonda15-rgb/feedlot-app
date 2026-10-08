@@ -345,28 +345,32 @@ function Home({ usuario, nav, onLogout, datos, onReload }) {
 // Se ven en Agricultura → 🌧️ Lluvias (PC) con el total del mes por lugar.
 // ─────────────────────────────────────────────────────────────────────────────
 function LluviaMovil({ usuario, nav }) {
+  const LUGAR_DEF = 'Bobo/Ramonda'   // donde está el feedlot
   const hoyS = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
-  const [lugares, setLugares] = useState(['Feedlot'])
-  const [ultimas, setUltimas] = useState([])
+  const [lugares, setLugares] = useState([LUGAR_DEF])
+  const [lluvias, setLluvias] = useState([])
   const [nombres, setNombres] = useState({})
-  const [form, setForm] = useState({ fecha: hoyS, mm: '', lugar: 'Feedlot', observaciones: '' })
+  const [form, setForm] = useState({ fecha: hoyS, mm: '', lugar: LUGAR_DEF, observaciones: '' })
   const [guardando, setGuardando] = useState(false)
   const [ok, setOk] = useState('')
+  const [mesAbierto, setMesAbierto] = useState(null)
   async function cargar() {
+    const desde = (() => { const d = new Date(); d.setMonth(d.getMonth() - 12); d.setDate(1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01` })()
     const [{ data: ca }, { data: ll }, { data: us }] = await Promise.all([
       supabase.from('campos').select('nombre').order('nombre'),
-      supabase.from('lluvias').select('*').order('fecha', { ascending: false }).order('creado_en', { ascending: false }).limit(20),
+      supabase.from('lluvias').select('*').gte('fecha', desde).order('fecha', { ascending: false }).order('creado_en', { ascending: false }),
       supabase.from('usuarios').select('id, nombre'),
     ])
-    setLugares(['Feedlot', ...(ca || []).map(c => c.nombre)])
-    setUltimas(ll || [])
+    const nombresCampos = (ca || []).map(c => c.nombre)
+    setLugares([LUGAR_DEF, ...nombresCampos.filter(n => n !== LUGAR_DEF)])
+    setLluvias(ll || [])
     setNombres(Object.fromEntries((us || []).map(u => [u.id, u.nombre])))
   }
   useEffect(() => { cargar() }, [])
   async function guardar() {
     const mm = parseFloat(String(form.mm).replace(',', '.'))
     if (!form.fecha || !(mm >= 0)) { alert('Poné la fecha y los milímetros'); return }
-    const ya = ultimas.find(l => l.fecha === form.fecha && (l.lugar || 'Feedlot') === form.lugar)
+    const ya = lluvias.find(l => l.fecha === form.fecha && (l.lugar || LUGAR_DEF) === form.lugar)
     if (ya && !confirm(`Ya hay ${ya.mm} mm cargados el ${new Date(form.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en ${form.lugar}${ya.registrado_por && nombres[ya.registrado_por] ? ` (los cargó ${nombres[ya.registrado_por]})` : ''}. ¿Cargar igual?`)) return
     setGuardando(true)
     const { error } = await supabase.from('lluvias').insert({ fecha: form.fecha, mm, lugar: form.lugar, observaciones: form.observaciones || null, registrado_por: usuario?.id || null })
@@ -378,10 +382,40 @@ function LluviaMovil({ usuario, nav }) {
   }
   const inp = { width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, color: C.text, boxSizing: 'border-box', fontFamily: C.sans }
   const lbl = { fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }
-  // Total del mes por lugar
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+  const nombreMes = k => { const [y, m] = k.split('-'); return `${MESES[parseInt(m) - 1]} ${y}` }
   const mesS = hoyS.slice(0, 7)
-  const totMes = {}
-  ultimas.filter(l => l.fecha?.slice(0, 7) === mesS).forEach(l => { const k = l.lugar || 'Feedlot'; totMes[k] = (totMes[k] || 0) + (parseFloat(l.mm) || 0) })
+  // Agrupar por mes; dentro de cada mes, total por lugar
+  const porMes = {}
+  lluvias.forEach(l => { const k = (l.fecha || '').slice(0, 7); (porMes[k] ||= []).push(l) })
+  const totalesLugar = arr => { const t = {}; arr.forEach(l => { const k = l.lugar || LUGAR_DEF; t[k] = (t[k] || 0) + (parseFloat(l.mm) || 0) }); return t }
+  const fila = l => (
+    <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '.6rem .8rem', marginTop: 6, fontSize: 13 }}>
+      <div>
+        <div style={{ fontWeight: 600 }}>{new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} · {l.lugar || LUGAR_DEF}</div>
+        <div style={{ fontSize: 11, color: C.muted }}>{l.registrado_por && nombres[l.registrado_por] ? `cargó ${nombres[l.registrado_por]}` : ''}{l.observaciones ? ` · ${l.observaciones}` : ''}</div>
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: C.blue, fontFamily: C.mono }}>{parseFloat(l.mm).toLocaleString('es-AR')} mm</div>
+    </div>
+  )
+  const tarjetaMes = (k, abierto, clickable) => {
+    const arr = porMes[k] || []
+    const tot = totalesLugar(arr)
+    return (
+      <div key={k} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '.85rem 1rem', marginBottom: 10 }}>
+        <div onClick={clickable ? () => setMesAbierto(mesAbierto === k ? null : k) : undefined} style={{ cursor: clickable ? 'pointer' : 'default' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>{k === mesS ? `Este mes · ${nombreMes(k)}` : nombreMes(k)}</div>
+            {clickable && <span style={{ color: C.muted, fontSize: 13 }}>{abierto ? '▲' : '▼'} {arr.length} lluvia{arr.length !== 1 ? 's' : ''}</span>}
+          </div>
+          {Object.entries(tot).map(([l, mm]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '2px 0' }}><span>{l}</span><b style={{ color: C.blue }}>{mm.toLocaleString('es-AR')} mm</b></div>)}
+          {!arr.length && <div style={{ fontSize: 12, color: C.muted }}>Sin lluvias cargadas</div>}
+        </div>
+        {abierto && arr.map(fila)}
+      </div>
+    )
+  }
+  const mesesAnteriores = Object.keys(porMes).filter(k => k !== mesS).sort().reverse()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Topbar titulo="🌧️ Registrar lluvia" onBack={() => nav('home')} />
@@ -400,22 +434,11 @@ function LluviaMovil({ usuario, nav }) {
           <button onClick={guardar} disabled={guardando} style={{ width: '100%', padding: '13px', fontSize: 15, fontWeight: 700, borderRadius: 10, border: 'none', background: C.green, color: '#10200F', cursor: 'pointer' }}>{guardando ? 'Guardando…' : '💾 Guardar lluvia'}</button>
           {ok && <div style={{ textAlign: 'center', color: C.green, fontWeight: 700, marginTop: 10 }}>{ok}</div>}
         </div>
-        {Object.keys(totMes).length > 0 && (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '.85rem 1rem', marginBottom: '1rem' }}>
-            <div style={{ ...lbl, marginBottom: 6 }}>Este mes</div>
-            {Object.entries(totMes).map(([l, mm]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '3px 0' }}><span>{l}</span><b style={{ color: C.blue }}>{mm.toLocaleString('es-AR')} mm</b></div>)}
-          </div>
-        )}
-        <div style={{ ...lbl, marginBottom: 6 }}>Últimas cargadas</div>
-        {ultimas.slice(0, 12).map(l => (
-          <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.7rem .9rem', marginBottom: 6, fontSize: 13 }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} · {l.lugar || 'Feedlot'}</div>
-              <div style={{ fontSize: 11, color: C.muted }}>{l.registrado_por && nombres[l.registrado_por] ? `cargó ${nombres[l.registrado_por]}` : ''}{l.observaciones ? ` · ${l.observaciones}` : ''}</div>
-            </div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: C.blue, fontFamily: C.mono }}>{parseFloat(l.mm).toLocaleString('es-AR')} mm</div>
-          </div>
-        ))}
+        {/* Mes en curso: con el detalle de cada lluvia */}
+        {tarjetaMes(mesS, true, false)}
+        {/* Meses anteriores: solo el total; tocando se despliega el detalle */}
+        {mesesAnteriores.length > 0 && <div style={{ ...lbl, margin: '14px 0 6px' }}>Meses anteriores</div>}
+        {mesesAnteriores.map(k => tarjetaMes(k, mesAbierto === k, true))}
       </Scroll>
     </div>
   )
