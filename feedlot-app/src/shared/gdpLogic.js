@@ -157,6 +157,21 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
 
   const permanencia = (existenciaPromedio * dias) / cabVendidas
   const variacionStock = stockInicial > 0 ? ((stockFinal - stockInicial) / stockInicial) * 100 : 0
+  // Cabezas que no cierran: lo que hay al final contra lo que debería haber
+  // (inicio + ingresados − vendidos). La variación de stock de arriba es real
+  // (ej. un mes con ventas y sin compras baja la existencia); lo que hay que
+  // mirar es esto: muertes, animales sin registrar o errores de carga.
+  // Se mide entre el primer y el último día con conteo cargado en
+  // Alimentación, y con las compras/ventas de ese mismo tramo (si el mes
+  // arrancó a cargarse a mitad, no se mezclan movimientos de antes).
+  let cabSinExplicar = null
+  if (diasOrdenados.length >= 2) {
+    const [d0, e0] = diasOrdenados[0], [d1, e1] = diasOrdenados[diasOrdenados.length - 1]
+    const local = f => { const x = new Date(f); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
+    const ing = lotesData.filter(l => l.fecha_ingreso > d0 && l.fecha_ingreso <= d1).reduce((t, l) => t + (l.cantidad || 0), 0)
+    const ven = ventasData.filter(v => { const f = local(v.creado_en); return f > d0 && f <= d1 }).reduce((t, v) => t + (v.cantidad || 0), 0)
+    cabSinExplicar = Math.round(e1.animalesReal - (e0.animalesReal + ing - ven))
+  }
   const existenciaCorregida = Math.max(stockInicial, stockFinal)
   const permanenciaCorregida = existenciaCorregida > 0 ? (existenciaCorregida * dias) / cabVendidas : permanencia
 
@@ -176,7 +191,7 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
   return {
     dias, stockInicial, stockFinal, existenciaPromedio, cabIngresadas, kgIngresados,
     cabVendidas, kgVendidos, pesoProm_ingreso, pesoProm_venta, pesoProm_venta_vivo, permanencia, permanenciaCorregida,
-    variacionStock, gdp, gdpCorregido, consumoDiario, consumoDiarioCalc, kgAlimento, kgAlimentoMS,
+    variacionStock, cabSinExplicar, gdp, gdpCorregido, consumoDiario, consumoDiarioCalc, kgAlimento, kgAlimentoMS,
     conversion, conversionCorregida, kgProducidos, kgProducidosCorregido,
   }
 }

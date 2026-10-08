@@ -1000,7 +1000,7 @@ export default function Reportes({ usuario }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead>
                         <tr style={{ background: S.bg }}>
-                          {['Mes', 'Exist. prom.', 'Ingr.', 'Vend.', 'P. ingreso', 'P. venta', 'Permanencia', 'GDP', 'GDP corr.', 'Conversión', 'Var. stock'].map(h => (
+                          {['Mes', 'Exist. prom.', 'Ingr.', 'Vend.', 'P. ingreso', 'P. venta', 'Permanencia', 'GDP', 'GDP corr.', 'Conversión', 'Var. existencia', 'Sin explicar'].map(h => (
                             <th key={h} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -1025,7 +1025,8 @@ export default function Reportes({ usuario }) {
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.gdp >= 1.1 ? S.green : m.gdp >= 0.9 ? S.amber : S.red }}>{enCurso ? enCursoTxt : m.gdp?.toFixed(3)}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.purple }}>{!enCurso && Math.abs(m.variacionStock) > 10 ? m.gdpCorregido?.toFixed(3) : '—'}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.conversion <= 7 ? S.green : m.conversion <= 9 ? S.amber : S.red }}>{enCurso ? enCursoTxt : (m.conversion?.toFixed(2) || '—')}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: Math.abs(m.variacionStock) > 20 ? S.red : Math.abs(m.variacionStock) > 10 ? S.amber : S.muted }}>{enCurso ? enCursoTxt : `${m.variacionStock.toFixed(0)}%`}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }} title="Cuánto subió o bajó la existencia en el mes (por compras y ventas: no es un error)">{enCurso ? enCursoTxt : `${m.variacionStock > 0 ? '+' : ''}${m.variacionStock.toFixed(0)}%`}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: enCurso || m.cabSinExplicar == null ? S.hint : Math.abs(m.cabSinExplicar) > Math.max(5, m.existenciaPromedio * 0.02) ? S.red : Math.abs(m.cabSinExplicar) > 2 ? S.amber : S.green }} title="Cabezas que no cierran: final − (inicio + ingresadas − vendidas). Muertes, animales sin registrar o errores de carga.">{enCurso ? enCursoTxt : (m.cabSinExplicar == null ? '—' : `${m.cabSinExplicar > 0 ? '+' : ''}${m.cabSinExplicar} cab`)}</td>
                           </tr>
                           )
                         })}
