@@ -1413,7 +1413,10 @@ export default function Contactos({ usuario }) {
                 credito: va.monto, debito: 0,
               })
             }
-            ;(va.pagos_detalle || []).filter(p => parseFloat(p.monto) > 0).forEach((p, pi) => {
+            // Igual que en las compras: un cobro en CANJE no genera fila aparte
+            // (la venta de arriba y las compras canjeadas ya se compensan solas;
+            // sumarlo de nuevo descontaba el canje dos veces en el resumen).
+            ;(va.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               movimientos.push({
                 fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: `${va.id}-${pi}`,
                 descripcion: `Cobro venta ${va.activo_nombre || 'activo'} · ${p.forma_pago || ''}`,
