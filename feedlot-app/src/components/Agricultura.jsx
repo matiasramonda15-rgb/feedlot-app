@@ -5731,7 +5731,11 @@ function TabLluvias({ usuario }) {
   const [lluvias, setLluvias] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ fecha: hoyLocal(), mm: '', observaciones: '' })
+  const [form, setForm] = useState({ fecha: hoyLocal(), mm: '', lugar: 'Feedlot', observaciones: '' })
+  // Cada lugar (feedlot y cada campo) tiene su pluviómetro: los totales son por lugar
+  const [lugares, setLugares] = useState(['Feedlot'])
+  const [filtroLugar, setFiltroLugar] = useState('Feedlot')
+  const [nombres, setNombres] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [filtroAnio, setFiltroAnio] = useState(new Date().getFullYear())
 
@@ -5739,20 +5743,26 @@ function TabLluvias({ usuario }) {
 
   async function cargar() {
     setLoading(true)
-    const { data } = await supabase.from('lluvias').select('*').order('fecha', { ascending: false })
+    const [{ data }, { data: ca }, { data: us }] = await Promise.all([
+      supabase.from('lluvias').select('*').order('fecha', { ascending: false }),
+      supabase.from('campos').select('nombre').order('nombre'),
+      supabase.from('usuarios').select('id, nombre'),
+    ])
     setLluvias(data || [])
+    setLugares(['Feedlot', ...(ca || []).map(c => c.nombre)])
+    setNombres(Object.fromEntries((us || []).map(u => [u.id, u.nombre])))
     setLoading(false)
   }
 
   async function guardar() {
     if (!form.fecha || !form.mm) { alert('Completá la fecha y los milímetros'); return }
-    const yaExiste = lluvias.find(l => l.fecha === form.fecha)
+    const yaExiste = lluvias.find(l => l.fecha === form.fecha && (l.lugar || 'Feedlot') === form.lugar)
     if (yaExiste && !confirm(`Ya hay un registro para el ${new Date(form.fecha+'T12:00:00').toLocaleDateString('es-AR')} (${yaExiste.mm} mm). ¿Agregar otro de todas formas?`)) return
     setGuardando(true)
-    await supabase.from('lluvias').insert({ fecha: form.fecha, mm: parseFloat(form.mm), observaciones: form.observaciones || null, registrado_por: usuario?.id })
+    await supabase.from('lluvias').insert({ fecha: form.fecha, mm: parseFloat(form.mm), lugar: form.lugar || 'Feedlot', observaciones: form.observaciones || null, registrado_por: usuario?.id })
     await cargar()
     setShowForm(false)
-    setForm({ fecha: hoyLocal(), mm: '', observaciones: '' })
+    setForm({ fecha: hoyLocal(), mm: '', lugar: form.lugar, observaciones: '' })
     setGuardando(false)
   }
 
@@ -5767,14 +5777,15 @@ function TabLluvias({ usuario }) {
   const anios = [...new Set(lluvias.map(l => new Date(l.fecha + 'T12:00:00').getFullYear()))].sort((a, b) => b - a)
   if (anios.length === 0) anios.push(new Date().getFullYear())
 
-  const delAnio = lluvias.filter(l => new Date(l.fecha + 'T12:00:00').getFullYear() === filtroAnio)
+  const lluviasL = lluvias.filter(l => !filtroLugar || (l.lugar || 'Feedlot') === filtroLugar)
+  const delAnio = lluviasL.filter(l => new Date(l.fecha + 'T12:00:00').getFullYear() === filtroAnio)
   const totalAnio = delAnio.reduce((s, l) => s + (l.mm || 0), 0)
   const hoy = new Date()
-  const totalMesActual = lluvias.filter(l => {
+  const totalMesActual = lluviasL.filter(l => {
     const f = new Date(l.fecha + 'T12:00:00')
     return f.getFullYear() === hoy.getFullYear() && f.getMonth() === hoy.getMonth()
   }).reduce((s, l) => s + (l.mm || 0), 0)
-  const ultimos30 = lluvias.filter(l => new Date(l.fecha + 'T12:00:00') >= new Date(Date.now() - 30 * 86400000)).reduce((s, l) => s + (l.mm || 0), 0)
+  const ultimos30 = lluviasL.filter(l => new Date(l.fecha + 'T12:00:00') >= new Date(Date.now() - 30 * 86400000)).reduce((s, l) => s + (l.mm || 0), 0)
 
   // Totales por mes del año filtrado, para la tabla y el gráfico
   const porMes = Array.from({ length: 12 }, (_, i) => ({
@@ -5806,6 +5817,7 @@ function TabLluvias({ usuario }) {
         <Card titulo="Nuevo registro de lluvia">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
             <div><Label>Fecha *</Label><input type="date" value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} style={inputStyle} /></div>
+            <div><Label>Lugar *</Label><select value={form.lugar} onChange={e => setForm({...form, lugar: e.target.value})} style={inputStyle}>{lugares.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
             <div><Label>Milímetros *</Label><input type="number" value={form.mm} onChange={e => setForm({...form, mm: e.target.value})} placeholder="ej. 25" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 600 }} /></div>
             <div><Label>Observaciones</Label><input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} placeholder="opcional" style={inputStyle} /></div>
           </div>
@@ -5835,6 +5847,10 @@ function TabLluvias({ usuario }) {
         <Label>Año</Label>
         <select value={filtroAnio} onChange={e => setFiltroAnio(parseInt(e.target.value))} style={{ ...inputStyle, width: 120 }}>
           {anios.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <Label>Lugar</Label>
+        <select value={filtroLugar} onChange={e => setFiltroLugar(e.target.value)} style={{ ...inputStyle, width: 220 }}>
+          {[...new Set([...lugares, ...lluvias.map(l => l.lugar || 'Feedlot')])].map(l => <option key={l} value={l}>{l}{lluvias.some(x => (x.lugar || 'Feedlot') === l) ? '' : ' (sin datos)'}</option>)}
         </select>
       </div>
 
@@ -5891,7 +5907,7 @@ function TabLluvias({ usuario }) {
       <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead><tr style={{ background: S.bg }}>
-            {['Fecha', 'Mm', 'Observaciones', ''].map(h => (
+            {['Fecha', 'Lugar', 'Mm', 'Cargó', 'Observaciones', ''].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>
             ))}
           </tr></thead>
@@ -5900,7 +5916,9 @@ function TabLluvias({ usuario }) {
             {lluvias.map(l => (
               <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                 <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12 }}>{l.lugar || 'Feedlot'}</td>
                 <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>{l.mm} mm</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, color: S.muted }}>{nombres[l.registrado_por] || '—'}</td>
                 <td style={{ padding: '7px 12px', color: S.muted, fontSize: 12 }}>{l.observaciones || '—'}</td>
                 <td style={{ padding: '7px 12px' }}>
                   <button onClick={() => eliminar(l.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>Eliminar</button>

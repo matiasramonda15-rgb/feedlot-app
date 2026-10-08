@@ -125,6 +125,7 @@ export default function AppMovil({ usuario, onLogout }) {
     novedad:     <PlaceholderMovil titulo="Novedad / Movimiento" nav={nav} />,
     servicios:   <Servicios usuario={usuario} mobile={true} nav={nav} />,
     agricultura: <Agricultura usuario={usuario} mobile={true} nav={nav} />,
+    lluvia:      <LluviaMovil usuario={usuario} nav={nav} />,
   }
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: C.sans, color: C.text, position: 'relative', overflow: 'hidden' }}>
@@ -324,6 +325,8 @@ function Home({ usuario, nav, onLogout, datos, onReload }) {
             ...(['matias_eu@hotmail.com','martin@campo.com','braian@campo.com','oscar@campo.com'].includes(usuario?.email) ? [{ icon: '🚜', label: 'Servicios', p: 'servicios' }] : []),
             // Agricultura: dueño, lectura y usuarios habilitados por mail (Martín: acceso completo)
             ...(usuario?.rol === 'dueno' || usuario?.rol === 'lectura' || ['martin@campo.com'].includes(usuario?.email) ? [{ icon: '🌱', label: 'Agricultura', p: 'agricultura' }] : []),
+            // Lluvias: la puede cargar cualquier usuario
+            { icon: '🌧️', label: 'Lluvia', p: 'lluvia' },
           ].map((a, i) => (
             <div key={i} onClick={() => nav(a.p)}
               style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.85rem', cursor: 'pointer', textAlign: 'center' }}>
@@ -332,6 +335,87 @@ function Home({ usuario, nav, onLogout, datos, onReload }) {
             </div>
           ))}
         </div>
+      </Scroll>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lluvias desde el celular (cualquier usuario): fecha, milímetros y dónde.
+// Se ven en Agricultura → 🌧️ Lluvias (PC) con el total del mes por lugar.
+// ─────────────────────────────────────────────────────────────────────────────
+function LluviaMovil({ usuario, nav }) {
+  const hoyS = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
+  const [lugares, setLugares] = useState(['Feedlot'])
+  const [ultimas, setUltimas] = useState([])
+  const [nombres, setNombres] = useState({})
+  const [form, setForm] = useState({ fecha: hoyS, mm: '', lugar: 'Feedlot', observaciones: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [ok, setOk] = useState('')
+  async function cargar() {
+    const [{ data: ca }, { data: ll }, { data: us }] = await Promise.all([
+      supabase.from('campos').select('nombre').order('nombre'),
+      supabase.from('lluvias').select('*').order('fecha', { ascending: false }).order('creado_en', { ascending: false }).limit(20),
+      supabase.from('usuarios').select('id, nombre'),
+    ])
+    setLugares(['Feedlot', ...(ca || []).map(c => c.nombre)])
+    setUltimas(ll || [])
+    setNombres(Object.fromEntries((us || []).map(u => [u.id, u.nombre])))
+  }
+  useEffect(() => { cargar() }, [])
+  async function guardar() {
+    const mm = parseFloat(String(form.mm).replace(',', '.'))
+    if (!form.fecha || !(mm >= 0)) { alert('Poné la fecha y los milímetros'); return }
+    const ya = ultimas.find(l => l.fecha === form.fecha && (l.lugar || 'Feedlot') === form.lugar)
+    if (ya && !confirm(`Ya hay ${ya.mm} mm cargados el ${new Date(form.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en ${form.lugar}${ya.registrado_por && nombres[ya.registrado_por] ? ` (los cargó ${nombres[ya.registrado_por]})` : ''}. ¿Cargar igual?`)) return
+    setGuardando(true)
+    const { error } = await supabase.from('lluvias').insert({ fecha: form.fecha, mm, lugar: form.lugar, observaciones: form.observaciones || null, registrado_por: usuario?.id || null })
+    setGuardando(false)
+    if (error) { alert('No se pudo guardar: ' + error.message); return }
+    setOk(`✓ ${mm} mm en ${form.lugar}`); setTimeout(() => setOk(''), 2500)
+    setForm({ ...form, mm: '', observaciones: '' })
+    cargar()
+  }
+  const inp = { width: '100%', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 12px', fontSize: 16, color: C.text, boxSizing: 'border-box', fontFamily: C.sans }
+  const lbl = { fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }
+  // Total del mes por lugar
+  const mesS = hoyS.slice(0, 7)
+  const totMes = {}
+  ultimas.filter(l => l.fecha?.slice(0, 7) === mesS).forEach(l => { const k = l.lugar || 'Feedlot'; totMes[k] = (totMes[k] || 0) + (parseFloat(l.mm) || 0) })
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Topbar titulo="🌧️ Registrar lluvia" onBack={() => nav('home')} />
+      <Scroll>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '1rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div><div style={lbl}>Fecha</div><input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} style={inp} /></div>
+            <div><div style={lbl}>Milímetros</div><input type="number" inputMode="decimal" value={form.mm} onChange={e => setForm({ ...form, mm: e.target.value })} placeholder="mm" style={{ ...inp, fontSize: 22, fontWeight: 700, textAlign: 'center' }} /></div>
+          </div>
+          <div style={lbl}>Dónde</div>
+          <select value={form.lugar} onChange={e => setForm({ ...form, lugar: e.target.value })} style={{ ...inp, marginBottom: 10 }}>
+            {lugares.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+          <div style={lbl}>Observación (opcional)</div>
+          <input value={form.observaciones} onChange={e => setForm({ ...form, observaciones: e.target.value })} placeholder="ej. con piedra, de noche…" style={{ ...inp, marginBottom: 12 }} />
+          <button onClick={guardar} disabled={guardando} style={{ width: '100%', padding: '13px', fontSize: 15, fontWeight: 700, borderRadius: 10, border: 'none', background: C.green, color: '#10200F', cursor: 'pointer' }}>{guardando ? 'Guardando…' : '💾 Guardar lluvia'}</button>
+          {ok && <div style={{ textAlign: 'center', color: C.green, fontWeight: 700, marginTop: 10 }}>{ok}</div>}
+        </div>
+        {Object.keys(totMes).length > 0 && (
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '.85rem 1rem', marginBottom: '1rem' }}>
+            <div style={{ ...lbl, marginBottom: 6 }}>Este mes</div>
+            {Object.entries(totMes).map(([l, mm]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '3px 0' }}><span>{l}</span><b style={{ color: C.blue }}>{mm.toLocaleString('es-AR')} mm</b></div>)}
+          </div>
+        )}
+        <div style={{ ...lbl, marginBottom: 6 }}>Últimas cargadas</div>
+        {ultimas.slice(0, 12).map(l => (
+          <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '.7rem .9rem', marginBottom: 6, fontSize: 13 }}>
+            <div>
+              <div style={{ fontWeight: 600 }}>{new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })} · {l.lugar || 'Feedlot'}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>{l.registrado_por && nombres[l.registrado_por] ? `cargó ${nombres[l.registrado_por]}` : ''}{l.observaciones ? ` · ${l.observaciones}` : ''}</div>
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: C.blue, fontFamily: C.mono }}>{parseFloat(l.mm).toLocaleString('es-AR')} mm</div>
+          </div>
+        ))}
       </Scroll>
     </div>
   )
