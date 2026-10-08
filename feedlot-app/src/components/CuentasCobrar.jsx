@@ -53,7 +53,7 @@ export default function CuentasCobrar({ setModulo }) {
       supabase.from('ventas_granos').select('*'),
       supabase.from('ventas_activos').select('*').neq('estado_cobro', 'cobrado'),
       supabase.from('cheques').select('*'),
-      supabase.from('compras_insumos').select('id, fecha, total, proveedor').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
+      supabase.from('compras_insumos').select('id, fecha, total, proveedor, pagos_detalle').in('estado_pago', ['pendiente', 'parcial']).eq('marcado_resuelto', false),
       supabase.from('gastos_generales').select('id, fecha, monto, proveedor').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
       supabase.from('pagos_creditos').select('id, fecha, monto, creditos(es_dolares)').eq('estado', 'pendiente').eq('marcado_resuelto', false),
       supabase.from('fletes').select('id, fecha, monto').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
@@ -130,7 +130,7 @@ export default function CuentasCobrar({ setModulo }) {
 
     // ── Lo que sale (para el flujo) ──
     const salidas = []
-    ;(ci || []).forEach(c => salidas.push({ fecha: c.fecha, monto: parseFloat(c.total) || 0 }))
+    ;(ci || []).forEach(c => salidas.push({ fecha: c.fecha, monto: (parseFloat(c.total) || 0) - sumaPagos(c.pagos_detalle) }))
     ;(gg || []).forEach(g => salidas.push({ fecha: g.fecha, monto: parseFloat(g.monto) || 0 }))
     ;(pc || []).filter(p => !p.creditos?.es_dolares).forEach(p => salidas.push({ fecha: p.fecha, monto: parseFloat(p.monto) || 0 }))
     ;(fl || []).forEach(f => salidas.push({ fecha: f.fecha, monto: parseFloat(f.monto) || 0 }))

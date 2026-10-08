@@ -45,7 +45,8 @@ export default function CuentasPagar({ usuario, setModulo }) {
       { data: ot },
     ] = await Promise.all([
       // Compras de insumos: Alimentación, Sanidad y Agricultura comparten esta tabla
-      supabase.from('compras_insumos').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
+      // También las "parciales" (pagadas en parte, ej. una parte en canje): figuran por su saldo
+      supabase.from('compras_insumos').select('*').in('estado_pago', ['pendiente', 'parcial']).eq('marcado_resuelto', false).order('fecha', { ascending: true }),
       supabase.from('gastos_generales').select('*').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
       // Cuotas de créditos pendientes, con los datos del crédito
       supabase.from('pagos_creditos').select('*, creditos(descripcion, entidad, es_dolares, activo_id, activos(nombre))').eq('estado', 'pendiente').eq('marcado_resuelto', false).order('fecha', { ascending: true }),
@@ -64,8 +65,8 @@ export default function CuentasPagar({ usuario, setModulo }) {
       const origen = c.insumo_tipo === 'agro' ? 'insumos_agro' : c.insumo_tipo === 'sanitario' ? 'insumos_sanidad' : 'insumos_alimentacion'
       filas.push({
         id: `ci-${c.id}`, origen, fecha: c.fecha, proveedor: c.proveedor || '—',
-        descripcion: `${c.insumo_nombre || 'Insumo'} · ${c.cantidad?.toLocaleString('es-AR') || ''}${c.unidad ? ' ' + c.unidad : ''}`,
-        monto: c.total,
+        descripcion: `${c.insumo_nombre || 'Insumo'} · ${c.cantidad?.toLocaleString('es-AR') || ''}${c.unidad ? ' ' + c.unidad : ''}${c.estado_pago === 'parcial' ? ' · saldo (pagada en parte)' : ''}`,
+        monto: c.total != null ? c.total - (c.pagos_detalle || []).reduce((t, p) => t + (parseFloat(p.monto) || 0), 0) : c.total,
       })
     })
 
