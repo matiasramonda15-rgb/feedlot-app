@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { confirmarPesadaClasificacion, eliminarPesadaClasificacion } from '../shared/pesadaLogic'
+import ControlCaravanas from './ControlCaravanas'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -440,12 +441,27 @@ export default function Pesada({ usuario, mobile, nav }) {
   // ── FIN MODO CELULAR — de acá para abajo sigue el modo PC, sin cambios ──
 
   // ── HISTORIAL ──
+  if (vista === 'control') {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1rem' }}>
+          <button onClick={() => setVista('historial')} style={{ padding: '5px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>← Volver</button>
+          <div style={{ fontSize: 22, fontWeight: 600 }}>Control de peso por caravana</div>
+        </div>
+        <ControlCaravanas S={S} corrales={corrales} usuario={usuario} />
+      </div>
+    )
+  }
+
   if (vista === 'historial') {
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Pesada y clasificación</div>
+            <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              Pesada y clasificación
+              <button onClick={() => setVista('control')} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>📡 Control por caravana</button>
+            </div>
             <div style={{ fontSize: 13, color: S.muted, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               {!editandoFecha ? (
                 <>
