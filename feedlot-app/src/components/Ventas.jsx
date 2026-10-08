@@ -2364,6 +2364,19 @@ export default function Ventas({ usuario, mobile, nav }) {
                                 + Registrar pago
                               </button>
                             ) : null}
+                            {/* Diferencia chica que no se va a reclamar: se da por saldada sin
+                                mover caja (queda registrada como "diferencia" en los pagos) */}
+                            {!isReg && saldo > 0 && saldo <= 50000 && (
+                              <button onClick={async () => {
+                                if (!confirm(`¿Dar por saldada la diferencia de $${Math.round(saldo).toLocaleString('es-AR')} de ${v.comprador || 'esta venta'}?\n\nNo mueve ninguna caja: queda registrada como "diferencia de cobro" y la venta pasa a cobrada.`)) return
+                                const { error } = await supabase.from('pagos_ventas').insert({ venta_id: v.id, grupo_venta_id: v.grupo_venta_id || null, fecha: hoyLocal(), monto: Math.round(saldo * 100) / 100, forma_pago: 'diferencia', observaciones: 'Diferencia de cobro no reclamada (se da por saldada)', registrado_por: usuario?.id || null })
+                                if (error) { alert('No se pudo registrar: ' + error.message); return }
+                                for (const vv of grupo) await supabase.from('ventas').update({ estado_comercial: 'cobrado' }).eq('id', vv.id)
+                                await cargar()
+                              }} style={{ marginTop: 4, fontSize: 10, padding: '3px 8px', background: '#F7F5F0', border: '1px solid #C8C2B8', color: '#6B6760', borderRadius: 4, cursor: 'pointer', width: '100%' }}>
+                                ✓ Saldar diferencia (${Math.round(saldo).toLocaleString('es-AR')})
+                              </button>
+                            )}
                             {isReg && (
                               <div style={{ marginTop: 12 }}>
                             {formPagos.map((fp, fpi) => {
