@@ -22,6 +22,7 @@ var Activos      = lazy(() => import('./Activos'))
 var Insumos      = lazy(() => import('./Insumos'))
 var Fletes       = lazy(() => import('./Fletes'))
 var CuentasPagar = lazy(() => import('./CuentasPagar'))
+var CuentasCobrar = lazy(() => import('./CuentasCobrar'))
 var Presupuesto  = lazy(() => import('./Presupuesto'))
 var Diagnostico  = lazy(() => import('./Diagnostico'))
 var Asistente    = lazy(() => import('./Asistente'))
@@ -31,7 +32,7 @@ const MODULOS = {
   ventas: Ventas, alimentacion: Alimentacion, sanidad: Sanidad, reportes: Reportes,
   agricultura: Agricultura, alfalfa: Agricultura, servicios: Servicios, personal: Personal, creditos: Creditos, gastos: Gastos,
   comercial: Comercial, contactos: Contactos, activos: Activos, socios: Activos, insumos: Insumos, fletes: Fletes,
-  cuentas_pagar: CuentasPagar,
+  cuentas_pagar: CuentasPagar, cuentas_cobrar: CuentasCobrar,
   presupuesto: Presupuesto,
   diagnostico: Diagnostico,
   asistente: Asistente,
