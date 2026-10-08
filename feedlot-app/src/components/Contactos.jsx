@@ -1251,7 +1251,16 @@ export default function Contactos({ usuario }) {
               movimientos.push({
                 fecha: ci.fecha || ci.creado_en?.split('T')[0],
                 fechaVto: null, tipo: esParaleloCi ? 'PAR' : (ci.insumo_tipo === 'agro' ? 'AGRO' : 'INSUMO'), nro: ci.id,
-                descripcion: `${ci.insumo_nombre || 'Insumo'} · ${ci.cantidad || ''}${ci.unidad ? ' ' + ci.unidad : ''}`,
+                // Kilos (o unidades) y precio de lo entregado; si se pagó una
+                // parte en canje, también se aclara
+                descripcion: (() => {
+                  const cant = parseFloat(ci.cantidad)
+                  const pu = parseFloat(ci.precio_unitario)
+                  const canje = (ci.pagos_detalle || []).filter(p => p.tipo === 'canje').reduce((t, p) => t + (parseFloat(p.monto) || 0), 0)
+                  return `${ci.insumo_nombre || 'Insumo'} · ${cant ? cant.toLocaleString('es-AR', { maximumFractionDigits: 2 }) : ''}${ci.unidad ? ' ' + ci.unidad : ''}`
+                    + (pu ? ` × $${pu.toLocaleString('es-AR', { maximumFractionDigits: 2 })}/${ci.unidad || 'u'}` : '')
+                    + (canje > 0 ? ` · pagado en canje $${Math.round(canje).toLocaleString('es-AR')}${canje < (parseFloat(ci.total) || 0) - 1 ? ` (saldo $${Math.round((parseFloat(ci.total) || 0) - canje).toLocaleString('es-AR')})` : ''}` : '')
+                })(),
                 credito: 0, debito: ci.total, factura: ci.numero_factura,
               })
             }
