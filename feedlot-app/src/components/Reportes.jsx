@@ -60,11 +60,12 @@ export default function Reportes({ usuario }) {
   const [ventas, setVentas] = useState([])
   const [formulasMixer, setFormulasMixer] = useState([])
   const [mortalidad, setMortalidad] = useState([])
+  const [ajustesStock, setAjustesStock] = useState([])
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }, { data: ajs }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       // Todas las raciones de los últimos 13 meses (de a páginas: Supabase corta en 1000)
@@ -85,7 +86,9 @@ export default function Reportes({ usuario }) {
       supabase.from('eventos_sanitarios').select('producto, cantidad_ml, creado_en').order('creado_en', { ascending: false }).limit(3000),
       supabase.from('stock_sanitario').select('producto, precio_referencia'),
       supabase.from('caravanas_lecturas').select('*, lotes(procedencia), corrales(numero)'),
+      supabase.from('movimientos').select('fecha, cantidad, tipo, motivo').in('tipo', ['ajuste_manual', 'conteo_fisico']),
     ])
+    setAjustesStock(ajs || [])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
     setRaciones(r || [])
@@ -218,7 +221,7 @@ export default function Reportes({ usuario }) {
 
   // ── GDP, permanencia, conversión y consumo diario — lógica compartida con el
   // Tablero, para que los dos muestren siempre el mismo número. ──
-  const { mesesGDP, mesActual: mesCalendario, ultimos30, prom3, prom6, prom12 } = calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, stock, formulasMixer })
+  const { mesesGDP, mesActual: mesCalendario, ultimos30, prom3, prom6, prom12 } = calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, stock, formulasMixer, mortalidad, ajustesStock })
   // El cuadro "reciente" usa los últimos 30 días corridos (no el mes
   // calendario, que los primeros días da números sin sentido).
   const mesActual = ultimos30 || mesCalendario
@@ -1000,7 +1003,7 @@ export default function Reportes({ usuario }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead>
                         <tr style={{ background: S.bg }}>
-                          {['Mes', 'Exist. prom.', 'Ingr.', 'Vend.', 'P. ingreso', 'P. venta', 'Permanencia', 'GDP', 'GDP corr.', 'Conversión', 'Var. existencia', 'Sin explicar'].map(h => (
+                          {['Mes', 'Exist. prom.', 'Ingr.', 'Vend.', 'Muertes', 'P. ingreso', 'P. venta', 'Permanencia', 'GDP', 'GDP corr.', 'Conversión', 'Var. existencia', 'Ajuste conteo', 'Sin explicar'].map(h => (
                             <th key={h} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -1019,6 +1022,7 @@ export default function Reportes({ usuario }) {
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.existenciaPromedio)}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{m.cabIngresadas}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{m.cabVendidas}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.cabMuertes ? S.red : S.hint }}>{m.cabMuertes || '—'}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.pesoProm_ingreso)} kg</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(m.pesoProm_venta)} kg</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{enCurso ? enCursoTxt : `${Math.round(m.permanencia)} d`}</td>
@@ -1026,7 +1030,8 @@ export default function Reportes({ usuario }) {
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.purple }}>{!enCurso && Math.abs(m.variacionStock) > 10 ? m.gdpCorregido?.toFixed(3) : '—'}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.conversion <= 7 ? S.green : m.conversion <= 9 ? S.amber : S.red }}>{enCurso ? enCursoTxt : (m.conversion?.toFixed(2) || '—')}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }} title="Cuánto subió o bajó la existencia en el mes (por compras y ventas: no es un error)">{enCurso ? enCursoTxt : `${m.variacionStock > 0 ? '+' : ''}${m.variacionStock.toFixed(0)}%`}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: enCurso || m.cabSinExplicar == null ? S.hint : Math.abs(m.cabSinExplicar) > Math.max(5, m.existenciaPromedio * 0.02) ? S.red : Math.abs(m.cabSinExplicar) > 2 ? S.amber : S.green }} title="Cabezas que no cierran: final − (inicio + ingresadas − vendidas). Muertes, animales sin registrar o errores de carga.">{enCurso ? enCursoTxt : (m.cabSinExplicar == null ? '—' : `${m.cabSinExplicar > 0 ? '+' : ''}${m.cabSinExplicar} cab`)}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.cabAjusteConteo ? S.purple : S.hint }} title="Ajustes hechos a propósito por conteo físico (Corrales)">{enCurso ? enCursoTxt : (m.cabAjusteConteo ? `${m.cabAjusteConteo > 0 ? '+' : ''}${m.cabAjusteConteo}` : '—')}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: enCurso || m.cabSinExplicar == null ? S.hint : Math.abs(m.cabSinExplicar) > Math.max(5, m.existenciaPromedio * 0.02) ? S.red : Math.abs(m.cabSinExplicar) > 2 ? S.amber : S.green }} title="Cabezas que no cierran: final − (inicio + ingresadas − vendidas − muertes ± ajustes por conteo). Debería ser 0: si no, hay algo sin registrar.">{enCurso ? enCursoTxt : (m.cabSinExplicar == null ? '—' : `${m.cabSinExplicar > 0 ? '+' : ''}${m.cabSinExplicar} cab`)}</td>
                           </tr>
                           )
                         })}

@@ -573,7 +573,11 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
     const nuevo = parseInt(ajusteValor)
     if (isNaN(nuevo) || nuevo < 0) { alert('Ingresá un número válido'); return }
     const anterior = corral.animales || 0
-    if (nuevo !== anterior && !ajusteMotivo.trim()) { alert('Contá brevemente el motivo del ajuste (ej. "conteo físico del 22/7"), para poder distinguirlo después de un error del sistema'); return }
+    if (nuevo === anterior) { setAjustando(false); return }
+    // El total del feedlot SOLO cambia por ingresos, ventas, muertes y este
+    // ajuste por conteo físico (hecho a propósito). Para un traslado entre
+    // corrales se usa "Mover"; para una muerte, Sanidad → Registrar muerte.
+    if (!confirm(`Esto cambia el TOTAL del feedlot en ${nuevo - anterior > 0 ? '+' : ''}${nuevo - anterior} cabeza${Math.abs(nuevo - anterior) !== 1 ? 's' : ''}.\n\nUsalo solo después de un CONTEO FÍSICO.\n· Si murió un animal: Sanidad → Registrar muerte.\n· Si se pasó a otro corral: botón Mover.\n\n¿Es un ajuste por conteo físico?`)) return
     setGuardandoAjuste(true)
     const { error } = await supabase.from('corrales').update({ animales: nuevo }).eq('id', corral.id)
     if (error) { alert('Error al guardar el ajuste: ' + error.message); setGuardandoAjuste(false); return }
@@ -581,8 +585,8 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
       corral_origen_id: corral.id,
       corral_destino_id: corral.id,
       cantidad: nuevo - anterior,
-      tipo: 'ajuste_manual',
-      motivo: `Ajuste manual: ${anterior} → ${nuevo}${ajusteMotivo.trim() ? ' — ' + ajusteMotivo.trim() : ''}`,
+      tipo: 'conteo_fisico',
+      motivo: `Conteo físico: ${anterior} → ${nuevo}${ajusteMotivo.trim() ? ' — ' + ajusteMotivo.trim() : ''}`,
       registrado_por: usuario?.id,
     })
     setAjustando(false)
@@ -618,16 +622,17 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
         </button>
       )}
 
-      {/* Ajuste manual de cantidad */}
+      {/* Ajuste por conteo físico (único ajuste permitido del total) */}
       {esDueno && (
         <div style={{ marginBottom: 10 }}>
           {!ajustando
             ? <button onClick={() => { setAjustando(true); setAjusteValor(String(corral.animales || 0)) }}
                 style={{ width: '100%', background: '#FDF0E0', border: '1px solid #EF9F27', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, color: '#7A4500', cursor: 'pointer' }}>
-                ✏️ Ajustar cantidad manualmente
+                📋 Ajuste por conteo físico
               </button>
             : <div style={{ background: '#FDF0E0', border: '1px solid #EF9F27', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#7A4500', marginBottom: 8 }}>Ajuste manual — actual: {corral.animales || 0} animales</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#7A4500', marginBottom: 2 }}>Conteo físico — el sistema dice: {corral.animales || 0} animales</div>
+                <div style={{ fontSize: 11, color: '#7A4500', marginBottom: 8 }}>Poné cuántos contaste. Solo para corregir después de contar: las muertes van en Sanidad y los cambios de corral, con Mover.</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                   <input type="number" value={ajusteValor} onChange={e => setAjusteValor(e.target.value)} min="0"
                     style={{ flex: 1, padding: '7px 10px', border: '1px solid #EF9F27', borderRadius: 6, fontSize: 14, fontFamily: 'monospace', fontWeight: 700 }} />
@@ -640,7 +645,7 @@ function PanelDetalle({ corral, corrales, onCambiarRol, onMover, usuario, esDuen
                     ✕
                   </button>
                 </div>
-                <input type="text" value={ajusteMotivo} onChange={e => setAjusteMotivo(e.target.value)} placeholder="Motivo (ej. conteo físico del 22/7)"
+                <input type="text" value={ajusteMotivo} onChange={e => setAjusteMotivo(e.target.value)} placeholder="Observación (opcional, ej. conteo de octubre)"
                   style={{ width: '100%', padding: '6px 10px', border: '1px solid #EF9F27', borderRadius: 6, fontSize: 12, boxSizing: 'border-box' }} />
               </div>
           }

@@ -164,13 +164,17 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
   // Se mide entre el primer y el último día con conteo cargado en
   // Alimentación, y con las compras/ventas de ese mismo tramo (si el mes
   // arrancó a cargarse a mitad, no se mezclan movimientos de antes).
-  let cabSinExplicar = null
+  let cabSinExplicar = null, cabMuertes = 0, cabAjusteConteo = 0
   if (diasOrdenados.length >= 2) {
     const [d0, e0] = diasOrdenados[0], [d1, e1] = diasOrdenados[diasOrdenados.length - 1]
     const local = f => { const x = new Date(f); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
     const ing = lotesData.filter(l => l.fecha_ingreso > d0 && l.fecha_ingreso <= d1).reduce((t, l) => t + (l.cantidad || 0), 0)
     const ven = ventasData.filter(v => { const f = local(v.creado_en); return f > d0 && f <= d1 }).reduce((t, v) => t + (v.cantidad || 0), 0)
-    cabSinExplicar = Math.round(e1.animalesReal - (e0.animalesReal + ing - ven))
+    // Muertes (Sanidad) y ajustes por conteo físico (Corrales) del mismo tramo
+    const muertes = (lookups?.mortalidad || []).filter(m => m.fecha >= d0 && m.fecha < d1).reduce((t, m) => t + (parseInt(m.cantidad) || 0), 0)
+    const ajustes = (lookups?.ajustesStock || []).filter(a => { const f = local(a.fecha); return f >= d0 && f < d1 }).reduce((t, a) => t + (parseInt(a.cantidad) || 0), 0)
+    cabMuertes = muertes; cabAjusteConteo = ajustes
+    cabSinExplicar = Math.round(e1.animalesReal - (e0.animalesReal + ing - ven - muertes + ajustes))
   }
   const existenciaCorregida = Math.max(stockInicial, stockFinal)
   const permanenciaCorregida = existenciaCorregida > 0 ? (existenciaCorregida * dias) / cabVendidas : permanencia
@@ -191,7 +195,7 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
   return {
     dias, stockInicial, stockFinal, existenciaPromedio, cabIngresadas, kgIngresados,
     cabVendidas, kgVendidos, pesoProm_ingreso, pesoProm_venta, pesoProm_venta_vivo, permanencia, permanenciaCorregida,
-    variacionStock, cabSinExplicar, gdp, gdpCorregido, consumoDiario, consumoDiarioCalc, kgAlimento, kgAlimentoMS,
+    variacionStock, cabSinExplicar, cabMuertes, cabAjusteConteo, gdp, gdpCorregido, consumoDiario, consumoDiarioCalc, kgAlimento, kgAlimentoMS,
     conversion, conversionCorregida, kgProducidos, kgProducidosCorregido,
   }
 }
@@ -216,9 +220,9 @@ export function promMovil(meses, n) {
 
 // Función de conveniencia todo-en-uno: dado los datos ya cargados, arma los
 // últimos 12 meses y devuelve mesActual + promedios móviles de 3/6/12 meses.
-export function calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, stock, formulasMixer }) {
+export function calcularIndicadoresFeedlot({ corrales, lotes, ventas, raciones, stock, formulasMixer, mortalidad = [], ajustesStock = [] }) {
   const existenciaActualGlobal = (corrales || []).reduce((s, c) => s + (c.animales || 0), 0)
-  const lookups = construirLookupsMS(stock, formulasMixer)
+  const lookups = { ...construirLookupsMS(stock, formulasMixer), mortalidad, ajustesStock }
   const hoy = new Date()
 
   const mesesGDP = []
