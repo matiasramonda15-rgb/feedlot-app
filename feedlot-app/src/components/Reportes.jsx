@@ -63,11 +63,13 @@ export default function Reportes({ usuario }) {
   const [ajustesStock, setAjustesStock] = useState([])
   const [fletes, setFletes] = useState([])
   const [dolarHoy, setDolarHoy] = useState(null)
+  const [ordenesAgro, setOrdenesAgro] = useState([])
+  const [arriendosAgro, setArriendosAgro] = useState([])
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }, { data: ajs }, { data: fle }, { data: dolarCfg }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }, { data: ajs }, { data: fle }, { data: dolarCfg }, { data: otAgro }, { data: arrAgro }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       // Todas las raciones de los últimos 13 meses (de a páginas: Supabase corta en 1000)
@@ -80,9 +82,9 @@ export default function Reportes({ usuario }) {
       supabase.from('gastos_generales').select('*'),
       supabase.from('pagos_empleados').select('*, empleados(nombre, actividad)'),
       supabase.from('compras_insumos').select('total, fecha, creado_en').eq('insumo_tipo', 'agro'),
-      supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, tipo_servicio, orden_trabajo_id').or('tipo_servicio.eq.tercero,orden_trabajo_id.not.is.null'),
+      supabase.from('servicios_terceros').select('total, monto_negro, iva_pct, cliente, es_prueba, fecha, creado_en, tipo_servicio, orden_trabajo_id').or('tipo_servicio.eq.tercero,orden_trabajo_id.not.is.null'),
       supabase.from('mano_obra_servicios').select('monto_calculado, creado_en'),
-      supabase.from('ventas_granos').select('total, fecha, creado_en'),
+      supabase.from('ventas_granos').select('total, neto, kg, precio_tn, iva_pct, comprador, observaciones, fecha, creado_en'),
       supabase.from('activos').select('id, valor_compra, valor_actual, valor_usd, vida_util_anios, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa, estado, fecha_compra'),
       supabase.from('pagos_creditos').select('monto, fecha_pago, estado, creditos(activo_id, compras_insumos(insumo_tipo))').eq('estado', 'pagado'),
       supabase.from('eventos_sanitarios').select('producto, cantidad_ml, creado_en').order('creado_en', { ascending: false }).limit(3000),
@@ -91,7 +93,11 @@ export default function Reportes({ usuario }) {
       supabase.from('movimientos').select('fecha, cantidad, tipo, motivo').in('tipo', ['ajuste_manual', 'conteo_fisico', 'correccion_datos']),
       supabase.from('fletes').select('lote_id, fecha, monto, cantidad'),
       supabase.from('configuracion').select('valor').eq('clave', 'cotizacion_dolar_agro').maybeSingle(),
+      supabase.from('ordenes_trabajo').select('fecha, costo_total, productos, es_propia, estado').eq('estado', 'completado'),
+      supabase.from('vencimientos_arriendo').select('fecha_vencimiento, pagado_en, monto_total, estado').eq('estado', 'pagado'),
     ])
+    setOrdenesAgro(otAgro || [])
+    setArriendosAgro(arrAgro || [])
     setDolarHoy(parseFloat(dolarCfg?.valor) || null)
     setAjustesStock(ajs || [])
     setFletes(fle || [])
@@ -276,67 +282,22 @@ export default function Reportes({ usuario }) {
   // ── Rentabilidad mensual/anual — toda la inversión del feedlot (compra de
   // hacienda + alimentación + gastos generales) contra todo el ingreso (ventas) ──
   const mesKey = f => f ? String(f).slice(0, 7) : null
-  const totalLoteReal = l => {
-    const totalFacturasNeto = (l.facturas_feria || []).reduce((s, f) => s + ((parseFloat(f.monto_neto) || 0) + (parseFloat(f.gastos_total) || 0)), 0)
-    // Cuando hay facturas de feria cargadas, los gastos y la comisión de esa
-    // operación ya están adentro de cada factura (en gastos_total) — no hay
-    // que sumarlos de nuevo. Si no hay factura de feria, recién ahí se suma
-    // la comisión suelta (si la hay) al monto facturado neto + negro.
-    if (totalFacturasNeto > 0) return totalFacturasNeto + (l.monto_negro || 0)
-    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + (l.monto_negro || 0) + (l.comision_monto || 0) : null
-    const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
-    // Sin factura, precio_compra ya es lo que se pagó de bolsillo (no hay
-    // IVA que restar), así que ese caso queda igual que antes.
-    return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
-  }
-
   const rentabilidadPorMes = {}
   const asegurarMes = key => {
-    if (!rentabilidadPorMes[key]) rentabilidadPorMes[key] = { ingreso: 0, costoHacienda: 0, costoFletes: 0, costoAlim: 0, costoSanidad: 0, costoManoObra: 0, costoGastos: 0, varHacienda: 0 }
+    if (!rentabilidadPorMes[key]) rentabilidadPorMes[key] = { ingreso: 0, costoHacienda: 0, costoAlim: 0, costoSanidad: 0, costoManoObra: 0, costoGastos: 0 }
   }
   ventas.forEach(v => {
     const key = mesKey(v.fecha || v.creado_en)
     if (!key) return
     asegurarMes(key)
-    // Ingreso NETO: sin IVA (crédito/débito fiscal) ni comisión; antes se
-    // sumaba el total con IVA y el ingreso quedaba inflado
-    if (v.es_prueba) return
-    rentabilidadPorMes[key].ingreso += (v.total || 0) - (v.iva_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0)
+    rentabilidadPorMes[key].ingreso += v.total || 0
   })
   lotes.forEach(l => {
     const key = mesKey(l.fecha_ingreso || l.created_at)
     if (!key) return
     asegurarMes(key)
-    // Costo REAL del lote (facturas de feria, negro, comisión), igual que en
-    // la ganancia por ternero; antes era kg × precio y faltaban gastos
-    rentabilidadPorMes[key].costoHacienda += totalLoteReal(l)
+    rentabilidadPorMes[key].costoHacienda += (l.kg_bascula || 0) * (l.precio_compra || 0)
   })
-  // Fletes de hacienda (módulo Fletes)
-  fletes.forEach(f => {
-    const key = mesKey(f.fecha)
-    if (!key) return
-    asegurarMes(key)
-    rentabilidadPorMes[key].costoFletes += parseFloat(f.monto) || 0
-  })
-  // Cambio en la hacienda de los corrales (cabezas de más o de menos ×
-  // costo de reposición): si en un mes se vende más de lo que se compra, el
-  // ingreso de ese mes viene en parte de achicar el feedlot (y al revés).
-  // Las correcciones de datos no cuentan; las muertes sí (ya están en el conteo).
-  {
-    const ultLotes = lotes.filter(l => l.cantidad > 0).sort((a, b) => (b.fecha_ingreso || '').localeCompare(a.fecha_ingreso || '')).slice(0, 10)
-    const cabUlt = ultLotes.reduce((t, l) => t + l.cantidad, 0)
-    const valorCabRepo = cabUlt > 0 ? ultLotes.reduce((t, l) => t + totalLoteReal(l), 0) / cabUlt : 0
-    // Cabezas de más o de menos en el mes, por los movimientos registrados
-    // (compras − ventas − muertes ± ajustes por conteo físico). Las
-    // correcciones de datos no cuentan: no eran animales reales.
-    const cabMes = {}
-    const sumar = (k, n) => { if (!k) return; asegurarMes(k); cabMes[k] = (cabMes[k] || 0) + n }
-    lotes.filter(l => l.cantidad > 0).forEach(l => sumar(mesKey(l.fecha_ingreso), l.cantidad))
-    ventas.filter(v => v.cantidad > 0 && !v.es_prueba).forEach(v => sumar(mesKey(v.fecha || v.creado_en), -v.cantidad))
-    ;(mortalidad || []).forEach(mo => sumar(mesKey(mo.fecha), -(parseInt(mo.cantidad) || 0)))
-    ;(ajustesStock || []).filter(a => a.tipo !== 'correccion_datos').forEach(a => sumar(mesKey(a.fecha), parseInt(a.cantidad) || 0))
-    Object.entries(cabMes).forEach(([k, n]) => { rentabilidadPorMes[k].varHacienda += n * valorCabRepo })
-  }
   raciones.forEach(r => {
     const key = mesKey(r.creado_en)
     if (!key) return
@@ -391,8 +352,8 @@ export default function Reportes({ usuario }) {
     }
   })
   const rentabilidadMensual = Object.entries(rentabilidadPorMes).sort((a, b) => b[0].localeCompare(a[0])).map(([mes, d]) => {
-    const costoTotal = d.costoHacienda + d.costoFletes + d.costoAlim + d.costoSanidad + d.costoManoObra + d.costoGastos
-    const resultado = d.ingreso - costoTotal + (d.varHacienda || 0)
+    const costoTotal = d.costoHacienda + d.costoAlim + d.costoSanidad + d.costoManoObra + d.costoGastos
+    const resultado = d.ingreso - costoTotal
     const indice = costoTotal > 0 ? (resultado / costoTotal * 100) : null
     return { mes, ...d, costoTotal, resultado, indice }
   })
@@ -449,15 +410,14 @@ export default function Reportes({ usuario }) {
 
   const mesesDelAnio = rentabilidadMensual.filter(m => m.mes.startsWith(anioActualStr))
   const rentabilidadAnual = mesesDelAnio.reduce((acc, m) => ({
-    ingreso: acc.ingreso + m.ingreso, costoTotal: acc.costoTotal + m.costoTotal, resultado: acc.resultado + m.resultado, varHacienda: acc.varHacienda + (m.varHacienda || 0),
-  }), { ingreso: 0, costoTotal: 0, resultado: 0, varHacienda: 0 })
+    ingreso: acc.ingreso + m.ingreso, costoTotal: acc.costoTotal + m.costoTotal, resultado: acc.resultado + m.resultado,
+  }), { ingreso: 0, costoTotal: 0, resultado: 0 })
   rentabilidadAnual.costoAmortizacion = amortizacionPorActividad.feedlot
   rentabilidadAnual.costoTotal += amortizacionPorActividad.feedlot
   rentabilidadAnual.resultado -= amortizacionPorActividad.feedlot
-  // Las cuotas de crédito NO se restan: el capital ya está como costo por
-  // otro lado (la máquina se amortiza; el insumo se cuenta al consumirse).
-  // Restarlas lo contaba dos veces. Se muestran solo como dato.
   rentabilidadAnual.costoCreditos = costoCreditosPorActividad.feedlot
+  rentabilidadAnual.costoTotal += costoCreditosPorActividad.feedlot
+  rentabilidadAnual.resultado -= costoCreditosPorActividad.feedlot
   const indiceAnual = rentabilidadAnual.costoTotal > 0 ? (rentabilidadAnual.resultado / rentabilidadAnual.costoTotal * 100) : null
 
   // El costo real de compra de un lote se recalcula acá con la misma lógica
@@ -468,6 +428,19 @@ export default function Reportes({ usuario }) {
   // Se usa el NETO (sin IVA) — el IVA de una compra es un crédito fiscal que
   // se recupera después contra AFIP, no es plata que realmente sale del
   // negocio, así que no corresponde contarlo como costo real acá.
+  const totalLoteReal = l => {
+    const totalFacturasNeto = (l.facturas_feria || []).reduce((s, f) => s + ((parseFloat(f.monto_neto) || 0) + (parseFloat(f.gastos_total) || 0)), 0)
+    // Cuando hay facturas de feria cargadas, los gastos y la comisión de esa
+    // operación ya están adentro de cada factura (en gastos_total) — no hay
+    // que sumarlos de nuevo. Si no hay factura de feria, recién ahí se suma
+    // la comisión suelta (si la hay) al monto facturado neto + negro.
+    if (totalFacturasNeto > 0) return totalFacturasNeto + (l.monto_negro || 0)
+    const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + (l.monto_negro || 0) + (l.comision_monto || 0) : null
+    const kgBase = l.kg_factura > 0 ? l.kg_factura : l.kg_bascula
+    // Sin factura, precio_compra ya es lo que se pagó de bolsillo (no hay
+    // IVA que restar), así que ese caso queda igual que antes.
+    return totalGC || l.monto_total_con_iva || (l.precio_compra && kgBase ? Math.round(kgBase * l.precio_compra) : 0)
+  }
 
   // ── Ganancia promedio por animal — últimos 30 días (compra-venta, sin FIFO) ──
   // El método anterior (FIFO por lote) daba ciclos de compra→venta de apenas
@@ -807,32 +780,51 @@ export default function Reportes({ usuario }) {
     : null
 
   // ── Rentabilidad Agricultura (ingreso = ventas de granos; costo = agroquímicos + gastos generales + mano de obra) ──
+  // Reparte un gasto general en los meses con las mismas reglas que el
+  // feedlot: no suman las inversiones ni lo "ya contado en consumo"; los
+  // anuales se reparten en N meses. (Antes Agricultura y Servicios sumaban
+  // todo, incluido el galpón y otras inversiones, en el mes del gasto.)
+  const repartirGasto = (g, factor, sumarA) => {
+    if (!factor || g.no_recurrente || g.en_consumo) return
+    const key = mesKey(g.fecha); if (!key) return
+    const partes = g.prorrateo_meses > 1 ? g.prorrateo_meses : 1
+    const mesHoy = mesKey(new Date().toISOString())
+    for (let i = 0; i < partes; i++) { const k = sumarMeses(key, i); if (k > mesHoy) break; sumarA(k, (g.monto || 0) * factor / partes) }
+  }
   const rentabilidadPorMesAgro = {}
-  const asegurarMesAgro = key => { if (!rentabilidadPorMesAgro[key]) rentabilidadPorMesAgro[key] = { ingreso: 0, costoInsumos: 0, costoManoObra: 0, costoGastos: 0 } }
+  const asegurarMesAgro = key => { if (!rentabilidadPorMesAgro[key]) rentabilidadPorMesAgro[key] = { ingreso: 0, costoInsumos: 0, costoLabores: 0, costoArriendos: 0, costoManoObra: 0, costoGastos: 0 } }
+  // Ingreso NETO de granos (igual que en Agricultura): el neto de la
+  // liquidación si está; las ventas internas al feedlot sin IVA; si no, el
+  // precio pactado × kg o el total sin el IVA de granos
+  const netoGrano = v => {
+    if (parseFloat(v.neto) > 0) return parseFloat(v.neto)
+    const total = parseFloat(v.total) || 0
+    if (/ramonda hnos/i.test(v.comprador || '') || /traspaso interno/i.test(v.observaciones || '')) return total
+    const pactado = (parseFloat(v.precio_tn) || 0) * (parseFloat(v.kg) || 0) / 1000
+    if (pactado > 0 && total > 0 && Math.abs(pactado - total) / total > 0.01) return pactado
+    return total / (1 + (parseFloat(v.iva_pct) || 10.5) / 100)
+  }
   ventasGranos.forEach(vg => {
     const key = mesKey(vg.fecha || vg.creado_en)
     if (!key) return
     asegurarMesAgro(key)
-    rentabilidadPorMesAgro[key].ingreso += vg.total || 0
+    rentabilidadPorMesAgro[key].ingreso += netoGrano(vg)
   })
-  comprasAgro.forEach(ca => {
-    const key = mesKey(ca.fecha || ca.creado_en)
-    if (!key || !ca.total) return
+  // Costos por lo que se USA (órdenes realizadas: insumos a su precio guardado
+  // + labores), no por lo que se compra: comprar herbicidas que quedan en el
+  // galpón no es costo del mes. Más los arriendos pagados.
+  ordenesAgro.forEach(o => {
+    const key = mesKey(o.fecha); if (!key) return
     asegurarMesAgro(key)
-    rentabilidadPorMesAgro[key].costoInsumos += ca.total || 0
+    rentabilidadPorMesAgro[key].costoLabores += parseFloat(o.costo_total) || 0
+    rentabilidadPorMesAgro[key].costoInsumos += (o.productos || []).filter(p => !p.aporta_contratista).reduce((t, p) => t + (parseFloat(p.total) || 0) * (parseFloat(p.precio_ars) || 0), 0)
   })
-  gastosGenerales.filter(g => g.actividad === 'Agricultura').forEach(g => {
-    const key = mesKey(g.fecha)
-    if (!key) return
+  arriendosAgro.forEach(a => {
+    const key = mesKey(a.pagado_en || a.fecha_vencimiento); if (!key) return
     asegurarMesAgro(key)
-    rentabilidadPorMesAgro[key].costoGastos += g.monto || 0
+    rentabilidadPorMesAgro[key].costoArriendos += parseFloat(a.monto_total) || 0
   })
-  gastosGenerales.filter(g => g.actividad === 'General').forEach(g => {
-    const key = mesKey(g.fecha)
-    if (!key) return
-    asegurarMesAgro(key)
-    rentabilidadPorMesAgro[key].costoGastos += (g.monto || 0) / 3
-  })
+  gastosGenerales.forEach(g => repartirGasto(g, g.actividad === 'Agricultura' ? 1 : g.actividad === 'General' ? 1 / 3 : 0, (k, m) => { asegurarMesAgro(k); rentabilidadPorMesAgro[k].costoGastos += m }))
   pagosEmpleados.forEach(pe => {
     const key = mesKey(pe.fecha || pe.creado_en)
     if (!key) return
@@ -841,7 +833,7 @@ export default function Reportes({ usuario }) {
     else if (actividad === 'General') { asegurarMesAgro(key); rentabilidadPorMesAgro[key].costoManoObra += (pe.monto || 0) / 3 }
   })
   const rentabilidadMensualAgro = Object.entries(rentabilidadPorMesAgro).sort((a, b) => b[0].localeCompare(a[0])).map(([mes, d]) => {
-    const costoTotal = d.costoInsumos + d.costoManoObra + d.costoGastos
+    const costoTotal = d.costoInsumos + (d.costoLabores || 0) + (d.costoArriendos || 0) + d.costoManoObra + d.costoGastos
     const resultado = d.ingreso - costoTotal
     const indice = costoTotal > 0 ? (resultado / costoTotal * 100) : null
     return { mes, ...d, costoTotal, resultado, indice }
@@ -853,9 +845,7 @@ export default function Reportes({ usuario }) {
   rentabilidadAnualAgro.costoAmortizacion = amortizacionPorActividad.agricultura
   rentabilidadAnualAgro.costoTotal += amortizacionPorActividad.agricultura
   rentabilidadAnualAgro.resultado -= amortizacionPorActividad.agricultura
-  rentabilidadAnualAgro.costoCreditos = costoCreditosPorActividad.agricultura
-  rentabilidadAnualAgro.costoTotal += costoCreditosPorActividad.agricultura
-  rentabilidadAnualAgro.resultado -= costoCreditosPorActividad.agricultura
+  rentabilidadAnualAgro.costoCreditos = costoCreditosPorActividad.agricultura // solo dato (no se resta: ver feedlot)
   const indiceAnualAgro = rentabilidadAnualAgro.costoTotal > 0 ? (rentabilidadAnualAgro.resultado / rentabilidadAnualAgro.costoTotal * 100) : null
 
   // ── Rentabilidad Servicios (ingreso = servicios a terceros + trabajo interno
@@ -867,12 +857,15 @@ export default function Reportes({ usuario }) {
     const key = mesKey(st.fecha || st.creado_en)
     if (!key) return
     asegurarMesServ(key)
-    const monto = (st.total || 0) + (st.monto_negro || 0)
+    if (st.es_prueba) return
+    // Neto: si ya se cobró, el total quedó con IVA → se le saca
+    const neto = (parseFloat(st.total) || 0) / (1 + (parseFloat(st.iva_pct) || 0) / 100)
+    const monto = neto + (parseFloat(st.monto_negro) || 0)
     rentabilidadPorMesServ[key].ingreso += monto
     // Se distingue el ingreso "real" (con cliente externo) del interno (otra
     // actividad usando la maquinaria/personal de Servicios, sin caja de por
     // medio) — así queda claro en el desglose de dónde sale cada parte.
-    if (st.orden_trabajo_id) rentabilidadPorMesServ[key].ingresoInterno += monto
+    if (st.orden_trabajo_id || /ramonda hnos/i.test(st.cliente || '')) rentabilidadPorMesServ[key].ingresoInterno += monto
     else rentabilidadPorMesServ[key].ingresoTerceros += monto
   })
   manoObraServicios.forEach(mo => {
@@ -881,18 +874,7 @@ export default function Reportes({ usuario }) {
     asegurarMesServ(key)
     rentabilidadPorMesServ[key].costoManoObraServ += mo.monto_calculado || 0
   })
-  gastosGenerales.filter(g => g.actividad === 'Servicios').forEach(g => {
-    const key = mesKey(g.fecha)
-    if (!key) return
-    asegurarMesServ(key)
-    rentabilidadPorMesServ[key].costoGastos += g.monto || 0
-  })
-  gastosGenerales.filter(g => g.actividad === 'General').forEach(g => {
-    const key = mesKey(g.fecha)
-    if (!key) return
-    asegurarMesServ(key)
-    rentabilidadPorMesServ[key].costoGastos += (g.monto || 0) / 3
-  })
+  gastosGenerales.forEach(g => repartirGasto(g, g.actividad === 'Servicios' ? 1 : g.actividad === 'General' ? 1 / 3 : 0, (k, m) => { asegurarMesServ(k); rentabilidadPorMesServ[k].costoGastos += m }))
   pagosEmpleados.forEach(pe => {
     const key = mesKey(pe.fecha || pe.creado_en)
     if (!key) return
@@ -914,9 +896,7 @@ export default function Reportes({ usuario }) {
   rentabilidadAnualServ.costoAmortizacion = amortizacionPorActividad.servicios
   rentabilidadAnualServ.costoTotal += amortizacionPorActividad.servicios
   rentabilidadAnualServ.resultado -= amortizacionPorActividad.servicios
-  rentabilidadAnualServ.costoCreditos = costoCreditosPorActividad.servicios
-  rentabilidadAnualServ.costoTotal += costoCreditosPorActividad.servicios
-  rentabilidadAnualServ.resultado -= costoCreditosPorActividad.servicios
+  rentabilidadAnualServ.costoCreditos = costoCreditosPorActividad.servicios // solo dato (no se resta: ver feedlot)
   const indiceAnualServ = rentabilidadAnualServ.costoTotal > 0 ? (rentabilidadAnualServ.resultado / rentabilidadAnualServ.costoTotal * 100) : null
 
   // ── Comparativa entre actividades ──
@@ -1441,9 +1421,9 @@ export default function Reportes({ usuario }) {
               <Stat label="Índice de rentabilidad anual" val={indiceAnual !== null ? `${indiceAnual.toFixed(1)}%` : '—'} sub="resultado / inversión total del año en curso" color={indiceAnual !== null ? (indiceAnual >= 0 ? S.green : S.red) : S.hint} />
             </div>
             <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
-              Compara, mes a mes, lo que entró (ventas netas: sin IVA ni comisión) contra lo que salió (compra de hacienda a su costo real, fletes, alimentación, sanidad, mano de obra y gastos generales del feedlot), más o menos el cambio de hacienda en los corrales (si se vendió más de lo que se compró, esos animales de menos se descuentan al costo de reposición).
-              La mano de obra cuenta entero para el personal asignado a Feedlot, y un tercio para el personal "General".
-              La amortización de maquinaria (${(rentabilidadAnual.costoAmortizacion / 1000000).toFixed(1)}M este año) se suma solo al total anual de arriba. Las cuotas de crédito pagadas (${(rentabilidadAnual.costoCreditos / 1000000).toFixed(1)}M este año) NO se restan: lo que se compró con el crédito ya está como costo (amortización o consumo).
+              Compara, mes a mes, todo lo que entró (ventas) contra todo lo que salió (compra de hacienda, alimentación, sanidad, mano de obra y gastos generales del feedlot).
+              La mano de obra cuenta entero para el personal asignado a Feedlot, y un tercio para el personal "General" (se reparte entre Feedlot, Agricultura y Servicios).
+              La amortización de maquinaria (${(rentabilidadAnual.costoAmortizacion / 1000000).toFixed(1)}M este año) y las cuotas de crédito pagadas (${(rentabilidadAnual.costoCreditos / 1000000).toFixed(1)}M este año, repartidas según el % de uso del activo vinculado a cada crédito) se suman solo al total anual de arriba, no a la tabla mes a mes de abajo.
             </div>
             {rentabilidadMensual.length === 0 ? (
               <div style={{ padding: '1.5rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin datos suficientes todavía.</div>
@@ -1452,7 +1432,7 @@ export default function Reportes({ usuario }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: S.bg }}>
-                      {['Mes', 'Ventas netas', 'Compra hacienda', 'Fletes', 'Alimentación', 'Sanidad', 'Mano de obra', 'Gastos generales', 'Costo total', 'Var. hacienda', 'Resultado', 'Índice'].map(h => (
+                      {['Mes', 'Ingreso (ventas)', 'Compra hacienda', 'Alimentación', 'Sanidad', 'Mano de obra', 'Gastos generales', 'Inversión total', 'Resultado', 'Índice'].map(h => (
                         <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Mes' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -1465,13 +1445,11 @@ export default function Reportes({ usuario }) {
                         </td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{m.ingreso > 0 ? `$${(m.ingreso / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoHacienda > 0 ? `$${(m.costoHacienda / 1000000).toFixed(2)}M` : '—'}</td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoFletes > 0 ? `$${(m.costoFletes / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoAlim > 0 ? `$${(m.costoAlim / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoSanidad > 0 ? `$${(m.costoSanidad / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoManoObra > 0 ? `$${(m.costoManoObra / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>{m.costoGastos > 0 ? `$${(m.costoGastos / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{m.costoTotal > 0 ? `$${(m.costoTotal / 1000000).toFixed(2)}M` : '—'}</td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: m.varHacienda > 0 ? S.green : m.varHacienda < 0 ? S.red : S.hint }} title="Cabezas de más o de menos en los corrales × costo de reposición">{m.varHacienda ? `${m.varHacienda > 0 ? '+' : '−'}$${(Math.abs(m.varHacienda) / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: m.resultado >= 0 ? S.green : S.red }}>{m.costoTotal > 0 || m.ingreso > 0 ? `$${(m.resultado / 1000000).toFixed(2)}M` : '—'}</td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: m.indice !== null ? (m.indice >= 0 ? S.green : S.red) : S.hint }}>{m.indice !== null ? `${m.indice.toFixed(1)}%` : '—'}</td>
                       </tr>
@@ -1580,12 +1558,59 @@ export default function Reportes({ usuario }) {
             )}
           </div>
 
+          {/* Ganancia neta por animal — ciclo completo (compra → venta), FIFO — referencia */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>
+              📋 Detalle por lote (FIFO) — referencia, no usar como ganancia real
+            </div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
+              Lo que deja cada lote comprado, de punta a punta, emparejando cada compra con las ventas más cercanas en
+              el tiempo (FIFO — el lote más viejo se considera el primero en venderse). En este feedlot da ciclos de
+              compra→venta de apenas días o pocas semanas — imposible para un engorde real — porque hay varios lotes
+              engordando a la vez y se vende del que está más terminado, no necesariamente del más viejo. Se deja acá
+              solo para ver el detalle de cada compra, no como medida de ganancia real (para eso, mirá la tarjeta de arriba).
+            </div>
+            <div style={{ marginBottom: '1.25rem' }}>
+              <Stat label="Ganancia promedio por animal (FIFO)" val={gananciaPromedioPorAnimalFIFO !== null ? `$${Math.round(gananciaPromedioPorAnimalFIFO).toLocaleString('es-AR')}` : '—'}
+                sub={`${lotesCompletos.length} lote${lotesCompletos.length !== 1 ? 's' : ''} con ciclo completo — no confiable, ver nota arriba`} color={S.hint} />
+            </div>
+            {gananciaPorLote.length === 0 ? (
+              <div style={{ padding: '1.5rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>Sin lotes de compra cargados todavía.</div>
+            ) : (
+              <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: S.bg }}>
+                      {['Ingreso', 'Cab.', 'Días', 'Compra', 'Costo oper.', 'Venta', 'Ganancia neta', '$/animal', 'Estado'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Ingreso' ? 'left' : 'right', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gananciaPorLote.map(l => (
+                      <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}`, opacity: l.cicloCompleto ? 1 : 0.6 }}>
+                        <td style={{ padding: '9px 12px', fontFamily: 'monospace' }}>{new Date(l.fechaIngreso + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{l.cantidad}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{l.dias}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>${(l.costoCompra / 1000000).toFixed(2)}M</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }}>${(l.costoOperativo / 1000000).toFixed(2)}M</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{l.ingresoVenta > 0 ? `$${(l.ingresoVenta / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: l.gananciaNeta >= 0 ? S.green : S.red }}>{l.cicloCompleto ? `$${(l.gananciaNeta / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: l.gananciaPorAnimal >= 0 ? S.green : S.red }}>{l.cicloCompleto && l.gananciaPorAnimal !== null ? `$${Math.round(l.gananciaPorAnimal).toLocaleString('es-AR')}` : '—'}</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11 }}>{l.cicloCompleto ? '✓ Completo' : `${l.cantidadVendida}/${l.cantidad} vendidos`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Resumen */}
           {(() => {
             const ventasConDatos = rentabilidadVentas.filter(v => v.total && v.costoCompra)
-            // Neto: sin IVA ni comisión, y compras a su costo real (igual que el resto de Reportes)
-            const totalIngreso = ventas.filter(v => !v.es_prueba).reduce((s, v) => s + (v.total || 0) - (v.iva_monto || 0) - (v.comision_monto || 0) - (v.descuento_monto || 0), 0)
-            const totalCostoComp = lotes.reduce((s, l) => s + totalLoteReal(l), 0)
+            const totalIngreso = ventas.reduce((s, v) => s + (v.total || 0), 0)
+            const totalCostoComp = lotes.reduce((s, l) => s + ((l.kg_bascula || 0) * (l.precio_compra || 0)), 0)
             const margenBruto = totalIngreso - totalCostoComp
             const margenPct = totalCostoComp > 0 ? (margenBruto / totalCostoComp * 100) : null
             const totalAnimVendidos = ventas.reduce((s, v) => s + (v.cantidad || 0), 0)
@@ -1611,6 +1636,83 @@ export default function Reportes({ usuario }) {
             )
           })()}
 
+          {/* Historial de ventas */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 4 }}>Detalle por venta</div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
+              No muestra costo de compra ni margen por venta individual — no hay forma confiable de saber de qué lote
+              de compra viene cada venta puntual (los corrales mezclan animales de distintos lotes con el tiempo).
+              Para ver la ganancia real, con el costo de compra correspondiente, mirá el cuadro de "Ganancia neta por
+              animal — ciclo completo" más arriba.
+            </div>
+            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: S.bg }}>
+                    {['Fecha', 'Corral', 'Animales', 'Kg netos', 'Precio venta', 'Total venta'].map(h => (
+                      <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ventas.length === 0 && (
+                    <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay ventas registradas.</td></tr>
+                  )}
+                  {rentabilidadVentas.map(v => (
+                    <tr key={v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(v.creado_en).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                      <td style={{ padding: '10px 12px' }}>C-{v.corrales?.numero || v.corral_id}</td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{v.cantidad}</td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{v.kg_neto?.toLocaleString('es-AR')} kg</td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{(() => {
+                        if (v.kg_neto && (v.monto_facturado || v.monto_negro)) {
+                          return `$${Math.round(((v.monto_facturado||0) + (v.monto_negro||0) - (v.descuento_monto||0)) / v.kg_neto).toLocaleString('es-AR')}`
+                        }
+                        return v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>
+                      })()}</td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: v.total ? S.green : S.hint }}>{v.total ? `$${(v.total / 1000000).toFixed(2)}M` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Historial de compras */}
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '1rem' }}>Historial de compras</div>
+            <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: S.bg }}>
+                    {['Fecha', 'Lote', 'Animales', 'Procedencia', 'Kg báscula', 'Precio $/kg', 'Total compra', 'Peso prom.'].map(h => (
+                      <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {lotes.length === 0 && (
+                    <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint, fontSize: 13 }}>No hay compras registradas.</td></tr>
+                  )}
+                  {lotes.map(l => {
+                    const total = (l.kg_bascula || 0) * (l.precio_compra || 0)
+                    return (
+                      <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(l.fecha_ingreso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12 }}>{l.codigo}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{l.cantidad}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 12 }}>{l.procedencia || '—'}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{l.kg_bascula?.toLocaleString('es-AR')} kg</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{l.precio_compra ? `$${l.precio_compra.toLocaleString('es-AR')}` : <span style={{ color: S.amber, fontSize: 11 }}>Pendiente</span>}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600 }}>{total > 0 ? `$${(total / 1000000).toFixed(2)}M` : '—'}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: S.muted }}>{l.peso_prom_ingreso ? `${l.peso_prom_ingreso} kg` : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1893,13 +1995,15 @@ export default function Reportes({ usuario }) {
           S={S} titulo="Agricultura" anio={anioActualStr}
           anual={rentabilidadAnualAgro} indiceAnual={indiceAnualAgro} mensual={rentabilidadMensualAgro}
           columnas={[
-            { key: 'ingreso', label: 'Ingreso (venta granos)', color: S.green },
-            { key: 'costoInsumos', label: 'Agroquímicos', color: S.muted },
+            { key: 'ingreso', label: 'Ventas de granos (netas)', color: S.green },
+            { key: 'costoInsumos', label: 'Insumos usados', color: S.muted },
+            { key: 'costoLabores', label: 'Labores', color: S.muted },
+            { key: 'costoArriendos', label: 'Arriendos', color: S.muted },
             { key: 'costoManoObra', label: 'Mano de obra', color: S.muted },
             { key: 'costoGastos', label: 'Gastos generales', color: S.muted },
           ]}
-          subInversion="agroquímicos + mano de obra + gastos + amortización de maquinaria"
-          nota="Compara ventas de granos contra compras de agroquímicos, mano de obra (Feedlot no incluido, General se reparte en tercios) y gastos generales de Agricultura. La amortización de maquinaria se suma solo al total anual de arriba, no a la tabla mes a mes. Con pocos datos cargados todavía, muchos meses van a aparecer vacíos — a medida que cargues cosechas, ventas de granos y compras, se va completando solo."
+          subInversion="insumos usados + labores + arriendos + mano de obra + gastos + amortización de maquinaria"
+          nota="Ventas de granos netas (sin IVA; las internas al feedlot sin IVA) contra los insumos realmente usados en las órdenes (a su precio guardado), las labores (contratistas y trabajos propios), los arriendos pagados, la mano de obra (General en tercios) y los gastos de Agricultura (sin inversiones; anuales ÷ 12). La amortización de maquinaria se suma solo al total anual. Ojo: mes a mes no sirve para Agricultura (se cobra en la cosecha lo que se gastó meses antes): para eso, Agricultura → Rentabilidad por lote, por campaña."
         />
       )}
 
@@ -1908,7 +2012,7 @@ export default function Reportes({ usuario }) {
           S={S} titulo="Servicios" anio={anioActualStr}
           anual={rentabilidadAnualServ} indiceAnual={indiceAnualServ} mensual={rentabilidadMensualServ}
           columnas={[
-            { key: 'ingreso', label: 'Ingreso (servicios a terceros)', color: S.green },
+            { key: 'ingreso', label: 'Ingreso neto (terceros + internos)', color: S.green },
             { key: 'costoManoObraServ', label: 'Mano de obra (por servicio)', color: S.muted },
             { key: 'costoManoObra', label: 'Sueldos', color: S.muted },
             { key: 'costoGastos', label: 'Gastos generales', color: S.muted },
