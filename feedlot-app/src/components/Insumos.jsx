@@ -36,6 +36,26 @@ async function generarRecibo(datos, pagos) {
   })
 }
 
+
+// Precio del insumo = PROMEDIO PONDERADO del stock (antes se pisaba con el
+// precio de la última compra: ej. rollos a $110 aunque la mayoría del stock
+// se había pagado $80). Lo que ya había en stock vale su precio anterior y lo
+// que entra, el de esta compra. Como la compra ya se sumó al stock al
+// cargarla, lo "anterior" es el stock actual menos esta compra.
+async function actualizarPrecioPromedio(c, precioFinal) {
+  if (!c.insumo_id || !(precioFinal > 0)) return
+  const alim = c.insumo_tipo === 'alimentacion'
+  const tabla = alim ? 'stock_insumos' : 'stock_sanitario'
+  const campoCant = alim ? 'cantidad_kg' : 'cantidad_ml'
+  const { data: st } = await supabase.from(tabla).select(`${campoCant}, precio_referencia`).eq('id', c.insumo_id).maybeSingle()
+  const stock = parseFloat(st?.[campoCant]) || 0
+  const cant = parseFloat(c.cantidad) || 0
+  const anterior = Math.max(0, stock - cant)
+  const pAnt = parseFloat(st?.precio_referencia) || 0
+  const nuevo = (anterior > 0 && pAnt > 0 && cant > 0) ? Math.round((anterior * pAnt + cant * precioFinal) / (anterior + cant) * 100) / 100 : precioFinal
+  await supabase.from(tabla).update({ precio_referencia: nuevo, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+}
+
 export default function Insumos({ usuario }) {
   const [tab, setTab] = useState('compras')
   const [compras, setCompras] = useState([])
@@ -431,9 +451,7 @@ export default function Insumos({ usuario }) {
                         contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
                         creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
                         actualizarPrecioReferencia: async (c, precioFinal) => {
-                          if (!c.insumo_id) return
-                          const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
-                          await supabase.from(tabla).update({ precio_referencia: precioFinal, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                          await actualizarPrecioPromedio(c, precioFinal)
                         },
                       })
                       pagandoRef.current = false
@@ -471,9 +489,7 @@ export default function Insumos({ usuario }) {
                       contactoId: formPagoGrupal.contacto_id, contactoNombre, registradoPor: usuario?.id,
                       creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
                       actualizarPrecioReferencia: async (c, precioFinal) => {
-                        if (!c.insumo_id) return
-                        const tabla = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
-                        await supabase.from(tabla).update({ precio_referencia: precioFinal, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', c.insumo_id)
+                        await actualizarPrecioPromedio(c, precioFinal)
                       },
                     })
                     pagandoRef.current = false

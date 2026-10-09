@@ -1577,6 +1577,7 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
   const [nuevoInsumo, setNuevoInsumo] = useState({ show: false, nombre: '', minimo_kg: '' })
   const [editMinimo, setEditMinimo] = useState({})
   const [editInsumo, setEditInsumo] = useState({})
+  const [filtroHistInsumo, setFiltroHistInsumo] = useState('')
   const [guardando, setGuardando] = useState(false)
   const COLORES = { 'Rollo (heno)': '#639922', 'Maiz grano seco': '#E8A020', 'Vitaminas': '#5090E0', 'Urea': '#9060C0', 'Soja (expeller)': '#20A060' }
 
@@ -1747,7 +1748,14 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
       {/* Historial de ingresos */}
       {historialInsumos.length > 0 && (
         <div style={{ marginTop: '1.5rem', borderTop: '1px solid #E2DDD6', paddingTop: '1.25rem' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: '.75rem' }}>Historial de ingresos</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: '.75rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6760', textTransform: 'uppercase', letterSpacing: '.07em' }}>Historial de ingresos</div>
+            {/* Filtro por insumo: para ver cómo fue variando el precio */}
+            <select value={filtroHistInsumo} onChange={e => setFiltroHistInsumo(e.target.value)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #E2DDD6', borderRadius: 6, background: '#fff' }}>
+              <option value="">Todos los insumos</option>
+              {[...new Set(historialInsumos.map(c => c.insumo_nombre).filter(Boolean))].sort().map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
           <div style={{ border: '1px solid #E2DDD6', borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -1758,7 +1766,7 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                 </tr>
               </thead>
               <tbody>
-                {historialInsumos.map(c => {
+                {historialInsumos.filter(c => !filtroHistInsumo || c.insumo_nombre === filtroHistInsumo).map(c => {
                   const pctMs = c.pct_ms
                   const kgMs = c.kg_ms || (pctMs && c.cantidad ? Math.round(c.cantidad * pctMs / 100 * 10) / 10 : null)
                   const precioKgMf = c.precio_unitario
