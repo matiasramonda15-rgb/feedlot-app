@@ -495,7 +495,10 @@ export default function Reportes({ usuario }) {
   const totalIngresoV = ventasV.reduce((s, v) => s + ingresoVentaNeto(v), 0)
   const ingresoPromedioPorAnimalVendido = totalAnimVendidosV > 0 ? totalIngresoV / totalAnimVendidosV : null
 
-  const lotesV = lotes.filter(l => l.cantidad > 0 && enVentana(l.fecha_ingreso, VENTANA_COMPRAS))
+  // Compras de los últimos 60 días, incluidas las de HOY (las ventas y el
+  // consumo usan días completos hasta ayer, pero un lote que entró hoy ya se
+  // puede evaluar: si no, el último lote no aparecía hasta el día siguiente)
+  const lotesV = lotes.filter(l => l.cantidad > 0 && (enVentana(l.fecha_ingreso, VENTANA_COMPRAS) || l.fecha_ingreso === hoyStr))
   const totalAnimCompradosV = lotesV.reduce((s, l) => s + l.cantidad, 0)
   const totalCostoCompraV = lotesV.reduce((s, l) => s + totalLoteReal(l), 0)
   const costoPromedioPorAnimalComprado = totalAnimCompradosV > 0 ? totalCostoCompraV / totalAnimCompradosV : null
