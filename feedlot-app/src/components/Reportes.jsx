@@ -61,11 +61,12 @@ export default function Reportes({ usuario }) {
   const [formulasMixer, setFormulasMixer] = useState([])
   const [mortalidad, setMortalidad] = useState([])
   const [ajustesStock, setAjustesStock] = useState([])
+  const [fletes, setFletes] = useState([])
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }, { data: ajs }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }, { data: ajs }, { data: fle }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       // Todas las raciones de los últimos 13 meses (de a páginas: Supabase corta en 1000)
@@ -87,8 +88,10 @@ export default function Reportes({ usuario }) {
       supabase.from('stock_sanitario').select('producto, precio_referencia'),
       supabase.from('caravanas_lecturas').select('*, lotes(procedencia), corrales(numero)'),
       supabase.from('movimientos').select('fecha, cantidad, tipo, motivo').in('tipo', ['ajuste_manual', 'conteo_fisico']),
+      supabase.from('fletes').select('lote_id, fecha, monto, cantidad'),
     ])
     setAjustesStock(ajs || [])
+    setFletes(fle || [])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
     setPesadas(p || [])
     setRaciones(r || [])
@@ -542,13 +545,21 @@ export default function Reportes({ usuario }) {
   // y la ganancia saltaba según el tamaño del lote que justo había entrado.)
   const pesoVentaProm = (() => { const k = ventasV.reduce((t, v) => t + (parseFloat(v.kg_neto) || 0), 0); return totalAnimVendidosV > 0 && k > 0 ? k / totalAnimVendidosV : null })()
   const gdpCiclo = gdpEstable
+  // Fletes de compra: el del propio lote (Fletes tiene el lote); si no tiene,
+  // el promedio por animal de los fletes de los últimos 60 días.
+  const fletesPorLote = {}
+  fletes.forEach(f => { if (f.lote_id) fletesPorLote[f.lote_id] = (fletesPorLote[f.lote_id] || 0) + (parseFloat(f.monto) || 0) })
+  const fletesV = fletes.filter(f => f.lote_id && enVentana(f.fecha, VENTANA_COMPRAS))
+  const animFletesV = fletesV.reduce((t, f) => t + (lotes.find(l => l.id === f.lote_id)?.cantidad || 0), 0)
+  const fletePromAnimal = animFletesV > 0 ? fletesV.reduce((t, f) => t + (parseFloat(f.monto) || 0), 0) / animFletesV : 0
   const gananciaEsperadaLotes = (ingresoPromedioPorAnimalVendido != null && costoOperativoDiarioPorAnimal != null && pesoVentaProm && gdpCiclo > 0)
     ? lotesV.map(l => {
         const pesoIng = parseFloat(l.peso_prom_ingreso) || ((parseFloat(l.kg_bascula) || 0) / (l.cantidad || 1))
         const diasNec = Math.max(0, (pesoVentaProm - pesoIng) / gdpCiclo)
         const costoAnimal = totalLoteReal(l) / (l.cantidad || 1)
         const costoMantener = diasNec * costoOperativoDiarioPorAnimal
-        return { lote: l, pesoIng, diasNec, costoAnimal, costoMantener, ganancia: ingresoPromedioPorAnimalVendido - costoAnimal - costoMantener }
+        const flete = fletesPorLote[l.id] != null ? fletesPorLote[l.id] / (l.cantidad || 1) : fletePromAnimal
+        return { lote: l, pesoIng, diasNec, costoAnimal, costoMantener, flete, fleteEstimado: fletesPorLote[l.id] == null, ganancia: ingresoPromedioPorAnimalVendido - costoAnimal - costoMantener - flete }
       }).sort((a, b) => (b.lote.fecha_ingreso || '').localeCompare(a.lote.fecha_ingreso || '') || (b.lote.id || 0) - (a.lote.id || 0)) // últimas compras arriba
     : []
   const animGanancia = gananciaEsperadaLotes.reduce((t, g) => t + (g.lote.cantidad || 0), 0)
@@ -557,6 +568,37 @@ export default function Reportes({ usuario }) {
     : ((ingresoPromedioPorAnimalVendido != null && costoPromedioPorAnimalComprado != null && costoOperativoCicloCompleto != null)
       ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
       : null)
+
+  // ── Resultado REAL del feedlot: últimos 3 meses cerrados ──
+  // Lo que efectivamente pasó (no una proyección): ventas netas − compras −
+  // fletes − alimento − sanidad − sueldos − gastos, más/menos lo que cambió el
+  // valor de la hacienda en los corrales (cabezas de más o de menos ×
+  // costo de reposición). Sirve para ver si se ganó plata o si la plata
+  // quedó metida en animales.
+  const resultadoReal = (() => {
+    const ms = mesesCerrados.slice(-3).filter(m => m.fechaInicio)
+    if (!ms.length) return null
+    const ini = isoLocal(new Date(ms[0].fechaInicio))
+    const ult = new Date(ms[ms.length - 1].fechaInicio); const fin = isoLocal(new Date(ult.getFullYear(), ult.getMonth() + 1, 1))
+    const enRango = f => { const d = f && f.length > 10 ? diaLocal(f) : f; return !!d && d >= ini && d < fin }
+    const vs = ventas.filter(v => v.cantidad > 0 && !v.es_prueba && enRango(v.creado_en))
+    const ls = lotes.filter(l => l.cantidad > 0 && enRango(l.fecha_ingreso))
+    const ventasNetas = vs.reduce((t, v) => t + ingresoVentaNeto(v), 0)
+    const cabVend = vs.reduce((t, v) => t + v.cantidad, 0)
+    const compras = ls.reduce((t, l) => t + totalLoteReal(l), 0)
+    const cabComp = ls.reduce((t, l) => t + l.cantidad, 0)
+    const fletesP = fletes.filter(f => enRango(f.fecha)).reduce((t, f) => t + (parseFloat(f.monto) || 0), 0)
+    const k = ms.map(m => rentabilidadPorMes[claveMesGDP(m)] || {})
+    const alim = k.reduce((t, x) => t + (x.costoAlim || 0), 0)
+    const sanidad = k.reduce((t, x) => t + (x.costoSanidad || 0), 0)
+    const mo = k.reduce((t, x) => t + (x.costoManoObra || 0), 0)
+    const gastos = k.reduce((t, x) => t + (x.costoGastos || 0), 0)
+    const stockIni = ms[0].stockInicial, stockFin = ms[ms.length - 1].stockFinal
+    const valorCab = cabComp > 0 ? compras / cabComp : (costoPromedioPorAnimalComprado || 0)
+    const varHacienda = (stockFin - stockIni) * valorCab
+    const resultado = ventasNetas - compras - fletesP - alim - sanidad - mo - gastos + varHacienda
+    return { periodo: `${ms[0].mes} – ${ms[ms.length - 1].mes}`, meses: ms.length, ventasNetas, cabVend, compras, cabComp, fletesP, alim, sanidad, mo, gastos, stockIni, stockFin, valorCab, varHacienda, resultado }
+  })()
 
   // ── Costo de producir un kilo vs precio de venta, por rango de peso ──
   // Sirve para ver hasta qué peso conviene seguir engordando: mientras el
@@ -945,7 +987,7 @@ export default function Reportes({ usuario }) {
                       Ganancia esperada por lote de compra <span style={{ fontWeight: 400, color: S.muted }}>· últimos 60 días · llevados a {Math.round(pesoVentaProm)} kg con GDP {gdpCiclo.toFixed(2)} kg/día · costo diario ${Math.round(costoOperativoDiarioPorAnimal).toLocaleString('es-AR')}</span>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead><tr>{['Lote', 'Ingreso', 'Cab.', 'Peso ingreso', 'Costo por animal', 'Días necesarios', 'Alimento y estructura', 'Ganancia esperada'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Lote' ? 'left' : 'right', fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Lote', 'Ingreso', 'Cab.', 'Peso ingreso', 'Costo por animal', 'Flete', 'Días necesarios', 'Alimento y estructura', 'Ganancia esperada'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Lote' ? 'left' : 'right', fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
                       <tbody>
                         {gananciaEsperadaLotes.map(g => (
                           <tr key={g.lote.id} style={{ borderBottom: `1px solid ${S.border}` }}>
@@ -954,6 +996,7 @@ export default function Reportes({ usuario }) {
                             <td style={{ padding: '6px 10px', textAlign: 'right' }}>{g.lote.cantidad}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(g.pesoIng)} kg</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>${Math.round(g.costoAnimal).toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: g.fleteEstimado ? S.hint : S.text }} title={g.fleteEstimado ? 'Sin flete cargado para este lote: promedio de los últimos 60 días' : 'Flete cargado para este lote'}>${Math.round(g.flete).toLocaleString('es-AR')}{g.fleteEstimado ? '*' : ''}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(g.diasNec)}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>${Math.round(g.costoMantener).toLocaleString('es-AR')}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: g.ganancia >= 0 ? S.green : S.red }}>${Math.round(g.ganancia).toLocaleString('es-AR')}</td>
@@ -961,9 +1004,45 @@ export default function Reportes({ usuario }) {
                         ))}
                       </tbody>
                     </table>
-                    <div style={{ padding: '6px 12px', fontSize: 11, color: S.muted }}>Valor de venta por animal: ${Math.round(ingresoPromedioPorAnimalVendido).toLocaleString('es-AR')} (ventas de los últimos 60 días). La ganancia por ternero de arriba es el promedio de estos lotes, ponderado por cabezas.</div>
+                    <div style={{ padding: '6px 12px', fontSize: 11, color: S.muted }}>Valor de venta por animal: ${Math.round(ingresoPromedioPorAnimalVendido).toLocaleString('es-AR')} (ventas de los últimos 60 días). La ganancia por ternero de arriba es el promedio de estos lotes, ponderado por cabezas. Flete con * = el lote no tiene flete cargado (se usa el promedio). No incluye costo financiero, impuestos ni amortizaciones.</div>
                   </div>
                 )}
+                {/* Resultado real de los últimos 3 meses cerrados */}
+                {resultadoReal && (() => {
+                  const r = resultadoReal
+                  const $m = x => `${x < 0 ? '−' : ''}$${Math.abs(Math.round(x)).toLocaleString('es-AR')}`
+                  const fila = (t, x, sub, fuerte) => (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '5px 0', borderTop: `1px solid ${S.border}`, fontSize: 13, fontWeight: fuerte ? 700 : 400 }}>
+                      <span>{t}{sub && <span style={{ fontWeight: 400, color: S.hint, fontSize: 11 }}> · {sub}</span>}</span>
+                      <span style={{ fontFamily: 'monospace', color: x < 0 ? S.red : S.green }}>{$m(x)}</span>
+                    </div>
+                  )
+                  const esperado = gananciaPromedioPorAnimal != null ? gananciaPromedioPorAnimal * r.cabVend : null
+                  return (
+                    <div style={{ marginTop: 12, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 14px' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>Resultado real del feedlot <span style={{ fontWeight: 400, color: S.muted, fontSize: 12 }}>· últimos {r.meses} meses cerrados ({r.periodo})</span></div>
+                      <div style={{ fontSize: 11, color: S.muted, marginBottom: 6 }}>Lo que efectivamente pasó, no una proyección. Sin impuestos, costo financiero ni amortizaciones.</div>
+                      {fila('Ventas netas', r.ventasNetas, `${r.cabVend} animales`)}
+                      {fila('Compras de hacienda', -r.compras, `${r.cabComp} animales`)}
+                      {fila('Fletes', -r.fletesP)}
+                      {fila('Alimento', -r.alim)}
+                      {fila('Sanidad', -r.sanidad)}
+                      {fila('Sueldos', -r.mo)}
+                      {fila('Gastos generales', -r.gastos)}
+                      {fila('Cambio en la hacienda de los corrales', r.varHacienda, `${Math.round(r.stockIni)} → ${Math.round(r.stockFin)} cab. × $${Math.round(r.valorCab).toLocaleString('es-AR')} (reposición)`)}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0 2px', borderTop: `2px solid ${S.text}`, fontSize: 15, fontWeight: 700 }}>
+                        <span>Resultado del período</span>
+                        <span style={{ fontFamily: 'monospace', color: r.resultado < 0 ? S.red : S.green }}>{$m(r.resultado)} <span style={{ fontSize: 12, fontWeight: 400, color: S.muted }}>· {$m(r.resultado / r.meses)} por mes{r.cabVend ? ` · ${$m(r.resultado / r.cabVend)} por animal vendido` : ''}</span></span>
+                      </div>
+                      {esperado != null && (
+                        <div style={{ fontSize: 12, color: S.muted, marginTop: 6 }}>
+                          Para comparar: con la ganancia esperada de hoy ({$m(gananciaPromedioPorAnimal)} por animal), esos {r.cabVend} animales vendidos darían {$m(esperado)}.
+                          {Math.abs(r.resultado) < Math.abs(r.varHacienda) && r.varHacienda > 0 ? ' Ojo: buena parte del resultado es hacienda de más en los corrales, no plata en caja.' : ''}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Promedios móviles */}
