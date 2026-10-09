@@ -1662,11 +1662,18 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                 <div style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
                 {s.insumo}
                 {kgDia > 0 && <span style={{ fontSize: 11, color: '#6B6760', fontFamily: 'monospace' }}>· ~{Math.round(kgDia).toLocaleString('es-AR')} kg/día</span>}
-                {s.precio_referencia && (
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#1E5C2E', background: '#E8F4EB', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
-                    ${s.precio_referencia.toLocaleString('es-AR')}/kg
-                  </span>
-                )}
+                {/* Precio del insumo: se puede corregir a mano (ej. maíz propio a pizarra −10%) */}
+                <span title="Tocá para corregir el precio por kg" onClick={async () => {
+                  const v = prompt(`Precio por kg de ${s.insumo} (sin IVA):`, s.precio_referencia != null ? String(s.precio_referencia) : '')
+                  if (v == null) return
+                  const n = parseFloat(String(v).replace(',', '.'))
+                  if (!(n > 0)) { alert('Poné un precio válido'); return }
+                  const { error } = await supabase.from('stock_insumos').update({ precio_referencia: n, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', s.id)
+                  if (error) { alert('No se pudo guardar: ' + error.message); return }
+                  onReload && onReload()
+                }} style={{ fontSize: 11, fontFamily: 'monospace', color: '#1E5C2E', background: '#E8F4EB', padding: '2px 6px', borderRadius: 4, fontWeight: 600, cursor: 'pointer' }}>
+                  {s.precio_referencia ? `$${s.precio_referencia.toLocaleString('es-AR')}/kg` : 'sin precio'} ✏️
+                </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontFamily: 'monospace', fontWeight: 600, color: barColor }}>{s.cantidad_kg.toLocaleString('es-AR')} kg</span>
