@@ -593,11 +593,20 @@ export default function Reportes({ usuario }) {
     const sanidad = k.reduce((t, x) => t + (x.costoSanidad || 0), 0)
     const mo = k.reduce((t, x) => t + (x.costoManoObra || 0), 0)
     const gastos = k.reduce((t, x) => t + (x.costoGastos || 0), 0)
-    const stockIni = ms[0].stockInicial, stockFin = ms[ms.length - 1].stockFinal
+    // Existencia al inicio: se reconstruye desde la del final con los
+    // movimientos registrados del período (compras, ventas, muertes y
+    // ajustes por conteo). No se toma el primer conteo del período porque
+    // puede no ser del día 1 (en julio el conteo arrancó el 07/07, después
+    // de que ya habían entrado 102 animales y salido 45: eso aparecía como
+    // si hubieran desaparecido ~50 animales, unos $57 M de pérdida falsa).
+    const muertesP = (mortalidad || []).filter(m => enRango(m.fecha)).reduce((t, m) => t + (parseInt(m.cantidad) || 0), 0)
+    const ajustesP = (ajustesStock || []).filter(a => enRango(a.fecha)).reduce((t, a) => t + (parseInt(a.cantidad) || 0), 0)
+    const stockFin = ms[ms.length - 1].stockFinal
+    const stockIni = stockFin - cabComp + cabVend + muertesP - ajustesP
     const valorCab = cabComp > 0 ? compras / cabComp : (costoPromedioPorAnimalComprado || 0)
     const varHacienda = (stockFin - stockIni) * valorCab
     const resultado = ventasNetas - compras - fletesP - alim - sanidad - mo - gastos + varHacienda
-    return { periodo: `${ms[0].mes} – ${ms[ms.length - 1].mes}`, meses: ms.length, ventasNetas, cabVend, compras, cabComp, fletesP, alim, sanidad, mo, gastos, stockIni, stockFin, valorCab, varHacienda, resultado }
+    return { periodo: `${ms[0].mes} – ${ms[ms.length - 1].mes}`, meses: ms.length, ventasNetas, cabVend, compras, cabComp, fletesP, alim, sanidad, mo, gastos, stockIni, stockFin, valorCab, varHacienda, resultado, muertesP, ajustesP }
   })()
 
   // ── Costo de producir un kilo vs precio de venta, por rango de peso ──
@@ -1029,7 +1038,7 @@ export default function Reportes({ usuario }) {
                       {fila('Sanidad', -r.sanidad)}
                       {fila('Sueldos', -r.mo)}
                       {fila('Gastos generales', -r.gastos)}
-                      {fila('Cambio en la hacienda de los corrales', r.varHacienda, `${Math.round(r.stockIni)} → ${Math.round(r.stockFin)} cab. × $${Math.round(r.valorCab).toLocaleString('es-AR')} (reposición)`)}
+                      {fila('Cambio en la hacienda de los corrales', r.varHacienda, `${Math.round(r.stockIni)} → ${Math.round(r.stockFin)} cab.${r.muertesP ? ` (${r.muertesP} muerte${r.muertesP !== 1 ? 's' : ''})` : ''} × $${Math.round(r.valorCab).toLocaleString('es-AR')} (reposición)`)}
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0 2px', borderTop: `2px solid ${S.text}`, fontSize: 15, fontWeight: 700 }}>
                         <span>Resultado del período</span>
                         <span style={{ fontFamily: 'monospace', color: r.resultado < 0 ? S.red : S.green }}>{$m(r.resultado)} <span style={{ fontSize: 12, fontWeight: 400, color: S.muted }}>· {$m(r.resultado / r.meses)} por mes{r.cabVend ? ` · ${$m(r.resultado / r.cabVend)} por animal vendido` : ''}</span></span>
