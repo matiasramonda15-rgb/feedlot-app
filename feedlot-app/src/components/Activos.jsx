@@ -60,6 +60,9 @@ export default function Activos({ usuario }) {
 
   useEffect(() => { cargar() }, [])
 
+  // Dólar del día (el mismo de Agricultura) para pasar a pesos la amortización en USD
+  const [cotizacionDolar, setCotizacionDolar] = useState(null)
+  useEffect(() => { supabase.from('configuracion').select('valor').eq('clave', 'cotizacion_dolar_agro').maybeSingle().then(({ data }) => setCotizacionDolar(parseFloat(data?.valor) || null)) }, [])
   async function cargar() {
     const [{ data: a }, { data: r }, { data: ct }, { data: chc }] = await Promise.all([
       supabase.from('activos').select('*').order('fecha_compra', { ascending: false }),
@@ -84,6 +87,7 @@ export default function Activos({ usuario }) {
       valor_compra: formActivo.valor_compra ? parseFloat(formActivo.valor_compra) : null,
       valor_actual: formActivo.valor_actual ? parseFloat(formActivo.valor_actual) : null,
       vida_util_anios: formActivo.vida_util_anios ? parseInt(formActivo.vida_util_anios) : null,
+      valor_usd: formActivo.valor_usd ? parseFloat(formActivo.valor_usd) : null,
       registrado_por: usuario?.id,
     })
     if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
@@ -238,6 +242,7 @@ export default function Activos({ usuario }) {
       pct_servicios: parseFloat(editandoActivo.pct_servicios) || 0,
       pct_alfalfa: parseFloat(editandoActivo.pct_alfalfa) || 0,
       vida_util_anios: editandoActivo.vida_util_anios ? parseInt(editandoActivo.vida_util_anios) : null,
+      valor_usd: editandoActivo.valor_usd ? parseFloat(editandoActivo.valor_usd) : null,
     }).eq('id', editandoActivo.id)
     if (error) { alert('Error al guardar los cambios: ' + error.message); return }
     setEditandoActivo(null)
@@ -414,6 +419,7 @@ export default function Activos({ usuario }) {
                 <div><Label>Fecha de compra</Label><input type="date" value={formActivo.fecha_compra} onChange={e => setFormActivo({...formActivo, fecha_compra: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Valor de compra $</Label><input type="number" value={formActivo.valor_compra} onChange={e => setFormActivo({...formActivo, valor_compra: e.target.value})} style={inputStyle} /></div>
                 <div><Label>Valor actual $</Label><input type="number" value={formActivo.valor_actual} onChange={e => setFormActivo({...formActivo, valor_actual: e.target.value})} style={inputStyle} placeholder="Si difiere del de compra" /></div>
+                <div><Label>Valor de reposición USD</Label><input type="number" value={formActivo.valor_usd || ''} onChange={e => setFormActivo({...formActivo, valor_usd: e.target.value})} style={inputStyle} placeholder="Lo que costaría hoy una igual" /></div>
                 <div><Label>Vida útil (años)</Label><input type="number" value={formActivo.vida_util_anios} onChange={e => setFormActivo({...formActivo, vida_util_anios: e.target.value})} style={inputStyle} placeholder="Años antes de vender/reponer" /></div>
                 <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={formActivo.observaciones} onChange={e => setFormActivo({...formActivo, observaciones: e.target.value})} style={inputStyle} /></div>
                 <div style={{ gridColumn: '1/-1' }}>
@@ -475,6 +481,12 @@ export default function Activos({ usuario }) {
                     {a.valor_compra && <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: S.text, marginTop: 3 }}>Compra: ${a.valor_compra.toLocaleString('es-AR')}</div>}
                     {a.valor_actual && <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: S.green, marginTop: 2 }}>Actual: ${a.valor_actual.toLocaleString('es-AR')}</div>}
                     {depreciacion !== null && <div style={{ fontSize: 11, color: depreciacion > 30 ? S.red : S.amber, marginTop: 2 }}>Depreciación: {depreciacion}%</div>}
+                    {a.valor_usd > 0 && (
+                      <div style={{ fontSize: 12, marginTop: 4, color: S.accent }}>
+                        Reposición: <b style={{ fontFamily: 'monospace' }}>USD {Number(a.valor_usd).toLocaleString('es-AR')}</b>
+                        {a.vida_util_anios > 0 && <div style={{ fontSize: 11, color: S.muted }}>Amortiza USD {Math.round(a.valor_usd / a.vida_util_anios).toLocaleString('es-AR')}/año{cotizacionDolar ? ` ≈ $${Math.round(a.valor_usd / a.vida_util_anios * cotizacionDolar).toLocaleString('es-AR')} hoy` : ''}</div>}
+                      </div>
+                    )}
                     {/* Distribución por actividad */}
                     {(a.pct_feedlot > 0 || a.pct_agricultura > 0 || a.pct_servicios > 0 || a.pct_alfalfa > 0) && (
                       <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -502,6 +514,7 @@ export default function Activos({ usuario }) {
                       pct_feedlot: a.pct_feedlot || 0, pct_agricultura: a.pct_agricultura || 0,
                       pct_servicios: a.pct_servicios || 0, pct_alfalfa: a.pct_alfalfa || 0,
                       vida_util_anios: a.vida_util_anios || VIDA_UTIL_DEFAULT[a.tipo] || 10,
+                      valor_usd: a.valor_usd ? String(a.valor_usd) : '',
                     })}
                       style={{ flex: 1, padding: '5px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                       ✏ Editar
@@ -582,6 +595,7 @@ export default function Activos({ usuario }) {
                   <div><Label>Fecha de compra</Label><input type="date" value={editandoActivo.fecha_compra} onChange={e => setEditandoActivo({...editandoActivo, fecha_compra: e.target.value})} style={inputStyle} /></div>
                   <div><Label>Valor de compra $</Label><input type="number" value={editandoActivo.valor_compra} onChange={e => setEditandoActivo({...editandoActivo, valor_compra: e.target.value})} style={inputStyle} /></div>
                   <div><Label>Valor actual $</Label><input type="number" value={editandoActivo.valor_actual} onChange={e => setEditandoActivo({...editandoActivo, valor_actual: e.target.value})} style={inputStyle} /></div>
+                  <div><Label>Valor de reposición USD</Label><input type="number" value={editandoActivo.valor_usd || ''} onChange={e => setEditandoActivo({...editandoActivo, valor_usd: e.target.value})} style={inputStyle} placeholder="Lo que costaría hoy una igual" /></div>
                   <div><Label>Vida útil (años)</Label><input type="number" value={editandoActivo.vida_util_anios} onChange={e => setEditandoActivo({...editandoActivo, vida_util_anios: e.target.value})} style={inputStyle} placeholder="Años antes de vender/reponer" /></div>
                   <div style={{ gridColumn: '1/-1' }}><Label>Observaciones</Label><input type="text" value={editandoActivo.observaciones} onChange={e => setEditandoActivo({...editandoActivo, observaciones: e.target.value})} style={inputStyle} /></div>
                 </div>

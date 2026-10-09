@@ -62,11 +62,12 @@ export default function Reportes({ usuario }) {
   const [mortalidad, setMortalidad] = useState([])
   const [ajustesStock, setAjustesStock] = useState([])
   const [fletes, setFletes] = useState([])
+  const [dolarHoy, setDolarHoy] = useState(null)
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }, { data: ajs }, { data: fle }] = await Promise.all([
+    const [{ data: c }, { data: p }, { data: r }, { data: s }, { data: l }, { data: v }, { data: fm }, { data: m }, { data: gg }, { data: pe }, { data: iag }, { data: st }, { data: mos }, { data: vg }, { data: ac }, { data: pcr }, { data: es }, { data: ss }, { data: cl }, { data: ajs }, { data: fle }, { data: dolarCfg }] = await Promise.all([
       supabase.from('corrales').select('*').not('rol', 'eq', 'deshabilitado').order('numero'),
       supabase.from('pesadas').select('*, corrales(numero), pesada_animales(rango, cantidad, peso_promedio)').order('creado_en', { ascending: false }).limit(100),
       // Todas las raciones de los últimos 13 meses (de a páginas: Supabase corta en 1000)
@@ -82,14 +83,16 @@ export default function Reportes({ usuario }) {
       supabase.from('servicios_terceros').select('total, monto_negro, fecha, creado_en, tipo_servicio, orden_trabajo_id').or('tipo_servicio.eq.tercero,orden_trabajo_id.not.is.null'),
       supabase.from('mano_obra_servicios').select('monto_calculado, creado_en'),
       supabase.from('ventas_granos').select('total, fecha, creado_en'),
-      supabase.from('activos').select('id, valor_compra, vida_util_anios, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa, estado, fecha_compra'),
+      supabase.from('activos').select('id, valor_compra, valor_actual, valor_usd, vida_util_anios, pct_feedlot, pct_agricultura, pct_servicios, pct_alfalfa, estado, fecha_compra'),
       supabase.from('pagos_creditos').select('monto, fecha_pago, estado, creditos(activo_id, compras_insumos(insumo_tipo))').eq('estado', 'pagado'),
       supabase.from('eventos_sanitarios').select('producto, cantidad_ml, creado_en').order('creado_en', { ascending: false }).limit(3000),
       supabase.from('stock_sanitario').select('producto, precio_referencia'),
       supabase.from('caravanas_lecturas').select('*, lotes(procedencia), corrales(numero)'),
       supabase.from('movimientos').select('fecha, cantidad, tipo, motivo').in('tipo', ['ajuste_manual', 'conteo_fisico', 'correccion_datos']),
       supabase.from('fletes').select('lote_id, fecha, monto, cantidad'),
+      supabase.from('configuracion').select('valor').eq('clave', 'cotizacion_dolar_agro').maybeSingle(),
     ])
+    setDolarHoy(parseFloat(dolarCfg?.valor) || null)
     setAjustesStock(ajs || [])
     setFletes(fle || [])
     setCorrales((c || []).sort((a, b) => parseInt(a.numero) - parseInt(b.numero)))
@@ -357,8 +360,13 @@ export default function Reportes({ usuario }) {
   // cargado en cada activo. Si se compró durante este año, se prorratea solo
   // por los meses que ya pasaron desde la compra.
   const amortizacionPorActividad = { feedlot: 0, agricultura: 0, servicios: 0 }
-  activos.filter(a => a.estado !== 'vendido' && a.valor_compra > 0 && a.vida_util_anios > 0).forEach(a => {
-    const amortAnioCompleto = a.valor_compra / a.vida_util_anios
+  // Si el activo tiene VALOR DE REPOSICIÓN EN USD, la amortización se calcula
+  // con ese valor al dólar del día: se mantiene actualizada y no se "termina"
+  // aunque la máquina haya pasado su vida útil (lo que importa es cuánto
+  // cuesta reponerla). Si no, con el valor de compra en pesos, como antes.
+  const baseAmort = a => (parseFloat(a.valor_usd) > 0 && dolarHoy) ? parseFloat(a.valor_usd) * dolarHoy : (parseFloat(a.valor_compra) || 0)
+  activos.filter(a => a.estado !== 'vendido' && baseAmort(a) > 0 && a.vida_util_anios > 0).forEach(a => {
+    const amortAnioCompleto = baseAmort(a) / a.vida_util_anios
     let amortEsteAnio = amortAnioCompleto
     if (a.fecha_compra && a.fecha_compra.startsWith(anioActualStr)) {
       const mesCompra = parseInt(a.fecha_compra.slice(5, 7))
@@ -607,8 +615,10 @@ export default function Reportes({ usuario }) {
     const stockIni = stockFin - cabComp + cabVend + muertesP - ajustesP
     const valorCab = cabComp > 0 ? compras / cabComp : (costoPromedioPorAnimalComprado || 0)
     const varHacienda = (stockFin - stockIni) * valorCab
-    const resultado = ventasNetas - compras - fletesP - alim - sanidad - mo - gastos + varHacienda
-    return { periodo: `${ms[0].mes} – ${ms[ms.length - 1].mes}`, meses: ms.length, ventasNetas, cabVend, compras, cabComp, fletesP, alim, sanidad, mo, gastos, stockIni, stockFin, valorCab, varHacienda, resultado, muertesP, ajustesP }
+    // Amortización de máquinas y equipos del feedlot (parte proporcional del período)
+    const amort = (amortizacionPorActividad.feedlot || 0) / 12 * ms.length
+    const resultado = ventasNetas - compras - fletesP - alim - sanidad - mo - gastos + varHacienda - amort
+    return { periodo: `${ms[0].mes} – ${ms[ms.length - 1].mes}`, meses: ms.length, ventasNetas, cabVend, compras, cabComp, fletesP, alim, sanidad, mo, gastos, stockIni, stockFin, valorCab, varHacienda, resultado, muertesP, ajustesP, amort }
   })()
 
   // ── Costo de producir un kilo vs precio de venta, por rango de peso ──
@@ -1032,7 +1042,7 @@ export default function Reportes({ usuario }) {
                   return (
                     <div style={{ marginTop: 12, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 14px' }}>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>Resultado real del feedlot <span style={{ fontWeight: 400, color: S.muted, fontSize: 12 }}>· últimos {r.meses} meses cerrados ({r.periodo})</span></div>
-                      <div style={{ fontSize: 11, color: S.muted, marginBottom: 6 }}>Lo que efectivamente pasó, no una proyección. Sin impuestos, costo financiero ni amortizaciones.</div>
+                      <div style={{ fontSize: 11, color: S.muted, marginBottom: 6 }}>Lo que efectivamente pasó, no una proyección. Sin impuestos ni costo financiero.</div>
                       {fila('Ventas netas', r.ventasNetas, `${r.cabVend} animales`)}
                       {fila('Compras de hacienda', -r.compras, `${r.cabComp} animales`)}
                       {fila('Fletes', -r.fletesP)}
@@ -1040,6 +1050,7 @@ export default function Reportes({ usuario }) {
                       {fila('Sanidad', -r.sanidad)}
                       {fila('Sueldos', -r.mo)}
                       {fila('Gastos generales', -r.gastos)}
+                      {r.amort > 0 && fila('Amortización de máquinas y equipos', -r.amort, 'según Activos (valor de reposición USD al dólar de hoy, si está cargado)')}
                       {fila('Cambio en la hacienda de los corrales', r.varHacienda, `${Math.round(r.stockIni)} → ${Math.round(r.stockFin)} cab.${r.muertesP ? ` (${r.muertesP} muerte${r.muertesP !== 1 ? 's' : ''})` : ''} × $${Math.round(r.valorCab).toLocaleString('es-AR')} (reposición)`)}
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0 2px', borderTop: `2px solid ${S.text}`, fontSize: 15, fontWeight: 700 }}>
                         <span>Resultado del período</span>
