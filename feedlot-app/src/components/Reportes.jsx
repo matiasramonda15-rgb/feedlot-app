@@ -87,7 +87,7 @@ export default function Reportes({ usuario }) {
       supabase.from('eventos_sanitarios').select('producto, cantidad_ml, creado_en').order('creado_en', { ascending: false }).limit(3000),
       supabase.from('stock_sanitario').select('producto, precio_referencia'),
       supabase.from('caravanas_lecturas').select('*, lotes(procedencia), corrales(numero)'),
-      supabase.from('movimientos').select('fecha, cantidad, tipo, motivo').in('tipo', ['ajuste_manual', 'conteo_fisico']),
+      supabase.from('movimientos').select('fecha, cantidad, tipo, motivo').in('tipo', ['ajuste_manual', 'conteo_fisico', 'correccion_datos']),
       supabase.from('fletes').select('lote_id, fecha, monto, cantidad'),
     ])
     setAjustesStock(ajs || [])
@@ -600,7 +600,9 @@ export default function Reportes({ usuario }) {
     // de que ya habían entrado 102 animales y salido 45: eso aparecía como
     // si hubieran desaparecido ~50 animales, unos $57 M de pérdida falsa).
     const muertesP = (mortalidad || []).filter(m => enRango(m.fecha)).reduce((t, m) => t + (parseInt(m.cantidad) || 0), 0)
-    const ajustesP = (ajustesStock || []).filter(a => enRango(a.fecha)).reduce((t, a) => t + (parseInt(a.cantidad) || 0), 0)
+    // Las "correcciones de datos" (errores del sistema: animales que nunca
+    // existieron) no son animales perdidos ni ganados: no entran acá.
+    const ajustesP = (ajustesStock || []).filter(a => a.tipo !== 'correccion_datos' && enRango(a.fecha)).reduce((t, a) => t + (parseInt(a.cantidad) || 0), 0)
     const stockFin = ms[ms.length - 1].stockFinal
     const stockIni = stockFin - cabComp + cabVend + muertesP - ajustesP
     const valorCab = cabComp > 0 ? compras / cabComp : (costoPromedioPorAnimalComprado || 0)
@@ -1091,7 +1093,7 @@ export default function Reportes({ usuario }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead>
                         <tr style={{ background: S.bg }}>
-                          {['Mes', 'Exist. prom.', 'Ingr.', 'Vend.', 'Muertes', 'P. ingreso', 'P. venta', 'Permanencia', 'GDP', 'GDP corr.', 'Conversión', 'Var. existencia', 'Ajuste conteo', 'Sin explicar'].map(h => (
+                          {['Mes', 'Exist. prom.', 'Ingr.', 'Vend.', 'Muertes', 'P. ingreso', 'P. venta', 'Permanencia', 'GDP', 'GDP corr.', 'Conversión', 'Var. existencia', 'Ajustes', 'Sin explicar'].map(h => (
                             <th key={h} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -1118,7 +1120,7 @@ export default function Reportes({ usuario }) {
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.purple }}>{!enCurso && Math.abs(m.variacionStock) > 10 ? m.gdpCorregido?.toFixed(3) : '—'}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.conversion <= 7 ? S.green : m.conversion <= 9 ? S.amber : S.red }}>{enCurso ? enCursoTxt : (m.conversion?.toFixed(2) || '—')}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.muted }} title="Cuánto subió o bajó la existencia en el mes (por compras y ventas: no es un error)">{enCurso ? enCursoTxt : `${m.variacionStock > 0 ? '+' : ''}${m.variacionStock.toFixed(0)}%`}</td>
-                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.cabAjusteConteo ? S.purple : S.hint }} title="Ajustes hechos a propósito por conteo físico (Corrales)">{enCurso ? enCursoTxt : (m.cabAjusteConteo ? `${m.cabAjusteConteo > 0 ? '+' : ''}${m.cabAjusteConteo}` : '—')}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', color: m.cabAjusteConteo ? S.purple : S.hint }} title="Ajustes por conteo físico y correcciones de datos (errores del sistema) del mes">{enCurso ? enCursoTxt : (m.cabAjusteConteo ? `${m.cabAjusteConteo > 0 ? '+' : ''}${m.cabAjusteConteo}` : '—')}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: enCurso || m.cabSinExplicar == null ? S.hint : Math.abs(m.cabSinExplicar) > Math.max(5, m.existenciaPromedio * 0.02) ? S.red : Math.abs(m.cabSinExplicar) > 2 ? S.amber : S.green }} title="Cabezas que no cierran: final − (inicio + ingresadas − vendidas − muertes ± ajustes por conteo). Debería ser 0: si no, hay algo sin registrar.">{enCurso ? enCursoTxt : (m.cabSinExplicar == null ? '—' : `${m.cabSinExplicar > 0 ? '+' : ''}${m.cabSinExplicar} cab`)}</td>
                           </tr>
                           )
