@@ -36,6 +36,11 @@ export default function Creditos({ usuario }) {
   const [guardandoPagoCredito, setGuardandoPagoCredito] = useState(false)
 
   useEffect(() => { cargar() }, [])
+  // Dólar del día (el de Agricultura), para mostrar en pesos lo que falta de
+  // los créditos en dólares (se pesifican recién el día que se paga cada cuota)
+  const [dolarHoy, setDolarHoy] = useState(null)
+  useEffect(() => { supabase.from('configuracion').select('valor').eq('clave', 'cotizacion_dolar_agro').maybeSingle().then(({ data }) => setDolarHoy(parseFloat(data?.valor) || null)) }, [])
+  const saldoUsdDe = c => (pagosCreditos[c.id] || []).filter(p => p.estado !== 'pagado').reduce((a, p) => a + (parseFloat(p.monto_usd) || 0), 0)
 
   async function cargar() {
     const [{ data: a }, { data: cred }, { data: pc }] = await Promise.all([
@@ -164,7 +169,8 @@ export default function Creditos({ usuario }) {
   const inp = { padding: '8px 10px', border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 13, background: S.surface, width: '100%', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }
   const creditosActivos = creditos.filter(c => c.estado === 'activo')
   const creditosCancelados = creditos.filter(c => c.estado === 'cancelado')
-  const totalDeuda = creditosActivos.reduce((a, c) => a + (c.saldo_pendiente || 0), 0)
+  const totalDeuda = creditosActivos.reduce((a, c) => a + (c.es_dolares ? saldoUsdDe(c) * (dolarHoy || 0) : (c.saldo_pendiente || 0)), 0)
+  const totalDeudaUsd = creditosActivos.filter(c => c.es_dolares).reduce((a, c) => a + saldoUsdDe(c), 0)
 
   return (
     <div>
@@ -175,12 +181,13 @@ export default function Creditos({ usuario }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
         {[
           { label: 'Créditos activos', val: creditosActivos.length, color: S.amber },
-          { label: 'Deuda total', val: `$${(totalDeuda / 1000000).toFixed(1)}M`, color: S.red },
+          { label: 'Deuda total', val: `$${(totalDeuda / 1000000).toFixed(1)}M`, color: S.red, sub: totalDeudaUsd > 0 ? `incluye US$ ${Math.round(totalDeudaUsd).toLocaleString('es-AR')}${dolarHoy ? ` al dólar de hoy ($${dolarHoy.toLocaleString('es-AR')})` : ''}` : null },
           { label: 'Cancelados', val: creditosCancelados.length, color: S.green },
         ].map((m, i) => (
           <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
             <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
             <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: m.color || S.text }}>{m.val}</div>
+            {m.sub && <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>{m.sub}</div>}
           </div>
         ))}
       </div>
@@ -292,6 +299,7 @@ export default function Creditos({ usuario }) {
                   {c.cant_cuotas && <span>{c.cuotas_pagadas || 0}/{c.cant_cuotas} cuotas</span>}
                   {c.monto_cuota && <span>Cuota: <strong>${(c.monto_cuota || 0).toLocaleString('es-AR')}</strong></span>}
                   {!c.es_dolares && <span style={{ color: S.red }}>Saldo: <strong>${(c.saldo_pendiente || 0).toLocaleString('es-AR')}</strong></span>}
+                  {c.es_dolares && c.estado !== 'cancelado' && <span style={{ color: S.red }}>Saldo: <strong>US$ {Math.round(saldoUsdDe(c)).toLocaleString('es-AR')}</strong>{dolarHoy ? <span style={{ color: S.muted }}> ≈ ${Math.round(saldoUsdDe(c) * dolarHoy).toLocaleString('es-AR')} hoy</span> : null}</span>}
                 </div>
                 {/* Barra progreso */}
                 <div style={{ marginTop: 8, background: S.border, borderRadius: 4, height: 6, overflow: 'hidden' }}>
