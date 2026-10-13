@@ -60,6 +60,8 @@ const ORDEN_GRUPOS = ['Venta de hacienda', 'Venta de granos', 'Servicios a terce
 // futuro, se sugiere el promedio de los últimos meses (en itálica).
 const RECURRENTES = ['Sueldos', 'Gastos generales', 'Mano de obra servicios', 'Arriendos']
 const MANO = 'Cargado a mano'
+const ESTIM_VENTA = 'estimado (ritmo de venta)'
+const ESTIM_COMPRA = 'estimado (reposición)'
 const FINALES = ['cobrado', 'rechazado', 'anulado']
 
 const pad = n => String(n).padStart(2, '0')
@@ -225,6 +227,57 @@ async function cargarPendientes() {
   return p
 }
 
+// Datos para estimar las ventas y compras de hacienda de los meses que vienen:
+// lo vendido/comprado en los últimos 3 meses cerrados y en el mes en curso
+// (cabezas y plata, con IVA, como entra y sale de la caja), el stock de hoy
+// y los valores que se hayan fijado a mano (configuracion: presupuesto_hacienda).
+async function cargarDatosHacienda() {
+  const h = new Date()
+  const desde = iso(new Date(h.getFullYear(), h.getMonth() - 3, 1))
+  const mkHoy = iso(h).slice(0, 7)
+  const [{ data: ve }, { data: lo }, { data: co }, { data: cfg }] = await Promise.all([
+    supabase.from('ventas').select('cantidad, creado_en, total, monto_facturado, monto_negro, iva_monto, retencion_monto, comision_monto, comision_es_paralela, es_prueba').gte('creado_en', desde),
+    supabase.from('lotes').select('cantidad, fecha_ingreso, facturas_feria, monto_facturado, iva_pct, iva_monto, monto_negro, monto_total_con_iva, es_prueba').gte('fecha_ingreso', desde),
+    supabase.from('corrales').select('animales, activo'),
+    supabase.from('configuracion').select('valor').eq('clave', 'presupuesto_hacienda').maybeSingle(),
+  ])
+  const cobroVenta = v => {
+    const fact = num(v.monto_facturado), iva = num(v.iva_monto), negro = num(v.monto_negro)
+    const com = (!v.comision_es_paralela && v.comision_monto) ? num(v.comision_monto) : 0
+    return (fact + iva > 0 || negro > 0) ? fact + iva - com - num(v.retencion_monto) + negro : num(v.total)
+  }
+  const costoLote = l => {
+    const fer = (l.facturas_feria || []).reduce((s, f) => s + (num(f.total_factura_manual) || f.total_factura || 0), 0)
+    const ivaCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : num(l.iva_monto)
+    const gc = (l.monto_facturado != null || l.monto_negro != null) ? num(l.monto_facturado) + ivaCalc + num(l.monto_negro) : null
+    return fer > 0 ? fer : (gc || num(l.monto_total_con_iva))
+  }
+  const v3 = { cab: 0, plata: 0 }, c3 = { cab: 0, plata: 0 }
+  let vendidasMes = 0, compradasMes = 0
+  ;(ve || []).filter(v => !v.es_prueba).forEach(v => {
+    const mk = (v.creado_en || '').slice(0, 7)
+    if (mk === mkHoy) vendidasMes += v.cantidad || 0
+    else if (mk < mkHoy) { v3.cab += v.cantidad || 0; v3.plata += cobroVenta(v) }
+  })
+  ;(lo || []).filter(l => !l.es_prueba).forEach(l => {
+    const mk = (l.fecha_ingreso || '').slice(0, 7)
+    if (mk === mkHoy) compradasMes += l.cantidad || 0
+    else if (mk < mkHoy) { c3.cab += l.cantidad || 0; c3.plata += costoLote(l) }
+  })
+  let fijado = {}
+  try { fijado = cfg?.valor ? JSON.parse(cfg.valor) : {} } catch { fijado = {} }
+  return {
+    stock: (co || []).filter(c => c.activo !== false).reduce((t, c) => t + (c.animales || 0), 0),
+    vendidasMes, compradasMes,
+    sugerido: {
+      cabVenta: Math.round(v3.cab / 3), precio: v3.cab ? Math.round(v3.plata / v3.cab) : 0,
+      cabCompra: Math.round(v3.cab / 3), costo: c3.cab ? Math.round(c3.plata / c3.cab) : 0,
+    },
+    compraHistorica: Math.round(c3.cab / 3),
+    fijado,
+  }
+}
+
 export default function Presupuesto() {
   const [vista, setVista] = useState('Resumen')
   const [loading, setLoading] = useState(true)
@@ -237,6 +290,8 @@ export default function Presupuesto() {
   const [editando, setEditando] = useState(null)
   const [valorEditando, setValorEditando] = useState('')
   const [abiertos, setAbiertos] = useState(new Set())
+  const [hacienda, setHacienda] = useState(null)
+  const [formHac, setFormHac] = useState({})
 
   // ── Columnas: 6 meses atrás · mes actual (hasta hoy | resto) · 12 adelante ──
   const hoyS = iso(new Date())
@@ -264,16 +319,19 @@ export default function Presupuesto() {
     setLoading(true)
     setError(null)
     try {
-      const [m, p, { data: ch }, { data: li }] = await Promise.all([
+      const [m, p, { data: ch }, { data: li }, hac] = await Promise.all([
         traerTodo(() => supabase.from('v_caja_movimientos').select('caja, id, fecha, tipo, monto, descripcion, origen, actividad, inferido').order('fecha').order('id')),
         cargarPendientes(),
         supabase.from('cheques').select('id, tipo, estado, monto, fecha_cobro, fecha_vencimiento, es_paralelo'),
         supabase.from('presupuesto_lineas').select('*').eq('es_proyeccion', true),
+        cargarDatosHacienda(),
       ])
       setMovs(m)
       setPendientes(p)
       setCheques(ch || [])
       setLineas(li || [])
+      setHacienda(hac)
+      setFormHac(Object.fromEntries(Object.entries(hac.fijado || {}).map(([k, v]) => [k, String(v)])))
     } catch (e) {
       setError(e.message || String(e))
     }
@@ -337,7 +395,7 @@ export default function Presupuesto() {
     const colActualReal = `${mkHoy}|r`
     const gruposRec = new Map()
     filas.forEach(f => {
-      if (f.tipo !== 'egreso' || !RECURRENTES.includes(f.grupo)) return
+      if (f.tipo !== 'egreso' || !(RECURRENTES.includes(f.grupo) || (f.act === 'Feedlot' && f.grupo === 'Compra de insumos'))) return
       const k = `${f.act}|${f.grupo}`
       if (!gruposRec.has(k)) gruposRec.set(k, [])
       gruposRec.get(k).push(f)
@@ -356,10 +414,28 @@ export default function Presupuesto() {
       })
     })
 
+    // Hacienda: ventas y reposición al ritmo de los últimos meses (o lo fijado).
+    // En el mes en curso solo lo que falta para llegar al ritmo mensual.
+    const stockProy = {}
+    if (hacienda) {
+      const ef = { ...hacienda.sugerido, ...hacienda.fijado }
+      const fV = ef.cabVenta > 0 && ef.precio > 0 ? fila('Feedlot', 'ingreso', 'Venta de hacienda', ESTIM_VENTA) : null
+      const fC = ef.cabCompra > 0 && ef.costo > 0 ? fila('Feedlot', 'egreso', 'Compra de hacienda', ESTIM_COMPRA) : null
+      let stock = hacienda.stock
+      columnas.filter(c => c.proy).forEach(c => {
+        const cabV = c.actual ? Math.max(0, (ef.cabVenta || 0) - hacienda.vendidasMes) : (ef.cabVenta || 0)
+        const cabC = c.actual ? Math.max(0, (ef.cabCompra || 0) - hacienda.compradasMes) : (ef.cabCompra || 0)
+        if (fV && cabV) { fV.estim[c.id] = cabV * ef.precio; fV.items[c.id] = [`${cabV} cab × ${$(ef.precio)}`] }
+        if (fC && cabC) { fC.estim[c.id] = cabC * ef.costo; fC.items[c.id] = [`${cabC} cab × ${$(ef.costo)}`] }
+        stock += (fC ? cabC : 0) - (fV ? cabV : 0)
+        stockProy[c.id] = stock
+      })
+    }
+
     filasExtra.forEach(x => fila(x.act, x.tipo, x.grupo, x.detalle))
 
-    return { filas: [...filas.values()], saldoInicial, saldoHoy, saldoCaja, inicio }
-  }, [movs, pendientes, lineas, filasExtra, columnas, hoyS, mkHoy])
+    return { filas: [...filas.values()], saldoInicial, saldoHoy, saldoCaja, inicio, stockProy }
+  }, [movs, pendientes, lineas, filasExtra, columnas, hoyS, mkHoy, hacienda])
 
   // ── Valor de una celda ──
   function celda(f, c) {
@@ -399,6 +475,17 @@ export default function Presupuesto() {
     setAbiertos(a => new Set([...a, `${act}|${tipo}|${MANO}`]))
   }
 
+  async function guardarHacienda() {
+    const fijado = {}
+    Object.entries(formHac).forEach(([k, v]) => {
+      const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.'))
+      if (String(v).trim() !== '' && !isNaN(n)) fijado[k] = n
+    })
+    const { error: e } = await supabase.from('configuracion').upsert({ clave: 'presupuesto_hacienda', valor: JSON.stringify(fijado) }, { onConflict: 'clave' })
+    if (e) { alert('Error al guardar: ' + e.message); return }
+    setHacienda(h => ({ ...h, fijado }))
+  }
+
   if (loading) return <Loader />
   if (error) return <div style={{ padding: 20, color: S.red }}>Error al cargar el presupuesto: {error}</div>
 
@@ -418,7 +505,7 @@ export default function Presupuesto() {
         const clave = `${f.id}|${c.id}`
         const puede = editable && c.proy && factor === 1
         const esEdit = editando === clave
-        const items = c.proy && estado === 'auto' ? (f.items[c.id] || []) : []
+        const items = c.proy && ['auto', 'estimado'].includes(estado) ? (f.items[c.id] || []) : []
         return (
           <td key={c.id} title={items.length ? items.join('\n') : (estado === 'estimado' ? 'Promedio de los últimos meses (sugerido)' : estado === 'manual' ? 'Cargado a mano — borrá el número para volver al automático' : undefined)}
             onClick={() => { if (puede && !esEdit) { setEditando(clave); setValorEditando(estado === 'manual' ? String(Math.round(v)) : '') } }}
@@ -525,6 +612,43 @@ export default function Presupuesto() {
   )
   const marco = children => <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'auto', maxHeight: '75vh' }}><table style={{ borderCollapse: 'collapse', width: '100%' }}>{children}</table></div>
 
+  // Panel de la estimación de hacienda (pestaña Feedlot)
+  const panelHacienda = () => {
+    if (!hacienda) return null
+    const sug = hacienda.sugerido
+    const ultimaCol = columnas[columnas.length - 1]
+    const campos = [
+      { k: 'cabVenta', label: 'Cabezas vendidas por mes', sug: sug.cabVenta, fmtS: v => `${v} cab` },
+      { k: 'precio', label: 'Cobro por cabeza vendida', sug: sug.precio, fmtS: $ },
+      { k: 'cabCompra', label: 'Cabezas compradas por mes', sug: sug.cabCompra, fmtS: v => `${v} cab` },
+      { k: 'costo', label: 'Costo por ternero comprado', sug: sug.costo, fmtS: $ },
+    ]
+    const cambiado = campos.some(c => String(formHac[c.k] ?? '') !== String(hacienda.fijado[c.k] ?? ''))
+    return (
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: S.text, marginBottom: 2 }}>Estimación de hacienda — meses que vienen</div>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 10 }}>
+          Stock hoy: <b>{hacienda.stock} cab</b>. Sugerido según los últimos 3 meses cerrados (plata con IVA, como entra y sale de la caja). La reposición sugerida es igual a lo que se vende, para mantener el stock (se compraron {hacienda.compraHistorica} cab/mes). Dejá un campo vacío para usar lo sugerido; poné 0 para no estimar.
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          {campos.map(c => (
+            <label key={c.k} style={{ fontSize: 11, color: S.muted, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {c.label}
+              <input type="text" inputMode="numeric" value={formHac[c.k] ?? ''} placeholder={String(c.sug)} onChange={e => setFormHac({ ...formHac, [c.k]: e.target.value })}
+                style={{ width: 150, padding: '6px 8px', fontSize: 13, fontFamily: 'monospace', border: `1px solid ${S.border}`, borderRadius: 6 }} />
+              <span style={{ fontSize: 10, color: S.hint }}>sugerido: {c.fmtS(c.sug)}</span>
+            </label>
+          ))}
+          <button onClick={guardarHacienda} disabled={!cambiado}
+            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: 'none', background: cambiado ? S.accent : S.border, color: '#fff', cursor: cambiado ? 'pointer' : 'default', marginBottom: 16 }}>Guardar</button>
+        </div>
+        <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>
+          Con estos valores el stock pasa de {hacienda.stock} a <b style={{ color: (modelo.stockProy[ultimaCol.id] ?? 0) < hacienda.stock * 0.8 ? S.red : S.text }}>{Math.round(modelo.stockProy[ultimaCol.id] ?? hacienda.stock)} cab</b> en {ultimaCol.label}. Este mes ya se vendieron {hacienda.vendidasMes} y se compraron {hacienda.compradasMes} cab: en "resto" solo va lo que falta para llegar al ritmo mensual.
+        </div>
+      </div>
+    )
+  }
+
   const inferidos = movs.filter(m => m.inferido && m.fecha >= modelo.inicio).length
   const sinClasificar = movs.filter(m => m.actividad === 'Sin clasificar' && m.fecha >= modelo.inicio).length
 
@@ -604,7 +728,9 @@ export default function Presupuesto() {
             El saldo de la columna "hasta hoy" es el saldo de las cajas hoy. Igual que en la caja, un cheque cuenta el día que se recibe o se entrega; las dos filas de abajo muestran cuánto de ese saldo son cheques todavía no cobrados/debitados. Las cuotas en dólares se proyectan al dólar de hoy. Las compras pagadas con canje de grano no se proyectan (no salen de caja).
           </div>
         </>
-      ) : marco(<>
+      ) : (<>
+        {vista === 'Feedlot' && panelHacienda()}
+        {marco(<>
         {cabecera(vista)}
         <tbody>
           {renderSeparador('Ingresos', S.green, S.greenLight, { label: '+ renglón', fn: () => agregarRenglon(vista, 'ingreso') })}
@@ -613,7 +739,14 @@ export default function Presupuesto() {
           {seccionesActividad(vista, 'egreso', S.red)}
           {renderTotal('Resultado de caja del mes', c => balanceActividad(vista, c))}
           {(() => { let ac = 0; const acu = {}; columnas.forEach(c => { ac += balanceActividad(vista, c); acu[c.id] = ac }); return renderTotal(`Acumulado desde ${columnas[0].label}`, c => acu[c.id], { bg: S.accentLight, colorFijo: S.accent }) })()}
+          {vista === 'Feedlot' && hacienda && (
+            <tr style={{ background: S.surface }}>
+              <td style={{ ...tdNombre, color: S.muted }}>Cabezas en corrales (proyectado)</td>
+              {columnas.map(c => <td key={c.id} style={{ ...tdNum, color: (modelo.stockProy[c.id] ?? 0) < 0 ? S.red : S.muted, background: bgCol(c) }}>{c.hoy ? hacienda.stock : (c.proy ? Math.round(modelo.stockProy[c.id] ?? 0) : '')}</td>)}
+            </tr>
+          )}
         </tbody>
+      </>)}
       </>)}
     </div>
   )
