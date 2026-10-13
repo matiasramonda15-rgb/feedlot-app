@@ -1240,7 +1240,7 @@ export default function Reportes({ usuario }) {
             const anioAnterior = anioActual - 1
             const existenciaActualM = corrales.reduce((s, c) => s + (c.animales || 0), 0)
             const calcAnio = (anio) => {
-              const delAnio = mortalidad.filter(m => m.fecha && new Date(m.fecha + 'T12:00:00').getFullYear() === anio)
+              const delAnio = mortalidad.filter(m => m.fecha && !/consumo propio/i.test(m.causa || '') && new Date(m.fecha + 'T12:00:00').getFullYear() === anio)
               const total = delAnio.reduce((s, m) => s + (m.cantidad || 0), 0)
               // Mismo criterio que ya se usa en Sanidad: % sobre la población que
               // pudo haber estado expuesta (existencia actual + las que murieron)

@@ -3,7 +3,14 @@ import { supabase } from '../supabase'
 import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Btn, Loader } from './UI'
 import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso, confirmarRevisionBisemanal, procesarEnfermosCorral } from '../shared/sanidadLogic'
+
 import SelectBuscable from './SelectBuscable'
+
+// Un animal carneado para consumo propio se registra como "muerte" con esta
+// causa: así sale del corral y del stock, pero NO cuenta en la tasa de
+// mortalidad ni en las muertes del mes (no murió).
+const CONSUMO_PROPIO = 'Consumo propio (carneado)'
+const esConsumoPropio = m => /consumo propio/i.test(m?.causa || '')
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -988,7 +995,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                 <select value={formMort.causa} onChange={e => setFormMort({...formMort, causa: e.target.value})}
                   style={{ width: '100%', background: CM.surface, border: '1px solid ' + CM.border, borderRadius: 8, padding: '11px 12px', fontSize: 14, color: CM.text, fontFamily: CM.sans }}>
                   <option value="">Sin especificar</option>
-                  {['Neumonia', 'Enterotoxemia', 'Accidente', 'Timpanismo', 'Diarrea', 'Causa desconocida', 'Otro'].map(c => <option key={c}>{c}</option>)}
+                  {['Neumonia', 'Enterotoxemia', 'Accidente', 'Timpanismo', 'Diarrea', 'Causa desconocida', 'Otro', CONSUMO_PROPIO].map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <button onClick={guardarMortalidadM} disabled={guardandoMort}
@@ -1152,6 +1159,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
   // ── FIN MODO CELULAR — de acá para abajo sigue el modo PC, sin cambios ──
 
   const mortMes = mortalidad.filter(m => {
+    if (esConsumoPropio(m)) return false
     const f = new Date(m.creado_en); const h = new Date()
     return f.getMonth() === h.getMonth() && f.getFullYear() === h.getFullYear()
   }).reduce((s, m) => s + (m.cantidad || 0), 0)
@@ -1670,8 +1678,8 @@ export default function Sanidad({ usuario, mobile, nav }) {
             {(() => {
               const anio = new Date().getFullYear()
               const mes = new Date().getMonth()
-              const mortAnio = mortalidad.filter(m => new Date(m.creado_en).getFullYear() === anio)
-              const mortMes = mortalidad.filter(m => { const d = new Date(m.creado_en); return d.getFullYear() === anio && d.getMonth() === mes })
+              const mortAnio = mortalidad.filter(m => !esConsumoPropio(m) && new Date(m.creado_en).getFullYear() === anio)
+              const mortMes = mortalidad.filter(m => { const d = new Date(m.creado_en); return !esConsumoPropio(m) && d.getFullYear() === anio && d.getMonth() === mes })
               const totalAnio = mortAnio.reduce((s, m) => s + (m.cantidad || 0), 0)
               const totalMes = mortMes.reduce((s, m) => s + (m.cantidad || 0), 0)
               const totalAnimales = corrales.reduce((s, c) => s + (c.animales || 0), 0)
@@ -1727,7 +1735,7 @@ export default function Sanidad({ usuario, mobile, nav }) {
                   <select value={formMort.causa} onChange={e => setFormMort({...formMort, causa: e.target.value})}
                     style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '9px 12px', fontSize: 13, background: S.surface }}>
                     <option value="">— Sin especificar —</option>
-                    {['Neumonía', 'Enterotoxemia', 'Accidente', 'Timpanismo', 'Diarrea', 'Causa desconocida', 'Otro'].map(c => <option key={c}>{c}</option>)}
+                    {['Neumonía', 'Enterotoxemia', 'Accidente', 'Timpanismo', 'Diarrea', 'Causa desconocida', 'Otro', CONSUMO_PROPIO].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
               </div>

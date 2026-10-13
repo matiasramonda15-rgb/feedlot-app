@@ -824,6 +824,8 @@ export default function Activos({ usuario }) {
                       <td style={{ padding: '9px 12px' }}>
                         {r.no_afecta_caja
                           ? <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.purpleLight || '#F0EAFB', color: '#3D1A6B', whiteSpace: 'nowrap' }}>🧾 Pagó con plata propia</span>
+                          : /^en especie/i.test(r.forma_pago || '')
+                          ? <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.greenLight || '#E8F4EB', color: S.green || '#1E5C2E', whiteSpace: 'nowrap' }}>🐄 En especie (no mueve caja)</span>
                           : r.es_adelanto
                           ? <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.amberLight, color: S.amber, whiteSpace: 'nowrap' }}>📌 Adelanto p/ tercero</span>
                           : <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: S.redLight, color: S.red, whiteSpace: 'nowrap' }}>💵 Salió de la caja</span>
