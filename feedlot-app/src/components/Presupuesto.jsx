@@ -60,6 +60,7 @@ const ORDEN_GRUPOS = ['Venta de hacienda', 'Venta de granos', 'Servicios a terce
 // futuro, se sugiere el promedio de los últimos meses (en itálica).
 const RECURRENTES = ['Sueldos', 'Gastos generales', 'Mano de obra servicios', 'Arriendos']
 const MANO = 'Cargado a mano'
+const MESES_VISIBLES = 3  // meses pasados que se ven sin desplegar el archivo
 const ESTIM_VENTA = 'estimado (ritmo de venta)'
 const ESTIM_COMPRA = 'estimado (reposición)'
 const FINALES = ['cobrado', 'rechazado', 'anulado']
@@ -293,13 +294,19 @@ export default function Presupuesto() {
   const [hacienda, setHacienda] = useState(null)
   const [formHac, setFormHac] = useState({})
 
-  // ── Columnas: 6 meses atrás · mes actual (hasta hoy | resto) · 12 adelante ──
+  // ── Columnas: desde el primer mes con movimientos de caja (máx. 24 atrás) ·
+  // mes actual (hasta hoy | resto) · 12 adelante. En pantalla se ven los
+  // últimos 3 meses; los anteriores quedan archivados en una sola columna
+  // ("Anteriores") que se despliega con un botón.
   const hoyS = iso(new Date())
   const mkHoy = hoyS.slice(0, 7)
+  const primerMk = movs.length ? movs[0].fecha.slice(0, 7) : mkHoy
   const columnas = useMemo(() => {
     const h = new Date()
+    const [py, pm] = primerMk.split('-').map(Number)
+    const atras = Math.min(24, Math.max(MESES_VISIBLES, (h.getFullYear() - py) * 12 + (h.getMonth() + 1 - pm)))
     const cols = []
-    for (let i = -6; i <= 12; i++) {
+    for (let i = -atras; i <= 12; i++) {
       const d = new Date(h.getFullYear(), h.getMonth() + i, 1)
       const mk = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
       const label = `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`
@@ -311,7 +318,19 @@ export default function Presupuesto() {
       } else cols.push({ ...base, id: `${mk}|p`, proy: true, label, fin: finDeMes(mk) })
     }
     return cols
-  }, [hoyS])
+  }, [hoyS, primerMk])
+  const [verAnteriores, setVerAnteriores] = useState(false)
+  const ocultas = useMemo(() => {
+    const h = new Date()
+    const d = new Date(h.getFullYear(), h.getMonth() - MESES_VISIBLES, 1)
+    const corte = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+    return columnas.filter(c => !c.proy && !c.hoy && c.mk < corte)
+  }, [columnas])
+  const colsVis = useMemo(() => {
+    if (verAnteriores || !ocultas.length) return columnas
+    const ids = new Set(ocultas.map(c => c.id))
+    return [{ id: 'archivo', archivo: true, ocultas, label: 'Anteriores', sub: ocultas.length > 1 ? `${ocultas[0].label} – ${ocultas[ocultas.length - 1].label}` : ocultas[0].label, proy: false }, ...columnas.filter(c => !ids.has(c.id))]
+  }, [columnas, ocultas, verAnteriores])
 
   useEffect(() => { cargar() }, [])
 
@@ -439,6 +458,7 @@ export default function Presupuesto() {
 
   // ── Valor de una celda ──
   function celda(f, c) {
+    if (c.archivo) { const v = c.ocultas.reduce((t, h) => t + (f.real[h.id] || 0), 0); return { v, estado: v ? 'real' : 'vacio' } }
     if (!c.proy) { const v = f.real[c.id] || 0; return { v, estado: v ? 'real' : 'vacio' } }
     if (f.manual[c.id] != null) return { v: f.manual[c.id], estado: 'manual' }
     const r = f.real[c.id] || 0, a = f.auto[c.id] || 0, e = f.estim[c.id] || 0
@@ -490,7 +510,7 @@ export default function Presupuesto() {
   if (error) return <div style={{ padding: 20, color: S.red }}>Error al cargar el presupuesto: {error}</div>
 
   const COLOR_ESTADO = { real: null, auto: S.accent, manual: S.amber, estimado: '#B8A088', vacio: S.hint }
-  const bgCol = c => c.actual ? (c.proy ? '#FFF6D8' : '#FFFBEA') : 'transparent'
+  const bgCol = c => c.archivo ? '#F4F2ED' : c.actual ? (c.proy ? '#FFF6D8' : '#FFFBEA') : 'transparent'
   const tdNum = { padding: '4px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, minWidth: 82, whiteSpace: 'nowrap' }
   const tdNombre = { padding: '6px 12px', fontSize: 12, position: 'sticky', left: 0, background: S.surface, whiteSpace: 'nowrap', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', zIndex: 1 }
   const toggle = k => { const n = new Set(abiertos); if (n.has(k)) n.delete(k); else n.add(k); setAbiertos(n) }
@@ -500,7 +520,7 @@ export default function Presupuesto() {
   const renderFila = (f, { color, factor = 1, editable = true, indent = 28, nombre } = {}) => (
     <tr key={f.id + factor} style={{ borderBottom: `1px solid ${S.border}` }}>
       <td style={{ ...tdNombre, paddingLeft: indent, color: S.muted }} title={f.label}>{nombre || f.detalle}{factor !== 1 ? ' (⅓)' : ''}</td>
-      {columnas.map(c => {
+      {colsVis.map(c => {
         const { v, estado } = celda(f, c)
         const clave = `${f.id}|${c.id}`
         const puede = editable && c.proy && factor === 1
@@ -533,7 +553,7 @@ export default function Presupuesto() {
           <span style={{ display: 'inline-block', width: 14, color: S.muted, fontSize: 10 }}>{abierto ? '▾' : '▸'}</span>
           {titulo} <span style={{ color: S.hint, fontWeight: 400 }}>({fs.length})</span>
         </td>
-        {columnas.map(c => {
+        {colsVis.map(c => {
           const t = conSigno ? neto(fs, c, factor) : fs.reduce((s, f) => s + celda(f, c).v * factor, 0)
           const soloEstimado = c.proy && fs.every(f => ['estimado', 'vacio'].includes(celda(f, c).estado)) && t
           return <td key={c.id} style={{ ...tdNum, fontWeight: 600, fontStyle: soloEstimado ? 'italic' : 'normal', color: conSigno ? (t >= 0 ? S.green : S.red) : color, background: bgCol(c) }}>{fmt(t)}</td>
@@ -549,14 +569,14 @@ export default function Presupuesto() {
         {texto}
         {accion && <button onClick={accion.fn} style={{ marginLeft: 10, fontSize: 10, padding: '2px 8px', borderRadius: 4, border: `1px solid ${color}`, background: S.surface, color, cursor: 'pointer', textTransform: 'none', letterSpacing: 0 }}>{accion.label}</button>}
       </td>
-      <td colSpan={columnas.length} style={{ background: bg }} />
+      <td colSpan={colsVis.length} style={{ background: bg }} />
     </tr>
   )
 
   const renderTotal = (texto, fn, { bg = S.bg, colorFijo, mostrarEn } = {}) => (
     <tr key={'tot-' + texto} style={{ borderTop: `2px solid ${S.border}`, background: bg }}>
       <td style={{ ...tdNombre, fontWeight: 700, background: bg, color: colorFijo || S.text }}>{texto}</td>
-      {columnas.map(c => {
+      {colsVis.map(c => {
         if (mostrarEn && !mostrarEn(c)) return <td key={c.id} style={{ ...tdNum, background: bg }} />
         const v = fn(c)
         return <td key={c.id} style={{ ...tdNum, fontWeight: 700, color: colorFijo ? (v >= 0 ? colorFijo : S.red) : (v >= 0 ? S.green : S.red), background: c.actual ? bgCol(c) : bg }}>{fmt(v) || '0'}</td>
@@ -579,7 +599,7 @@ export default function Presupuesto() {
       Object.keys(porGrupoG).sort((a, b) => ordenGrupo(a) - ordenGrupo(b))
         .forEach(g => out.push(...renderGrupo(`${act}|General|${tipo}|${g}`, `${g} · empresa (⅓)`, porGrupoG[g], { color, factor: 1 / 3, editable: false })))
     }
-    if (!out.length) out.push(<tr key={`vacio-${tipo}`}><td colSpan={columnas.length + 1} style={{ padding: '10px 12px', fontSize: 12, color: S.hint }}>Sin {tipo === 'ingreso' ? 'ingresos' : 'egresos'} en este período.</td></tr>)
+    if (!out.length) out.push(<tr key={`vacio-${tipo}`}><td colSpan={colsVis.length + 1} style={{ padding: '10px 12px', fontSize: 12, color: S.hint }}>Sin {tipo === 'ingreso' ? 'ingresos' : 'egresos'} en este período.</td></tr>)
     return out
   }
 
@@ -597,12 +617,24 @@ export default function Presupuesto() {
   }
   const acumulados = {}
   { let ac = modelo.saldoInicial; columnas.forEach(c => { ac += balanceTotal(c); acumulados[c.id] = ac }) }
+  if (ocultas.length) acumulados.archivo = acumulados[ocultas[ocultas.length - 1].id]
+  // Saldo con el que arranca lo que se ve en pantalla
+  const primeraVisible = colsVis.find(c => !c.archivo)
+  const idxPrimera = columnas.findIndex(c => c.id === primeraVisible.id)
+  const colPrevia = idxPrimera > 0 ? columnas[idxPrimera - 1] : null
+  const saldoArranque = colPrevia ? acumulados[colPrevia.id] : modelo.saldoInicial
+  const fechaArranque = colPrevia ? colPrevia.fin : sumarDias(modelo.inicio, -1)
 
   const cabecera = titulo => (
     <thead>
       <tr style={{ position: 'sticky', top: 0, background: S.bg, zIndex: 3 }}>
         <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: S.muted, position: 'sticky', left: 0, background: S.bg, zIndex: 4 }}>{titulo}</th>
-        {columnas.map(c => (
+        {colsVis.map(c => c.archivo ? (
+          <th key={c.id} onClick={() => setVerAnteriores(true)} title="Ver mes por mes"
+            style={{ padding: '6px 8px', textAlign: 'right', fontSize: 11, color: S.muted, fontWeight: 600, background: '#EEEBE4', whiteSpace: 'nowrap', lineHeight: 1.2, cursor: 'pointer' }}>
+            ▸ {c.label}<div style={{ fontSize: 9, fontWeight: 500 }}>{c.sub}</div>
+          </th>
+        ) : (
           <th key={c.id} style={{ padding: '6px 8px', textAlign: 'right', fontSize: 11, color: c.proy ? S.accent : S.muted, fontWeight: c.actual ? 700 : 600, background: c.actual ? bgCol(c) : S.bg, whiteSpace: 'nowrap', lineHeight: 1.2 }}>
             {c.label}{c.sub && <div style={{ fontSize: 9, fontWeight: 500 }}>{c.sub}</div>}
           </th>
@@ -668,7 +700,12 @@ export default function Presupuesto() {
             {a}
           </button>
         ))}
-        <button onClick={cargar} style={{ marginLeft: 'auto', padding: '8px 12px', fontSize: 12, borderRadius: 6, border: `1px solid ${S.border}`, background: S.surface, color: S.muted, cursor: 'pointer' }}>↻ Actualizar</button>
+        {ocultas.length > 0 && (
+          <button onClick={() => setVerAnteriores(v => !v)} style={{ marginLeft: 'auto', padding: '8px 12px', fontSize: 12, borderRadius: 6, border: `1px solid ${S.border}`, background: verAnteriores ? S.accentLight : S.surface, color: verAnteriores ? S.accent : S.muted, cursor: 'pointer' }}>
+            {verAnteriores ? '◂ Archivar meses anteriores' : `▸ Ver meses anteriores (${ocultas.length})`}
+          </button>
+        )}
+        <button onClick={cargar} style={{ marginLeft: ocultas.length > 0 ? 0 : 'auto', padding: '8px 12px', fontSize: 12, borderRadius: 6, border: `1px solid ${S.border}`, background: S.surface, color: S.muted, cursor: 'pointer' }}>↻ Actualizar</button>
       </div>
 
       <div style={{ fontSize: 11, color: S.hint, marginBottom: 8, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -684,7 +721,7 @@ export default function Presupuesto() {
         <>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
             {[
-              { t: `Saldo de caja al ${fmtF(sumarDias(modelo.inicio, -1))}`, v: modelo.saldoInicial },
+              { t: `Saldo de caja al ${fmtF(fechaArranque)}`, v: saldoArranque },
               { t: 'Saldo de caja hoy', v: modelo.saldoHoy, sub: `Caja 1 ${$(modelo.saldoCaja.O || 0)} · Caja 2 ${$(modelo.saldoCaja.P || 0)}` },
               { t: `Saldo proyectado a ${columnas[columnas.length - 1].label}`, v: acumulados[columnas[columnas.length - 1].id] },
             ].map(x => (
@@ -702,7 +739,7 @@ export default function Presupuesto() {
               {ACTIVIDADES.map(act => (
                 <tr key={act} style={{ borderBottom: `1px solid ${S.border}`, cursor: 'pointer' }} onClick={() => setVista(act)} title={`Ver el detalle de ${act}`}>
                   <td style={{ ...tdNombre, fontWeight: 600 }}>{act} <span style={{ color: S.hint, fontSize: 10 }}>›</span></td>
-                  {columnas.map(c => { const v = balanceActividad(act, c); return <td key={c.id} style={{ ...tdNum, color: v >= 0 ? S.green : S.red, background: bgCol(c) }}>{fmt(v)}</td> })}
+                  {colsVis.map(c => { const v = balanceActividad(act, c); return <td key={c.id} style={{ ...tdNum, color: v >= 0 ? S.green : S.red, background: bgCol(c) }}>{fmt(v)}</td> })}
                 </tr>
               ))}
               {renderTotal('Resultado de las actividades', c => ACTIVIDADES.reduce((s, a) => s + balanceActividad(a, c), 0))}
@@ -738,11 +775,11 @@ export default function Presupuesto() {
           {renderSeparador('Egresos', S.red, S.redLight, { label: '+ renglón', fn: () => agregarRenglon(vista, 'egreso') })}
           {seccionesActividad(vista, 'egreso', S.red)}
           {renderTotal('Resultado de caja del mes', c => balanceActividad(vista, c))}
-          {(() => { let ac = 0; const acu = {}; columnas.forEach(c => { ac += balanceActividad(vista, c); acu[c.id] = ac }); return renderTotal(`Acumulado desde ${columnas[0].label}`, c => acu[c.id], { bg: S.accentLight, colorFijo: S.accent }) })()}
+          {(() => { let ac = 0; const acu = {}; columnas.forEach(c => { ac += balanceActividad(vista, c); acu[c.id] = ac }); if (ocultas.length) acu.archivo = acu[ocultas[ocultas.length - 1].id]; return renderTotal(`Acumulado desde ${columnas[0].label}`, c => acu[c.id], { bg: S.accentLight, colorFijo: S.accent }) })()}
           {vista === 'Feedlot' && hacienda && (
             <tr style={{ background: S.surface }}>
               <td style={{ ...tdNombre, color: S.muted }}>Cabezas en corrales (proyectado)</td>
-              {columnas.map(c => <td key={c.id} style={{ ...tdNum, color: (modelo.stockProy[c.id] ?? 0) < 0 ? S.red : S.muted, background: bgCol(c) }}>{c.hoy ? hacienda.stock : (c.proy ? Math.round(modelo.stockProy[c.id] ?? 0) : '')}</td>)}
+              {colsVis.map(c => <td key={c.id} style={{ ...tdNum, color: (modelo.stockProy[c.id] ?? 0) < 0 ? S.red : S.muted, background: bgCol(c) }}>{c.hoy ? hacienda.stock : (c.proy ? Math.round(modelo.stockProy[c.id] ?? 0) : '')}</td>)}
             </tr>
           )}
         </tbody>
