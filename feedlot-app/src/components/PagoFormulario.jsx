@@ -62,6 +62,11 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
               const a = anticiposDisponibles[0]
               const montoActual = parseFloat(pago.monto) || 0
               onChange({ ...pago, tipo: 'anticipo', subtipo_cheque: '', anticipo_id: a.id, anticipo_detalle: a.descripcion, monto: String(Math.min(a.monto_disponible, montoActual || a.monto_disponible)) })
+            } else if (e.target.value === 'descuento') {
+              // Descuento: un gasto que era del vendedor (ej. la guía) y lo
+              // pagamos nosotros — se lo descontamos de su factura. No mueve
+              // ninguna caja (esa plata ya salió cuando se pagó el gasto).
+              onChange({ ...pago, tipo: 'descuento', subtipo_cheque: '', es_paralelo: false, descuento_concepto: pago.descuento_concepto || 'Gasto de guía' })
             } else if (e.target.value === 'retencion') {
               // La retención no sale de ninguna caja ese día (se deposita
               // después en ARCA/Rentas desde Comercial): nunca es Caja 2.
@@ -86,7 +91,7 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
         {mostrarParalelo && (
           <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: S.muted, cursor: 'pointer' }}>
-              <input type="checkbox" checked={pago.es_paralelo || false} disabled={pago.tipo === 'retencion'} onChange={e => set('es_paralelo', e.target.checked)} />
+              <input type="checkbox" checked={pago.es_paralelo || false} disabled={pago.tipo === 'retencion' || pago.tipo === 'descuento'} onChange={e => set('es_paralelo', e.target.checked)} />
               Caja 2
             </label>
           </div>
@@ -175,6 +180,17 @@ export function FilaPago({ pago, onChange, onRemove, chequesCartera = [], S, inp
           <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>A cambio de</div>
           <input type="text" value={pago.canje_detalle || ''} placeholder="ej. factura de cosecha del 5/7"
             onChange={e => set('canje_detalle', e.target.value)} style={inp} />
+        </div>
+      )}
+
+      {pago.tipo === 'descuento' && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>Qué se descuenta</div>
+          <input type="text" value={pago.descuento_concepto || ''} placeholder="ej. Gasto de guía a cargo del vendedor"
+            onChange={e => set('descuento_concepto', e.target.value)} style={inp} />
+          <div style={{ fontSize: 11, color: S.hint, marginTop: 6 }}>
+            No sale plata de caja: cuenta como pagado de la factura y aparece en el recibo como descuento. El gasto en sí (lo que pagaste vos) se carga aparte, en Gastos.
+          </div>
         </div>
       )}
 

@@ -1630,6 +1630,16 @@ async function generarReciboCompra(lote, pagos, corrales) {
       </tr>`)
     }
 
+    // Descuento de un gasto a cargo del vendedor (ej. la guía)
+    if (tipo === 'descuento') {
+      return [`<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">DESCUENTO: ${(p.observaciones || p.descuento_concepto || 'GASTO A CARGO DEL VENDEDOR').toUpperCase()}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;font-size:10px;">Se descuenta de la factura</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR') : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${(p.monto||0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+    </tr>`]
+    }
+
     // Retención: impuesto y N° de certificado
     if (tipo === 'retencion') {
       const partes = (p.observaciones || '').split(' · ')
@@ -2102,6 +2112,11 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
       const impuestoRet = pago.retencion_impuesto || 'Impuesto a las Ganancias'
       const certRet = (pago.retencion_certificado || '').trim()
       if (esRetencion) desc = `Retención ${impuestoRet}${certRet ? ` — Cert. N° ${certRet}` : ''} — ${lote.procedencia || ''}`
+      // Descuento (ej. la guía, que era del vendedor y la pagamos nosotros):
+      // cuenta como pagado de la factura, no mueve caja.
+      const esDescuento = pago.tipo === 'descuento'
+      const conceptoDesc = (pago.descuento_concepto || '').trim() || 'Gasto a cargo del vendedor'
+      if (esDescuento) desc = `Descuento ${conceptoDesc} — ${lote.procedencia || ''}`
 
       const { data: pagoInsertado, error: errPago } = await supabase.from('pagos_compras').insert({
         lote_id: lote.id, fecha: formPago.fecha, monto,
@@ -2113,9 +2128,9 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
         fecha_vencimiento_cheque: pago.subtipo_cheque === 'propio' ? pago.cheque_propio.fecha_vencimiento || null : null,
         cheque_propio: pago.subtipo_cheque === 'propio' ? pago.cheque_propio : null,
         cheque_tercero_detalle,
-        es_negro: esRetencion ? false : (pago.es_paralelo || false),
+        es_negro: (esRetencion || esDescuento) ? false : (pago.es_paralelo || false),
         descripcion: pago.tipo === 'canje' && pago.canje_detalle ? `${desc} — Canje, a cambio de: ${pago.canje_detalle}` : desc,
-        observaciones: esRetencion ? `${impuestoRet} · Cert. N° ${certRet || 's/n'}` : null,
+        observaciones: esRetencion ? `${impuestoRet} · Cert. N° ${certRet || 's/n'}` : esDescuento ? conceptoDesc : null,
       }).select().single()
       if (errPago) { alert('Error al registrar el pago: ' + errPago.message); setGuardando(false); return }
 
@@ -2161,7 +2176,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
         }
         const { error: errCuotas } = await supabase.from('pagos_creditos').insert(cuotasAInsertar)
         if (errCuotas) alert('El crédito se creó, pero no se pudieron generar las cuotas: ' + errCuotas.message)
-      } else if (pago.tipo !== 'canje' && !esRetencion) {
+      } else if (pago.tipo !== 'canje' && !esRetencion && !esDescuento) {
         if (pago.es_paralelo) {
           const { data: cp, error: errCp } = await supabase.from('caja_paralela').insert({ fecha: formPago.fecha, tipo: 'egreso', descripcion: desc, monto, pago_compra_id: pagoInsertado?.id }).select().single()
           if (errCp) { alert('El pago se registró, pero no se pudo cargar en Caja 2: ' + errCp.message); setGuardando(false); return }
@@ -2459,7 +2474,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                               <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                                 {pagos.map((p, pi) => (
                                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagos.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                    <span style={{ fontSize: 13 }}>{p.forma_pago === 'retencion' ? `🧾 Retención · ${p.observaciones || ''}` : p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
+                                    <span style={{ fontSize: 13 }}>{p.forma_pago === 'retencion' ? `🧾 Retención · ${p.observaciones || ''}` : p.forma_pago === 'descuento' ? `➖ Descuento · ${p.observaciones || ''}` : p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                       <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
                                       <button onClick={() => generarReciboCompra(l, [p], corrales)} title="Recibo de solo este pago" style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 13 }}>🖨️</button>
@@ -2565,7 +2580,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                             </div>
                           )
                         })()}
-                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (tarjeta/financiera)' }, { value: 'retencion', label: '🧾 Retención (ARCA / Rentas)' }]} />
+                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo opcionesExtra={[{ value: 'credito', label: '🏦 Crédito (tarjeta/financiera)' }, { value: 'retencion', label: '🧾 Retención (ARCA / Rentas)' }, { value: 'descuento', label: '➖ Descuento (gasto a cargo del vendedor)' }]} />
                         {formPago.pagos.some(p => p.tipo === 'credito') && (
                           <div style={{ background: '#F0EAFB', border: '1px solid #9F8ED4', borderRadius: 8, padding: 12, marginTop: 8, marginBottom: 10 }}>
                             <div style={{ fontSize: 12, color: '#3D1A6B', marginBottom: 8 }}>
@@ -2661,7 +2676,7 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                           <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
                             {pagosArch.map((p, pi) => (
                               <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderBottom: pi < pagosArch.length - 1 ? `1px solid ${S.border}` : 'none' }}>
-                                <span style={{ fontSize: 13 }}>{p.forma_pago === 'retencion' ? `🧾 Retención · ${p.observaciones || ''}` : p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
+                                <span style={{ fontSize: 13 }}>{p.forma_pago === 'retencion' ? `🧾 Retención · ${p.observaciones || ''}` : p.forma_pago === 'descuento' ? `➖ Descuento · ${p.observaciones || ''}` : p.forma_pago}{p.numero_cheque ? ` #${p.numero_cheque}` : ''}{p.es_negro ? ' · Caja 2' : ''}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                   <span style={{ fontSize: 13, fontFamily: 'monospace' }}>${p.monto?.toLocaleString('es-AR')}</span>
                                   <button onClick={() => generarReciboCompra(l, [p], corrales)} title="Recibo de solo este pago" style={{ background: 'none', border: 'none', color: S.accent, cursor: 'pointer', fontSize: 13 }}>🖨️</button>
