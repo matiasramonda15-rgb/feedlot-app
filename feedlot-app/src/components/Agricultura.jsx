@@ -87,6 +87,8 @@ function Card({ children, titulo, style = {} }) {
 }
 
 const CULTIVOS = ['Soja', 'Maiz', 'Trigo', 'Alfalfa', 'Girasol', 'Sorgo', 'Otro']
+// Labores en las que el personal cobra un % aparte (Mano de obra en Servicios)
+const LABORES_CON_MANO_OBRA = ['Siembra', 'Cosecha']
 const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'Labranza', 'Volteo', 'Rastrillado', 'Confeccion de rollo', 'Otro']
 // Qué productos del stock se ofrecen según el tipo de orden:
 //  - Siembra: semillas y fertilizantes.
@@ -1440,12 +1442,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (ya?.length) return null
     const { error } = await supabase.from('servicios_terceros').insert({
       cliente: 'Ramonda Hnos SA', labor: LABOR_SERVICIOS[tipo] || tipo, fecha,
-      hectareas: ha || null, precio_ha: costoHa, total: 0, monto_negro: costo,
+      // Igual que los servicios cargados desde Servicios: el monto va en
+      // "total". Si todavía no se sabe el valor, queda en 0 / pendiente y se
+      // completa después desde Servicios (eso actualiza también la orden).
+      hectareas: ha || null, precio_ha: costo ? costoHa : null, total: costo || 0, monto_negro: null,
       campo: campoNombre, nro_lote: loteNums || null,
       cultivo: null, campania: campanaNombre, tipo_servicio: 'propio',
       empleado1: empleado1 || null, empleado2: empleado2 || null,
       orden_trabajo_id: ordenId,
-      estado_pago: 'pagado', estado: 'completado',
+      estado_pago: costo ? 'pagado' : 'pendiente', estado: 'completado',
       observaciones: `Trabajo propio para Agricultura — orden${(ordenIds || []).length > 1 ? 'es' : ''} #${(ordenIds && ordenIds.length ? ordenIds : [ordenId]).join(', #')}`,
       registrado_por: usuario?.id,
     })
@@ -1597,12 +1602,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     if (error) { alert('El stock se descontó, pero no se pudo actualizar la orden: ' + error.message); return }
     // Trabajo propio con maquinaria/personal de Servicios: recién al hacerse
     // se registra el servicio interno (con los empleados que trabajaron).
-    if (o.es_propia && (o.usa_maquinaria_servicios || c.empleado1 || c.empleado2) && (parseFloat(costoTotal) || 0) > 0) {
+    if (o.es_propia && (o.usa_maquinaria_servicios || c.empleado1 || c.empleado2)) {
       if (c.empleado1 !== undefined) await supabase.from('ordenes_trabajo').update({ usa_maquinaria_servicios: true, empleado1: c.empleado1 || null, empleado2: c.empleado2 || null }).eq('id', o.id)
       const campoO = campos.find(x => x.id === o.campo_id)
       const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
       const errServ = await registrarServicioInterno({
-        ordenId: o.id, tipo: o.tipo, fecha: c.fecha, ha, costo: parseFloat(costoTotal), costoHa,
+        ordenId: o.id, tipo: o.tipo, fecha: c.fecha, ha, costo: parseFloat(costoTotal) || 0, costoHa,
         campoNombre: campoO?.nombre || '', loteNums: loteO?.numero || null,
         campanaNombre: campanas.find(x => x.id === o.campana_id)?.nombre || '',
         empleado1: c.empleado1 ?? o.empleado1, empleado2: c.empleado2 ?? o.empleado2,
@@ -1751,8 +1756,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         observaciones: form.observaciones || null,
         estado_pago: form.es_propia ? 'pagado' : 'pendiente',
         usa_maquinaria_servicios: !!(form.es_propia && form.usa_maquinaria_servicios),
-        empleado1: form.es_propia ? (form.empleado1 || null) : null,
-        empleado2: form.es_propia ? (form.empleado2 || null) : null,
+        empleado1: form.es_propia && LABORES_CON_MANO_OBRA.includes(form.tipo) ? (form.empleado1 || null) : null,
+        empleado2: form.es_propia && LABORES_CON_MANO_OBRA.includes(form.tipo) ? (form.empleado2 || null) : null,
         caja_oficial_id, registrado_por: usuario?.id,
       }).select().single()
       if (errOrden) { alert('Error al guardar la orden' + (lote ? ` del lote ${lote.numero}` : ` de ${campoDeEsteItem?.nombre || ''}`) + ': ' + errOrden.message); setGuardando(false); return }
@@ -1767,19 +1772,24 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     // su maquinaria, sin inflar el resultado consolidado de la empresa (se
     // cancelan solos al sumar todas las actividades). Uno solo por el total,
     // aunque hayan sido varios campos/lotes.
-    if (form.es_propia && form.usa_maquinaria_servicios && costoNum > 0 && !form.emitir) {
-      const campoNombre = camposSeleccionados.map(c => c.nombre).join(', ')
+    if (form.es_propia && form.usa_maquinaria_servicios && !form.emitir) {
+      // Un servicio por cada orden (cada campo/lote), con sus hectáreas y su
+      // parte del costo: así, si el valor se completa después desde
+      // Servicios, cada orden queda con lo suyo.
       const campanaNombre = campanas.find(c => c.id === parseInt(form.campana_id))?.nombre || ''
-      // Va como monto_negro/Caja 2, no facturado — no hay ninguna factura de
-      // por medio (es la misma empresa), así que no corresponde marcarlo
-      // como "Caja 1" (que implica algo facturado/oficial).
-      const errServ = await registrarServicioInterno({
-        ordenId: ordenesInsertadas[0]?.id, ordenIds: ordenesInsertadas.map(o => o?.id),
-        tipo: form.tipo, fecha: form.fecha, ha: superficie, costo: costoNum, costoHa,
-        campoNombre, loteNums: lotesSeleccionados.length ? lotesSeleccionados.map(l => l.numero).join(', ') : null,
-        campanaNombre, empleado1: form.empleado1, empleado2: form.empleado2,
-      })
-      if (errServ) alert('La orden se guardó, pero no se pudo reflejar el ingreso en Servicios: ' + errServ.message)
+      const conMO = LABORES_CON_MANO_OBRA.includes(form.tipo)
+      for (const o of ordenesInsertadas) {
+        if (!o) continue
+        const campoO = campos.find(x => x.id === o.campo_id)
+        const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+        const errServ = await registrarServicioInterno({
+          ordenId: o.id, tipo: form.tipo, fecha: form.fecha, ha: parseFloat(o.superficie_ha_real) || null,
+          costo: parseFloat(o.costo_total) || 0, costoHa,
+          campoNombre: campoO?.nombre || '', loteNums: loteO?.numero || null, campanaNombre,
+          empleado1: conMO ? form.empleado1 : null, empleado2: conMO ? form.empleado2 : null,
+        })
+        if (errServ) { alert('La orden se guardó, pero no se pudo reflejar el trabajo en Servicios: ' + errServ.message); break }
+      }
     }
 
     if (!mobile) await cargar() // en el celular, la recarga se hace recién al volver al inicio (ver más abajo), para no remontar el formulario y perder la confirmación
@@ -2112,7 +2122,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 <input type="checkbox" checked={form.usa_maquinaria_servicios} onChange={e => setForm({...form, usa_maquinaria_servicios: e.target.checked})} />
                 <span style={{ fontSize: 13, color: CM.text }}>Se usó maquinaria/personal de Servicios</span>
               </label>
-              {[1, 2].map(n => (
+              {LABORES_CON_MANO_OBRA.includes(form.tipo) && [1, 2].map(n => (
                 <div key={n} style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Empleado {n} que trabajó</div>
                   <select value={form[`empleado${n}`] || ''} onChange={e => setForm({ ...form, [`empleado${n}`]: e.target.value, ...(e.target.value ? { usa_maquinaria_servicios: true } : {}) })}
@@ -2347,9 +2357,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem', cursor: 'pointer' }}>
                     <input type="checkbox" checked={form.usa_maquinaria_servicios} onChange={e => setForm({...form, usa_maquinaria_servicios: e.target.checked})} />
-                    <span style={{ fontSize: 13 }}>Se usó maquinaria/personal de <strong>Servicios</strong> — reflejar este monto como ingreso de Servicios (sin mover caja)</span>
+                    <span style={{ fontSize: 13 }}>Se usó maquinaria/personal de <strong>Servicios</strong> — queda cargado en Servicios (sin mover caja). Si no sabés el valor todavía, dejalo vacío y completalo después desde Servicios.</span>
                   </label>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1rem' }}>
+                  {LABORES_CON_MANO_OBRA.includes(form.tipo) && <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1rem' }}>
                     {[1, 2].map(n => (
                       <div key={n} style={{ width: 200 }}><Label>Empleado {n} que trabajó</Label>
                         <select value={form[`empleado${n}`] || ''} onChange={e => setForm({ ...form, [`empleado${n}`]: e.target.value, ...(e.target.value ? { usa_maquinaria_servicios: true } : {}) })} style={inputStyle}>
@@ -2361,7 +2371,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     <div style={{ fontSize: 11, color: S.hint, flex: 1, minWidth: 220, paddingBottom: 6 }}>
                       Su % se paga desde Servicios → Mano de obra, sobre el costo/ha × hectáreas de esta orden (igual que en los servicios).
                     </div>
-                  </div>
+                  </div>}
                 </>
               )}
 
@@ -2671,7 +2681,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                                 {confirmando.proveedor !== (o.proveedor || '') && <div style={{ fontSize: 11, color: S.amber, alignSelf: 'center' }}>La deuda pasa a {confirmando.proveedor || '—'}</div>}
                               </>
                             )}
-                            {o.es_propia && [1, 2].map(n => (
+                            {o.es_propia && LABORES_CON_MANO_OBRA.includes(o.tipo) && [1, 2].map(n => (
                               <div key={n} style={{ width: 180 }}><Label>Empleado {n}</Label>
                                 <select value={confirmando[`empleado${n}`] || ''} onChange={e => setConfirmando({ ...confirmando, [`empleado${n}`]: e.target.value })} style={inputStyle}>
                                   <option value="">— Nadie —</option>
