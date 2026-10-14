@@ -6,6 +6,7 @@ import { PAGO_INIT, ListaPagos } from './PagoFormulario'
 import { generarReciboDeCobro } from '../shared/reciboLogic'
 import SelectBuscable from './SelectBuscable'
 import { useBorrador } from '../shared/useBorrador'
+import { confirmarSiHayOrdenParecida, TIPO_ORDEN_DE_LABOR } from '../shared/ordenesDuplicadas'
 
 const CM = { bg: '#0D1B2A', surface: '#1A2D3D', surface2: '#243447', border: '#2D4357', text: '#E8F0F8', muted: '#7A9AB8', accent: '#5BB8F5', green: '#4CAF82', greenLight: '#1A3D2E', amber: '#F5A623', amberLight: '#3D2E1A', red: '#F55B5B', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -261,6 +262,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     if (!form.labor || !form.hectareas) { alert('Completá labor y hectáreas'); return }
     if (form.tipo_servicio === 'tercero' && !form.cliente) { alert('Ingresá el cliente'); return }
     if (form.esParaAgricultura && !form.campo_id) { alert('Seleccioná el campo de Agricultura'); return }
+    if (form.esParaAgricultura && !(await confirmarSiHayOrdenParecida(supabase, { tipo: TIPO_ORDEN_DE_LABOR[form.labor] || 'Otro', fecha: form.fecha, destinos: [{ campoId: parseInt(form.campo_id), loteId: form.lote_id ? parseInt(form.lote_id) : null }], campos }))) return
     setGuardando(true)
     const clienteTexto = form.tipo_servicio === 'propio' ? null : form.cliente
     const costoNum = form.esParaAgricultura ? (parseFloat(form.costo_total) || null) : null
@@ -590,6 +592,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       const nombreCliente = formM.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : formM.cliente
       if (!nombreCliente || !formM.labor || !formM.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
       if (formM.esParaAgricultura && !formM.campo_id) { alert('Seleccioná el campo de Agricultura'); return }
+      if (formM.esParaAgricultura && !(await confirmarSiHayOrdenParecida(supabase, { tipo: TIPO_ORDEN_DE_LABOR[formM.labor] || 'Otro', fecha: formM.fecha, destinos: [{ campoId: parseInt(formM.campo_id), loteId: formM.lote_id ? parseInt(formM.lote_id) : null }], campos }))) return
       setGuardandoM(true)
       const costoNum = formM.esParaAgricultura ? (parseFloat(formM.costo_total) || null) : null
       const { data: servicioCreado, error } = await registrarServicioTercero(supabase, {

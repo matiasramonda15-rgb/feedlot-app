@@ -12,6 +12,7 @@ import GranosUbicaciones from './GranosUbicaciones'
 import PlanTanques from './PlanTanques'
 import MapasCampos, { BotonMapa, mapaPintadoDataURL } from './MapasCampos'
 import { useBorrador } from '../shared/useBorrador'
+import { confirmarSiHayOrdenParecida } from '../shared/ordenesDuplicadas'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -1657,6 +1658,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const nombres = repetidos.map(id => stockAgro.find(x => String(x.id) === id)?.insumo || 'un producto').join(', ')
       if (!confirm(`Ojo: ${nombres} está cargado más de una vez en la orden. ¿Es correcto? (Si no, tocá Cancelar y corregí el producto.)`)) return
     }
+    // ¿Ya hay una orden del mismo tipo en ese campo/lote con fecha cercana?
+    if (!(await confirmarSiHayOrdenParecida(supabase, { tipo: form.tipo, fecha: form.fecha, destinos: destinos.map(d => ({ campoId: d.campoId, loteId: d.lote?.id || null })), campos }))) return
     setGuardando(true)
     // Costo de la labor: el total si se cargó; si no, costo/ha × hectáreas
     // (antes, con solo el costo/ha la orden quedaba sin costo y no se
