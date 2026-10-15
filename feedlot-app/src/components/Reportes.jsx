@@ -593,6 +593,32 @@ export default function Reportes({ usuario }) {
       ? ingresoPromedioPorAnimalVendido - costoPromedioPorAnimalComprado - costoOperativoCicloCompleto
       : null)
 
+  // ── Parámetros promedio para la Calculadora de compra (Ingresos) ──
+  // Los mismos números que usa el cuadro de "Ganancia esperada por lote":
+  // se guardan en configuracion (parametros_feedlot) cada vez que cambian,
+  // así la calculadora parte exactamente de lo mismo que ve Reportes.
+  const pesoVentaVivoProm = (() => { const k = ventasV.reduce((t, v) => t + (parseFloat(v.kg_vivo_total) || 0), 0); return totalAnimVendidosV > 0 && k > 0 ? k / totalAnimVendidosV : null })()
+  const cabComprasV = lotesV.reduce((t, l) => t + (l.cantidad || 0), 0)
+  const kgComprasV = lotesV.reduce((t, l) => t + (parseFloat(l.peso_prom_ingreso) || ((parseFloat(l.kg_bascula) || 0) / (l.cantidad || 1))) * (l.cantidad || 0), 0)
+  const plataComprasV = lotesV.reduce((t, l) => t + totalLoteReal(l), 0)
+  const paramsCalculadora = (!loading && ingresoPromedioPorAnimalVendido && pesoVentaProm && gdpCiclo > 0 && costoConsumoDiario != null && costoFijoDiario != null)
+    ? {
+        precioVentaKg: Math.round(ingresoPromedioPorAnimalVendido / pesoVentaProm),
+        pesoVenta: Math.round(pesoVentaProm), pesoVentaVivo: pesoVentaVivoProm ? Math.round(pesoVentaVivoProm) : null,
+        gdp: Math.round(gdpCiclo * 100) / 100,
+        costoAlimDia: Math.round(costoConsumoDiario), costoFijoDia: Math.round(costoFijoDiario),
+        fleteAnimal: Math.round(fletePromAnimal || 0),
+        pesoCompra: cabComprasV ? Math.round(kgComprasV / cabComprasV) : null,
+        precioCompraKg: kgComprasV ? Math.round(plataComprasV / kgComprasV) : null,
+        cabVentas: totalAnimVendidosV, cabCompras: cabComprasV,
+      }
+    : null
+  const paramsCalculadoraKey = paramsCalculadora ? JSON.stringify(paramsCalculadora) : ''
+  useEffect(() => {
+    if (!paramsCalculadoraKey) return
+    supabase.from('configuracion').upsert({ clave: 'parametros_feedlot', valor: JSON.stringify({ ...JSON.parse(paramsCalculadoraKey), actualizado: new Date().toISOString() }) }, { onConflict: 'clave' }).then(() => {})
+  }, [paramsCalculadoraKey])
+
   // ── Resultado REAL del feedlot: últimos 3 meses cerrados ──
   // Lo que efectivamente pasó (no una proyección): ventas netas − compras −
   // fletes − alimento − sanidad − sueldos − gastos, más/menos lo que cambió el

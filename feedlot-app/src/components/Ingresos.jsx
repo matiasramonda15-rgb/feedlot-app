@@ -5,11 +5,10 @@ import { hoyLocal, fechaLocal } from '../shared/dateUtils'
 import { Loader } from './UI'
 import { registrarIngresoLote } from '../shared/ingresosLogic'
 import { siguienteNumeroRecibo } from '../shared/reciboLogic'
-import { calcularIndicadoresFeedlot } from '../shared/gdpLogic'
 import { parsearReporteCaravanas, guardarLecturasCaravana, parsearListaSenasa, guardarCaravanasSenasa, compararCaravanasSenasaCampo } from '../shared/caravanasLogic'
 import { PAGO_INIT, ListaPagos } from './PagoFormulario'
-import { traerTodo } from '../shared/traerTodo'
 import SelectBuscable from './SelectBuscable'
+import CalculadoraCompra from './CalculadoraCompra'
 import { useBorrador } from '../shared/useBorrador'
 
 // Paleta y navegación para cuando este componente se muestra en el celular (mobile=true)
@@ -102,117 +101,9 @@ export default function Ingresos({ usuario, mobile, nav }) {
   // Estado pagos
   const [formPagoCompra, setFormPagoCompra] = useState({ monto: '', forma_pago: 'transferencia', fecha: hoyLocal(), numero_cheque: '', banco: '', fecha_vencimiento_cheque: '', es_negro: false })
 
-  // Calculadora
-  const [calc, setCalc] = useState({ precio_venta: '', kg_venta: '', desbaste_venta: '8', kg_compra: '', conversion_mf: '6.8', aumento_diario: '1.25', costo_dieta: '220', sanidad_animal: '9500', gastos_fijos_mes: '20000', flete_compra: '', flete_venta: '', comision_compra_pct: '', comision_venta_pct: '', margen_deseado: '15' })
-  const [calcPrecargado, setCalcPrecargado] = useState(false)
-
   const esDueno = usuario?.rol === 'dueno'
 
   useEffect(() => { cargarDatos() }, [])
-
-  // Al abrir la calculadora de precio máximo, se precargan los parámetros
-  // que ya se pueden sacar de los datos reales de los últimos 6 meses
-  // (mismo cálculo que usan Reportes y el Tablero) — el aumento de peso
-  // diario, la conversión, y el precio/peso promedio de venta reciente.
-  // Solo se hace una vez por visita a la pantalla, para no pisar si el
-  // usuario ya edito algo a mano.
-  useEffect(() => {
-    if (tab !== 'calculadora' || calcPrecargado) return
-    setCalcPrecargado(true)
-    ;(async () => {
-      const hace6Meses = new Date(); hace6Meses.setMonth(hace6Meses.getMonth() - 6)
-      const hace12Meses = new Date(); hace12Meses.setMonth(hace12Meses.getMonth() - 12)
-      const hace6MesesISO = hace6Meses.toISOString().split('T')[0]
-      const hace12MesesISO = hace12Meses.toISOString().split('T')[0]
-
-      const [{ data: lotesGdp }, { data: ventasGdp }, { data: raciones }, { data: stock }, { data: formulasMixer },
-             { data: comprasAlim }, { data: comprasSanit }, { data: gastosGen }, { data: lotesIngresados },
-             { data: fletesCompra }, { data: lotesConComision }, { data: ventasConComision }] = await Promise.all([
-        supabase.from('lotes').select('cantidad, fecha_ingreso, kg_bascula'),
-        supabase.from('ventas').select('cantidad, kg_vivo_total, kg_neto, desbaste_pct, creado_en, total'),
-        traerTodo(() => supabase.from('raciones_app').select('id, kg_total, kg_rollo_extra, solo_rollo, mezclador, tipo_dieta, fecha').order('id')),
-        supabase.from('stock_insumos').select('insumo, pct_ms'),
-        supabase.from('formulas_mixer').select('dieta, etapa, ingrediente, kg'),
-        supabase.from('compras_insumos').select('total, fecha').eq('insumo_tipo', 'alimentacion').gte('fecha', hace6MesesISO),
-        supabase.from('compras_insumos').select('total, fecha').eq('insumo_tipo', 'sanitario').gte('fecha', hace12MesesISO),
-        supabase.from('gastos_generales').select('monto, fecha, actividad').gte('fecha', hace6MesesISO).in('actividad', ['Feedlot', 'General']),
-        supabase.from('lotes').select('cantidad').gte('fecha_ingreso', hace12MesesISO),
-        supabase.from('fletes').select('monto, kg_bruto, fecha').gte('fecha', hace6MesesISO),
-        supabase.from('lotes').select('comision_monto, monto_total_con_iva, fecha_ingreso').gte('fecha_ingreso', hace6MesesISO),
-        supabase.from('ventas').select('comision_pct, creado_en').gte('creado_en', hace6MesesISO),
-      ])
-      const indicadores = calcularIndicadoresFeedlot({ corrales, lotes: lotesGdp, ventas: ventasGdp, raciones, stock, formulasMixer })
-      const prom6 = indicadores.prom6
-      const existenciaGlobal = indicadores.existenciaActualGlobal || 0
-
-      // Precio y peso promedio de venta de los últimos 6 meses, calculado
-      // directo de las ventas reales (no lo trae gdpLogic, que se enfoca en GDP/conversión).
-      const ventasRecientes = (ventasGdp || []).filter(v => new Date(v.creado_en) >= hace6Meses && v.cantidad > 0 && v.kg_vivo_total > 0)
-      const kgVendidoTotal = ventasRecientes.reduce((s, v) => s + (v.kg_vivo_total || 0), 0)
-      const montoVendidoTotal = ventasRecientes.reduce((s, v) => s + (v.total || 0), 0)
-      const cabVendidasTotal = ventasRecientes.reduce((s, v) => s + (v.cantidad || 0), 0)
-      const precioVentaProm = kgVendidoTotal > 0 ? montoVendidoTotal / kgVendidoTotal : null
-      const kgVentaProm = cabVendidasTotal > 0 ? kgVendidoTotal / cabVendidasTotal : null
-
-      // Costo real de la dieta $/kg — lo gastado en insumos de alimentación
-      // (últimos 6 meses) dividido los kg de comida que efectivamente se
-      // repartieron en el mixer en ese mismo período (de Alimentación).
-      const kgAlimentoRepartido = (raciones || []).filter(r => r.fecha && new Date(r.fecha) >= hace6Meses).reduce((s, r) => s + (r.kg_total || 0), 0)
-      const gastoAlim = (comprasAlim || []).reduce((s, c) => s + (parseFloat(c.total) || 0), 0)
-      const costoDietaReal = kgAlimentoRepartido > 0 ? gastoAlim / kgAlimentoRepartido : null
-
-      // Sanidad $/animal — lo gastado en insumos sanitarios en los últimos 12
-      // meses (un ciclo), dividido las cabezas que ingresaron en ese mismo
-      // período (aproxima cuánto sale sanidad por cada animal que pasa).
-      const gastoSanit = (comprasSanit || []).reduce((s, c) => s + (parseFloat(c.total) || 0), 0)
-      const cabIngresadas12m = (lotesIngresados || []).reduce((s, l) => s + (l.cantidad || 0), 0)
-      const sanidadAnimalReal = cabIngresadas12m > 0 ? gastoSanit / cabIngresadas12m : null
-
-      // Gastos fijos $/animal/mes — gastos generales del feedlot (Feedlot +
-      // un tercio del "General") en los últimos 6 meses, dividido la
-      // existencia promedio del feedlot en ese mismo período × 6 meses.
-      const gastoFijo = (gastosGen || []).reduce((s, g) => s + (g.actividad === 'General' ? (parseFloat(g.monto) || 0) / 3 : (parseFloat(g.monto) || 0)), 0)
-      const gastosFijosMesReal = existenciaGlobal > 0 ? gastoFijo / (existenciaGlobal * 6) : null
-
-      // Flete de compra $/kg — lo gastado en fletes de ingreso de hacienda
-      // (últimos 6 meses) dividido los kg brutos transportados en esos
-      // mismos fletes. El flete de VENTA no tiene una fuente de datos
-      // separada en el sistema hoy (no se carga como registro propio),
-      // así que ese sigue siendo manual.
-      const gastoFleteCompra = (fletesCompra || []).reduce((s, f) => s + (parseFloat(f.monto) || 0), 0)
-      const kgFleteCompra = (fletesCompra || []).reduce((s, f) => s + (parseFloat(f.kg_bruto) || 0), 0)
-      const fleteCompraReal = kgFleteCompra > 0 ? gastoFleteCompra / kgFleteCompra : null
-
-      // Comisión de compra % — promedio de comisión pagada / monto total de
-      // cada lote comprado en los últimos 6 meses (donde hay comisión
-      // cargada).
-      const lotesConComisionValida = (lotesConComision || []).filter(l => l.comision_monto > 0 && l.monto_total_con_iva > 0)
-      const comisionCompraReal = lotesConComisionValida.length > 0
-        ? (lotesConComisionValida.reduce((s, l) => s + (l.comision_monto / l.monto_total_con_iva * 100), 0) / lotesConComisionValida.length)
-        : null
-
-      // Comisión de venta % — promedio directo del % ya cargado en cada
-      // venta de los últimos 6 meses.
-      const ventasConComisionValida = (ventasConComision || []).filter(v => v.comision_pct > 0)
-      const comisionVentaReal = ventasConComisionValida.length > 0
-        ? (ventasConComisionValida.reduce((s, v) => s + v.comision_pct, 0) / ventasConComisionValida.length)
-        : null
-
-      setCalc(prev => ({
-        ...prev,
-        aumento_diario: prom6?.gdp ? prom6.gdp.toFixed(2) : prev.aumento_diario,
-        conversion_mf: prom6?.conversion ? prom6.conversion.toFixed(2) : prev.conversion_mf,
-        precio_venta: precioVentaProm ? Math.round(precioVentaProm).toString() : prev.precio_venta,
-        kg_venta: kgVentaProm ? Math.round(kgVentaProm).toString() : prev.kg_venta,
-        costo_dieta: costoDietaReal ? Math.round(costoDietaReal).toString() : prev.costo_dieta,
-        sanidad_animal: sanidadAnimalReal ? Math.round(sanidadAnimalReal).toString() : prev.sanidad_animal,
-        gastos_fijos_mes: gastosFijosMesReal ? Math.round(gastosFijosMesReal).toString() : prev.gastos_fijos_mes,
-        flete_compra: fleteCompraReal ? fleteCompraReal.toFixed(1) : prev.flete_compra,
-        comision_compra_pct: comisionCompraReal ? comisionCompraReal.toFixed(1) : prev.comision_compra_pct,
-        comision_venta_pct: comisionVentaReal ? comisionVentaReal.toFixed(1) : prev.comision_venta_pct,
-      }))
-    })()
-  }, [tab, calcPrecargado, corrales])
 
   async function cargarDatos() {
     setLoading(true)
@@ -576,7 +467,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
     { key: 'lista', label: 'Ingresos' },
     { key: 'gestion', label: 'Gestión comercial' },
     { key: 'caravanas', label: '📡 Caravanas' },
-    { key: 'calculadora', label: '🧮 Calculadora precio máximo' },
+    { key: 'calculadora', label: '🧮 Calculadora de compra' },
   ]
 
   // ── VISTA NUEVO / EDITAR ──
@@ -1375,188 +1266,7 @@ export default function Ingresos({ usuario, mobile, nav }) {
       )}
 
       {/* ── TAB CALCULADORA ── */}
-      {tab === 'calculadora' && (
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Calculadora de precio máximo de compra</div>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: '1.5rem' }}>Ingresá los parámetros estimados y el sistema calcula el precio máximo a pagar por kg en la compra. El peso/precio de venta, conversión, aumento de peso diario, costo de dieta, sanidad, gastos fijos, flete de compra y comisiones ya vienen precargados con el promedio real de tu feedlot (últimos 6-12 meses) — corregilos si te parece que van a cambiar. Solo el flete de venta queda a cargo tuyo, no hay una fuente de datos propia para eso en el sistema todavía.</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: S.green, textTransform: 'uppercase', marginBottom: '1rem' }}>Venta estimada</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {[
-                    { label: 'Precio venta $/kg vivo', key: 'precio_venta', placeholder: '4250' },
-                    { label: 'Kg venta por animal', key: 'kg_venta', placeholder: '380' },
-                    { label: 'Desbaste venta %', key: 'desbaste_venta', placeholder: '8' },
-                    { label: 'Flete venta $/animal', key: 'flete_venta', placeholder: '0' },
-                    { label: 'Comisión venta %', key: 'comision_venta_pct', placeholder: '0' },
-                  ].map(f => (
-                    <div key={f.key}>
-                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{f.label}</div>
-                      <input type="number" value={calc[f.key]} onChange={e => setCalc({...calc, [f.key]: e.target.value})} placeholder={f.placeholder}
-                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>Parámetros feedlot</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {[
-                    { label: 'Kg compra por animal', key: 'kg_compra', placeholder: '267' },
-                    { label: 'Aumento diario kg', key: 'aumento_diario', placeholder: '1.25' },
-                    { label: 'Conversión MF/kg carne', key: 'conversion_mf', placeholder: '6.8' },
-                    { label: 'Costo dieta $/kg comida', key: 'costo_dieta', placeholder: '220' },
-                  ].map(f => (
-                    <div key={f.key}>
-                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{f.label}</div>
-                      <input type="number" value={calc[f.key]} onChange={e => setCalc({...calc, [f.key]: e.target.value})} placeholder={f.placeholder}
-                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: S.red, textTransform: 'uppercase', marginBottom: '1rem' }}>Gastos por animal</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {[
-                    { label: 'Sanidad $/animal', key: 'sanidad_animal', placeholder: '9500' },
-                    { label: 'Gastos fijos $/animal/mes', key: 'gastos_fijos_mes', placeholder: '20000' },
-                    { label: 'Flete compra $/animal', key: 'flete_compra', placeholder: '12000' },
-                    { label: 'Comisión compra %', key: 'comision_compra_pct', placeholder: '0' },
-                  ].map(f => (
-                    <div key={f.key}>
-                      <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 3 }}>{f.label}</div>
-                      <input type="number" value={calc[f.key]} onChange={e => setCalc({...calc, [f.key]: e.target.value})} placeholder={f.placeholder}
-                        style={{ width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace' }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: S.amber, textTransform: 'uppercase', marginBottom: 8 }}>Rentabilidad anual deseada %</div>
-                <input type="number" value={calc.margen_deseado} onChange={e => setCalc({...calc, margen_deseado: e.target.value})} placeholder="15"
-                  style={{ width: '100%', border: `1px solid ${S.amber}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.bg, boxSizing: 'border-box', fontFamily: 'monospace', fontWeight: 600 }} />
-              </div>
-            </div>
-            <div>
-              {(() => {
-                const pV=parseFloat(calc.precio_venta)||0, kgV=parseFloat(calc.kg_venta)||0
-                const desbaste=parseFloat(calc.desbaste_venta)/100||0.08
-                const kgC=parseFloat(calc.kg_compra)||0
-                const aumDia=parseFloat(calc.aumento_diario)||1.25
-                const convMF=parseFloat(calc.conversion_mf)||6.8
-                const costDieta=parseFloat(calc.costo_dieta)||220
-                const sanidad=parseFloat(calc.sanidad_animal)||9500
-                const gfMes=parseFloat(calc.gastos_fijos_mes)||20000
-                const flC=parseFloat(calc.flete_compra)||0
-                const flV=parseFloat(calc.flete_venta)||0
-                const comV=parseFloat(calc.comision_venta_pct)/100||0
-                const comC=parseFloat(calc.comision_compra_pct)/100||0
-                const margen=parseFloat(calc.margen_deseado)/100||0.15
-                if (!pV||!kgV||!kgC) return (
-                  <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '2rem', textAlign: 'center', color: S.hint }}>
-                    Completá precio de venta, kg venta y kg compra para ver el cálculo.
-                  </div>
-                )
-                const kgNetoV=kgV*(1-desbaste)
-                const aumento=kgV-kgC
-                const dias=aumDia>0?Math.round(aumento/aumDia):0
-                const meses=dias/30
-                const kgComida=aumento*convMF
-                const costComida=kgComida*costDieta
-                const gfTotal=gfMes*meses
-                const comVMonto=kgNetoV*pV*comV
-                const comCMonto=kgC*comC
-                const ingresoNeto=kgNetoV*pV-flV-comVMonto
-                const costosSinCompra=costComida+sanidad+gfTotal+flC+comCMonto
-                const precioMaxEq=(ingresoNeto-costosSinCompra)/kgC
-                const factorM=1+(margen*meses/12)
-                const precioMaxConM=(ingresoNeto-costosSinCompra*factorM)/(kgC*factorM)
-                const costos=[
-                  {label:'Alimentación', val:Math.round(costComida)},
-                  {label:'Sanidad', val:Math.round(sanidad)},
-                  {label:'Gastos fijos', val:Math.round(gfTotal)},
-                  {label:'Flete compra', val:Math.round(flC)},
-                  {label:'Flete venta', val:Math.round(flV)},
-                  {label:'Comisión venta', val:Math.round(comVMonto)},
-                ].filter(c=>c.val>0)
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                      {[
-                        {label:'Días feedlot', val:`${dias} días`, sub:`${meses.toFixed(1)} meses`},
-                        {label:'Aumento total', val:`${aumento} kg`, sub:`${kgC} a ${kgV} kg`},
-                        {label:'Kg comida total', val:`${Math.round(kgComida).toLocaleString('es-AR')} kg`, sub:`Conv. ${convMF}`},
-                      ].map((c,i)=>(
-                        <div key={i} style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '1rem' }}>
-                          <div style={{ fontSize: 10, color: S.muted, textTransform: 'uppercase', marginBottom: 4 }}>{c.label}</div>
-                          <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'monospace', color: S.accent }}>{c.val}</div>
-                          <div style={{ fontSize: 11, color: S.hint }}>{c.sub}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: S.red, textTransform: 'uppercase', marginBottom: '1rem' }}>Costos sin compra</div>
-                      {costos.map((c,i)=>(
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: `1px solid ${S.border}` }}>
-                          <span style={{ color: S.muted }}>{c.label}</span>
-                          <span style={{ fontFamily: 'monospace', color: S.red }}>-${c.val.toLocaleString('es-AR')}</span>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '8px 0', fontWeight: 700 }}>
-                        <span>Total costos sin compra</span>
-                        <span style={{ fontFamily: 'monospace', color: S.red }}>-${Math.round(costosSinCompra).toLocaleString('es-AR')}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderTop: `1px solid ${S.border}` }}>
-                        <span style={{ color: S.green }}>Ingreso neto venta</span>
-                        <span style={{ fontFamily: 'monospace', color: S.green }}>+${Math.round(ingresoNeto).toLocaleString('es-AR')}</span>
-                      </div>
-                    </div>
-                    <div style={{ background: S.accent, borderRadius: 10, padding: '1.5rem', color: '#fff' }}>
-                      <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.7, marginBottom: 8 }}>Precio máximo de compra — Punto de equilibrio</div>
-                      <div style={{ fontSize: 36, fontWeight: 800, fontFamily: 'monospace' }}>${Math.max(0,Math.round(precioMaxEq)).toLocaleString('es-AR')}</div>
-                      <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>por kg vivo</div>
-                      <div style={{ height: 1, background: 'rgba(255,255,255,0.2)', margin: '12px 0' }} />
-                      <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.7, marginBottom: 6 }}>Con rentabilidad del {calc.margen_deseado}% anual</div>
-                      <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace' }}>${Math.max(0,Math.round(precioMaxConM)).toLocaleString('es-AR')}</div>
-                      <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>por kg vivo</div>
-                    </div>
-                    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem' }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>Sensibilidad — precio compra vs rentabilidad</div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                        <thead><tr style={{ background: S.bg }}>
-                          {['Precio compra $/kg','Costo total','Ingreso neto','Ganancia','Rent. anual'].map(h=>(
-                            <th key={h} style={{ padding:'6px 10px', textAlign:'right', fontWeight:600, color:S.muted, fontSize:10, textTransform:'uppercase', borderBottom:`1px solid ${S.border}` }}>{h}</th>
-                          ))}
-                        </tr></thead>
-                        <tbody>
-                          {[0.85,0.90,0.95,1.0,1.05,1.10].map(factor=>{
-                            const pC=Math.round(precioMaxEq*factor)
-                            const cTotal=pC*kgC+costosSinCompra
-                            const gan=ingresoNeto-cTotal
-                            const rentA=meses>0?((gan/cTotal)*(12/meses)*100):0
-                            const esRef=factor===1.0
-                            return (
-                              <tr key={factor} style={{ borderBottom:`1px solid ${S.border}`, background:esRef?S.accentLight:'transparent' }}>
-                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:esRef?700:400 }}>${pC.toLocaleString('es-AR')}</td>
-                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', color:S.red }}>-${cTotal.toLocaleString('es-AR')}</td>
-                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', color:S.green }}>+${Math.round(ingresoNeto).toLocaleString('es-AR')}</td>
-                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color:gan>=0?S.green:S.red }}>{gan>=0?'+':''}{Math.round(gan).toLocaleString('es-AR')}</td>
-                                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color:rentA>=0?S.green:S.red }}>{rentA.toFixed(1)}%</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
+      {tab === 'calculadora' && <CalculadoraCompra />}
 
     </div>
   )
