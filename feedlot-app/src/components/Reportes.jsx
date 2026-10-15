@@ -576,7 +576,14 @@ export default function Reportes({ usuario }) {
         const costoAnimal = totalLoteReal(l) / (l.cantidad || 1)
         const costoMantener = diasNec * costoOperativoDiarioPorAnimal
         const flete = fletesPorLote[l.id] != null ? fletesPorLote[l.id] / (l.cantidad || 1) : fletePromAnimal
-        return { lote: l, pesoIng, diasNec, costoAnimal, costoMantener, flete, fleteEstimado: fletesPorLote[l.id] == null, ganancia: ingresoPromedioPorAnimalVendido - costoAnimal - costoMantener - flete }
+        const ganancia = ingresoPromedioPorAnimalVendido - costoAnimal - costoMantener - flete
+        // Rentabilidad: ganancia sobre todo lo que se pone por animal
+        // (compra + flete + alimento y estructura). Anualizada (simple, sin
+        // capitalizar) para poder comparar tropas que tardan distinto en salir.
+        const inversion = costoAnimal + flete + costoMantener
+        const rentab = inversion > 0 ? ganancia / inversion : null
+        const rentabAnual = rentab != null && diasNec >= 1 ? rentab * 365 / diasNec : null
+        return { lote: l, pesoIng, diasNec, costoAnimal, costoMantener, flete, fleteEstimado: fletesPorLote[l.id] == null, ganancia, inversion, rentab, rentabAnual }
       }).sort((a, b) => (b.lote.fecha_ingreso || '').localeCompare(a.lote.fecha_ingreso || '') || (b.lote.id || 0) - (a.lote.id || 0)) // últimas compras arriba
     : []
   const animGanancia = gananciaEsperadaLotes.reduce((t, g) => t + (g.lote.cantidad || 0), 0)
@@ -1024,7 +1031,7 @@ export default function Reportes({ usuario }) {
                       Ganancia esperada por lote de compra <span style={{ fontWeight: 400, color: S.muted }}>· últimos 60 días · llevados a {Math.round(pesoVentaProm)} kg con GDP {gdpCiclo.toFixed(2)} kg/día · costo diario ${Math.round(costoOperativoDiarioPorAnimal).toLocaleString('es-AR')}</span>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead><tr>{['Lote', 'Ingreso', 'Cab.', 'Peso ingreso', 'Costo por animal', 'Flete', 'Días necesarios', 'Alimento y estructura', 'Ganancia esperada'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Lote' ? 'left' : 'right', fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Lote', 'Ingreso', 'Cab.', 'Peso ingreso', 'Costo por animal', 'Flete', 'Días necesarios', 'Alimento y estructura', 'Ganancia esperada', 'Rentab.', 'Anual'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Lote' ? 'left' : 'right', fontSize: 10, color: S.muted, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
                       <tbody>
                         {gananciaEsperadaLotes.map(g => (
                           <tr key={g.lote.id} style={{ borderBottom: `1px solid ${S.border}` }}>
@@ -1037,11 +1044,27 @@ export default function Reportes({ usuario }) {
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Math.round(g.diasNec)}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>${Math.round(g.costoMantener).toLocaleString('es-AR')}</td>
                             <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: g.ganancia >= 0 ? S.green : S.red }}>${Math.round(g.ganancia).toLocaleString('es-AR')}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: (g.rentab || 0) >= 0 ? S.text : S.red }} title={`Ganancia ÷ inversión por animal ($${Math.round(g.inversion).toLocaleString('es-AR')})`}>{g.rentab != null ? `${(g.rentab * 100).toFixed(1)}%` : '—'}</td>
+                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: (g.rentabAnual || 0) >= 0 ? S.green : S.red }} title={`${(g.rentab * 100).toFixed(1)}% en ${Math.round(g.diasNec)} días, llevado a 365 días`}>{g.rentabAnual != null ? `${(g.rentabAnual * 100).toFixed(0)}%` : '—'}</td>
                           </tr>
                         ))}
+                        {(() => {
+                          // Promedio ponderado por plata invertida (inversión × cabezas)
+                          const pesos = gananciaEsperadaLotes.filter(g => g.rentabAnual != null).map(g => ({ g, w: g.inversion * (g.lote.cantidad || 0) }))
+                          const W = pesos.reduce((t, x) => t + x.w, 0)
+                          if (!W) return null
+                          const prom = k => pesos.reduce((t, x) => t + x.g[k] * x.w, 0) / W
+                          return (
+                            <tr style={{ background: S.bg }}>
+                              <td colSpan={9} style={{ padding: '6px 10px', fontWeight: 600, textAlign: 'right' }}>Promedio (ponderado por plata invertida)</td>
+                              <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{(prom('rentab') * 100).toFixed(1)}%</td>
+                              <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: prom('rentabAnual') >= 0 ? S.green : S.red }}>{(prom('rentabAnual') * 100).toFixed(0)}%</td>
+                            </tr>
+                          )
+                        })()}
                       </tbody>
                     </table>
-                    <div style={{ padding: '6px 12px', fontSize: 11, color: S.muted }}>Valor de venta por animal: ${Math.round(ingresoPromedioPorAnimalVendido).toLocaleString('es-AR')} (ventas de los últimos 60 días). La ganancia por ternero de arriba es el promedio de estos lotes, ponderado por cabezas. Flete con * = el lote no tiene flete cargado (se usa el promedio). No incluye costo financiero, impuestos ni amortizaciones.</div>
+                    <div style={{ padding: '6px 12px', fontSize: 11, color: S.muted }}>Valor de venta por animal: ${Math.round(ingresoPromedioPorAnimalVendido).toLocaleString('es-AR')} (ventas de los últimos 60 días). La ganancia por ternero de arriba es el promedio de estos lotes, ponderado por cabezas. Flete con * = el lote no tiene flete cargado (se usa el promedio). Rentab. = ganancia ÷ (costo del animal + flete + alimento y estructura). Anual = esa rentabilidad llevada a 365 días según los días que tarda la tropa (simple, sin capitalizar): sirve para comparar tropas que salen en 90 días con las que salen en 200. No incluye costo financiero, impuestos ni amortizaciones.</div>
                   </div>
                 )}
                 {/* Resultado real de los últimos 3 meses cerrados */}
