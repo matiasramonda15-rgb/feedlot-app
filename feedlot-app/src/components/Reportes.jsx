@@ -607,6 +607,11 @@ export default function Reportes({ usuario }) {
         pesoVenta: Math.round(pesoVentaProm), pesoVentaVivo: pesoVentaVivoProm ? Math.round(pesoVentaVivoProm) : null,
         gdp: Math.round(gdpCiclo * 100) / 100,
         costoAlimDia: Math.round(costoConsumoDiario), costoFijoDia: Math.round(costoFijoDiario),
+        // Separado para la calculadora: alimento solo, sanidad, y la
+        // conversión (kg MS / kg producido) del mismo período que el GDP.
+        costoAlimentoDia: animalDiasConsumo > 0 ? Math.round(costoAlimV / animalDiasConsumo) : null,
+        costoSanidadDia: animalDiasConsumo > 0 ? Math.round(costoSanidadV / animalDiasConsumo) : null,
+        conversion: (prom6Cerrado?.conversion || prom3Cerrado?.conversion) ? Math.round((prom6Cerrado?.conversion || prom3Cerrado?.conversion) * 100) / 100 : null,
         fleteAnimal: Math.round(fletePromAnimal || 0),
         pesoCompra: cabComprasV ? Math.round(kgComprasV / cabComprasV) : null,
         precioCompraKg: kgComprasV ? Math.round(plataComprasV / kgComprasV) : null,

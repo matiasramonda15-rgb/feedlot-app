@@ -35,7 +35,9 @@ const CAMPOS = [
   ] },
   { grupo: 'Engorde', color: S.amber, items: [
     { k: 'gdp', label: 'Aumento diario (GDP)', unidad: 'kg/día', paso: 0.05 },
-    { k: 'costoAlimDia', label: 'Alimento + sanidad', unidad: '$/animal/día' },
+    { k: 'conversion', label: 'Conversión', unidad: 'kg MS / kg carne', paso: 0.1, ayuda: 'kg de materia seca por kg ganado' },
+    { k: 'precioMS', label: 'Costo del alimento', unidad: '$/kg MS', ayuda: 'promedio de la dieta, en materia seca' },
+    { k: 'costoSanidadDia', label: 'Sanidad', unidad: '$/animal/día' },
     { k: 'costoFijoDia', label: 'Estructura (sueldos + gastos)', unidad: '$/animal/día' },
   ] },
 ]
@@ -46,7 +48,12 @@ function calcular(p, pesoCompra, precioCompraKg) {
   const flete = n(p.fleteAnimal)
   const gdp = n(p.gdp)
   const dias = gdp > 0 ? Math.max(0, (n(p.pesoVenta) - pesoCompra) / gdp) : 0
-  const engorde = dias * (n(p.costoAlimDia) + n(p.costoFijoDia))
+  // Alimento: consumo diario = conversión × GDP (kg MS), por su costo. Si
+  // mejora la conversión, baja el consumo y el costo de engordar cada kilo.
+  const usaConversion = n(p.conversion) > 0 && n(p.precioMS) > 0
+  const consumoMS = usaConversion ? n(p.conversion) * gdp : null
+  const alimentoDia = usaConversion ? consumoMS * n(p.precioMS) : n(p.costoAlimDia)
+  const engorde = dias * (alimentoDia + n(p.costoSanidadDia) + n(p.costoFijoDia))
   const ingreso = n(p.pesoVenta) * n(p.precioVentaKg)
   const inversion = compra + flete + engorde
   const ganancia = ingreso - inversion
@@ -57,7 +64,7 @@ function calcular(p, pesoCompra, precioCompraKg) {
   const objetivo = n(p.objetivo) / 100
   const invObjetivo = ingreso / (1 + objetivo * dias / 365)
   const precioObjetivo = divisor > 0 ? (invObjetivo - flete - engorde) / divisor : null
-  return { compra, flete, dias, engorde, ingreso, inversion, ganancia, rentab, anual, precioEquilibrio, precioObjetivo }
+  return { compra, flete, dias, engorde, ingreso, inversion, ganancia, rentab, anual, precioEquilibrio, precioObjetivo, consumoMS, alimentoDia, usaConversion }
 }
 
 // Color de la celda según la rentabilidad anual
@@ -89,7 +96,14 @@ export default function CalculadoraCompra() {
       pesoCompra: String(b.pesoCompra || 180), precioCompraKg: String(b.precioCompraKg || ''),
       fleteAnimal: String(b.fleteAnimal || 0), comisionCompra: '0',
       pesoVenta: String(b.pesoVenta || ''), precioVentaKg: String(b.precioVentaKg || ''),
-      gdp: String(b.gdp || ''), costoAlimDia: String(b.costoAlimDia || ''), costoFijoDia: String(b.costoFijoDia || ''),
+      gdp: String(b.gdp || ''), costoFijoDia: String(b.costoFijoDia || ''),
+      // Conversión y costo del kg de MS: el costo se calibra para que, con la
+      // conversión y el GDP promedio, dé exactamente el costo diario real de
+      // alimento. (Si los promedios guardados son viejos y no traen la
+      // conversión, se usa el costo diario directo.)
+      ...(b.conversion && b.costoAlimentoDia != null && b.gdp
+        ? { conversion: String(b.conversion), precioMS: String(Math.round(b.costoAlimentoDia / (b.conversion * b.gdp))), costoSanidadDia: String(b.costoSanidadDia || 0), costoAlimDia: '' }
+        : { conversion: '', precioMS: '', costoSanidadDia: '0', costoAlimDia: String(b.costoAlimDia || '') }),
       objetivo: '25',
     }
   }
@@ -153,6 +167,7 @@ export default function CalculadoraCompra() {
       {/* Resultado */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
         {tarjeta('Días de engorde', `${Math.round(r.dias)} días`, `${n(p.pesoCompra)} → ${n(p.pesoVenta)} kg a ${n(p.gdp)} kg/día`)}
+        {tarjeta('Alimento por día', $(r.alimentoDia), r.usaConversion ? `${r.consumoMS.toFixed(1)} kg MS/día · ${$(r.alimentoDia * n(p.conversion) / (r.consumoMS || 1))} por kg ganado` : 'costo diario promedio')}
         {tarjeta('Pongo por animal', $(r.inversion), `compra ${$(r.compra)} · flete ${$(r.flete)} · engorde ${$(r.engorde)}`)}
         {tarjeta('Vendo por animal', $(r.ingreso), `${n(p.pesoVenta)} kg × ${$(n(p.precioVentaKg))}`)}
         {tarjeta('Ganancia por animal', $(r.ganancia), `rentabilidad ${pct(r.rentab)}`, r.ganancia >= 0 ? S.green : S.red)}
