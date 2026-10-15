@@ -169,7 +169,10 @@ export default function Fletes({ usuario }) {
         caja_oficial_id: cajaOficialIds[0] || null, caja_paralela_id: cajaParalelaIds[0] || null,
         caja_oficial_ids: unirIds(cajaOficialIds), caja_paralela_ids: unirIds(cajaParalelaIds), cheque_emitido_ids: unirIds(chequeEmitidoIds),
         contacto_id: formPago.contacto_id ? parseInt(formPago.contacto_id) : null,
-        pagos_detalle: lineas,
+        // Cada flete guarda SU parte de cada línea de pago (no el pago
+        // completo repetido): si no, en Contactos el pago aparece una vez
+        // por flete y la cuenta del transportista queda inflada.
+        pagos_detalle: fletes.length > 1 ? lineas.map(l => ({ ...l, monto: Math.round((parseFloat(l.monto) || 0) * proporcion * 100) / 100 })) : lineas,
         monto_grupo: fletes.length > 1 ? totalPagado : null,
         forma_pago: pagos.map(p => p.subtipo_cheque || p.tipo).join('+'),
         es_paralelo: pagos.some(p => p.es_paralelo),
