@@ -76,6 +76,129 @@ const terceroVencidoEnCartera = c => c.tipo === 'recibido' && c.estado === 'en_c
 const propioSeCobraEn = (c, dias) => c.tipo === 'emitido' && !ESTADOS_FINALES_CHEQUE.includes(c.estado) && !!fechaCobroCheque(c)
   && fechaCobroCheque(c) >= hoyISO() && fechaCobroCheque(c) <= sumarDias(hoyISO(), dias)
 
+// ── Detalle de Caja 1: cuánto debería haber en efectivo, en el banco y en
+// cheques. El saldo de Caja 1 mezcla todo, porque los cheques cuentan cuando
+// se reciben o se emiten. Para separarlo:
+//  - Efectivo: el arqueo del último cierre de caja (lo que se contó en la
+//    conciliación a esa fecha) + los movimientos en efectivo posteriores. Si
+//    no hay cierre con arqueo, todos los movimientos en efectivo.
+//  - Cheques de terceros: los que están EN CARTERA en Caja 1 (físicos y e-cheq).
+//  - Cheques propios por debitar: emitidos que se cobran después de hoy. Ya
+//    se restaron del saldo, pero la plata todavía está en la cuenta.
+//  - Banco: lo que queda. Saldo − efectivo − cheques + propios por debitar
+//    = lo que debería mostrar el extracto hoy.
+export function DetalleCaja1({ cajaOficial, cheques, ancla, saldo }) {
+  const suma = arr => arr.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+  const signo = m => (m.tipo === 'ingreso' ? 1 : -1) * (parseFloat(m.monto) || 0)
+  const $ = n => (n < 0 ? '−$' : '$') + Math.abs(Math.round(n)).toLocaleString('es-AR')
+  const fmtF = f => new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+  const hoy = hoyISO()
+  const enEfectivo = cajaOficial.filter(m => m.forma_pago === 'efectivo')
+  const conArqueo = ancla && ancla.efectivo !== null
+  const movEfPost = conArqueo ? enEfectivo.filter(m => m.fecha > ancla.fecha) : enEfectivo
+  const efectivo = (conArqueo ? ancla.efectivo : 0) + movEfPost.reduce((s, m) => s + signo(m), 0)
+  const cartera = cheques.filter(c => !c.es_paralelo && c.tipo === 'recibido' && c.estado === 'en_cartera')
+  const fisicos = cartera.filter(c => !c.es_electronico)
+  const echeqs = cartera.filter(c => c.es_electronico)
+  const propios = cheques.filter(c => !c.es_paralelo && c.tipo === 'emitido' && !ESTADOS_FINALES_CHEQUE.includes(c.estado) && fechaCobroCheque(c) && fechaCobroCheque(c) > hoy)
+  const sumCart = suma(cartera), sumProp = suma(propios)
+  const banco = saldo - efectivo - sumCart + sumProp
+  const libreBanco = banco - sumProp
+  const fila = { display: 'grid', gridTemplateColumns: '26px 1fr auto', gap: 8, alignItems: 'baseline', padding: '7px 0', borderBottom: `1px solid ${S.border}` }
+  const monto = (n, color) => <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: color || (n < 0 ? S.red : S.text), textAlign: 'right' }}>{$(n)}</div>
+  const nota = t => <div style={{ fontSize: 11, color: S.hint, marginTop: 2 }}>{t}</div>
+  return (
+    <div onClick={e => e.stopPropagation()} style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${S.border}`, cursor: 'default' }}>
+      <div style={fila}>
+        <div>💵</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>Efectivo</div>
+          {nota(conArqueo
+            ? `Arqueo del cierre ${fmtF(ancla.fecha)}: ${$(ancla.efectivo)} · movimientos en efectivo desde entonces: ${movEfPost.length ? $(efectivo - ancla.efectivo) : 'ninguno'}`
+            : 'Sin arqueo de efectivo en un cierre: suma de todos los movimientos en efectivo')}</div>
+        {monto(efectivo)}
+      </div>
+      <div style={fila}>
+        <div>🏦</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>Banco — lo que debería decir el extracto hoy</div>
+          {nota(`Incluye ${$(sumProp)} de ${propios.length} cheque${propios.length !== 1 ? 's' : ''} propio${propios.length !== 1 ? 's' : ''} que todavía no se debitaron (se cobran después de hoy).`)}
+          <div style={{ fontSize: 12, marginTop: 4 }}>Libre, descontando esos cheques: <b style={{ fontFamily: 'monospace', color: libreBanco < 0 ? S.red : S.green }}>{$(libreBanco)}</b></div>
+        </div>
+        {monto(banco)}
+      </div>
+      <div style={fila}>
+        <div>📄</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>Cheques físicos en cartera</div>{nota(`${fisicos.length} cheque${fisicos.length !== 1 ? 's' : ''} de terceros`)}</div>
+        {monto(suma(fisicos), S.amber)}
+      </div>
+      <div style={fila}>
+        <div>💻</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>E-cheqs en cartera</div>{nota(`${echeqs.length} e-cheq${echeqs.length !== 1 ? 's' : ''} de terceros`)}</div>
+        {monto(suma(echeqs), S.amber)}
+      </div>
+      <div style={{ ...fila, borderBottom: 'none' }}>
+        <div>➖</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>Cheques propios por debitar</div>{nota('Ya están restados en el saldo de Caja 1')}</div>
+        {monto(-sumProp, S.red)}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '9px 12px', background: S.bg, borderRadius: 6, fontSize: 13 }}>
+        <span>Efectivo + banco + cheques − propios por debitar = <b>Saldo Caja 1</b></span>
+        <b style={{ fontFamily: 'monospace', color: saldo < 0 ? S.red : S.green }}>{$(saldo)}</b>
+      </div>
+      <div style={{ fontSize: 11, color: S.hint, marginTop: 6 }}>
+        Cuando depositen efectivo en el banco (o saquen plata del banco), cargalo con el botón "🏦 Depósito / extracción" de Caja 1 o Caja 2: así el efectivo y el banco quedan bien separados. Si no se carga, el total sigue bien pero la plata queda contada en el lugar equivocado hasta la próxima conciliación.
+      </div>
+    </div>
+  )
+}
+
+// ── Detalle de Caja 2: en Caja 2 no hay banco, así que el saldo es efectivo +
+// cheques de terceros en cartera − cheques propios sin cobrar. El efectivo es
+// lo que queda: saldo − cheques + propios sin cobrar.
+export function DetalleCaja2({ cheques, saldo }) {
+  const suma = arr => arr.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+  const $ = n => (n < 0 ? '−$' : '$') + Math.abs(Math.round(n)).toLocaleString('es-AR')
+  const hoy = hoyISO()
+  const cartera = cheques.filter(c => c.es_paralelo && c.tipo === 'recibido' && c.estado === 'en_cartera')
+  const fisicos = cartera.filter(c => !c.es_electronico)
+  const echeqs = cartera.filter(c => c.es_electronico)
+  const propios = cheques.filter(c => c.es_paralelo && c.tipo === 'emitido' && !ESTADOS_FINALES_CHEQUE.includes(c.estado) && fechaCobroCheque(c) && fechaCobroCheque(c) > hoy)
+  const sumProp = suma(propios)
+  const efectivo = saldo - suma(cartera) + sumProp
+  const fila = { display: 'grid', gridTemplateColumns: '26px 1fr auto', gap: 8, alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid #D9CFF0' }
+  const monto = (n, color) => <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: color || (n < 0 ? S.red : S.text), textAlign: 'right' }}>{$(n)}</div>
+  const nota = t => <div style={{ fontSize: 11, color: S.hint, marginTop: 2 }}>{t}</div>
+  return (
+    <div onClick={e => e.stopPropagation()} style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #9F8ED4', cursor: 'default', color: S.text }}>
+      <div style={fila}>
+        <div>💵</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>Efectivo — lo que debería haber contado</div>{nota('Saldo de Caja 2 menos los cheques en cartera' + (propios.length ? ', más los cheques propios sin cobrar' : ''))}</div>
+        {monto(efectivo)}
+      </div>
+      <div style={fila}>
+        <div>📄</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>Cheques físicos en cartera</div>{nota(`${fisicos.length} cheque${fisicos.length !== 1 ? 's' : ''} de terceros`)}</div>
+        {monto(suma(fisicos), S.amber)}
+      </div>
+      <div style={{ ...fila, borderBottom: propios.length ? fila.borderBottom : 'none' }}>
+        <div>💻</div>
+        <div><div style={{ fontWeight: 600, fontSize: 13 }}>E-cheqs en cartera</div>{nota(`${echeqs.length} e-cheq${echeqs.length !== 1 ? 's' : ''} de terceros`)}</div>
+        {monto(suma(echeqs), S.amber)}
+      </div>
+      {propios.length > 0 && (
+        <div style={{ ...fila, borderBottom: 'none' }}>
+          <div>➖</div>
+          <div><div style={{ fontWeight: 600, fontSize: 13 }}>Cheques propios sin cobrar</div>{nota('Ya están restados en el saldo de Caja 2')}</div>
+          {monto(-sumProp, S.red)}
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '9px 12px', background: S.surface, borderRadius: 6, fontSize: 13 }}>
+        <span>Efectivo + cheques{propios.length ? ' − propios sin cobrar' : ''} = <b>Saldo Caja 2</b></span>
+        <b style={{ fontFamily: 'monospace', color: saldo < 0 ? S.red : S.green }}>{$(saldo)}</b>
+      </div>
+    </div>
+  )
+}
+
 function TablaCheques({ items, filtro, setFiltro, filtroEstado, setFiltroEstado, cambiarEstadoCheque, eliminar }) {
     return (
       <div>
@@ -208,6 +331,14 @@ export default function Comercial({ usuario }) {
   // año/mes para buscar algo más viejo, sin que la lista de todos los días
   // quede siempre larguísima.
   const [verArchivo, setVerArchivo] = useState(false)
+  // Detalle de la tarjeta "Saldo Caja 1" (efectivo / banco / cheques) y el
+  // arqueo del último cierre de Caja 1 que se usa de punto de partida.
+  const [verDetalleCaja1, setVerDetalleCaja1] = useState(false)
+  const [verDetalleCaja2, setVerDetalleCaja2] = useState(false)
+  // Depósito de efectivo en el banco / extracción del banco a efectivo.
+  const [showFormDep, setShowFormDep] = useState(false)
+  const [formDep, setFormDep] = useState({ operacion: 'deposito', caja: 'oficial', fecha: hoyLocal(), monto: '', observaciones: '' })
+  const [anclaCaja1, setAnclaCaja1] = useState(null)
   const [filtroCheque, setFiltroCheque] = useState('todos')
   const [filtroChequePar, setFiltroChequePar] = useState('todos')
   // Por defecto solo se ven los cheques "en cartera" — los ya entregados o
@@ -247,6 +378,14 @@ export default function Comercial({ usuario }) {
     setContactos(ct || [])
     setDolares(dol || [])
     setRetenciones(ret || [])
+    // Último cierre de Caja 1 y el efectivo contado en su conciliación.
+    const { data: cierre } = await supabase.from('cierres_caja').select('fecha').eq('caja', 'oficial').order('fecha', { ascending: false }).limit(1).maybeSingle()
+    if (cierre?.fecha) {
+      const { data: conc } = await supabase.from('conciliaciones_caja').select('datos').eq('fecha_corte', cierre.fecha).maybeSingle()
+      const ef = conc?.datos?.efectivo1
+      const n = ef === undefined || ef === null || String(ef).trim() === '' ? null : parseFloat(String(ef).replace(/\./g, '').replace(',', '.'))
+      setAnclaCaja1({ fecha: cierre.fecha, efectivo: n === null || isNaN(n) ? null : n })
+    } else setAnclaCaja1(null)
     } catch(e) { console.error('CARGAR ERROR:', e.message, e.stack) }
     setLoading(false)
   }
@@ -400,8 +539,66 @@ export default function Comercial({ usuario }) {
     await cargar()
   }
 
+  // Depósito de efectivo en el banco (o extracción del banco a efectivo). Se
+  // registran DOS movimientos con el mismo grupo_traspaso: la salida de un
+  // lado y la entrada del otro. Dentro de Caja 1 el saldo no cambia (solo
+  // pasa de efectivo a banco); si el efectivo es de Caja 2, baja Caja 2 y sube
+  // Caja 1. No es ingreso ni gasto: en el presupuesto va a "Movimiento interno".
+  async function guardarDeposito() {
+    const monto = parseFloat(formDep.monto)
+    if (!monto || monto <= 0) { alert('Ingresá el monto'); return }
+    if (!formDep.fecha) { alert('Ingresá la fecha'); return }
+    const dep = formDep.operacion === 'deposito'
+    const c2 = formDep.caja === 'paralela'
+    const grupo = crypto.randomUUID()
+    const base = dep ? 'Depósito de efectivo en el banco' : 'Extracción de efectivo del banco'
+    const categoria = dep ? 'Depósito de efectivo' : 'Extracción de efectivo'
+    const obs = formDep.observaciones?.trim() || null
+    const comunes = { fecha: formDep.fecha, monto, grupo_traspaso: grupo }
+    const filasOf = []
+    const filasPar = []
+    if (dep && !c2) {
+      filasOf.push({ ...comunes, tipo: 'egreso', categoria, forma_pago: 'efectivo', descripcion: `${base} — sale del efectivo${obs ? ' · ' + obs : ''}` })
+      filasOf.push({ ...comunes, tipo: 'ingreso', categoria, forma_pago: 'depósito', descripcion: `${base} — entra al banco${obs ? ' · ' + obs : ''}` })
+    } else if (dep && c2) {
+      filasPar.push({ ...comunes, tipo: 'egreso', descripcion: `${base} (pasa a Caja 1)`, observaciones: obs })
+      filasOf.push({ ...comunes, tipo: 'ingreso', categoria, forma_pago: 'depósito', descripcion: `${base} — efectivo de Caja 2${obs ? ' · ' + obs : ''}` })
+    } else if (!dep && !c2) {
+      filasOf.push({ ...comunes, tipo: 'egreso', categoria, forma_pago: 'extracción', descripcion: `${base} — sale del banco${obs ? ' · ' + obs : ''}` })
+      filasOf.push({ ...comunes, tipo: 'ingreso', categoria, forma_pago: 'efectivo', descripcion: `${base} — entra al efectivo${obs ? ' · ' + obs : ''}` })
+    } else {
+      filasOf.push({ ...comunes, tipo: 'egreso', categoria, forma_pago: 'extracción', descripcion: `${base} — pasa al efectivo de Caja 2${obs ? ' · ' + obs : ''}` })
+      filasPar.push({ ...comunes, tipo: 'ingreso', descripcion: `${base} (viene de Caja 1)`, observaciones: obs })
+    }
+    setGuardando(true)
+    const r1 = filasOf.length ? await supabase.from('caja_oficial').insert(filasOf) : { error: null }
+    const r2 = !r1.error && filasPar.length ? await supabase.from('caja_paralela').insert(filasPar) : { error: null }
+    if (r1.error || r2.error) {
+      // Que no quede una sola pata cargada.
+      await supabase.from('caja_oficial').delete().eq('grupo_traspaso', grupo)
+      await supabase.from('caja_paralela').delete().eq('grupo_traspaso', grupo)
+      alert('No se pudo registrar: ' + (r1.error || r2.error).message)
+      setGuardando(false); return
+    }
+    setGuardando(false)
+    setShowFormDep(false)
+    setFormDep({ operacion: 'deposito', caja: 'oficial', fecha: hoyLocal(), monto: '', observaciones: '' })
+    await cargar()
+  }
+
   async function eliminar(tabla, id) {
     let error = null
+    // Depósito / extracción: se borran las dos patas juntas.
+    if (tabla === 'caja_oficial' || tabla === 'caja_paralela') {
+      const fila = (tabla === 'caja_oficial' ? cajaOficial : cajaParalela).find(x => x.id === id)
+      if (fila?.grupo_traspaso) {
+        if (!confirm('Este movimiento es parte de un depósito / extracción de efectivo. Se van a borrar los dos movimientos (la salida y la entrada). ¿Seguir?')) return
+        const e1 = (await supabase.from('caja_oficial').delete().eq('grupo_traspaso', fila.grupo_traspaso)).error
+        const e2 = (await supabase.from('caja_paralela').delete().eq('grupo_traspaso', fila.grupo_traspaso)).error
+        if (e1 || e2) alert('Error al eliminar: ' + (e1 || e2).message)
+        await cargar(); return
+      }
+    }
     if (tabla === 'caja_oficial' || tabla === 'caja_paralela') {
       // Una sola regla: al eliminar un movimiento de caja, el pago se deshace
       // completo y el registro de origen vuelve a quedar PENDIENTE. Si ese
@@ -516,6 +713,46 @@ export default function Comercial({ usuario }) {
     { key: 'conciliacion', label: '🧮 Conciliación' },
   ]
 
+  const montoDep = parseFloat(formDep.monto) || 0
+  const esDep = formDep.operacion === 'deposito'
+  const fmtDep = n => '$' + n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
+  const resumenDep = !montoDep ? null : esDep
+    ? (formDep.caja === 'oficial'
+      ? `Caja 1: el efectivo baja ${fmtDep(montoDep)} y el banco sube ${fmtDep(montoDep)}. El saldo de Caja 1 no cambia.`
+      : `Caja 2 baja ${fmtDep(montoDep)} (sale el efectivo) y Caja 1 sube ${fmtDep(montoDep)} (entra al banco).`)
+    : (formDep.caja === 'oficial'
+      ? `Caja 1: el banco baja ${fmtDep(montoDep)} y el efectivo sube ${fmtDep(montoDep)}. El saldo de Caja 1 no cambia.`
+      : `Caja 1 baja ${fmtDep(montoDep)} (sale del banco) y Caja 2 sube ${fmtDep(montoDep)} (entra en efectivo).`)
+  // Es un elemento (no un componente) para que los inputs no pierdan el foco
+  // en cada tecla.
+  const formDeposito = (
+    <Card style={{ border: `1px solid ${S.accent}` }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: S.accent, textTransform: 'uppercase', marginBottom: '1rem' }}>🏦 Depósito de efectivo / extracción del banco</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '.75rem' }}>
+        <div><Label>Operación</Label>
+          <select value={formDep.operacion} onChange={e => setFormDep({ ...formDep, operacion: e.target.value })} style={inputStyle}>
+            <option value="deposito">Depósito: efectivo → banco</option>
+            <option value="extraccion">Extracción: banco → efectivo</option>
+          </select>
+        </div>
+        <div><Label>{esDep ? 'Efectivo de' : 'El efectivo va a'}</Label>
+          <select value={formDep.caja} onChange={e => setFormDep({ ...formDep, caja: e.target.value })} style={inputStyle}>
+            <option value="oficial">Caja 1</option>
+            <option value="paralela">Caja 2</option>
+          </select>
+        </div>
+        <div><Label>Fecha</Label><input type="date" value={formDep.fecha} onChange={e => setFormDep({ ...formDep, fecha: e.target.value })} style={inputStyle} /></div>
+        <div><Label>Monto $</Label><input type="number" value={formDep.monto} onChange={e => setFormDep({ ...formDep, monto: e.target.value })} style={inputStyle} /></div>
+        <div style={{ gridColumn: '1 / -1' }}><Label>Observaciones</Label><input type="text" value={formDep.observaciones} onChange={e => setFormDep({ ...formDep, observaciones: e.target.value })} style={inputStyle} placeholder="Opcional — banco, N° de boleta…" /></div>
+      </div>
+      {resumenDep && <div style={{ fontSize: 12, color: S.muted, background: S.bg, borderRadius: 6, padding: '8px 12px', marginBottom: '.75rem' }}>{resumenDep} No es ingreso ni gasto.</div>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={() => setShowFormDep(false)} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+        <button onClick={guardarDeposito} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Registrar'}</button>
+      </div>
+    </Card>
+  )
+
   const FiltrosPeriodo = () => (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <button onClick={() => setVerArchivo(!verArchivo)}
@@ -552,8 +789,8 @@ export default function Comercial({ usuario }) {
           const carteraPar = chParaleloRec.filter(c => c.estado === 'en_cartera')
           const fmtCant = n => `${n} cheque${n !== 1 ? 's' : ''}`
           return [
-          { label: 'Saldo Caja 1', val: `$${((coIng - coEg) / 1000000).toFixed(1)}M`, sub: `+${(coIng/1000000).toFixed(1)}M / -${(coEg/1000000).toFixed(1)}M`, color: coIng - coEg >= 0 ? S.green : S.red },
-          { label: 'Saldo Caja 2', val: `$${((cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `+${(cpIng/1000000).toFixed(1)}M / -${(cpEg/1000000).toFixed(1)}M`, color: cpIng - cpEg >= 0 ? S.green : S.red, purple: true },
+          { label: 'Saldo Caja 1', val: `$${((coIng - coEg) / 1000000).toFixed(1)}M`, sub: `+${(coIng/1000000).toFixed(1)}M / -${(coEg/1000000).toFixed(1)}M`, color: coIng - coEg >= 0 ? S.green : S.red, detalleCaja1: true },
+          { label: 'Saldo Caja 2', val: `$${((cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `+${(cpIng/1000000).toFixed(1)}M / -${(cpEg/1000000).toFixed(1)}M`, color: cpIng - cpEg >= 0 ? S.green : S.red, purple: true, detalleCaja2: true },
           { label: 'Cheques Caja 1', val: `$${(suma(carteraOf) / 1000000).toFixed(1)}M`, sub: `${fmtCant(carteraOf.length)} en cartera · $${suma(carteraOf).toLocaleString('es-AR')}`, color: S.amber },
           { label: 'Cheques Caja 2', val: `$${(suma(carteraPar) / 1000000).toFixed(1)}M`, sub: `${fmtCant(carteraPar.length)} en cartera · $${suma(carteraPar).toLocaleString('es-AR')}`, color: S.amber, purple: true },
           { label: 'Cheques en cartera (total)', val: carteraOf.length + carteraPar.length, sub: `$${(suma(carteraOf) + suma(carteraPar)).toLocaleString('es-AR')}`, color: S.amber },
@@ -563,13 +800,24 @@ export default function Comercial({ usuario }) {
           // sumar: el detalle muestra cuánto es plata y cuánto es cheques.
           { label: 'Disponibilidad', val: `$${((coIng - coEg + cpIng - cpEg) / 1000000).toFixed(1)}M`, sub: `Plata $${((coIng - coEg + cpIng - cpEg - suma(carteraOf) - suma(carteraPar)) / 1000000).toFixed(1)}M · Cheques $${((suma(carteraOf) + suma(carteraPar)) / 1000000).toFixed(1)}M`, color: (coIng - coEg + cpIng - cpEg) >= 0 ? S.green : S.red, destacada: true },
           ]
-        })().map((m, i) => (
-          <div key={i} style={{ background: m.destacada ? S.greenLight : m.purple ? S.purpleLight : S.surface, border: `${m.destacada ? 2 : 1}px solid ${m.destacada ? S.green : m.purple ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem' }}>
-            <div style={{ fontSize: 11, color: m.purple ? S.purple : S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
+        })().map((m, i) => {
+          const abierta = (m.detalleCaja1 && verDetalleCaja1) || (m.detalleCaja2 && verDetalleCaja2)
+          const clickeable = m.detalleCaja1 || m.detalleCaja2
+          const alternar = m.detalleCaja1 ? () => setVerDetalleCaja1(!verDetalleCaja1) : m.detalleCaja2 ? () => setVerDetalleCaja2(!verDetalleCaja2) : undefined
+          return (
+          <div key={i} onClick={alternar}
+            style={{ background: m.destacada ? S.greenLight : m.purple ? S.purpleLight : S.surface, border: `${m.destacada || abierta ? 2 : 1}px solid ${m.destacada ? S.green : abierta ? (m.purple ? S.purple : S.accent) : m.purple ? '#9F8ED4' : S.border}`, borderRadius: 8, padding: '1rem', cursor: clickeable ? 'pointer' : 'default', gridColumn: abierta ? '1 / -1' : undefined }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+              <div style={{ fontSize: 11, color: m.purple ? S.purple : S.muted, textTransform: 'uppercase', marginBottom: 5, fontWeight: 600 }}>{m.label}</div>
+              {clickeable && <div style={{ fontSize: 11, color: m.purple ? S.purple : S.accent, fontWeight: 600, whiteSpace: 'nowrap' }}>{abierta ? '▴ cerrar' : '▾ detalle'}</div>}
+            </div>
             <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.val}</div>
             <div style={{ fontSize: 11, color: m.purple ? S.purple : S.hint, marginTop: 3 }}>{m.sub}</div>
+            {abierta && m.detalleCaja1 && <DetalleCaja1 cajaOficial={cajaOficial} cheques={cheques} ancla={anclaCaja1} saldo={coIng - coEg} />}
+            {abierta && m.detalleCaja2 && <DetalleCaja2 cheques={cheques} saldo={cpIng - cpEg} />}
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Proyección de fondos necesarios — cuánto tiene que haber en el banco
@@ -768,8 +1016,13 @@ export default function Comercial({ usuario }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
             <FiltrosPeriodo />
+            <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { setFormDep(f => ({ ...f, caja: 'oficial' })); setShowFormDep(!showFormDep) }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.surface, border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer' }}>🏦 Depósito / extracción</button>
             <button onClick={() => setShowFormOf(!showFormOf)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>+ Movimiento</button>
+            </div>
           </div>
+
+          {showFormDep && formDeposito}
 
           {showFormOf && (
             <Card>
@@ -883,8 +1136,13 @@ export default function Comercial({ usuario }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
             <FiltrosPeriodo />
+            <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { setFormDep(f => ({ ...f, caja: 'paralela' })); setShowFormDep(!showFormDep) }} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.surface, border: `1px solid ${S.border}`, color: S.text, borderRadius: 6, cursor: 'pointer' }}>🏦 Depósito / extracción</button>
             <button onClick={() => setShowFormPar(!showFormPar)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.purple, border: `1px solid ${S.purple}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>+ Movimiento</button>
+            </div>
           </div>
+
+          {showFormDep && formDeposito}
 
           {showFormPar && (
             <Card style={{ border: '1px solid #9F8ED4' }}>
