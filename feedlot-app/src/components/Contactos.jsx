@@ -1124,11 +1124,18 @@ export default function Contactos({ usuario }) {
         {tabFicha !== 'pendientes' && tabFicha !== 'retiro' && tabFicha !== 'mercaderia' && (() => {
           const esParalela = tabFicha === 'paralela' && puedeVerParalelo
           const movimientos = []
+          // Orden dentro de un mismo día: por cuándo se cargó cada registro
+          // (y, dentro de un registro, el cargo antes que sus pagos). Antes
+          // quedaban en el orden en que se armaba la lista (por módulo), y
+          // un gasto recién cargado podía aparecer arriba de otros del día.
+          let _fuente = ''
+          let _seq = 0
+          const empujar = m => movimientos.push({ ...m, _creado: _fuente, _seq: _seq++ })
 
           // Saldo de apertura — si el contacto tiene uno cargado, aparece
           // como primer movimiento, marcando desde dónde arranca el cálculo.
           if (fechaCorte && saldoApertura && !esParalela) {
-            movimientos.push({
+            empujar({
               fecha: fechaCorte, fechaVto: null, tipo: 'APERTURA', nro: '—', esApertura: true,
               descripcion: `Ajuste de saldo al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} — diferencia agregada al principio`,
               credito: saldoApertura < 0 ? -saldoApertura : 0,
@@ -1136,7 +1143,7 @@ export default function Contactos({ usuario }) {
             })
           }
           if (fechaCorte && saldoAperturaCaja2 && esParalela) {
-            movimientos.push({
+            empujar({
               fecha: fechaCorte, fechaVto: null, tipo: 'APERTURA', nro: '—', esApertura: true,
               descripcion: `Ajuste de saldo al ${new Date(fechaCorte + 'T12:00:00').toLocaleDateString('es-AR')} en Caja 2 — diferencia agregada al principio`,
               credito: saldoAperturaCaja2 < 0 ? -saldoAperturaCaja2 : 0,
@@ -1147,6 +1154,7 @@ export default function Contactos({ usuario }) {
           // Ventas — agrupar multi-corral
           const ventasVistasCtaCte = new Set()
           ventasCto.forEach(v => {
+            _fuente = v.creado_en || v.created_at || ''
             if (v.grupo_venta_id) {
               if (ventasVistasCtaCte.has(v.grupo_venta_id)) return
               ventasVistasCtaCte.add(v.grupo_venta_id)
@@ -1180,14 +1188,14 @@ export default function Contactos({ usuario }) {
             const ventaId = v.grupo_venta_id || v.id
 
             if (!esParalela && montoFact > 0) {
-              movimientos.push({
+              empujar({
                 fecha: fechaOp, fechaVto, tipo: 'e-CVA', nro: ventaId,
                 descripcion: `Venta hacienda ${corralesStr} · ${cantidadTotal} cab`,
                 credito: montoFact, debito: 0,
               })
             }
             if (esParalela && montoParalelo > 0) {
-              movimientos.push({
+              empujar({
                 fecha: fechaOp, fechaVto: null, tipo: 'PAR', nro: ventaId,
                 descripcion: `Venta hacienda ${corralesStr} · ${cantidadTotal} cab`,
                 credito: montoParalelo, debito: 0,
@@ -1199,7 +1207,7 @@ export default function Contactos({ usuario }) {
               const esParaleloP = p.es_paralelo || false
               if (esParalela && !esParaleloP) return
               if (!esParalela && esParaleloP) return
-              movimientos.push({
+              empujar({
                 fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: p.id,
                 descripcion: `Cobro venta ${corralesStr} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
                 credito: 0, debito: p.monto, esPago: true,
@@ -1209,6 +1217,7 @@ export default function Contactos({ usuario }) {
 
           // Compras
           lotesCto.forEach(l => {
+            _fuente = l.creado_en || l.created_at || ''
             const totalFacturasRealL = (l.facturas_feria || []).reduce((ss, f) => ss + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
             const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
             const total = l.precio_compra && l.kg_bascula ? Math.round(l.kg_bascula * (1 - (l.desbaste_pct || 0) / 100) * l.precio_compra) : 0
@@ -1224,7 +1233,7 @@ export default function Contactos({ usuario }) {
             const venc = vencimientosCompra[l.id] || []
 
             if (!esParalela && montoFact > 0) {
-              movimientos.push({
+              empujar({
                 fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
                 fechaVto: venc.length > 0 ? venc[0].fecha_vencimiento : l.fecha_vencimiento_pago,
                 tipo: 'e-LCA', nro: l.codigo,
@@ -1233,7 +1242,7 @@ export default function Contactos({ usuario }) {
               })
             }
             if (esParalela && montoParalelo > 0) {
-              movimientos.push({
+              empujar({
                 fecha: l.fecha_ingreso || l.created_at?.split('T')[0],
                 fechaVto: null, tipo: 'PAR', nro: l.codigo,
                 descripcion: `Compra ${l.codigo} · ${l.cantidad} cab`,
@@ -1245,7 +1254,7 @@ export default function Contactos({ usuario }) {
               const esParaleloP = p.es_paralelo || p.es_negro || false
               if (esParalela && !esParaleloP) return
               if (!esParalela && esParaleloP) return
-              movimientos.push({
+              empujar({
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: p.id,
                 descripcion: `Pago compra ${l.codigo} · ${p.forma_pago}${p.numero_cheque ? ' #' + p.numero_cheque : ''}`,
                 credito: p.monto, debito: 0, esPago: true,
@@ -1256,11 +1265,12 @@ export default function Contactos({ usuario }) {
           // Compras de insumos (rollo, maíz, remedios, agroquímicos, etc.) — le
           // debemos al proveedor, sea de Alimentación, Sanidad o Agricultura.
           ;(comprasInsumosCto || []).forEach(ci => {
+            _fuente = ci.creado_en || ci.created_at || ''
             const esParaleloCi = ci.es_paralelo || false
             if (esParalela && !esParaleloCi) return
             if (!esParalela && esParaleloCi) return
             if (ci.total > 0) {
-              movimientos.push({
+              empujar({
                 fecha: ci.fecha || ci.creado_en?.split('T')[0],
                 fechaVto: null, tipo: esParaleloCi ? 'PAR' : (ci.insumo_tipo === 'agro' ? 'AGRO' : 'INSUMO'), nro: ci.id,
                 // Kilos (o unidades) y precio de lo entregado; si se pagó una
@@ -1274,7 +1284,7 @@ export default function Contactos({ usuario }) {
             // arriba ya representa el movimiento completo, y agregar un crédito acá
             // encima cancelaría ese débito sin sentido (no hubo plata real de por medio).
             ;(ci.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
-              movimientos.push({
+              empujar({
                 fecha: p.fecha, fechaVto: null, tipo: 'PAGO', nro: `${ci.id}-${pi}`,
                 descripcion: `Pago ${ci.insumo_nombre || 'insumo'} · ${p.forma_pago || ''}`,
                 credito: p.monto, debito: 0, esPago: true,
@@ -1289,6 +1299,7 @@ export default function Contactos({ usuario }) {
           // general del gasto (que antes dejaba a la otra caja con pagos
           // sueltos, sin la obligación que los explicaba).
           ;(gastosGeneralesCto || []).forEach(g => {
+            _fuente = g.creado_en || g.created_at || ''
             const pagosValidos = (g.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0)
             const pagadoTotal = pagosValidos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const pendienteTotal = (g.monto || 0) - pagadoTotal
@@ -1296,14 +1307,14 @@ export default function Contactos({ usuario }) {
             const pagadoEnEstaCaja = pagosEnEstaCaja.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
             const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
             if (debitoEnEstaCaja > 0) {
-              movimientos.push({
+              empujar({
                 fecha: g.fecha, fechaVto: null, tipo: esParalela ? 'PAR' : 'GASTO', nro: g.id,
                 descripcion: `${g.descripcion || g.categoria || 'Gasto'} · ${g.actividad || ''}`,
                 credito: 0, debito: debitoEnEstaCaja, factura: g.comprobante,
               })
             }
             pagosEnEstaCaja.forEach((p, pi) => {
-              movimientos.push({
+              empujar({
                 fecha: g.fecha, fechaVto: null, tipo: 'PAGO', nro: `gg${g.id}-${pi}`,
                 descripcion: `Pago ${g.descripcion || g.categoria || 'gasto'} · ${p.tipo || ''}`,
                 credito: parseFloat(p.monto) || 0, debito: 0, esPago: true,
@@ -1313,18 +1324,19 @@ export default function Contactos({ usuario }) {
 
           // Órdenes de trabajo con contratista (Agricultura) — le debemos al proveedor.
           ;(ordenesTrabajoCto || []).forEach(ot => {
+            _fuente = ot.creado_en || ot.created_at || ''
             const esParaleloOt = ot.es_paralelo || false
             if (esParalela && !esParaleloOt) return
             if (!esParalela && esParaleloOt) return
             if (ot.costo_total > 0) {
-              movimientos.push({
+              empujar({
                 fecha: ot.fecha, fechaVto: null, tipo: esParaleloOt ? 'PAR' : 'ORDEN', nro: ot.id,
                 descripcion: `${ot.tipo || 'Orden'}${ot.descripcion ? ' · ' + ot.descripcion : ''}`,
                 credito: 0, debito: ot.costo_total,
               })
             }
             ;(ot.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
-              movimientos.push({
+              empujar({
                 fecha: ot.fecha, fechaVto: null, tipo: 'PAGO', nro: `ot${ot.id}-${pi}`,
                 descripcion: `Pago ${ot.tipo || 'orden'} · ${p.tipo || ''}`,
                 credito: parseFloat(p.monto) || 0, debito: 0, esPago: true,
@@ -1334,16 +1346,17 @@ export default function Contactos({ usuario }) {
 
           // Ventas de granos — el comprador nos debe (sin desglose de pagos parciales).
           ;(ventasGranosCto || []).forEach(vg => {
+            _fuente = vg.creado_en || vg.created_at || ''
             if (vg.estado === 'pactada') return
             if (!esParalela && vg.monto_facturado > 0) {
-              movimientos.push({
+              empujar({
                 fecha: vg.fecha, fechaVto: null, tipo: 'GRANOS', nro: vg.id,
                 descripcion: `Venta ${vg.cultivo || 'grano'}`,
                 credito: vg.monto_facturado, debito: 0,
               })
             }
             if (esParalela && vg.monto_negro > 0) {
-              movimientos.push({
+              empujar({
                 fecha: vg.fecha, fechaVto: null, tipo: 'PAR', nro: vg.id,
                 descripcion: `Venta ${vg.cultivo || 'grano'} (C2)`,
                 credito: vg.monto_negro, debito: 0,
@@ -1352,7 +1365,7 @@ export default function Contactos({ usuario }) {
             ;(vg.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               const esPagoParalelo = p.es_paralelo || false
               if (esParalela !== esPagoParalelo) return
-              movimientos.push({
+              empujar({
                 fecha: vg.fecha, fechaVto: null, tipo: 'COBRO', nro: `vg${vg.id}-${pi}`,
                 descripcion: `Cobro venta ${vg.cultivo || 'grano'} · ${p.tipo || ''}`,
                 credito: 0, debito: parseFloat(p.monto) || 0, esPago: true,
@@ -1362,40 +1375,43 @@ export default function Contactos({ usuario }) {
 
           // Fletes — le debemos al transportista (se pagan de una sola vez).
           ;(fletesCto || []).forEach(f => {
+            _fuente = f.creado_en || f.created_at || ''
             if (!f.monto) return
             const esParaleloF = !!f.caja_paralela_id
             if (f.estado_pago === 'pagado') {
               if (esParalela !== esParaleloF) return
-              movimientos.push({ fecha: f.fecha, fechaVto: null, tipo: esParaleloF ? 'PAR' : 'FLETE', nro: f.id, descripcion: `Flete · ${f.transportista || ''}`, credito: 0, debito: f.monto })
-              movimientos.push({ fecha: f.fecha, fechaVto: null, tipo: 'PAGO', nro: `f${f.id}`, descripcion: `Pago flete`, credito: f.monto, debito: 0, esPago: true })
+              empujar({ fecha: f.fecha, fechaVto: null, tipo: esParaleloF ? 'PAR' : 'FLETE', nro: f.id, descripcion: `Flete · ${f.transportista || ''}`, credito: 0, debito: f.monto })
+              empujar({ fecha: f.fecha, fechaVto: null, tipo: 'PAGO', nro: `f${f.id}`, descripcion: `Pago flete`, credito: f.monto, debito: 0, esPago: true })
             } else if (!esParalela) {
-              movimientos.push({ fecha: f.fecha, fechaVto: null, tipo: 'FLETE', nro: f.id, descripcion: `Flete · ${f.transportista || ''}`, credito: 0, debito: f.monto })
+              empujar({ fecha: f.fecha, fechaVto: null, tipo: 'FLETE', nro: f.id, descripcion: `Flete · ${f.transportista || ''}`, credito: 0, debito: f.monto })
             }
           })
 
           // Retiros de socios pagados directo a este tercero — solo
           // informativo, ya quedó saldado con el retiro del socio.
           ;(retirosSociosCto || []).forEach(r => {
+            _fuente = r.creado_en || r.created_at || ''
             if (!r.monto) return
             if (esParalela !== !!r.es_paralelo) return
-            movimientos.push({ fecha: r.fecha, fechaVto: null, tipo: r.es_paralelo ? 'PAR' : 'RETIRO', nro: r.id, descripcion: `Retiro socio ${r.socio || ''}${r.concepto ? ' · ' + r.concepto : ''}`, credito: 0, debito: r.monto })
-            movimientos.push({ fecha: r.fecha, fechaVto: null, tipo: 'PAGO', nro: `r${r.id}`, descripcion: 'Pago', credito: r.monto, debito: 0, esPago: true })
+            empujar({ fecha: r.fecha, fechaVto: null, tipo: r.es_paralelo ? 'PAR' : 'RETIRO', nro: r.id, descripcion: `Retiro socio ${r.socio || ''}${r.concepto ? ' · ' + r.concepto : ''}`, credito: 0, debito: r.monto })
+            empujar({ fecha: r.fecha, fechaVto: null, tipo: 'PAGO', nro: `r${r.id}`, descripcion: 'Pago', credito: r.monto, debito: 0, esPago: true })
           })
 
           // Arriendos de campos — le debemos al propietario.
           ;(arriendosCto || []).forEach(v => {
+            _fuente = v.creado_en || v.created_at || ''
             const monto = parseFloat(v.monto_total)
             if (!monto) return
             const esParaleloV = !!v.caja_paralela_id
             if (!esParalela) {
-              movimientos.push({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
+              empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
             } else if (esParaleloV) {
-              movimientos.push({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: monto })
+              empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: monto })
             }
             ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               const esPagoParalelo = p.es_paralelo || false
               if (esParalela !== esPagoParalelo) return
-              movimientos.push({ fecha: v.pagado_en || v.fecha_vencimiento, fechaVto: null, tipo: 'PAGO', nro: `va${v.id}-${pi}`, descripcion: `Pago arriendo · ${p.tipo || ''}`, credito: parseFloat(p.monto) || 0, debito: 0, esPago: true })
+              empujar({ fecha: v.pagado_en || v.fecha_vencimiento, fechaVto: null, tipo: 'PAGO', nro: `va${v.id}-${pi}`, descripcion: `Pago arriendo · ${p.tipo || ''}`, credito: parseFloat(p.monto) || 0, debito: 0, esPago: true })
             })
           })
 
@@ -1404,11 +1420,12 @@ export default function Contactos({ usuario }) {
           // porque el peso recién se sabe al pagarlas).
           if (!esParalela) {
             ;(creditosCto || []).forEach(c => {
+            _fuente = c.creado_en || c.created_at || ''
               ;(c.cuotas || []).forEach(cuota => {
                 if (cuota.estado === 'pagado' && cuota.monto > 0) {
-                  movimientos.push({ fecha: cuota.fecha_pago || cuota.fecha, fechaVto: null, tipo: 'PAGO', nro: `cr${c.id}-${cuota.id}`, descripcion: `Pago cuota ${cuota.nro_cuota} — ${c.descripcion || 'Crédito'}`, credito: cuota.monto, debito: 0, esPago: true })
+                  empujar({ fecha: cuota.fecha_pago || cuota.fecha, fechaVto: null, tipo: 'PAGO', nro: `cr${c.id}-${cuota.id}`, descripcion: `Pago cuota ${cuota.nro_cuota} — ${c.descripcion || 'Crédito'}`, credito: cuota.monto, debito: 0, esPago: true })
                 } else if (cuota.estado !== 'pagado' && !c.es_dolares && cuota.monto > 0) {
-                  movimientos.push({ fecha: cuota.fecha, fechaVto: cuota.fecha, tipo: 'CUOTA', nro: `cr${c.id}-${cuota.id}`, descripcion: `Cuota ${cuota.nro_cuota} — ${c.descripcion || 'Crédito'}`, credito: 0, debito: cuota.monto })
+                  empujar({ fecha: cuota.fecha, fechaVto: cuota.fecha, tipo: 'CUOTA', nro: `cr${c.id}-${cuota.id}`, descripcion: `Cuota ${cuota.nro_cuota} — ${c.descripcion || 'Crédito'}`, credito: 0, debito: cuota.monto })
                 }
               })
             })
@@ -1416,11 +1433,12 @@ export default function Contactos({ usuario }) {
 
           // Ventas de activos (maquinaria, equipos) — el comprador nos debe
           ;(ventasActivosCto || []).forEach(va => {
+            _fuente = va.creado_en || va.created_at || ''
             const esParaleloVA = va.es_paralelo || false
             if (esParalela && !esParaleloVA) return
             if (!esParalela && esParaleloVA) return
             if (va.monto > 0) {
-              movimientos.push({
+              empujar({
                 fecha: va.fecha || va.creado_en?.split('T')[0],
                 fechaVto: null, tipo: esParaleloVA ? 'PAR' : 'ACTIVO', nro: va.id,
                 descripcion: `Venta ${va.activo_nombre || 'activo'}${va.observaciones ? ' · ' + va.observaciones : ''}`,
@@ -1431,7 +1449,7 @@ export default function Contactos({ usuario }) {
             // (la venta de arriba y las compras canjeadas ya se compensan solas;
             // sumarlo de nuevo descontaba el canje dos veces en el resumen).
             ;(va.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
-              movimientos.push({
+              empujar({
                 fecha: p.fecha, fechaVto: null, tipo: 'COBRO', nro: `${va.id}-${pi}`,
                 descripcion: `Cobro venta ${va.activo_nombre || 'activo'} · ${p.forma_pago || ''}`,
                 credito: 0, debito: p.monto, esPago: true,
@@ -1441,16 +1459,17 @@ export default function Contactos({ usuario }) {
 
           // Servicios a terceros — el cliente nos debe hasta que se cobre.
           ;(serviciosTercerosCto || []).forEach(st => {
+            _fuente = st.creado_en || st.created_at || ''
             const fecha = st.fecha || st.creado_en?.split('T')[0]
             if (!esParalela && st.total > 0) {
-              movimientos.push({
+              empujar({
                 fecha, fechaVto: null, tipo: 'SERVICIO', nro: st.id,
                 descripcion: `${st.labor || 'Servicio'}${st.cultivo ? ' · ' + st.cultivo : ''}${st.campo ? ' · ' + st.campo : ''}`,
                 credito: st.total, debito: 0,
               })
             }
             if (esParalela && st.monto_negro > 0) {
-              movimientos.push({
+              empujar({
                 fecha, fechaVto: null, tipo: 'PAR', nro: st.id,
                 descripcion: `${st.labor || 'Servicio'} (C2)`,
                 credito: st.monto_negro, debito: 0,
@@ -1459,7 +1478,7 @@ export default function Contactos({ usuario }) {
             ;(st.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               const esPagoParalelo = p.es_paralelo || false
               if (esParalela !== esPagoParalelo) return
-              movimientos.push({
+              empujar({
                 fecha, fechaVto: null, tipo: 'COBRO', nro: `st${st.id}-${pi}`,
                 descripcion: `Cobro ${st.labor || 'servicio'} · ${p.tipo || ''}`,
                 credito: 0, debito: parseFloat(p.monto) || 0, esPago: true,
@@ -1474,7 +1493,8 @@ export default function Contactos({ usuario }) {
           // de abajo (caja, gastos, etc.) sigan intactos para quien necesite
           // auditarlos directamente en esos otros módulos.
           const movimientosVisibles = fechaCorte ? movimientos.filter(m => m.esApertura || (m.fecha && m.fecha >= fechaCorte)) : movimientos
-          movimientosVisibles.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1 : (a.fecha || '').localeCompare(b.fecha || ''))
+          movimientosVisibles.sort((a, b) => a.esApertura ? -1 : b.esApertura ? 1
+            : (a.fecha || '').localeCompare(b.fecha || '') || (a._creado || '').localeCompare(b._creado || '') || a._seq - b._seq)
 
           // Calcular saldo acumulado
           let saldoAcum = 0
@@ -1482,6 +1502,9 @@ export default function Contactos({ usuario }) {
             saldoAcum += (Number(m.credito) || 0) - (Number(m.debito) || 0)
             return { ...m, saldoAcum }
           })
+          // Se muestra lo más nuevo arriba (el saldo de cada renglón sigue
+          // siendo el acumulado hasta ese movimiento).
+          const filasVista = [...movConSaldo].reverse()
 
           const colNegro = '#3D1A6B'
           const bgNegro = '#F0EAFB'
@@ -1515,7 +1538,7 @@ export default function Contactos({ usuario }) {
                   {movConSaldo.length === 0 && (
                     <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: S.hint }}>No hay movimientos registrados.</td></tr>
                   )}
-                  {movConSaldo.map((m, i) => (
+                  {filasVista.map((m, i) => (
                     <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, background: m.tipo === 'PAR' ? '#F0EAFB' : m.esPago ? '#F0FFF4' : i % 2 === 0 ? S.surface : S.bg }}>
                       <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>
                         {m.fecha ? new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
