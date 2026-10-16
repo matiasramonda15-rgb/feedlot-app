@@ -4206,7 +4206,17 @@ async function generarReciboArriendo(v, campo, pagos) {
   const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
   const fechaVenc = v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
   const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.tn_ha || ''} tn/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/tn` : ''}`
+  const celda = 'padding:6px 8px;border-bottom:1px solid #eee;'
+  const fmtPeso = m => '$' + (parseFloat(m) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })
   const filasPago = pagos.flatMap(p => {
+    // Retención y descuento: el recibo sale por el total del arriendo.
+    if (p.tipo === 'retencion') {
+      const partes = (p.observaciones || `${p.retencion_impuesto || ''} · Cert. N° ${p.retencion_certificado || 's/n'}`).split(' · ')
+      return [`<tr><td style="${celda}">RETENCIÓN ${(partes[0] || '').toUpperCase()}</td><td style="${celda}text-align:center;">${partes[1] || ''}</td><td style="${celda}text-align:center;">${p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR') : ''}</td><td style="${celda}text-align:right;font-weight:600;">${fmtPeso(p.monto)}</td></tr>`]
+    }
+    if (p.tipo === 'descuento') {
+      return [`<tr><td style="${celda}">DESCUENTO: ${(p.observaciones || p.descuento_concepto || '').toUpperCase()}</td><td style="${celda}text-align:center;font-size:10px;">Se descuenta del arriendo</td><td style="${celda}text-align:center;">${p.fecha ? new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR') : ''}</td><td style="${celda}text-align:right;font-weight:600;">${fmtPeso(p.monto)}</td></tr>`]
+    }
     let desc = p.tipo === 'transferencia' ? 'TRANSFERENCIA' : p.tipo === 'efectivo' ? 'EFECTIVO' : p.tipo === 'cuenta_corriente' ? 'CUENTA CORRIENTE' : p.subtipo_cheque === 'propio' ? 'E-CHEQ PROPIO' : p.subtipo_cheque === 'tercero' ? 'E-CHEQ TERCERO' : (p.tipo || '').toUpperCase()
     if (p.es_paralelo) desc += ' (C2)'
     if (p.subtipo_cheque === 'propio' && p.cheque_propio?.fecha_vencimiento) {
@@ -4268,7 +4278,7 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
 
   async function cargarVencimientos() {
     const [{ data }, { data: ch }] = await Promise.all([
-      supabase.from('vencimientos_arriendo').select('*, campos(nombre, superficie_ha, arrendamiento_tn_ha)').order('fecha_vencimiento'),
+      supabase.from('vencimientos_arriendo').select('*, campos(nombre, propietario, superficie_ha, arrendamiento_tn_ha)').order('fecha_vencimiento'),
       supabase.from('cheques').select('*').eq('tipo', 'recibido').eq('estado', 'en_cartera').order('fecha_vencimiento', { ascending: true }),
     ])
     setVencimientos(data || [])
@@ -4311,12 +4321,33 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
     const desc = `Arriendo ${v.campos?.nombre || ''} — ${v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : ''}`
     // Caja + cheques de TODAS las formas de pago (antes: solo la primera caja
     // de cada tipo, y sin avisar si algo fallaba).
-    const reg = await registrarPagos(supabase, formPago.pagos, {
+    // Retención y descuento no mueven caja: la retención queda "a depositar"
+    // (sale de Caja 1 cuando se paga el VEP, desde Comercial) y el descuento
+    // (ej. gastos de contador a cargo del dueño) solo cuenta como pagado.
+    const esSinCaja = p => p.tipo === 'retencion' || p.tipo === 'descuento'
+    const sinCaja = formPago.pagos.filter(p => esSinCaja(p) && (parseFloat(p.monto) || 0) > 0)
+    const reg = await registrarPagos(supabase, formPago.pagos.filter(p => !esSinCaja(p)), {
       fecha: formPago.fecha, descripcion: desc, categoria: 'Arriendo agricultura',
       beneficiarioCheque: v.campos?.propietario || null, registradoPorCheque: usuario?.id,
       beneficiarioTercero: v.campos?.propietario || null, chequesCartera,
     })
     if (reg.error) { alert(mensajeErrorPago(reg) + (reg.lineas.length ? '\n\nOjo: una parte del pago ya quedó registrada en caja — revisala antes de volver a pagar.' : '')); setGuardandoPago(false); return }
+    for (const p of sinCaja) {
+      const monto = parseFloat(p.monto) || 0
+      if (p.tipo === 'retencion') {
+        const impuesto = p.retencion_impuesto || 'Impuesto a las Ganancias'
+        const cert = (p.retencion_certificado || '').trim()
+        const { error: errRet } = await supabase.from('retenciones').insert({
+          fecha: formPago.fecha, impuesto, certificado: cert || null, monto,
+          proveedor: v.campos?.propietario || v.campos?.nombre || null, origen: 'arriendo',
+          vencimiento_arriendo_id: v.id, registrado_por: usuario?.id || null,
+        })
+        if (errRet) alert('Ojo: no se pudo registrar la retención en "Retenciones a depositar": ' + errRet.message + '\n\nEl pago se guarda igual; avisá para cargarla a mano.')
+        reg.lineas.push({ ...p, fecha: formPago.fecha, _caja_id: null, observaciones: `${impuesto} · Cert. N° ${cert || 's/n'}` })
+      } else {
+        reg.lineas.push({ ...p, fecha: formPago.fecha, _caja_id: null, observaciones: (p.descuento_concepto || '').trim() || 'Descuento' })
+      }
+    }
 
     await supabase.from('vencimientos_arriendo').update({
       estado: 'pagado', pagado_en: formPago.fecha,
@@ -4476,12 +4507,18 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
                             </button>
                         }
                         <button onClick={async () => {
+                          // Una retención ya depositada (VEP pagado) no se puede deshacer desde acá.
+                          const { data: retsV } = await supabase.from('retenciones').select('id, estado').eq('vencimiento_arriendo_id', v.id)
+                          if ((retsV || []).some(r => r.estado === 'depositada')) { alert('Este arriendo tiene una retención que ya se depositó (VEP pagado). Primero deshacé ese depósito en Comercial → Retenciones a depositar.'); return }
                           if (!confirm('¿Eliminar? Si estaba pagado, se revertirá la caja y los cheques.')) return
-                          if (v.caja_oficial_id) {
-                            await supabase.from('cheques').delete().eq('caja_oficial_id', v.caja_oficial_id).eq('tipo', 'emitido')
-                            await supabase.from('caja_oficial').delete().eq('id', v.caja_oficial_id)
+                          await supabase.from('retenciones').delete().eq('vencimiento_arriendo_id', v.id).eq('estado', 'a_depositar')
+                          const idsOf = [...new Set([...(v.caja_oficial_ids || []), v.caja_oficial_id].filter(Boolean))]
+                          const idsPar = [...new Set([...(v.caja_paralela_ids || []), v.caja_paralela_id].filter(Boolean))]
+                          for (const id of idsOf) {
+                            await supabase.from('cheques').delete().eq('caja_oficial_id', id).eq('tipo', 'emitido')
+                            await supabase.from('caja_oficial').delete().eq('id', id)
                           }
-                          if (v.caja_paralela_id) await supabase.from('caja_paralela').delete().eq('id', v.caja_paralela_id)
+                          for (const id of idsPar) await supabase.from('caja_paralela').delete().eq('id', id)
                           await supabase.from('vencimientos_arriendo').delete().eq('id', v.id)
                           cargarVencimientos()
                         }}
@@ -4544,7 +4581,11 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
                           <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
                         </div>
                         <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
-                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo  />
+                        <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo
+                          opcionesExtra={[{ value: 'retencion', label: '🧾 Retención (ARCA / Rentas)' }, { value: 'descuento', label: '➖ Descuento (ej. gastos de contador a cargo del dueño)' }]} />
+                        <div style={{ fontSize: 11, color: S.hint, margin: '-4px 0 10px' }}>
+                          Si le retenés Ganancias o le descontás algo (ej. gastos de contador), cargalo como una línea más con "Retención" o "Descuento": el recibo sale por el total del arriendo y en caja solo sale lo que se transfiere.
+                        </div>
 
                         {v.monto_total && (
                           <div style={{ background: Math.abs(v.monto_total - totalPagos) < 0.5 ? S.greenLight : S.amberLight, border: `1px solid ${Math.abs(v.monto_total - totalPagos) < 0.5 ? '#97C459' : '#EF9F27'}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>
