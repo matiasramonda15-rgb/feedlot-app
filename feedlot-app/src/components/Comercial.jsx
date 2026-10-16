@@ -6,6 +6,7 @@ import Conciliacion from './Conciliacion'
 import { buscarOrigenesDeCaja, validarDeshacerOrigen, deshacerPagosDeOrigen, mensajeDeshacerPago, mensajeCajaBloqueada, mensajeErrorDeshacer } from '../shared/pagosLogic'
 import { traerTodo } from '../shared/traerTodo'
 import SelectBuscable from './SelectBuscable'
+import BuscadorCheques from './BuscadorCheques'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -755,6 +756,13 @@ export default function Comercial({ usuario }) {
           </button>
         ))}
       </div>
+
+      {/* Buscador de cheques: por número, en las dos cajas y en todos los
+          estados — para cuando vuelve un cheque y hay que saber de quién vino
+          y a quién se entregó. */}
+      {['caja_oficial', 'caja_paralela', 'cheques_oficial', 'cheques_paralelo'].includes(tab) && (
+        <BuscadorCheques cheques={cheques} cajaOficial={cajaOficial} cajaParalela={cajaParalela} cambiarEstadoCheque={cambiarEstadoCheque} S={S} />
+      )}
 
       {tab === 'caja_oficial' && (
         <div>
