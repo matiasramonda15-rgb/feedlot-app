@@ -73,7 +73,8 @@ export default function CuentasPagar({ usuario, setModulo }) {
     // Gastos generales
     ;(gg || []).forEach(g => {
       filas.push({
-        id: `gg-${g.id}`, origen: 'gastos', fecha: g.fecha, proveedor: g.proveedor || '—',
+        // Si el gasto tiene vencimiento cargado, esa es la fecha que cuenta.
+        id: `gg-${g.id}`, origen: 'gastos', fecha: g.fecha_vencimiento || g.fecha, proveedor: g.proveedor || '—',
         descripcion: `${g.descripcion || g.categoria || 'Gasto'} · ${g.actividad || ''}`,
         monto: g.monto,
       })

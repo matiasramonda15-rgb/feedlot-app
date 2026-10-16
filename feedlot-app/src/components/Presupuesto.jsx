@@ -136,7 +136,7 @@ async function cargarPendientes() {
     supabase.from('ventas_granos').select('*'),
     supabase.from('ventas_activos').select('*').neq('estado_cobro', 'cobrado'),
     supabase.from('compras_insumos').select('id, fecha, total, proveedor, insumo_tipo, insumo_nombre, canje_usd, pagos_detalle, es_prueba').in('estado_pago', ['pendiente', 'parcial']).eq('marcado_resuelto', false),
-    supabase.from('gastos_generales').select('id, fecha, monto, proveedor, categoria, actividad, pagos_detalle').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
+    supabase.from('gastos_generales').select('id, fecha, fecha_vencimiento, monto, proveedor, categoria, actividad, pagos_detalle').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
     supabase.from('pagos_creditos').select('id, fecha, monto, monto_usd, nro_cuota, creditos(entidad, descripcion, es_dolares)').eq('estado', 'pendiente').eq('marcado_resuelto', false),
     supabase.from('fletes').select('id, fecha, monto, transportista, pagos_detalle').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
     supabase.from('lotes').select('*').neq('estado_pago', 'pagado').eq('marcado_resuelto', false),
@@ -192,7 +192,7 @@ async function cargarPendientes() {
   })
 
   // ── Gastos generales sin pagar ──
-  ;(gg || []).forEach(g => add(g.actividad || 'General', 'egreso', 'Gastos generales', g.categoria, g.fecha, num(g.monto) - sumaPagos(g.pagos_detalle), `${g.categoria || ''} · ${g.proveedor || ''}`))
+  ;(gg || []).forEach(g => add(g.actividad || 'General', 'egreso', 'Gastos generales', g.categoria, g.fecha_vencimiento || g.fecha, num(g.monto) - sumaPagos(g.pagos_detalle), `${g.categoria || ''} · ${g.proveedor || ''}`))
 
   // ── Cuotas de crédito (las de dólares, al dólar de hoy) ──
   ;(pc || []).forEach(c => {

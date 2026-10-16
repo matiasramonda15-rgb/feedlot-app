@@ -55,7 +55,7 @@ const NOMBRE_OCASIONAL = 'Proveedor / Cliente ocasional'
 
 const FORM_INIT = {
   actividad: 'Feedlot', categoria: 'Combustible', descripcion: '', monto: '', activo_id: '',
-  fecha: hoyLocal(), no_recurrente: false, tipo_costo: 'operativo',
+  fecha: hoyLocal(), fecha_vencimiento: '', no_recurrente: false, tipo_costo: 'operativo',
   proveedor: '', comprobante: '', detalleOcasional: '',
   // Datos proveedor para recibo
   domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
@@ -287,6 +287,8 @@ export default function Gastos({ usuario }) {
       descripcion: descripcionFinal || null,
       monto: form.monto ? montoTotal : null,
       fecha: form.fecha,
+      // Vencimiento: solo tiene sentido si queda pendiente de pago.
+      fecha_vencimiento: !pagarAhora && form.fecha_vencimiento ? form.fecha_vencimiento : null,
       ...camposTipoCosto(form.tipo_costo || (form.no_recurrente ? 'inversion' : 'operativo')),
       proveedor: form.proveedor || null,
       comprobante: form.comprobante || null,
@@ -603,6 +605,13 @@ export default function Gastos({ usuario }) {
                 Este gasto va a quedar marcado como "Pendiente" — cuando sepas cómo se paga (transferencia, canje, compensación con otra venta, etc.), volvés a esta pantalla y lo completás desde el historial.
               </div>
             )}
+            {!pagarAhora && (
+              <div style={{ maxWidth: 240, marginBottom: 12 }}>
+                <Label>Fecha de vencimiento (opcional)</Label>
+                <input type="date" value={form.fecha_vencimiento || ''} onChange={e => setForm({ ...form, fecha_vencimiento: e.target.value })} style={inputStyle} />
+                <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>Cuándo hay que pagarlo. Aparece en la cuenta corriente del proveedor, en Cuentas a pagar y en el Presupuesto.</div>
+              </div>
+            )}
             {pagarAhora && (
             <>
             <ListaPagos pagos={form.pagos} onChangePagos={n => setForm({ ...form, pagos: n })} chequesCartera={chequesCartera} S={S}
@@ -691,14 +700,14 @@ export default function Gastos({ usuario }) {
                     <td style={{ padding: '9px 12px', fontSize: 11 }}>{g.es_paralelo ? <span style={{ color: S.purple, fontWeight: 600 }}>Caja 2</span> : (g.estado_pago === 'pendiente' ? '—' : g.forma_pago || '—')}</td>
                     <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 600, color: S.red }}>
                       {g.monto != null ? `$${g.monto.toLocaleString('es-AR')}` : <span style={{ color: S.hint, fontWeight: 400, fontStyle: 'italic' }}>monto a definir</span>}
-                      {g.estado_pago === 'pendiente' && <div style={{ fontSize: 10, color: S.amber, fontWeight: 600 }}>⏳ Pendiente</div>}
+                      {g.estado_pago === 'pendiente' && <div style={{ fontSize: 10, color: S.amber, fontWeight: 600 }}>⏳ Pendiente{g.fecha_vencimiento ? ` · vence ${new Date(g.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}` : ''}</div>}
                     </td>
                     <td style={{ padding: '9px 12px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {g.estado_pago === 'pendiente' && (
                           <button onClick={() => {
                             setEditandoId(g.id)
-                            setForm({ actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: String(g.monto || ''), activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', no_recurrente: !!g.no_recurrente, tipo_costo: tipoCostoDe(g), pagos: [{ ...PAGO_INIT, monto: String(g.monto || '') }] })
+                            setForm({ actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: String(g.monto || ''), activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, fecha_vencimiento: g.fecha_vencimiento || '', proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', no_recurrente: !!g.no_recurrente, tipo_costo: tipoCostoDe(g), pagos: [{ ...PAGO_INIT, monto: String(g.monto || '') }] })
                             setPagarAhora(true)
                             setShowForm(true)
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>

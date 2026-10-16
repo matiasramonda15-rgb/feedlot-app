@@ -1308,7 +1308,7 @@ export default function Contactos({ usuario }) {
             const debitoEnEstaCaja = pagadoEnEstaCaja + (esParalela === (g.es_paralelo || false) ? Math.max(pendienteTotal, 0) : 0)
             if (debitoEnEstaCaja > 0) {
               empujar({
-                fecha: g.fecha, fechaVto: null, tipo: esParalela ? 'PAR' : 'GASTO', nro: g.id,
+                fecha: g.fecha, fechaVto: g.estado_pago === 'pendiente' ? (g.fecha_vencimiento || null) : null, tipo: esParalela ? 'PAR' : 'GASTO', nro: g.id,
                 descripcion: `${g.descripcion || g.categoria || 'Gasto'} · ${g.actividad || ''}`,
                 credito: 0, debito: debitoEnEstaCaja, factura: g.comprobante,
               })
@@ -1502,9 +1502,8 @@ export default function Contactos({ usuario }) {
             saldoAcum += (Number(m.credito) || 0) - (Number(m.debito) || 0)
             return { ...m, saldoAcum }
           })
-          // Se muestra lo más nuevo arriba (el saldo de cada renglón sigue
-          // siendo el acumulado hasta ese movimiento).
-          const filasVista = [...movConSaldo].reverse()
+          // Lo más viejo arriba y lo último abajo (dentro de un día, por orden de carga).
+          const filasVista = movConSaldo
 
           const colNegro = '#3D1A6B'
           const bgNegro = '#F0EAFB'
