@@ -77,6 +77,11 @@ const fmtStockAgro = s => `${(parseFloat(s?.cantidad) || 0).toLocaleString('es-A
 const opcionInsumo = s => `${s.insumo} · ${s.tipo || ''} — disponible: ${fmtStockAgro(s)}`
 const etiquetaProductosLabor = labor => labor === 'Siembra' ? 'Semilla y fertilizante usados' : labor === 'Cosecha' ? 'Silobolsa usado' : 'Productos usados'
 
+// Servicio interno: un trabajo propio en un campo de la empresa (Ramonda
+// Hnos). No se cobra: el valor es solo para el costo del lote en Agricultura
+// y el resultado de Servicios, así que nunca queda "pendiente de cobro".
+const esServicioInterno = s => s.tipo_servicio === 'propio' || !!s.orden_trabajo_id || /ramonda hnos/i.test(s.cliente || '')
+
 export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
@@ -575,7 +580,7 @@ export default function Servicios({ usuario, mobile, nav }) {
     if (filtros.tipo && s.tipo_servicio !== filtros.tipo) return false
     if (filtros.tipo && filtros.tipo !== 'Todo' && s.tipo_servicio !== filtros.tipo) return false
     if (filtros.estado && filtros.estado !== 'Todo') {
-      if (filtros.estado === 'Pendiente' && s.estado_pago === 'cobrado') return false
+      if (filtros.estado === 'Pendiente' && (s.estado_pago === 'cobrado' || esServicioInterno(s))) return false
       if (filtros.estado === 'Cobrado' && s.estado_pago !== 'cobrado') return false
     }
     if (filtros.empleado && filtros.empleado !== 'Todo') {
@@ -1458,6 +1463,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   const mo1 = moList.find(m => m.trabajador === s.empleado1) || moList[0]
                   const mo2 = moList.find(m => m.trabajador === s.empleado2) || moList[1]
                   const isCobrado = s.estado_pago === 'cobrado'
+                  const interno = esServicioInterno(s)
                   const isSelected = seleccionadas.includes(s.id)
                   const isEditing = editandoId === s.id
 
@@ -1494,7 +1500,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   return (
                     <tr key={s.id} style={{ background: isSelected ? S.accentLight : isCobrado ? S.greenLight : S.surface }}>
                       <td style={{ ...td_, textAlign: 'center' }}>
-                        {!isCobrado && (
+                        {!isCobrado && !interno && (
                           <input type="checkbox" checked={isSelected} onChange={() => setSeleccionadas(prev => isSelected ? prev.filter(x => x !== s.id) : [...prev, s.id])} />
                         )}
                       </td>
@@ -1512,9 +1518,15 @@ export default function Servicios({ usuario, mobile, nav }) {
                       <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', color: s.precio_ha ? S.text : S.amber }}>{s.precio_ha ? `$${s.precio_ha.toLocaleString('es-AR')}` : '—'}</td>
                       <td style={{ ...td_, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: isCobrado ? S.green : S.text }}>{s.total ? `$${s.total.toLocaleString('es-AR')}` : '—'}</td>
                       <td style={td_}>
+                        {interno ? (
+                          <span title="Trabajo propio: no se cobra, el valor va al costo del lote" style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: s.total ? S.purpleLight : S.bg, color: s.total ? S.purple : S.hint }}>
+                            {s.total ? '🏠 Interno' : 'Sin precio'}
+                          </span>
+                        ) : (
                         <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: isCobrado ? S.greenLight : s.precio_ha ? S.amberLight : S.bg, color: isCobrado ? S.green : s.precio_ha ? S.amber : S.hint }}>
                           {isCobrado ? '✓ Cobrado' : s.precio_ha ? '⏳ Pendiente' : 'Sin precio'}
                         </span>
+                        )}
                       </td>
                       <td style={{ ...td_, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
@@ -1528,7 +1540,8 @@ export default function Servicios({ usuario, mobile, nav }) {
                               // Cargar el precio NO significa que ya se pagó — queda
                               // pendiente igual, para poder mandar la factura y recién
                               // registrar el pago cuando se cancele de verdad.
-                              const { error: e1 } = await supabase.from('servicios_terceros').update({ total: monto, precio_ha: precioHa }).eq('id', s.id)
+                              // (Si es un trabajo propio, no hay nada que cobrar: queda saldado.)
+                              const { error: e1 } = await supabase.from('servicios_terceros').update({ total: monto, precio_ha: precioHa, ...(esServicioInterno(s) ? { estado_pago: 'pagado' } : {}) }).eq('id', s.id)
                               if (e1) { alert('Error al actualizar el servicio: ' + e1.message); return }
                               const { error: e2 } = await supabase.from('ordenes_trabajo').update({ costo_total: monto, costo_ha: precioHa }).eq('id', s.orden_trabajo_id)
                               if (e2) alert('El servicio se actualizó, pero no se pudo actualizar la orden en Agricultura: ' + e2.message)
