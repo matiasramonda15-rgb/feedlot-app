@@ -290,11 +290,12 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
                       <div style={{ fontSize: 12, color: CM.muted }}>Sin insumos cargados en esta orden.</div>
                     ) : o.productos.map((p, pi) => {
                       const item = stockAgro.find(s => s.id === parseInt(p.id))
-                      const total = p.total || (o.superficie_ha_real && p.dosis ? Math.round(parseFloat(p.dosis) * o.superficie_ha_real * 100) / 100 : null)
+                      const total = totalProducto(p, o.superficie_ha_real)
+                      const dosisV = dosisProducto(p, o.superficie_ha_real)
                       return (
                         <div key={pi} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
                           <span>{item?.insumo || '— insumo no encontrado —'}</span>
-                          <span style={{ fontFamily: 'monospace', color: CM.green }}>{p.dosis} {item?.unidad || p.unidad}/ha{total ? ` · ${total.toLocaleString('es-AR')} ${item?.unidad || p.unidad} total` : ''}</span>
+                          <span style={{ fontFamily: 'monospace', color: CM.green }}>{fmtCant(dosisV)} {item?.unidad || p.unidad}/ha{total ? ` · ${fmtCant(total)} ${item?.unidad || p.unidad} total` : ''}</span>
                         </div>
                       )
                     })}
@@ -924,6 +925,13 @@ function htmlCaldoTanques(caldo, tanque, ha, productos, stockAgro) {
   </div>`
 }
 
+// Las órdenes cargadas desde Servicios guardaban solo el TOTAL usado (no la
+// dosis): la dosis se saca dividiendo por la superficie, y viceversa.
+const numOk = v => { const n = parseFloat(v); return isNaN(n) ? null : n }
+const totalProducto = (p, sup) => numOk(p.total) ?? (numOk(p.dosis) != null && numOk(sup) ? numOk(p.dosis) * numOk(sup) : null)
+const dosisProducto = (p, sup) => numOk(p.dosis) ?? (numOk(p.total) != null && numOk(sup) ? Math.round(numOk(p.total) / numOk(sup) * 100) / 100 : null)
+const fmtCant = n => n != null ? n.toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—'
+
 function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const superficie = orden.superficie_ha_real || haTrabajables(lote) || haTrabajables(campo) || '—'
@@ -931,12 +939,13 @@ function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
 
   const filasProductos = productos.map(p => {
     const item = stockAgro.find(s => String(s.id) === String(p.id))
-    const totalUso = p.dosis && superficie !== '—' ? parseFloat(p.dosis) * parseFloat(superficie) : null
+    const totalUso = totalProducto(p, superficie)
+    const dosisVer = dosisProducto(p, superficie)
     const pres = totalUso ? enPresentaciones(totalUso, item) : ''
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${p.dosis || '—'} ${p.unidad || item?.unidad || ''}/ha</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${fmtCant(dosisVer)} ${p.unidad || item?.unidad || ''}/ha</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:right;font-weight:700;color:#1E5C2E;">${totalUso ? totalUso.toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' ' + (item?.unidad || '') : '—'}</td>
     </tr>`
   }).join('')
@@ -1085,10 +1094,11 @@ function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
   const filasProductos = Object.values(productosMapa).map(p => {
     const item = stockAgro.find(s => String(s.id) === String(p.id))
     const pres = enPresentaciones(p.total, item)
+    const dosisVer = numOk(p.dosis) ?? (superficieTotal ? Math.round(p.total / superficieTotal * 100) / 100 : null)
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${p.dosis || '—'} ${p.unidad || item?.unidad || ''}/ha</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${fmtCant(dosisVer)} ${p.unidad || item?.unidad || ''}/ha</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:right;font-weight:700;color:#1E5C2E;">${p.total.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ${item?.unidad || p.unidad || ''}</td>
     </tr>`
   }).join('')
@@ -1275,11 +1285,11 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 
   const filasProductos = productos.map(p => {
     const item = stockAgro.find(s => String(s.id) === String(p.id) || s.insumo === p.nombre)
-    const totalKg = p.dosis && superficie !== '—' ? (parseFloat(p.dosis) * parseFloat(superficie)).toLocaleString('es-AR', { maximumFractionDigits: 1 }) : '—'
+    const totalKg = fmtCant(totalProducto(p, superficie))
     return `<tr>
       <td style="padding:7px 10px;border-bottom:1px solid #eee;">${item?.insumo || p.nombre || '—'}</td>
       <td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center;">${item?.tipo || '—'}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center;">${p.dosis || '—'} ${p.unidad || item?.unidad || ''}/ha</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center;">${fmtCant(dosisProducto(p, superficie))} ${p.unidad || item?.unidad || ''}/ha</td>
       <td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">${totalKg} ${item?.unidad || ''}</td>
     </tr>`
   }).join('')
@@ -1914,8 +1924,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         (o.productos || []).length > 0 ? '\nInsumos aplicados:' : null,
         ...(o.productos || []).map(p => {
           const item = stockAgro.find(s => s.id === parseInt(p.id))
-          const total = o.superficie_ha_real ? Math.round(parseFloat(p.dosis) * o.superficie_ha_real * 100) / 100 : ''
-          return `• ${item?.insumo || '—'}: ${p.dosis} ${item?.unidad || ''}/ha (${total} ${item?.unidad || ''} total)`
+          return `• ${item?.insumo || '—'}: ${fmtCant(dosisProducto(p, o.superficie_ha_real))} ${item?.unidad || ''}/ha (${fmtCant(totalProducto(p, o.superficie_ha_real))} ${item?.unidad || ''} total)`
         }),
         o.observaciones ? `\nObs: ${o.observaciones}` : null,
       ].filter(Boolean).join('\n')
