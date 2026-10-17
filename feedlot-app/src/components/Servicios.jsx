@@ -91,6 +91,39 @@ const precioDelDia = (stockAgro, id) => {
   return ars || usd ? { precio_ars: ars, precio_usd: usd, sin_iva: true, precio_origen: 'stock' } : {}
 }
 
+// Una siembra propia cargada desde Servicios también tiene que aparecer en
+// Agricultura → Campañas (plan_cultivos): de ahí salen los campos sembrados
+// de cada campaña, la rentabilidad por lote y el presupuesto de campaña. Si
+// ya había un plan para ese campo/lote, cultivo y campaña, se completa la
+// fecha de siembra; si no, se crea. La orden queda vinculada al plan.
+const CULTIVO_AGRO = { 'Maíz': 'Maiz', 'Maiz': 'Maiz', 'Soja': 'Soja', 'Trigo': 'Trigo', 'Sorgo': 'Sorgo', 'Girasol': 'Girasol' }
+async function registrarSiembraEnCampana(supabase, { ordenId, campanaId, campoId, loteId, cultivo, ha, fecha, productos, stockAgro }) {
+  if (!ordenId || !campanaId || !campoId) return
+  const cultivoAgro = CULTIVO_AGRO[cultivo] || 'Otro'
+  const variedades = (productos || []).map(p => (stockAgro || []).find(x => String(x.id) === String(p.id)))
+    .filter(it => it && /semilla/i.test(it.tipo || '')).map(it => (it.insumo || '').trim())
+  let q = supabase.from('plan_cultivos').select('id, fecha_siembra, superficie_ha, variedad').eq('campana_id', campanaId).eq('campo_id', campoId).eq('cultivo', cultivoAgro)
+  q = loteId ? q.eq('lote_id', loteId) : q.is('lote_id', null)
+  const { data: existentes } = await q.limit(1)
+  let planId = existentes?.[0]?.id
+  if (planId) {
+    const pl = existentes[0]
+    await supabase.from('plan_cultivos').update({
+      fecha_siembra: pl.fecha_siembra || fecha,
+      superficie_ha: pl.superficie_ha || ha || null,
+      variedad: pl.variedad || (variedades.length ? variedades.join(', ') : null),
+    }).eq('id', planId)
+  } else {
+    const { data: nuevo } = await supabase.from('plan_cultivos').insert({
+      campana_id: campanaId, campo_id: campoId, lote_id: loteId || null, cultivo: cultivoAgro,
+      superficie_ha: ha || null, fecha_siembra: fecha, variedad: variedades.length ? variedades.join(', ') : null,
+      observaciones: 'Creado al cargar la siembra desde Servicios',
+    }).select('id').single()
+    planId = nuevo?.id
+  }
+  if (planId) await supabase.from('ordenes_trabajo').update({ plan_id: planId }).eq('id', ordenId)
+}
+
 export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
@@ -333,6 +366,11 @@ export default function Servicios({ usuario, mobile, nav }) {
       } else {
         // Vincular servicio ↔ orden para poder completar el precio después, en los dos a la vez
         await supabase.from('servicios_terceros').update({ orden_trabajo_id: ordenCreada?.id }).eq('id', servicioCreado?.id)
+        if (form.labor === 'Siembra') await registrarSiembraEnCampana(supabase, {
+          ordenId: ordenCreada?.id, campanaId: form.campana_id ? parseInt(form.campana_id) : null, campoId: parseInt(form.campo_id),
+          loteId: form.lote_id ? parseInt(form.lote_id) : null, cultivo: form.cultivo, ha: parseFloat(form.hectareas) || null,
+          fecha: form.fecha, productos: productosValidos, stockAgro,
+        })
         // Descontar del stock de Agricultura cada producto usado (esto pasa
         // siempre, tenga precio o no — el insumo se usó físicamente igual)
         for (const p of productosValidos) {
@@ -658,6 +696,11 @@ export default function Servicios({ usuario, mobile, nav }) {
           alert('El servicio se guardó, pero no se pudo reflejar en Agricultura: ' + errOrden.message)
         } else {
           await supabase.from('servicios_terceros').update({ orden_trabajo_id: ordenCreada?.id }).eq('id', servicioCreado?.id)
+          if (formM.labor === 'Siembra') await registrarSiembraEnCampana(supabase, {
+            ordenId: ordenCreada?.id, campanaId: formM.campana_id ? parseInt(formM.campana_id) : null, campoId: parseInt(formM.campo_id),
+            loteId: formM.lote_id ? parseInt(formM.lote_id) : null, cultivo: formM.cultivo, ha: parseFloat(formM.hectareas) || null,
+            fecha: formM.fecha, productos: productosValidos, stockAgro,
+          })
           for (const p of productosValidos) {
             await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -parseFloat(p.total) })
           }
