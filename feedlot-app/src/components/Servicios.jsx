@@ -63,6 +63,20 @@ async function obtenerOCrearCosecha(reg, destino, campos) {
   return { id: cos.id, registro: { ...reg, [campoId]: cos.id } }
 }
 
+// Insumos que se pueden cargar según la labor (órdenes propias de Agricultura
+// cargadas desde Servicios): siembra → semillas y fertilizantes; cosecha →
+// silobolsas; el resto, todo.
+const TIPOS_POR_LABOR = { Siembra: ['semilla', 'fertiliz'], Cosecha: ['silobolsa'] }
+const insumoParaLabor = (s, labor) => {
+  const tipos = TIPOS_POR_LABOR[labor]
+  return !tipos || tipos.some(t => (s.tipo || '').toLowerCase().includes(t))
+}
+const insumosParaLabor = (stock, labor) => (stock || []).filter(s => insumoParaLabor(s, labor))
+  .sort((a, b) => (a.tipo || '').localeCompare(b.tipo || '') || (a.insumo || '').localeCompare(b.insumo || ''))
+const fmtStockAgro = s => `${(parseFloat(s?.cantidad) || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${s?.unidad || ''}`.trim()
+const opcionInsumo = s => `${s.insumo} · ${s.tipo || ''} — disponible: ${fmtStockAgro(s)}`
+const etiquetaProductosLabor = labor => labor === 'Siembra' ? 'Semilla y fertilizante usados' : labor === 'Cosecha' ? 'Silobolsa usado' : 'Productos usados'
+
 export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
@@ -794,17 +808,29 @@ export default function Servicios({ usuario, mobile, nav }) {
                 <>
                   <label style={lblM}>Costo total $ (opcional — se puede completar después)</label>
                   <input type="number" value={formM.costo_total} onChange={e => setFormM({...formM, costo_total: e.target.value})} style={inpM} placeholder="Se puede dejar pendiente" inputMode="decimal" />
-                  <label style={lblM}>{formM.labor === 'Siembra' ? 'Semilla usada' : formM.labor === 'Cosecha' ? 'Silobolsa usado' : 'Productos usados'}</label>
-                  {formM.productos.map((p, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+                  <label style={lblM}>{etiquetaProductosLabor(formM.labor)}</label>
+                  {formM.productos.map((p, i) => {
+                    const it = stockAgro.find(s => String(s.id) === String(p.id))
+                    const disp = parseFloat(it?.cantidad) || 0
+                    const excede = it && (parseFloat(p.total) || 0) > disp
+                    return (
+                    <div key={i} style={{ marginBottom: 8 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <select value={p.id} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], id: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 2 }}>
                         <option value="">— Insumo —</option>
-                        {stockAgro.filter(s => formM.labor === 'Siembra' ? s.tipo === 'Semilla' : formM.labor === 'Cosecha' ? s.tipo === 'Silobolsa' : true).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad})</option>)}
+                        {insumosParaLabor(stockAgro, formM.labor).map(s => <option key={s.id} value={s.id}>{opcionInsumo(s)}</option>)}
                       </select>
                       <input type="number" step="0.1" value={p.total} onChange={e => { const np = [...formM.productos]; np[i] = {...np[i], total: e.target.value}; setFormM({...formM, productos: np}) }} style={{ ...inpM, marginBottom: 0, flex: 1 }} placeholder="Cant. (ej. 1,5)" inputMode="decimal" />
                       <button onClick={() => setFormM({...formM, productos: formM.productos.filter((_, ix) => ix !== i)})} style={{ padding: '10px 12px', background: CM.redLight || '#3D1A1A', border: `1px solid ${CM.red}`, color: CM.red, borderRadius: 8, cursor: 'pointer' }}>✕</button>
                     </div>
-                  ))}
+                    {it && (
+                      <div style={{ fontSize: 12, marginTop: 4, color: excede ? CM.red : CM.muted, fontWeight: excede ? 700 : 400 }}>
+                        Disponible: {fmtStockAgro(it)}{excede ? ' — estás cargando más de lo que hay en stock' : ''}
+                      </div>
+                    )}
+                    </div>
+                    )
+                  })}
                   <button onClick={() => setFormM({...formM, productos: [...formM.productos, { id: '', total: '' }]})}
                     style={{ padding: '9px 14px', fontSize: 13, background: 'transparent', border: `1px dashed ${CM.border}`, color: CM.muted, borderRadius: 8, cursor: 'pointer', marginBottom: 12, width: '100%' }}>
                     + Agregar producto
@@ -1316,23 +1342,35 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '.75rem' }}>
                     <div><Lbl>Costo total $ (valor del trabajo, para la rentabilidad del lote)</Lbl><input type="number" value={form.costo_total} onChange={e => setForm({ ...form, costo_total: e.target.value })} placeholder="ej. combustible + hs de trabajo" style={inpMono} /></div>
                   </div>
-                  <Lbl>{form.labor === 'Siembra' ? 'Semilla usada' : form.labor === 'Cosecha' ? 'Silobolsa usado' : 'Productos usados en este lote'}</Lbl>
-                  {form.productos.map((p, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                  <Lbl>{form.labor === 'Siembra' || form.labor === 'Cosecha' ? etiquetaProductosLabor(form.labor) : 'Productos usados en este lote'}</Lbl>
+                  {form.productos.map((p, i) => {
+                    const it = stockAgro.find(s => String(s.id) === String(p.id))
+                    const disp = parseFloat(it?.cantidad) || 0
+                    const excede = it && (parseFloat(p.total) || 0) > disp
+                    return (
+                    <div key={i} style={{ marginBottom: 6 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, alignItems: 'center' }}>
                       <select value={p.id} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], id: e.target.value }; setForm({ ...form, productos: np }) }} style={inp}>
                         <option value="">— Seleccioná el insumo —</option>
-                        {stockAgro.filter(s => formM.labor === 'Siembra' ? s.tipo === 'Semilla' : formM.labor === 'Cosecha' ? s.tipo === 'Silobolsa' : true).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.unidad}) — stock: {s.cantidad?.toLocaleString('es-AR')}</option>)}
+                        {insumosParaLabor(stockAgro, form.labor).map(s => <option key={s.id} value={s.id}>{opcionInsumo(s)}</option>)}
                       </select>
                       <input type="number" step="0.1" value={p.total} onChange={e => { const np = [...form.productos]; np[i] = { ...np[i], total: e.target.value }; setForm({ ...form, productos: np }) }} placeholder="Cantidad total (ej. 1,5)" style={inpMono} />
                       <button onClick={() => setForm({ ...form, productos: form.productos.filter((_, ix) => ix !== i) })} style={{ padding: '6px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕</button>
                     </div>
-                  ))}
+                    {it && (
+                      <div style={{ fontSize: 11, marginTop: 3, color: excede ? S.red : S.muted, fontWeight: excede ? 700 : 400 }}>
+                        Disponible: {fmtStockAgro(it)}{excede ? ' — estás cargando más de lo que hay en stock' : ''}
+                      </div>
+                    )}
+                    </div>
+                    )
+                  })}
                   <button onClick={() => setForm({ ...form, productos: [...form.productos, { id: '', total: '' }] })}
                     style={{ padding: '5px 12px', fontSize: 12, background: 'transparent', border: `1px dashed ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
                     + Agregar producto
                   </button>
                   <div style={{ fontSize: 11, color: S.hint, marginTop: 8 }}>
-                    Se descuentan del stock de Agricultura al guardar. Para siembra, cargá acá la semilla; para cosecha, el silobolsa.
+                    Se descuentan del stock de Agricultura al guardar. Para siembra, cargá acá la semilla y el fertilizante; para cosecha, el silobolsa.
                   </div>
                 </div>
               )}
