@@ -82,6 +82,15 @@ const etiquetaProductosLabor = labor => labor === 'Siembra' ? 'Semilla y fertili
 // y el resultado de Servicios, así que nunca queda "pendiente de cobro".
 const esServicioInterno = s => s.tipo_servicio === 'propio' || !!s.orden_trabajo_id || /ramonda hnos/i.test(s.cliente || '')
 
+// Precio del insumo al momento de cargar la orden (sin IVA, el del stock),
+// para que el costo del lote no cambie con las compras siguientes.
+const precioDelDia = (stockAgro, id) => {
+  const it = (stockAgro || []).find(x => String(x.id) === String(id))
+  const ars = parseFloat(it?.precio_referencia) || null
+  const usd = parseFloat(it?.precio_referencia_usd) || null
+  return ars || usd ? { precio_ars: ars, precio_usd: usd, sin_iva: true, precio_origen: 'stock' } : {}
+}
+
 export default function Servicios({ usuario, mobile, nav }) {
   const [tab, setTab] = useState('servicios')
   const [loading, setLoading] = useState(true)
@@ -313,7 +322,7 @@ export default function Servicios({ usuario, mobile, nav }) {
         descripcion: `Cargado desde Servicios — ${form.labor}`,
         proveedor: null, es_propia: true,
         superficie_ha_real: parseFloat(form.hectareas) || null,
-        productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(form.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(form.hectareas) * 100) / 100) : null })),
+        productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(form.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(form.hectareas) * 100) / 100) : null, ...precioDelDia(stockAgro, p.id) })),
         costo_total: costoNum, costo_ha: (costoNum && form.hectareas) ? Math.round(costoNum / parseFloat(form.hectareas)) : null,
         estado: 'completado', estado_pago: costoNum ? 'pagado' : 'pendiente',
         observaciones: `Servicio interno #${servicioCreado?.id} — usa maquinaria de Servicios`,
@@ -639,7 +648,7 @@ export default function Servicios({ usuario, mobile, nav }) {
           descripcion: `Cargado desde Servicios (celular) — ${formM.labor}`,
           proveedor: null, es_propia: true,
           superficie_ha_real: parseFloat(formM.hectareas) || null,
-          productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(formM.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(formM.hectareas) * 100) / 100) : null })),
+          productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(formM.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(formM.hectareas) * 100) / 100) : null, ...precioDelDia(stockAgro, p.id) })),
           costo_total: costoNum, costo_ha: (costoNum && formM.hectareas) ? Math.round(costoNum / parseFloat(formM.hectareas)) : null,
           estado: 'completado', estado_pago: costoNum ? 'pagado' : 'pendiente',
           observaciones: `Servicio interno #${servicioCreado?.id} — usa maquinaria de Servicios`,
