@@ -13,8 +13,6 @@ import { Loader } from './UI'
 //  - Activos: bienes vendidos sin cobrar.
 //  - Cheques de terceros en cartera (ya cobrados en cheque: entran a la
 //    cuenta en su fecha de cobro).
-// Abajo, el flujo de fondos por mes: lo que entra contra lo que sale (lo
-// pendiente de pago de Cuentas a pagar + cheques propios por debitar).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const S = {
@@ -37,7 +35,6 @@ const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', '
 export default function CuentasCobrar({ setModulo }) {
   const [cobrar, setCobrar] = useState([])
   const [chequesCartera, setChequesCartera] = useState([])
-  const [pagar, setPagar] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useState('')
   const [texto, setTexto] = useState('')
@@ -46,19 +43,12 @@ export default function CuentasCobrar({ setModulo }) {
 
   async function cargar() {
     setLoading(true)
-    const [{ data: ve }, { data: sv }, { data: vg }, { data: va }, { data: ch },
-      { data: ci }, { data: gg }, { data: pc }, { data: fl }, { data: lo }, { data: ot }] = await Promise.all([
+    const [{ data: ve }, { data: sv }, { data: vg }, { data: va }, { data: ch }] = await Promise.all([
       supabase.from('ventas').select('*, corrales(numero)').neq('estado_comercial', 'cobrado'),
       supabase.from('servicios_terceros').select('*'),
       supabase.from('ventas_granos').select('*'),
       supabase.from('ventas_activos').select('*').neq('estado_cobro', 'cobrado'),
       supabase.from('cheques').select('*'),
-      supabase.from('compras_insumos').select('id, fecha, total, proveedor, pagos_detalle').in('estado_pago', ['pendiente', 'parcial']).eq('marcado_resuelto', false),
-      supabase.from('gastos_generales').select('id, fecha, monto, proveedor').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
-      supabase.from('pagos_creditos').select('id, fecha, monto, creditos(es_dolares)').eq('estado', 'pendiente').eq('marcado_resuelto', false),
-      supabase.from('fletes').select('id, fecha, monto').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false),
-      supabase.from('lotes').select('*').neq('estado_pago', 'pagado').eq('marcado_resuelto', false),
-      supabase.from('ordenes_trabajo').select('id, fecha, costo_total, estado').eq('estado_pago', 'pendiente').eq('marcado_resuelto', false).eq('es_propia', false),
     ])
     const filas = []
 
@@ -125,32 +115,8 @@ export default function CuentasCobrar({ setModulo }) {
     setCobrar(filas)
 
     // Cheques: de terceros en cartera (entran) y propios por debitar (salen)
-    const hoyS = iso(new Date())
     setChequesCartera((ch || []).filter(c => c.tipo === 'recibido' && c.estado === 'en_cartera').map(c => ({ fecha: c.fecha_cobro, monto: parseFloat(c.monto) || 0, detalle: `Cheque ${c.numero || ''} · ${c.banco || ''}`, de: c.librador || c.recibido_de || '' })))
 
-    // ── Lo que sale (para el flujo) ──
-    const salidas = []
-    ;(ci || []).forEach(c => salidas.push({ fecha: c.fecha, monto: (parseFloat(c.total) || 0) - sumaPagos(c.pagos_detalle) }))
-    ;(gg || []).forEach(g => salidas.push({ fecha: g.fecha, monto: parseFloat(g.monto) || 0 }))
-    ;(pc || []).filter(p => !p.creditos?.es_dolares).forEach(p => salidas.push({ fecha: p.fecha, monto: parseFloat(p.monto) || 0 }))
-    ;(fl || []).forEach(f => salidas.push({ fecha: f.fecha, monto: parseFloat(f.monto) || 0 }))
-    ;(ot || []).filter(o => o.estado !== 'emitida').forEach(o => salidas.push({ fecha: o.fecha, monto: parseFloat(o.costo_total) || 0 }))
-    const lotesPend = lo || []
-    if (lotesPend.length) {
-      const { data: pagosL } = await supabase.from('pagos_compras').select('lote_id, monto').in('lote_id', lotesPend.map(l => l.id))
-      const pag = {}; (pagosL || []).forEach(p => { pag[p.lote_id] = (pag[p.lote_id] || 0) + (parseFloat(p.monto) || 0) })
-      lotesPend.forEach(l => {
-        const totalFacturasReal = (l.facturas_feria || []).reduce((s, f) => s + (parseFloat(f.total_factura_manual) || f.total_factura || 0), 0)
-        const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
-        const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
-        const total = totalFacturasReal > 0 ? totalFacturasReal : (totalGC || l.monto_total_con_iva || 0)
-        const saldo = total - (pag[l.id] || 0)
-        if (saldo > 0.5) salidas.push({ fecha: l.fecha_ingreso, monto: saldo })
-      })
-    }
-    ;(ch || []).filter(c => c.tipo === 'emitido' && c.estado === 'entregado' && c.fecha_cobro && c.fecha_cobro >= hoyS)
-      .forEach(c => salidas.push({ fecha: c.fecha_cobro, monto: parseFloat(c.monto) || 0, cheque: true }))
-    setPagar(salidas)
     setLoading(false)
   }
 
@@ -178,14 +144,6 @@ export default function CuentasCobrar({ setModulo }) {
   const porAct = Object.keys(ACT).map(a => ({ a, t: cobrar.filter(f => f.act === a).reduce((s, f) => s + f.saldo, 0), n: cobrar.filter(f => f.act === a).length })).filter(x => x.n > 0)
   const totalCheques = chequesCartera.reduce((t, c) => t + c.monto, 0)
 
-  // Flujo por período: entra (a cobrar + cheques en cartera) vs sale (a pagar + cheques propios)
-  const flujo = PER.map(p => {
-    const entraCobrar = cobrar.filter(f => periodo(f.vence) === p.k).reduce((t, f) => t + f.saldo, 0)
-    const entraCheques = chequesCartera.filter(c => (c.fecha && c.fecha < hoyS ? 'vencido' : periodo(c.fecha)) === p.k).reduce((t, c) => t + c.monto, 0)
-    const sale = pagar.filter(x => periodo(x.fecha) === p.k).reduce((t, x) => t + x.monto, 0)
-    const saleCheques = pagar.filter(x => x.cheque && periodo(x.fecha) === p.k).reduce((t, x) => t + x.monto, 0)
-    return { ...p, entraCobrar, entraCheques, sale, saleCheques, neto: entraCobrar + entraCheques - sale }
-  })
 
   const card = { background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1rem 1.1rem', marginBottom: '1rem' }
   const th = { padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }
@@ -194,7 +152,7 @@ export default function CuentasCobrar({ setModulo }) {
     <div>
       <div style={{ marginBottom: '1.25rem' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: S.text, margin: 0 }}>Cuentas a cobrar</h1>
-        <div style={{ fontSize: 13, color: S.muted, marginTop: 4 }}>Todo lo pendiente de cobro, junto: ventas de hacienda (las mismas de la Gestión Comercial), granos, servicios y activos. Abajo, lo que entra contra lo que sale por mes.</div>
+        <div style={{ fontSize: 13, color: S.muted, marginTop: 4 }}>Todo lo pendiente de cobro, junto: ventas de hacienda (las mismas de la Gestión Comercial), granos, servicios y activos.</div>
       </div>
 
       {/* Totales por período */}
@@ -262,35 +220,6 @@ export default function CuentasCobrar({ setModulo }) {
           ))}
         </div>
       )}
-
-      {/* Flujo de fondos */}
-      <div style={card}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>💵 Flujo de fondos: lo que entra contra lo que sale</div>
-        <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>Entra: lo pendiente de cobro y los cheques en cartera. Sale: lo pendiente de pago (Cuentas a pagar, por la fecha de la compra o gasto) y los cheques propios por debitar.</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead><tr>{['Período', 'Entra (a cobrar)', 'Entra (cheques)', 'Sale (a pagar)', 'de eso, cheques propios', 'Queda'].map(h => <th key={h} style={{ ...th, textAlign: h === 'Período' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {flujo.map(p => (
-              <tr key={p.k} style={{ borderBottom: `1px solid ${S.border}` }}>
-                <td style={{ padding: '8px 10px', fontWeight: 600, color: p.k === 'vencido' ? S.red : S.text }}>{p.label}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{fmt(p.entraCobrar)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.green }}>{fmt(p.entraCheques)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.red }}>{fmt(p.sale)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.hint }}>{fmt(p.saleCheques)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: p.neto >= 0 ? S.green : S.red }}>{fmt(p.neto)}</td>
-              </tr>
-            ))}
-            <tr style={{ background: S.bg }}>
-              <td style={{ padding: '8px 10px', fontWeight: 700 }}>Total</td>
-              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{fmt(flujo.reduce((t, p) => t + p.entraCobrar, 0))}</td>
-              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{fmt(flujo.reduce((t, p) => t + p.entraCheques, 0))}</td>
-              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{fmt(flujo.reduce((t, p) => t + p.sale, 0))}</td>
-              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: S.hint }}>{fmt(flujo.reduce((t, p) => t + p.saleCheques, 0))}</td>
-              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>{fmt(flujo.reduce((t, p) => t + p.neto, 0))}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </div>
   )
 }
