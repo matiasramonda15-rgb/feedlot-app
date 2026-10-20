@@ -51,6 +51,15 @@ function descCompraInsumo(ci) {
     + (canje > 0 ? ` · pagado en canje $${Math.round(canje).toLocaleString('es-AR')}${canje < (parseFloat(ci.total) || 0) - 1 ? ` (saldo $${Math.round((parseFloat(ci.total) || 0) - canje).toLocaleString('es-AR')})` : ''}` : '')
 }
 
+// Un arriendo pagado parte por Caja 1 y parte por Caja 2: la deuda se reparte
+// entre las dos cajas según lo que se pagó en cada una (antes figuraba el total
+// en las dos y quedaba como que se le debía al dueño). Lo que falta pagar
+// queda en Caja 1.
+const partesArriendo = (v, monto) => {
+  const c2 = (v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && p.es_paralelo).reduce((t, p) => t + (parseFloat(p.monto) || 0), 0)
+  return { c1: Math.max(0, monto - c2), c2 }
+}
+
 export default function Contactos({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [contactos, setContactos] = useState([])
@@ -411,8 +420,9 @@ export default function Contactos({ usuario }) {
     ;(data.arriendos || []).forEach(v => {
       const monto = parseFloat(v.monto_total)
       if (!monto) return
-      if (esParalela) { if (v.caja_paralela_id) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: monto }) }
-      else movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
+      const { c1, c2 } = partesArriendo(v, monto)
+      if (esParalela) { if (c2 > 0) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: c2 }) }
+      else if (c1 > 0) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: c1 })
       ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
@@ -1408,11 +1418,11 @@ export default function Contactos({ usuario }) {
             _fuente = v.creado_en || v.created_at || ''
             const monto = parseFloat(v.monto_total)
             if (!monto) return
-            const esParaleloV = !!v.caja_paralela_id
+            const { c1, c2 } = partesArriendo(v, monto)
             if (!esParalela) {
-              empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: monto })
-            } else if (esParaleloV) {
-              empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: monto })
+              if (c1 > 0) empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: c1 })
+            } else if (c2 > 0) {
+              empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: c2 })
             }
             ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               const esPagoParalelo = p.es_paralelo || false
