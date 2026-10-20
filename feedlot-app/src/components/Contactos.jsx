@@ -60,6 +60,11 @@ const partesArriendo = (v, monto) => {
   return { c1: Math.max(0, monto - c2), c2 }
 }
 
+// Fecha del renglón del arriendo: el vencimiento, salvo que se haya pagado
+// antes; ahí va el día del pago, así el arriendo queda arriba de su pago
+// (el vencimiento se ve igual en la columna Fecha vto.).
+const fechaArriendo = v => (v.pagado_en && v.fecha_vencimiento && v.pagado_en < v.fecha_vencimiento) ? v.pagado_en : v.fecha_vencimiento
+
 export default function Contactos({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [contactos, setContactos] = useState([])
@@ -421,8 +426,9 @@ export default function Contactos({ usuario }) {
       const monto = parseFloat(v.monto_total)
       if (!monto) return
       const { c1, c2 } = partesArriendo(v, monto)
-      if (esParalela) { if (c2 > 0) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: c2 }) }
-      else if (c1 > 0) movs.push({ fecha: v.fecha_vencimiento, tipo: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: c1 })
+      const fOp = fechaArriendo(v)
+      if (esParalela) { if (c2 > 0) movs.push({ fecha: fOp, tipo: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: c2 }) }
+      else if (c1 > 0) movs.push({ fecha: fOp, tipo: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: c1 })
       ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach(p => {
         const esPagoParalelo = p.es_paralelo || false
         if (esParalela !== esPagoParalelo) return
@@ -1419,10 +1425,11 @@ export default function Contactos({ usuario }) {
             const monto = parseFloat(v.monto_total)
             if (!monto) return
             const { c1, c2 } = partesArriendo(v, monto)
+            const fOp = fechaArriendo(v)
             if (!esParalela) {
-              if (c1 > 0) empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: c1 })
+              if (c1 > 0) empujar({ fecha: fOp, fechaVto: v.fecha_vencimiento, tipo: 'ARRIENDO', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''}`, credito: 0, debito: c1 })
             } else if (c2 > 0) {
-              empujar({ fecha: v.fecha_vencimiento, fechaVto: null, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: c2 })
+              empujar({ fecha: fOp, fechaVto: v.fecha_vencimiento, tipo: 'PAR', nro: v.id, descripcion: `Arriendo ${v.campos?.nombre || ''} (C2)`, credito: 0, debito: c2 })
             }
             ;(v.pagos_detalle || []).filter(p => p.tipo !== 'canje' && parseFloat(p.monto) > 0).forEach((p, pi) => {
               const esPagoParalelo = p.es_paralelo || false
