@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { cuotasPendientesLote } from '../shared/cuotasLote'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -112,9 +113,12 @@ export default function CuentasPagar({ usuario, setModulo }) {
       const total = totalFacturasReal > 0 ? totalFacturasReal : (totalGC || l.monto_total_con_iva || 0)
       const saldo = total - totalPagado
       if (saldo > 0.5) {
+        // Fecha: la de la próxima cuota sin pagar (no la de ingreso, que la
+        // hacía figurar vencida aunque se pague a 30-60-90).
+        const cuotas = cuotasPendientesLote(l, saldo, totalPagado)
         filas.push({
-          id: `lo-${l.id}`, origen: 'hacienda', fecha: l.fecha_ingreso, proveedor: l.procedencia || '—',
-          descripcion: `${l.cantidad || ''} animales · ${l.codigo || ''}`,
+          id: `lo-${l.id}`, origen: 'hacienda', fecha: cuotas[0]?.fecha || l.fecha_ingreso, proveedor: l.procedencia || '—',
+          descripcion: `${l.cantidad || ''} animales · ${l.codigo || ''}${cuotas.length > 1 ? ` · ${cuotas.length} cuotas (próxima $${Math.round(cuotas[0].monto).toLocaleString('es-AR')})` : ''}`,
           monto: saldo,
         })
       }

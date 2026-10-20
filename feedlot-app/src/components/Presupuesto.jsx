@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { Loader } from './UI'
+import { cuotasPendientesLote } from '../shared/cuotasLote'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Presupuesto (flujo de fondos)
@@ -222,7 +223,10 @@ async function cargarPendientes() {
       const ivaMontoCalc = l.monto_facturado != null ? Math.round(l.monto_facturado * (l.iva_pct || 10.5) / 100) : (l.iva_monto || 0)
       const totalGC = (l.monto_facturado != null || l.monto_negro != null) ? (l.monto_facturado || 0) + ivaMontoCalc + (l.monto_negro || 0) : null
       const total = totalFacturasReal > 0 ? totalFacturasReal : (totalGC || num(l.monto_total_con_iva))
-      add('Feedlot', 'egreso', 'Compra de hacienda', l.procedencia, l.fecha_vencimiento_pago || l.fecha_ingreso, total - (pag[l.id] || 0), `${l.procedencia || ''} · ${l.codigo || ''}`)
+      const saldo = total - (pag[l.id] || 0)
+      if (saldo <= 1000) return
+      const cuotas = cuotasPendientesLote(l, saldo, pag[l.id] || 0)
+      cuotas.forEach((q, i) => add('Feedlot', 'egreso', 'Compra de hacienda', l.procedencia, q.fecha, q.monto, `${l.procedencia || ''} · ${l.codigo || ''}${cuotas.length > 1 ? ` · cuota ${i + 1} de ${cuotas.length}` : ''}`))
     })
   }
   return p
