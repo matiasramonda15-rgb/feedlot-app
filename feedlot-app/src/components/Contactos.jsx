@@ -305,6 +305,7 @@ export default function Contactos({ usuario }) {
       // ventas activas a la vez no quedaba claro qué estaba pagando cada uno.
       grupo.forEach(vv => {
         (pagosVenta[vv.id] || []).forEach(p => {
+          if (p.forma_pago === 'canje') return
           const esPagoParalelo = p.es_paralelo || false
           if (esParalela !== esPagoParalelo) return
           if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: `Cobro — venta ${fechaCorta}${cantVenta ? ` (${cantVenta} cab)` : ''}${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: 0, debito: p.monto })
@@ -327,6 +328,7 @@ export default function Contactos({ usuario }) {
       else { if (montoFact > 0) movs.push({ fecha, tipo: 'Compra hacienda', credito: 0, debito: montoFact }) }
       // Pagos ya realizados de esta compra — bajan lo que le debemos
       ;(pagosCompra[l.id] || []).forEach(p => {
+        if (p.forma_pago === 'canje') return
         const esPagoParalelo = p.es_paralelo || p.es_negro || false
         if (esParalela !== esPagoParalelo) return
         if (p.monto > 0) movs.push({ fecha: p.fecha, tipo: `Pago${descMedioPago(p) ? ' · ' + descMedioPago(p) : ''}`, credito: p.monto, debito: 0 })
@@ -1202,7 +1204,11 @@ export default function Contactos({ usuario }) {
               })
             }
             // Cobros del grupo
-            const todosLosPagos = grupo.flatMap(vv => pagosVenta[vv.id] || [])
+            // Canje: la venta y la compra ya se descuentan solas en esta cuenta (una a
+            // favor y otra en contra), así que el registro del canje no se muestra — si
+            // no, aparecían dos renglones que se anulan entre sí. Mismo criterio que los
+            // canjes de compras de insumos.
+            const todosLosPagos = grupo.flatMap(vv => pagosVenta[vv.id] || []).filter(p => p.forma_pago !== 'canje')
             todosLosPagos.forEach(p => {
               const esParaleloP = p.es_paralelo || false
               if (esParalela && !esParaleloP) return
@@ -1250,7 +1256,7 @@ export default function Contactos({ usuario }) {
               })
             }
             // Pagos
-            ;(pagosCompra[l.id] || []).forEach(p => {
+            ;(pagosCompra[l.id] || []).filter(p => p.forma_pago !== 'canje').forEach(p => {
               const esParaleloP = p.es_paralelo || p.es_negro || false
               if (esParalela && !esParaleloP) return
               if (!esParalela && esParaleloP) return
