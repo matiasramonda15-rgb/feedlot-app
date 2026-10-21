@@ -1665,7 +1665,13 @@ export default function Ventas({ usuario, mobile, nav }) {
                             const totalA = v.grupo_venta_id ? (v.monto_total_grupo || (g || []).reduce((s,gv)=>s+(gv.monto_total_con_iva||gv.total||0),0)) : (v.monto_total_con_iva||v.total||0)
                             const corrStr = v.grupo_venta_id ? (g || []).map(gv=>`C-${gv.corrales?.numero||gv.corral_id}`).join(', ') : `C-${v.corrales?.numero||v.corral_id}`
                             const kgNeto = (g || []).reduce((s,gv)=>s+(gv.kg_neto||0),0)
-                            const precioReal = kgNeto && (v.monto_facturado||v.monto_negro) ? Math.round(((v.monto_facturado||0)+(v.monto_negro||0))/kgNeto) : v.precio_kg
+                            // $/kg real (sin IVA) de TODA la venta: facturado + negro − descuento de
+                            // todos los corrales, sobre los kg netos de todos. Antes tomaba la plata
+                            // de un solo corral dividida por los kg del grupo y daba precios bajísimos.
+                            const montoReal = (g || []).reduce((s,gv)=>s+(gv.monto_facturado||0)+(gv.monto_negro||0)-(gv.descuento_monto||0),0)
+                            const conMonto = (g || []).some(gv => gv.monto_facturado || gv.monto_negro)
+                            const precioPactado = kgNeto ? Math.round((g || []).reduce((s,gv)=>s+(gv.precio_kg||0)*(gv.kg_neto||0),0)/kgNeto) : v.precio_kg
+                            const precioReal = kgNeto && conMonto ? Math.round(montoReal/kgNeto) : precioPactado
                             return (
                               <tr key={v.grupo_venta_id||v.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                                 <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11 }}>{new Date((v.fecha||v.creado_en?.split('T')[0]||v.creado_en)+'T12:00:00').toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit' })}</td>
