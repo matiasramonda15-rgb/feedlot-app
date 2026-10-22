@@ -3113,6 +3113,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   }
   async function vincularCompra(c, ct) {
     const usd = usdCompra(c)
+    if (!(usd > 0)) { alert(`${(c.insumo_nombre || 'Esta compra').trim()} no tiene precio cargado. Completá primero el precio (en USD sin IVA) en la compra, así se sabe cuánto trigo cancela.`); return }
     const { error } = await supabase.from('compras_insumos').update({ contrato_id: ct.id, canje_usd: Math.round(usd * 100) / 100 }).eq('id', c.id)
     if (error) { alert('No se pudo vincular: ' + error.message); return }
     cargarContratos()
@@ -3527,7 +3528,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                               style={{ padding: '3px 4px', fontSize: 11, border: `1px solid ${S.border}`, borderRadius: 4 }}>
                               <option value="anual">% anual</option><option value="mensual">% mensual</option>
                             </select>
-                            {libres.length > 0 && <button onClick={() => setVinculando(vinculando === c.id ? null : c.id)} style={{ padding: '3px 8px', fontSize: 11, background: S.surface, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Vincular compras</button>}
+                            {<button onClick={() => { if (vinculando !== c.id) cargarContratos(); setVinculando(vinculando === c.id ? null : c.id) }} style={{ padding: '3px 8px', fontSize: 11, background: S.surface, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>+ Vincular compras</button>}
                           </div>
                         </div>
                         {vinculando === c.id && (
