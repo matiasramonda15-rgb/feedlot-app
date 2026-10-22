@@ -7,6 +7,7 @@ import { generarOrdenDePago } from '../shared/reciboLogic'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 import SelectBuscable from './SelectBuscable'
 import { useBorrador } from '../shared/useBorrador'
+import { pedirRemitoRetiro } from '../shared/retiroRemito'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -584,7 +585,9 @@ export default function Insumos({ usuario }) {
                           const cant = parseFloat(respuesta.replace(',', '.'))
                           if (!cant || cant <= 0) { alert('No se registró nada — hay que escribir un número mayor a 0.'); return }
                           if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} ${c.unidad || ''} por retirar — no se puede retirar más de eso.`); return }
-                          if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} ${c.unidad || ''} de ${c.insumo_nombre || 'insumo'} al stock.\n\n¿Es correcto?`)) return
+                          const nroRemito = await pedirRemitoRetiro(supabase)
+                          if (nroRemito === null) return
+                          if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} ${c.unidad || ''} de ${c.insumo_nombre || 'insumo'} al stock (remito ${nroRemito}).\n\n¿Es correcto?`)) return
                           const listaStock = c.insumo_tipo === 'alimentacion' ? stockAlim : stockSan
                           const item = listaStock.find(s => s.id === c.insumo_id)
                           const tablaStock = c.insumo_tipo === 'alimentacion' ? 'stock_insumos' : 'stock_sanitario'
@@ -594,7 +597,7 @@ export default function Insumos({ usuario }) {
                           const completo = nuevaCantidadRetirada >= (c.cantidad || 0) - 0.01
                           await supabase.from('compras_insumos').update({ cantidad_retirada: nuevaCantidadRetirada, retirado: completo }).eq('id', c.id)
                           const hoyRetiro2 = new Date()
-                          await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: c.id, fecha: `${hoyRetiro2.getFullYear()}-${String(hoyRetiro2.getMonth()+1).padStart(2,'0')}-${String(hoyRetiro2.getDate()).padStart(2,'0')}`, cantidad: cant, registrado_por: usuario?.id })
+                          await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: c.id, fecha: `${hoyRetiro2.getFullYear()}-${String(hoyRetiro2.getMonth()+1).padStart(2,'0')}-${String(hoyRetiro2.getDate()).padStart(2,'0')}`, cantidad: cant, numero_remito: nroRemito, registrado_por: usuario?.id })
                           await cargar()
                         }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                           📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { pedirRemitoRetiro } from '../shared/retiroRemito'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -1075,7 +1076,9 @@ export default function Contactos({ usuario }) {
                       const cant = parseFloat(respuesta.replace(',', '.'))
                       if (!cant || cant <= 0) { alert('No se registró nada — hay que escribir un número mayor a 0.'); return }
                       if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} ${r.unidad || ''} por retirar — no se puede retirar más de eso.`); return }
-                      if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} ${r.unidad || ''} de ${r.desc || 'insumo'} al stock.\n\n¿Es correcto?`)) return
+                      const nroRemito = await pedirRemitoRetiro(supabase)
+                      if (nroRemito === null) return
+                      if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} ${r.unidad || ''} de ${r.desc || 'insumo'} al stock (remito ${nroRemito}).\n\n¿Es correcto?`)) return
                       const rpc = r.tipo === 'sanitario' ? 'incrementar_stock_sanitario' : r.tipo === 'agro' ? 'incrementar_stock_agro' : 'incrementar_stock_insumo'
                       const { error: errRpc } = await supabase.rpc(rpc, { p_id: r.insumoId, p_delta: cant })
                       if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
@@ -1088,7 +1091,7 @@ export default function Contactos({ usuario }) {
                       // cada retiro por separado.
                       const hoyRetiro = new Date()
                       const hoyRetiroStr = `${hoyRetiro.getFullYear()}-${String(hoyRetiro.getMonth()+1).padStart(2,'0')}-${String(hoyRetiro.getDate()).padStart(2,'0')}`
-                      await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: r.id, fecha: hoyRetiroStr, cantidad: cant, registrado_por: usuario?.id })
+                      await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: r.id, fecha: hoyRetiroStr, cantidad: cant, numero_remito: nroRemito, registrado_por: usuario?.id })
                       await cargar()
                     }} style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#3D1A6B', border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       📦 {(r.cantidadRetirada || 0) > 0 ? 'Registrar más retiro' : 'Registrar retiro'}
@@ -1098,8 +1101,21 @@ export default function Contactos({ usuario }) {
                     <div style={{ background: '#fff', borderTop: '1px solid #9F8ED4', padding: '8px 12px' }}>
                       {historialEste.map(h => (
                         <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: S.text, padding: '3px 0' }}>
-                          <span>{new Date(h.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</span>
-                          <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{h.cantidad.toLocaleString('es-AR')} {r.unidad || ''}</span>
+                          <span>
+                            {new Date(h.fecha + 'T12:00:00').toLocaleDateString('es-AR')}
+                            {' · '}
+                            <span onClick={async () => {
+                              const nro = prompt('Número de remito de este retiro:', h.numero_remito || '')
+                              if (nro === null) return
+                              const { error } = await supabase.from('retiros_insumos_log').update({ numero_remito: nro.trim() || null }).eq('id', h.id)
+                              if (error) { alert('No se pudo guardar: ' + error.message); return }
+                              await cargar()
+                            }} title="Tocá para cargar o corregir el número de remito"
+                              style={{ cursor: 'pointer', color: h.numero_remito ? S.text : S.accent, textDecoration: h.numero_remito ? 'none' : 'underline' }}>
+                              {h.numero_remito ? `Remito ${h.numero_remito}` : '+ cargar n° de remito'}
+                            </span>
+                          </span>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{Number(h.cantidad).toLocaleString('es-AR')} {r.unidad || ''}</span>
                         </div>
                       ))}
                     </div>

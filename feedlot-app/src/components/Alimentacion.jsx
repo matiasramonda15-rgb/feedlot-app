@@ -5,6 +5,7 @@ import { Btn, Loader } from './UI'
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
 import SelectBuscable from './SelectBuscable'
 import AnalisisConsumo from './AnalisisConsumo'
+import { pedirRemitoRetiro } from '../shared/retiroRemito'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -1800,13 +1801,15 @@ function StockABM({ stockDB, onReload, onShowIngreso, historial, formulas, formu
                               const cant = parseFloat(respuesta.replace(',', '.'))
                               if (!cant || cant <= 0) { alert('No se registró nada — hay que escribir un número mayor a 0.'); return }
                               if (cant > restante + 0.01) { alert(`Solo queda ${restante.toLocaleString('es-AR')} kg por retirar — no se puede retirar más de eso.`); return }
-                              if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} kg de ${c.insumo_nombre || 'insumo'} al stock.\n\n¿Es correcto?`)) return
+                              const nroRemito = await pedirRemitoRetiro(supabase)
+                              if (nroRemito === null) return
+                              if (!confirm(`Confirmá: se van a sumar ${cant.toLocaleString('es-AR')} kg de ${c.insumo_nombre || 'insumo'} al stock (remito ${nroRemito}).\n\n¿Es correcto?`)) return
                               const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: c.insumo_id, p_delta: cant })
                               if (errRpc) { alert('Error al sumar al stock: ' + errRpc.message); return }
                               const nuevaCantidadRetirada = yaRetirado + cant
                               const completo = nuevaCantidadRetirada >= (c.cantidad || 0) - 0.01
                               await supabase.from('compras_insumos').update({ retirado: completo, cantidad_retirada: nuevaCantidadRetirada }).eq('id', c.id)
-                              await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: c.id, fecha: hoyLocal(), cantidad: cant })
+                              await supabase.from('retiros_insumos_log').insert({ compra_insumo_id: c.id, fecha: hoyLocal(), cantidad: cant, numero_remito: nroRemito })
                               onReload()
                             }} style={{ padding: '3px 8px', fontSize: 11, background: '#F0EAFB', border: '1px solid #9F8ED4', color: '#3D1A6B', borderRadius: 5, cursor: 'pointer' }}>
                               📦 {(c.cantidad_retirada || 0) > 0 ? `${(c.cantidad_retirada || 0).toLocaleString('es-AR')}/${(c.cantidad || 0).toLocaleString('es-AR')}` : 'Registrar retiro'}
