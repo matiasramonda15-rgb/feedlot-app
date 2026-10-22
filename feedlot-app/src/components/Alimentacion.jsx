@@ -5,7 +5,7 @@ import { Btn, Loader } from './UI'
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
 import SelectBuscable from './SelectBuscable'
 import AnalisisConsumo from './AnalisisConsumo'
-import { pedirRemitoRetiro } from '../shared/retiroRemito'
+import { pedirRemitoRetiro, confirmarRemitoNuevo } from '../shared/retiroRemito'
 
 const CM = { bg: '#1A2E1A', surface: '#243324', surface2: '#2E3F2E', border: '#3A4F3A', text: '#E8F0E8', muted: '#8FA88F', green: '#7EC87E', amber: '#F5C97A', red: '#F09595', blue: '#7EB8F7', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -438,6 +438,7 @@ export default function Alimentacion({ usuario, mobile, nav }) {
     // probable es que sea un typo con algún cero de más (nos pasó justo con
     // esto). No bloquea, solo pide confirmar antes de seguir.
     if (cant > 500000 && !confirm(`${cant.toLocaleString('es-AR')} kg es una cantidad muy grande para un solo ingreso — ¿es correcto, o se pasó algún cero de más?`)) return
+    if (formIngreso.remito && !(await confirmarRemitoNuevo(supabase, formIngreso.remito, { proveedor: formIngreso.proveedor }))) return
     setGuardando(true)
     const pctMsForm = parseFloat(formIngreso.pct_ms) || null
     const kgMsForm = pctMsForm ? Math.round(cant * pctMsForm / 100 * 10) / 10 : null

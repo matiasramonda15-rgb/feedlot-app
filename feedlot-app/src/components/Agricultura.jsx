@@ -13,7 +13,7 @@ import PlanTanques from './PlanTanques'
 import MapasCampos, { BotonMapa, mapaPintadoDataURL } from './MapasCampos'
 import { useBorrador } from '../shared/useBorrador'
 import { confirmarSiHayOrdenParecida } from '../shared/ordenesDuplicadas'
-import { pedirRemitoRetiro } from '../shared/retiroRemito'
+import { pedirRemitoRetiro, confirmarRemitoNuevo } from '../shared/retiroRemito'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -3113,9 +3113,28 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   }
   async function vincularCompra(c, ct) {
     const usd = usdCompra(c)
-    if (!(usd > 0)) { alert(`${(c.insumo_nombre || 'Esta compra').trim()} no tiene precio cargado. Completá primero el precio (en USD sin IVA) en la compra, así se sabe cuánto trigo cancela.`); return }
-    const { error } = await supabase.from('compras_insumos').update({ contrato_id: ct.id, canje_usd: Math.round(usd * 100) / 100 }).eq('id', c.id)
+    if (!(usd > 0) && !confirm(`${(c.insumo_nombre || 'Esta compra').trim()} todavía no tiene precio. Queda vinculada al contrato sin descontar trigo; cuando llegue la factura, tocá "cargar precio" al lado de la compra en el contrato.\n\n¿Vincular igual?`)) return
+    const { error } = await supabase.from('compras_insumos').update({ contrato_id: ct.id, canje_usd: usd > 0 ? Math.round(usd * 100) / 100 : null }).eq('id', c.id)
     if (error) { alert('No se pudo vincular: ' + error.message); return }
+    cargarContratos()
+  }
+  // Precio de una compra a cuenta que se vinculó antes de tener la factura:
+  // en USD sin IVA por unidad; el precio en pesos sale con el dólar de hoy.
+  async function cargarPrecioCanje(c) {
+    const resp = prompt(`Precio de ${(c.insumo_nombre || '').trim()} en USD SIN IVA, por ${c.unidad || 'unidad'}\n(${c.cantidad} ${c.unidad || ''} · IVA ${c.iva_pct || 0}%):`, '')
+    if (resp === null) return
+    const pu = parseFloat(resp.replace(',', '.'))
+    if (!(pu > 0)) { alert('Poné un precio mayor a 0.'); return }
+    const cant = parseFloat(c.cantidad) || 0, iva = parseFloat(c.iva_pct) || 0, cot = parseFloat(cotizacionDolar) || 0
+    const usdTotal = Math.round(pu * cant * (1 + iva / 100) * 100) / 100
+    const datos = { precio_unitario_usd: pu, canje_usd: usdTotal }
+    if (cot) {
+      const puArs = Math.round(pu * cot * 100) / 100, neto = Math.round(puArs * cant * 100) / 100, total = Math.round(neto * (1 + iva / 100) * 100) / 100
+      Object.assign(datos, { cotizacion_dolar: cot, precio_unitario: puArs, neto, total, iva_monto: Math.round((total - neto) * 100) / 100 })
+    }
+    if (!confirm(`${cant} ${c.unidad || ''} × USD ${pu} + IVA ${iva}% = USD ${usdTotal.toLocaleString('es-AR')}${cot ? ` ($${Math.round(datos.total).toLocaleString('es-AR')} al dólar ${cot})` : ''}.\n\n¿Es correcto?`)) return
+    const { error } = await supabase.from('compras_insumos').update(datos).eq('id', c.id)
+    if (error) { alert('No se pudo guardar el precio: ' + error.message); return }
     cargarContratos()
   }
   async function desvincularCompra(c) {
@@ -3548,7 +3567,9 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                             {vinc.map(x => (
                               <div key={x.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '2px 0', color: x.estado_pago === 'pagado' ? S.hint : S.text }}>
                                 <span>{fmtF(x.fecha)} · {x.insumo_nombre}{x.estado_pago === 'pagado' ? ' · ✓ cancelado' : ''}</span>
-                                <span style={{ fontFamily: 'monospace' }}>{u(usdCompra(x))}{x.estado_pago !== 'pagado' && tasaAnual(c) ? ` + int. ${u(interesUsd(x, c, hoyS))}` : ''}
+                                <span style={{ fontFamily: 'monospace' }}>{usdCompra(x) > 0
+                                  ? <>{u(usdCompra(x))}{x.estado_pago !== 'pagado' && tasaAnual(c) ? ` + int. ${u(interesUsd(x, c, hoyS))}` : ''}</>
+                                  : <button onClick={() => cargarPrecioCanje(x)} title="Todavía sin factura: no descuenta trigo hasta que tenga precio" style={{ padding: '1px 8px', fontSize: 11, background: S.amberLight || '#FFF3DC', border: `1px solid ${S.amber || '#B07000'}`, color: S.amber || '#B07000', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>sin precio · cargar precio</button>}
                                   {x.estado_pago !== 'pagado' && <button onClick={() => desvincularCompra(x)} title="Desvincular" style={{ marginLeft: 6, padding: '0 6px', fontSize: 11, background: 'none', border: 'none', color: S.red, cursor: 'pointer' }}>✕</button>}
                                 </span>
                               </div>
@@ -4715,7 +4736,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     agroquimico_id: '', iva_pct: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '',
     fecha: hoyLocal(), proveedor: '',
     domicilio: '', localidad: '', cuit: '', iva: '', cbu: '',
-    numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
+    numero_factura: '', numero_remito: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
   })
 
   const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Silobolsa', 'Otro']
@@ -4795,6 +4816,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
 
   async function guardarCompra() {
     if (!formCompra.agroquimico_id || !formCompra.cantidad) { alert('Completá insumo y cantidad'); return }
+    if (formCompra.numero_remito && !(await confirmarRemitoNuevo(supabase, formCompra.numero_remito, { proveedor: formCompra.proveedor }))) return
     // Si se cargó precio en dólares, el precio unitario en pesos se calcula
     // solo con la cotización de hoy — si se cargó directo en pesos, se respeta eso.
     const precioUnitUsd = formCompra.precio_unitario_usd ? parseFloat(formCompra.precio_unitario_usd) : null
@@ -4828,7 +4850,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
       precio_unitario_usd: precioUnitUsd, cotizacion_dolar: precioUnitUsd ? cotizacionDolar : null,
       proveedor: formCompra.proveedor || null, domicilio: formCompra.domicilio || null, localidad: formCompra.localidad || null,
       cuit: formCompra.cuit || null, iva: formCompra.iva || null, cbu: formCompra.cbu || null,
-      numero_factura: formCompra.numero_factura || null, observaciones: formCompra.observaciones || null,
+      numero_factura: formCompra.numero_factura || null, numero_remito: formCompra.numero_remito?.trim() || null, observaciones: formCompra.observaciones || null,
       // El pago (si se paga ahora) lo registra pagarComprasPendientes más
       // abajo: acá la compra nace pendiente y sin detalle de pago.
       forma_pago: null,
@@ -4906,7 +4928,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     }
 
     setShowFormCompra(false)
-    setFormCompra({ agroquimico_id: '', iva_pct: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '', credito_es_dolares: false, credito_monto_usd: '' })
+    setFormCompra({ agroquimico_id: '', iva_pct: '', insumo_nombre: '', cantidad: '', precio_unitario: '', precio_unitario_usd: '', total: '', fecha: hoyLocal(), proveedor: '', domicilio: '', localidad: '', cuit: '', iva: '', cbu: '', numero_factura: '', numero_remito: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true, credito_entidad: '', credito_cuotas: '', credito_vencimiento: '', credito_es_dolares: false, credito_monto_usd: '' })
     setPagarAhora(true)
     setGuardando(false)
     await cargar()
@@ -5187,7 +5209,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               {formCompra.total && parseFloat(formCompra.iva_pct) > 0 && (() => { const t = parseFloat(formCompra.total) || 0; const ne = t / (1 + parseFloat(formCompra.iva_pct) / 100); return <div style={{ fontSize: 10, color: S.muted, marginTop: 3 }}>Neto ${Math.round(ne).toLocaleString('es-AR')} + IVA ${Math.round(t - ne).toLocaleString('es-AR')}</div> })()}
             </div>
             <div><Label>Fecha</Label><input type="date" value={formCompra.fecha} onChange={e => setFormCompra({...formCompra, fecha: e.target.value})} style={inputStyle} /></div>
-            <div><Label>N° Factura</Label><input type="text" value={formCompra.numero_factura} onChange={e => setFormCompra({...formCompra, numero_factura: e.target.value})} style={inputStyle} /></div>
+            <div><Label>N° Remito</Label><input type="text" value={formCompra.numero_remito || ''} onChange={e => setFormCompra({...formCompra, numero_remito: e.target.value})} placeholder="el del papel de la entrega" style={inputStyle} /></div>
+            <div><Label>N° Factura</Label><input type="text" value={formCompra.numero_factura} onChange={e => setFormCompra({...formCompra, numero_factura: e.target.value})} placeholder={pagarAhora ? '' : 'si ya llegó'} style={inputStyle} /></div>
           </div>
 
           {/* Datos proveedor */}

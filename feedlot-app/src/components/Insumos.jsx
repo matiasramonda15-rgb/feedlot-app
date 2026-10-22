@@ -7,7 +7,7 @@ import { generarOrdenDePago } from '../shared/reciboLogic'
 import { ChecklistComprasPendientes, pagarComprasPendientes } from './comprasPendientesLogic'
 import SelectBuscable from './SelectBuscable'
 import { useBorrador } from '../shared/useBorrador'
-import { pedirRemitoRetiro } from '../shared/retiroRemito'
+import { pedirRemitoRetiro, confirmarRemitoNuevo } from '../shared/retiroRemito'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -180,6 +180,7 @@ export default function Insumos({ usuario }) {
       alert('Completá insumo y cantidad')
       return
     }
+    if (form.numero_factura && !(await confirmarRemitoNuevo(supabase, form.numero_factura, { proveedor: form.proveedor }))) return
     // Si quiere pagar ahora, precio es obligatorio
     if (pagarAhora && !form.precio_unitario) {
       alert('Para pagar ahora necesitás ingresar el precio. Si no tenés la factura todavía, elegí "Dejar pendiente".')
