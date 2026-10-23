@@ -1662,7 +1662,85 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
   const totalGastosPropios = form.gastos_propios.reduce((s, g) => s + (parseFloat(g.monto) || 0), 0)
 
+  // ── Editar una orden EMITIDA (todavía no se hizo) ──
+  // Como no descontó stock ni movió caja, se puede cambiar todo (campo, lote,
+  // fecha, productos, dosis, contratista, costo) y se guarda sobre la misma
+  // orden. Queda emitida: el stock se descuenta recién al marcarla realizada.
+  const [editandoOrden, setEditandoOrden] = useBorrador('agro-orden-editando', null) // se guarda con el borrador del formulario: si se recarga la página, sigue editando la misma orden
+  const formOrdenVacio = () => ({ campo_ids: [], campana_id: campanaActiva?.id || '', tipo: '', fecha: hoyLocal(), descripcion: '', proveedor: '', es_propia: false, lote_ids: [], ha_por_destino: {}, guardar_ha_trabajables: true, superficie_ha: '', productos: [], gastos_propios: [], costo_total: '', costo_ha: '', observaciones: '', usa_maquinaria_servicios: false, cantidad_rollos: '', emitir: false, caldo_l_ha: '', capacidad_tanque_l: '', empleado1: '', empleado2: '' })
+  function editarOrden(o) {
+    const str = v => v != null ? String(v) : ''
+    setEditandoOrden(o)
+    setConfirmando(null)
+    setForm({
+      ...formOrdenVacio(),
+      campo_ids: [String(o.campo_id)], lote_ids: o.lote_id ? [String(o.lote_id)] : [],
+      campana_id: o.campana_id || '', tipo: o.tipo || '', fecha: o.fecha || hoyLocal(),
+      descripcion: o.descripcion || '', proveedor: o.proveedor || '', es_propia: !!o.es_propia,
+      ha_por_destino: { [`${o.campo_id}-${o.lote_id || 'todo'}`]: str(o.superficie_ha_real) }, guardar_ha_trabajables: false,
+      productos: (o.productos || []).map(p => ({ ...p })), gastos_propios: o.gastos_propios || [],
+      costo_total: str(o.costo_total), costo_ha: str(o.costo_ha), observaciones: o.observaciones || '',
+      usa_maquinaria_servicios: !!o.usa_maquinaria_servicios, cantidad_rollos: str(o.cantidad_rollos), emitir: true,
+      caldo_l_ha: str(o.caldo_l_ha), capacidad_tanque_l: str(o.capacidad_tanque_l),
+      empleado1: o.empleado1 || '', empleado2: o.empleado2 || '', cotizacion_usd: str(o.cotizacion_usd),
+    })
+    setShowForm(true)
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }) } catch { /* nada */ }
+  }
+  function cerrarFormOrden() {
+    setShowForm(false)
+    if (editandoOrden) { setEditandoOrden(null); setForm(formOrdenVacio()) }
+  }
+  async function guardarEdicionOrden() {
+    const o = editandoOrden
+    if (!form.tipo) { alert('Elegí el tipo de trabajo'); return }
+    if (destinos.length !== 1) { alert('Al editar, la orden tiene que quedar en UN solo campo o lote. Si el trabajo también va en otro campo/lote, cargá una orden nueva para ese.'); return }
+    const repetidos = [...new Set((form.productos || []).filter(p => p.id).map(p => String(p.id)).filter((id, i, arr) => arr.indexOf(id) !== i))]
+    if (repetidos.length) {
+      const nombres = repetidos.map(id => stockAgro.find(x => String(x.id) === id)?.insumo || 'un producto').join(', ')
+      if (!confirm(`Ojo: ${nombres} está cargado más de una vez en la orden. ¿Es correcto?`)) return
+    }
+    const d = destinos[0]
+    const ha = d.ha
+    if (!(ha > 0) && form.tipo !== 'Confeccion de rollo' && !confirm('La orden quedó sin hectáreas. ¿Guardarla igual?')) return
+    setGuardando(true)
+    const costoNum = parseFloat(form.costo_total) || ((parseFloat(form.costo_ha) || 0) * ha) || totalGastosPropios || null
+    const costoHa = costoNum && ha ? Math.round(costoNum / ha) : (parseFloat(form.costo_ha) || null)
+    const dolar = parseFloat(form.cotizacion_usd) || cotizacionDolar || null
+    const productos = (form.productos || []).filter(p => p.id).map(p => {
+      const item = stockAgro.find(x => String(x.id) === String(p.id))
+      const total = p.dosis && ha ? String(redondearMedio(dosisCalc(p) * ha, item?.dosis_chica)) : p.total
+      // Precio: el que ya tenía la orden para ese producto; si es un producto nuevo, el del día
+      const antes = (o.productos || []).find(x => String(x.id) === String(p.id))
+      const precioArs = parseFloat(antes?.precio_ars) || parseFloat(item?.precio_referencia) || null
+      const precioUsd = parseFloat(antes?.precio_usd) || parseFloat(item?.precio_referencia_usd) || (precioArs && dolar ? Math.round(precioArs / dolar * 10000) / 10000 : null)
+      return { ...p, total, dosis_exacta: ha && parseFloat(total) ? parseFloat(total) / ha : p.dosis_exacta, descontado_real: undefined, precio_ars: precioArs, precio_usd: precioUsd }
+    })
+    const { data: actualizada, error } = await supabase.from('ordenes_trabajo').update({
+      campo_id: d.campoId, lote_id: d.lote ? d.lote.id : null, campana_id: parseInt(form.campana_id) || null,
+      superficie_ha_real: ha || null, cotizacion_usd: dolar,
+      tipo: form.tipo, fecha: form.fecha, descripcion: form.descripcion || null,
+      proveedor: form.proveedor || null, es_propia: form.es_propia,
+      productos: productos.length ? productos : null,
+      gastos_propios: form.gastos_propios.length ? form.gastos_propios : null,
+      costo_total: costoNum, costo_ha: costoHa,
+      caldo_l_ha: parseFloat(form.caldo_l_ha) || null, capacidad_tanque_l: parseFloat(form.capacidad_tanque_l) || null,
+      cantidad_rollos: form.tipo === 'Confeccion de rollo' && form.cantidad_rollos ? parseFloat(form.cantidad_rollos) : null,
+      observaciones: form.observaciones || null,
+      estado_pago: form.es_propia ? 'pagado' : 'pendiente',
+      usa_maquinaria_servicios: !!(form.es_propia && form.usa_maquinaria_servicios),
+      empleado1: form.es_propia && LABORES_CON_MANO_OBRA.includes(form.tipo) ? (form.empleado1 || null) : null,
+      empleado2: form.es_propia && LABORES_CON_MANO_OBRA.includes(form.tipo) ? (form.empleado2 || null) : null,
+    }).eq('id', o.id).eq('estado', 'emitida').select('id')
+    setGuardando(false)
+    if (error) { alert('No se pudo guardar la orden: ' + error.message); return }
+    if (!actualizada?.length) { alert(`La orden #${o.id} ya no está emitida (se marcó realizada o se borró) — no se guardaron los cambios.`); setEditandoOrden(null); setShowForm(false); setForm(formOrdenVacio()); await cargar(); return }
+    setEditandoOrden(null); setShowForm(false); setForm(formOrdenVacio())
+    await cargar()
+  }
+
   async function guardar() {
+    if (editandoOrden) return guardarEdicionOrden()
     if (!camposSeleccionados.length || !form.tipo) { alert('Seleccioná al menos un campo y el tipo'); return }
     if (!(superficie > 0) && form.tipo !== 'Confeccion de rollo' && !confirm('La orden quedó sin hectáreas. ¿Guardarla igual?')) return
     // Mismo producto cargado dos veces (ej. se eligió Imazapir 80% en vez de 48%)
@@ -2209,14 +2287,14 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                 {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
-            <button onClick={() => setShowForm(!showForm)}
+            <button onClick={() => { if (editandoOrden) { setEditandoOrden(null); setForm(formOrdenVacio()); setShowForm(true) } else setShowForm(!showForm) }}
               style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
               + Nueva orden
             </button>
           </div>
 
           {showForm && (
-            <Card titulo="Nueva orden de trabajo">
+            <Card titulo={editandoOrden ? `✏️ Editar orden #${editandoOrden.id} (emitida, todavía sin hacer)` : 'Nueva orden de trabajo'}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
                 <div style={{ gridColumn: 'span 3' }}><Label>Campo(s) *</Label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -2401,7 +2479,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   )}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              {!editandoOrden && <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
                 {[{ v: false, t: '✓ Ya se hizo', d: 'descuenta stock ahora' }, { v: true, t: '📝 Emitir orden', d: 'todavía no se hizo: el stock queda reservado' }].map(op => (
                   <button key={String(op.v)} type="button" onClick={() => setForm({ ...form, emitir: op.v })}
                     style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', textAlign: 'left', border: `2px solid ${form.emitir === op.v ? S.accent : S.border}`, background: form.emitir === op.v ? S.accentLight : S.surface }}>
@@ -2409,10 +2487,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     <div style={{ fontSize: 11, color: S.muted }}>{op.d}</div>
                   </button>
                 ))}
-              </div>
+              </div>}
+              {editandoOrden && <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>Sigue como orden emitida: el stock se descuenta cuando la marques ✓ Realizada.</div>}
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={guardar} disabled={guardando} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: form.emitir ? S.accent : S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : form.emitir ? '📝 Emitir orden' : '💾 Guardar orden'}</button>
-                <button onClick={() => setShowForm(false)} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={guardar} disabled={guardando} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: form.emitir ? S.accent : S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer' }}>{guardando ? 'Guardando...' : editandoOrden ? '💾 Guardar cambios' : form.emitir ? '📝 Emitir orden' : '💾 Guardar orden'}</button>
+                <button onClick={cerrarFormOrden} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
               </div>
             </Card>
           )}
@@ -2621,6 +2700,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                             <button onClick={() => setConfirmando(confirmando?.id === o.id ? null : { id: o.id, fecha: hoyLocal(), ha: String(o.superficie_ha_real || ''), proveedor: o.proveedor || '', costo_ha: o.costo_ha != null ? String(o.costo_ha) : '', productos: (o.productos || []).map(p => ({ ...p })), empleado1: o.empleado1 || '', empleado2: o.empleado2 || '' })}
                               style={{ padding: '3px 8px', fontSize: 11, fontWeight: 700, background: S.green, border: 'none', color: '#fff', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>✓ Realizada</button>
                           )}
+                          {emitida && <button onClick={() => editarOrden(o)} title="Cambiar campo, fecha, productos o dosis (todavía no se hizo)"
+                            style={{ padding: '3px 8px', fontSize: 11, background: S.surface, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>✏️ Editar</button>}
                           <button onClick={() => setVisorOrden(o.id)}
                             style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer' }}>📋 Orden</button>
                           {o.estado_pago === 'pagado' && o.costo_total && <button onClick={() => {
