@@ -5043,6 +5043,45 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         const totalPagGrupal = formPagoGrupal.pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0)
         const faltaPrecio = seleccionadas.some(id => { const i = pendientes.find(x => x.id === id); return i && !i.precio_unitario && !preciosPend[id] })
 
+        const actualizarPrecioRefAgro = async (i, precioFinal) => {
+          if (!i.insumo_id) return
+          const { data: item } = await supabase.from('stock_agro').select('cantidad, precio_referencia').eq('id', i.insumo_id).single()
+          // El stock ya incluye esta compra (se sumó al cargarla) — así
+          // que lo que había ANTES es el total actual menos esta compra.
+          // Eso, valuado al precio promedio viejo, más esta compra al
+          // precio nuevo, da el promedio ponderado correcto.
+          const cantidadEstaCompra = parseFloat(i.cantidad) || 0
+          const cantidadTotal = parseFloat(item?.cantidad) || 0
+          const cantidadAnterior = Math.max(0, cantidadTotal - cantidadEstaCompra)
+          const precioAnterior = parseFloat(item?.precio_referencia) || precioFinal
+          const nuevoPromedio = cantidadTotal > 0
+            ? Math.round(((cantidadAnterior * precioAnterior) + (cantidadEstaCompra * precioFinal)) / cantidadTotal * 100) / 100
+            : precioFinal
+          // También en USD (al dólar de Stock), promedio ponderado.
+          const usdCompra = cotizacionDolar ? precioFinal / cotizacionDolar : null
+          const usdAnterior = parseFloat(item?.precio_referencia_usd) || (cotizacionDolar ? precioAnterior / cotizacionDolar : usdCompra)
+          const nuevoPromUsd = usdCompra == null ? undefined : (cantidadTotal > 0 ? Math.round(((cantidadAnterior * usdAnterior) + (cantidadEstaCompra * usdCompra)) / cantidadTotal * 10000) / 10000 : usdCompra)
+          await supabase.from('stock_agro').update({ precio_referencia: nuevoPromedio, precio_ultima_compra: precioFinal, ...(nuevoPromUsd != null ? { precio_referencia_usd: nuevoPromUsd } : {}), actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
+        }
+        // Solo ponerle precio a una compra (ej. llegó la factura de algo que se
+        // paga con grano o más adelante) — sin pago, sin caja y sin recibo.
+        const sinPrecioSel = seleccionadas.filter(id => { const i = pendientes.find(x => x.id === id); return i && !i.precio_unitario && !i.total })
+        async function guardarSoloPrecio() {
+          if (!sinPrecioSel.length) { alert('Marcá la compra que no tiene precio y cargale el precio de la factura.'); return }
+          if (sinPrecioSel.some(id => !preciosPend[id])) { alert('Falta el precio en alguna de las compras marcadas.'); return }
+          setGuardandoPago(true)
+          const { error } = await pagarComprasPendientes(supabase, {
+            seleccionadas: sinPrecioSel, pendientes, precios: preciosPend, facturas: null,
+            monedas: monedasPend, cotizacionDolar, modos: modosPend, ivas: ivasPend, ivaSugerido: ivaSugeridoAgro,
+            pagos: [], fecha: hoyLocal(), descripcion: 'Precio compras insumos Agricultura', registradoPor: usuario?.id,
+            categoriaCaja: 'Compra insumos Agricultura', actualizarPrecioReferencia: actualizarPrecioRefAgro,
+          })
+          setGuardandoPago(false)
+          if (error) { alert('No se pudo guardar el precio: ' + error.message); return }
+          setSeleccionadas([]); setPreciosPend({}); setShowPagosPend(false)
+          await cargar()
+        }
+
         async function pagarSeleccionadas() {
           if (seleccionadas.length === 0) { alert('Seleccioná al menos una compra'); return }
           if (faltaPrecio) { alert('Falta cargar el precio de la factura en alguna de las compras seleccionadas.'); return }
@@ -5068,26 +5107,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
             categoriaCaja: 'Compra insumos Agricultura',
             creditoEntidad: formPagoGrupal.credito_entidad, creditoCuotas: formPagoGrupal.credito_cuotas, creditoVencimiento: formPagoGrupal.credito_vencimiento,
             creditoEsDolares: formPagoGrupal.credito_es_dolares, cotizacionDolarCredito: cotizacionDolar, creditoMontoUsd: formPagoGrupal.credito_monto_usd,
-            actualizarPrecioReferencia: async (i, precioFinal) => {
-              if (!i.insumo_id) return
-              const { data: item } = await supabase.from('stock_agro').select('cantidad, precio_referencia').eq('id', i.insumo_id).single()
-              // El stock ya incluye esta compra (se sumó al cargarla) — así
-              // que lo que había ANTES es el total actual menos esta compra.
-              // Eso, valuado al precio promedio viejo, más esta compra al
-              // precio nuevo, da el promedio ponderado correcto.
-              const cantidadEstaCompra = parseFloat(i.cantidad) || 0
-              const cantidadTotal = parseFloat(item?.cantidad) || 0
-              const cantidadAnterior = Math.max(0, cantidadTotal - cantidadEstaCompra)
-              const precioAnterior = parseFloat(item?.precio_referencia) || precioFinal
-              const nuevoPromedio = cantidadTotal > 0
-                ? Math.round(((cantidadAnterior * precioAnterior) + (cantidadEstaCompra * precioFinal)) / cantidadTotal * 100) / 100
-                : precioFinal
-              // También en USD (al dólar de Stock), promedio ponderado.
-              const usdCompra = cotizacionDolar ? precioFinal / cotizacionDolar : null
-              const usdAnterior = parseFloat(item?.precio_referencia_usd) || (cotizacionDolar ? precioAnterior / cotizacionDolar : usdCompra)
-              const nuevoPromUsd = usdCompra == null ? undefined : (cantidadTotal > 0 ? Math.round(((cantidadAnterior * usdAnterior) + (cantidadEstaCompra * usdCompra)) / cantidadTotal * 10000) / 10000 : usdCompra)
-              await supabase.from('stock_agro').update({ precio_referencia: nuevoPromedio, precio_ultima_compra: precioFinal, ...(nuevoPromUsd != null ? { precio_referencia_usd: nuevoPromUsd } : {}), actualizado_en: new Date().toISOString() }).eq('id', i.insumo_id)
-            },
+            actualizarPrecioReferencia: actualizarPrecioRefAgro,
           })
           if (error) { alert('Error al registrar el pago: ' + error.message); setGuardandoPago(false); return }
           setSeleccionadas([])
@@ -5111,6 +5131,15 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                 {showPagosPend ? 'Cerrar' : 'Registrar pago'}
               </button>
             </div>
+            {sinPrecioSel.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                <button onClick={guardarSoloPrecio} disabled={guardandoPago}
+                  style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.surface, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 6, cursor: 'pointer' }}>
+                  {guardandoPago ? 'Guardando...' : `💾 Guardar solo el precio${sinPrecioSel.length > 1 ? ` (${sinPrecioSel.length})` : ''}`}
+                </button>
+                <span style={{ fontSize: 11, color: S.muted }}>Sin pagar: la compra sigue pendiente (o a cuenta del contrato, si está vinculada).</span>
+              </div>
+            )}
             <ChecklistComprasPendientes pendientes={pendientes} seleccionadas={seleccionadas} setSeleccionadas={setSeleccionadas}
               precios={preciosPend} setPrecios={setPreciosPend} S={S} cotizacionDolar={cotizacionDolar} monedas={monedasPend} setMonedas={setMonedasPend} modos={modosPend} setModos={setModosPend}
               ivas={ivasPend} setIvas={setIvasPend} ivaSugerido={ivaSugeridoAgro} />
