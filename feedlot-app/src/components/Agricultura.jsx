@@ -1680,7 +1680,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       ha_por_destino: { [`${o.campo_id}-${o.lote_id || 'todo'}`]: str(o.superficie_ha_real) }, guardar_ha_trabajables: false,
       productos: (o.productos || []).map(p => ({ ...p })), gastos_propios: o.gastos_propios || [],
       costo_total: str(o.costo_total), costo_ha: str(o.costo_ha), observaciones: o.observaciones || '',
-      usa_maquinaria_servicios: !!o.usa_maquinaria_servicios, cantidad_rollos: str(o.cantidad_rollos), emitir: true,
+      usa_maquinaria_servicios: !!o.usa_maquinaria_servicios, cantidad_rollos: str(o.cantidad_rollos), kg_silo: str(o.kg_silo), emitir: true,
       caldo_l_ha: str(o.caldo_l_ha), capacidad_tanque_l: str(o.capacidad_tanque_l),
       empleado1: o.empleado1 || '', empleado2: o.empleado2 || '', cotizacion_usd: str(o.cotizacion_usd),
     })
@@ -1726,6 +1726,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       costo_total: costoNum, costo_ha: costoHa,
       caldo_l_ha: parseFloat(form.caldo_l_ha) || null, capacidad_tanque_l: parseFloat(form.capacidad_tanque_l) || null,
       cantidad_rollos: form.tipo === 'Confeccion de rollo' && form.cantidad_rollos ? parseFloat(form.cantidad_rollos) : null,
+      kg_silo: form.tipo === 'Confeccion de silo' && form.kg_silo ? parseFloat(form.kg_silo) : null,
       observaciones: form.observaciones || null,
       estado_pago: form.es_propia ? 'pagado' : 'pendiente',
       usa_maquinaria_servicios: !!(form.es_propia && form.usa_maquinaria_servicios),
@@ -1847,6 +1848,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         fecha_realizada: form.emitir ? null : form.fecha,
         caldo_l_ha: parseFloat(form.caldo_l_ha) || null, capacidad_tanque_l: parseFloat(form.capacidad_tanque_l) || null,
         cantidad_rollos: form.tipo === 'Confeccion de rollo' && form.cantidad_rollos ? parseFloat(form.cantidad_rollos) : null,
+        kg_silo: form.tipo === 'Confeccion de silo' && form.kg_silo ? parseFloat(form.kg_silo) : null,
         observaciones: form.observaciones || null,
         estado_pago: form.es_propia ? 'pagado' : 'pendiente',
         usa_maquinaria_servicios: !!(form.es_propia && form.usa_maquinaria_servicios),
@@ -2352,6 +2354,13 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <Label>Hectáreas a trabajar (una línea por campo/lote, se pueden corregir)</Label>
                   {tablaHectareas({ bg: S.bg })}
                 </div>
+                {form.tipo === 'Confeccion de silo' && (
+                  <div>
+                    <Label>Kg de silo (aprox.)</Label>
+                    <input type="number" value={form.kg_silo || ''} onChange={e => setForm({...form, kg_silo: e.target.value})} style={inputStyle} placeholder="ej. 62000" />
+                    <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>Para la productividad del lote (kg de materia seca por ha).</div>
+                  </div>
+                )}
                 {form.tipo === 'Confeccion de rollo' && (
                   <div>
                     <Label>Cantidad de rollos</Label>
@@ -3291,6 +3300,17 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
       } else {
         const { error: errRpc } = await supabase.rpc('incrementar_stock_insumo', { p_id: parseInt(form.stock_insumo_id), p_delta: kg })
         if (errRpc) alert('La venta y la compra se guardaron, pero no se pudo sumar al stock de Alimentación: ' + errRpc.message)
+        // Precio de referencia del alimento (el que usa el costo de las
+        // dietas): promedio ponderado entre lo que había en stock y lo que
+        // entra. Antes no se tocaba y un insumo nuevo (ej. silo de alfalfa)
+        // quedaba sin precio.
+        const precioKg = precioTn ? precioTn / 1000 : null
+        if (!errRpc && precioKg) {
+          const antesKg = Math.max(0, parseFloat(stockItem?.cantidad_kg) || 0)
+          const antesPr = parseFloat(stockItem?.precio_referencia) || 0
+          const nuevoPr = antesKg > 0 && antesPr > 0 ? (antesKg * antesPr + kg * precioKg) / (antesKg + kg) : precioKg
+          await supabase.from('stock_insumos').update({ precio_referencia: Math.round(nuevoPr * 100) / 100, precio_referencia_actualizado_en: new Date().toISOString() }).eq('id', parseInt(form.stock_insumo_id))
+        }
       }
     } else if (form.esVentaEnNegro) {
       // Venta en negro: no hay contrato ni factura de por medio, así que no
@@ -3751,46 +3771,65 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
       {/* Solo en la pestaña Alfalfa: en Agricultura → Ventas de granos se
           repetía con lo que ya muestra Alfalfa. */}
       {soloAlfalfa && (() => {
+        // Forraje de alfalfa: rollos (Confección de rollo) y silo (Confección
+        // de silo, con los kg de silo cargados en la orden). La productividad
+        // se suma en kg de MATERIA SECA por ha, porque un kg de silo (≈35% MS)
+        // no vale lo mismo que un kg de rollo (≈80% MS).
         const ordenesRollo = (ordenes || []).filter(o => o.tipo === 'Confeccion de rollo' && o.cantidad_rollos > 0)
-        if (ordenesRollo.length === 0) return null
+        const ordenesSilo = (ordenes || []).filter(o => o.tipo === 'Confeccion de silo')
+        if (ordenesRollo.length === 0 && ordenesSilo.length === 0) return null
+        const msDe = (nombre, def) => { const it = (stockInsumosAlim || []).find(x => (x.insumo || '').toLowerCase().includes(nombre)); const v = parseFloat(it?.pct_ms); return v > 0 ? v / 100 : def }
+        const msRollo = msDe('rollo', 0.85), msSilo = msDe('silo de alfalfa', 0.35)
         const porCampo = {}
-        ordenesRollo.forEach(o => {
+        const sumar = o => {
           const campoO = campos.find(c => c.id === o.campo_id)
           const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
           const key = o.campo_id
-          if (!porCampo[key]) porCampo[key] = { nombre: campoO?.nombre || '—', ha: haTrabajables(loteO) || haTrabajables(campoO) || 0, hechos: 0 }
-          porCampo[key].hechos += parseFloat(o.cantidad_rollos) || 0
-        })
+          if (!porCampo[key]) porCampo[key] = { nombre: campoO?.nombre || '—', ha: haTrabajables(loteO) || haTrabajables(campoO) || 0, hechos: 0, kgSilo: 0 }
+          return porCampo[key]
+        }
+        ordenesRollo.forEach(o => { sumar(o).hechos += parseFloat(o.cantidad_rollos) || 0 })
+        ordenesSilo.forEach(o => { sumar(o).kgSilo += parseFloat(o.kg_silo) || 0 })
         const transferencias = (ventas || []).filter(v => v.cantidad_rollos > 0)
         const kgTransferido = transferencias.reduce((s, v) => s + (parseFloat(v.kg) || 0), 0)
         const rollosTransferidosTotal = transferencias.reduce((s, v) => s + (parseFloat(v.cantidad_rollos) || 0), 0)
         const kgPorRollo = rollosTransferidosTotal > 0 ? kgTransferido / rollosTransferidosTotal : null
         const soloUnCampo = Object.keys(porCampo).length === 1
+        const tn = kg => (kg / 1000).toLocaleString('es-AR', { maximumFractionDigits: 1 })
 
         return (
           <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, padding: '1.25rem', marginBottom: '1.5rem' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>🌾 Rollos (alfalfa u otro forraje)</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>🌾 Forraje de alfalfa — rollos y silo</div>
             <div style={{ fontSize: 11, color: S.hint, marginBottom: '1rem' }}>
               {kgPorRollo
-                ? `Kg/rollo promedio, según lo ya pesado y transferido: ${Math.round(kgPorRollo).toLocaleString('es-AR')} kg`
-                : 'Todavía no se transfirió ningún rollo al Feedlot con su peso cargado — en cuanto se haga la primera transferencia, acá se va a calcular el kg/rollo promedio y la productividad estimada.'}
+                ? `Kg/rollo promedio, según lo ya pesado y transferido: ${Math.round(kgPorRollo).toLocaleString('es-AR')} kg. `
+                : ordenesRollo.length ? 'Todavía no se transfirió ningún rollo al Feedlot con su peso cargado: con la primera transferencia se calcula el kg/rollo. ' : ''}
+              La productividad va en kg de materia seca por ha (rollo {Math.round(msRollo * 100)}% MS · silo {Math.round(msSilo * 100)}% MS), para poder sumar rollos y silo.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(Object.keys(porCampo).length, 3)}, 1fr)`, gap: 12, marginBottom: '1rem' }}>
               {Object.entries(porCampo).map(([campoId, d]) => {
                 const disponibles = Math.max(0, d.hechos - (soloUnCampo ? rollosTransferidosTotal : 0))
-                const kgTotalEstimado = kgPorRollo ? kgPorRollo * d.hechos : null
-                const productividad = kgTotalEstimado && d.ha > 0 ? kgTotalEstimado / d.ha : null
+                const kgRollosEst = kgPorRollo ? kgPorRollo * d.hechos : 0
+                const kgMS = kgRollosEst * msRollo + d.kgSilo * msSilo
+                const faltaPesoRollos = d.hechos > 0 && !kgPorRollo
+                const productividad = kgMS > 0 && d.ha > 0 ? kgMS / d.ha : null
                 return (
                   <div key={campoId} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '0.85rem' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{d.nombre} · {d.ha} ha</div>
-                    <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Rollos disponibles</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: disponibles > 0 ? S.green : S.hint, marginBottom: 6 }}>{disponibles}</div>
-                    <div style={{ fontSize: 11, color: S.muted }}>Hechos: {d.hechos} · Transferidos: {soloUnCampo ? rollosTransferidosTotal : '—'}</div>
+                    {d.hechos > 0 && <>
+                      <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Rollos disponibles</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: disponibles > 0 ? S.green : S.hint, marginBottom: 6 }}>{disponibles}</div>
+                      <div style={{ fontSize: 11, color: S.muted }}>Hechos: {d.hechos} · Transferidos: {soloUnCampo ? rollosTransferidosTotal : '—'}</div>
+                    </>}
+                    {d.kgSilo > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: d.hechos > 0 ? 4 : 0 }}>Silo: <strong>{tn(d.kgSilo)} tn</strong> ({tn(d.kgSilo * msSilo)} tn MS)</div>}
                     {productividad && (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${S.border}` }}>
                         <div style={{ fontSize: 11, color: S.muted, textTransform: 'uppercase' }}>Productividad estimada</div>
-                        <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'monospace', color: S.accent }}>{Math.round(productividad).toLocaleString('es-AR')} kg/ha</div>
-                        <div style={{ fontSize: 10, color: S.hint, marginTop: 2 }}>{(kgTotalEstimado/1000).toLocaleString('es-AR', {maximumFractionDigits:1})} tn totales estimadas / {d.ha} ha</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'monospace', color: S.accent }}>{Math.round(productividad).toLocaleString('es-AR')} kg MS/ha</div>
+                        <div style={{ fontSize: 10, color: S.hint, marginTop: 2 }}>
+                          {tn(kgMS)} tn MS / {d.ha} ha{kgRollosEst > 0 ? ` · rollos ≈ ${tn(kgRollosEst)} tn` : ''}{d.kgSilo > 0 ? ` · silo ${tn(d.kgSilo)} tn` : ''}
+                          {faltaPesoRollos ? ' · faltan los rollos (sin peso todavía)' : ''}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -3802,20 +3841,36 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
               <div style={{ marginTop: 10, border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead><tr style={{ background: S.bg }}>
-                    {['Fecha', 'Campo', 'Lote', 'Rollos hechos'].map(h => (
+                    {['Fecha', 'Campo', 'Lote', 'Qué', 'Cantidad'].map(h => (
                       <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, color: S.muted, textTransform: 'uppercase' }}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
-                    {ordenesRollo.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)).map(o => {
+                    {[...ordenesRollo, ...ordenesSilo].sort((a,b) => new Date(b.fecha) - new Date(a.fecha)).map(o => {
                       const campoO = campos.find(c => c.id === o.campo_id)
                       const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+                      const esSilo = o.tipo === 'Confeccion de silo'
                       return (
                         <tr key={o.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                           <td style={{ padding: '6px 10px', fontFamily: 'monospace' }}>{o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
                           <td style={{ padding: '6px 10px' }}>{campoO?.nombre || '—'}</td>
                           <td style={{ padding: '6px 10px' }}>{loteO ? `Lote ${loteO.numero}` : 'Todo el campo'}</td>
-                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 600 }}>{o.cantidad_rollos}</td>
+                          <td style={{ padding: '6px 10px' }}>{esSilo ? 'Silo' : 'Rollos'}</td>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 600 }}>
+                            {esSilo
+                              ? <span onClick={async () => {
+                                  const val = prompt('¿Cuántos kg de silo salieron de esta confección?', o.kg_silo || '')
+                                  if (val === null) return
+                                  const num = parseFloat(String(val).replace(/\./g, '').replace(',', '.'))
+                                  if (!(num > 0)) { alert('Poné los kg (un número mayor a 0).'); return }
+                                  const { error } = await supabase.from('ordenes_trabajo').update({ kg_silo: num }).eq('id', o.id)
+                                  if (error) { alert('No se pudo guardar: ' + error.message); return }
+                                  cargar()
+                                }} title="Tocá para cargar o corregir los kg" style={{ cursor: 'pointer', textDecoration: 'underline dotted', color: o.kg_silo ? S.text : S.amber }}>
+                                  {o.kg_silo ? `${Number(o.kg_silo).toLocaleString('es-AR')} kg` : '⚠ Cargar kg'}
+                                </span>
+                              : `${o.cantidad_rollos} rollos`}
+                          </td>
                         </tr>
                       )
                     })}
