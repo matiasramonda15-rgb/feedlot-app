@@ -199,6 +199,69 @@ export function DetalleCaja2({ cheques, saldo }) {
   )
 }
 
+// Resumen de una caja como un resumen de cuenta: cada movimiento con su
+// ingreso/egreso y el saldo que va quedando, desde la fecha que se elija
+// (por defecto, el último cierre de esa caja). El saldo sale de TODOS los
+// movimientos de la caja, así coincide con el saldo de la tarjeta.
+export function ResumenCaja({ movimientos, titulo, desdeInicial, color = S.accent }) {
+  const [desde, setDesde] = useState(desdeInicial || '')
+  const $ = n => (n < 0 ? '−$' : '$') + Math.abs(Math.round(n)).toLocaleString('es-AR')
+  const fmtF = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''
+  const orden = [...(movimientos || [])].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.id || 0) - (b.id || 0))
+  let saldo = 0, saldoInicial = 0
+  const filas = []
+  orden.forEach(m => {
+    const v = m.tipo === 'ingreso' ? (m.monto || 0) : -(m.monto || 0)
+    if (desde && (m.fecha || '') < desde) { saldo += v; saldoInicial = saldo; return }
+    saldo += v
+    filas.push({ ...m, v, saldo })
+  })
+  const ing = filas.filter(f => f.v > 0).reduce((t, f) => t + f.v, 0)
+  const eg = filas.filter(f => f.v < 0).reduce((t, f) => t - f.v, 0)
+  const th = { padding: '6px 8px', fontSize: 10, color: S.muted, textTransform: 'uppercase', textAlign: 'left', borderBottom: `1px solid ${S.border}`, position: 'sticky', top: 0, background: S.bg }
+  const td = { padding: '5px 8px', fontSize: 12, borderBottom: `1px solid ${S.border}` }
+  const num = { ...td, fontFamily: 'monospace', textAlign: 'right', whiteSpace: 'nowrap' }
+  function imprimir() {
+    const w = window.open('', '_blank'); if (!w) return
+    const esc = t => String(t || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+    w.document.write(`<html><head><title>${esc(titulo)}</title><style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}table{width:100%;border-collapse:collapse}th,td{padding:4px 6px;border-bottom:1px solid #ddd;text-align:left}td.n,th.n{text-align:right;font-family:monospace;white-space:nowrap}h2{margin:0 0 4px}</style></head><body>
+      <h2>${esc(titulo)}</h2><div>Desde ${desde ? fmtF(desde) : 'el inicio'} · impreso ${new Date().toLocaleDateString('es-AR')}</div><br/>
+      <table><thead><tr><th>Fecha</th><th>Descripción</th><th class="n">Ingreso</th><th class="n">Egreso</th><th class="n">Saldo</th></tr></thead><tbody>
+      <tr><td></td><td><b>Saldo inicial</b></td><td></td><td></td><td class="n"><b>${$(saldoInicial)}</b></td></tr>
+      ${filas.map(f => `<tr><td>${fmtF(f.fecha)}</td><td>${esc(f.descripcion)}</td><td class="n">${f.v > 0 ? $(f.v) : ''}</td><td class="n">${f.v < 0 ? $(-f.v) : ''}</td><td class="n">${$(f.saldo)}</td></tr>`).join('')}
+      <tr><td></td><td><b>Totales</b></td><td class="n"><b>${$(ing)}</b></td><td class="n"><b>${$(eg)}</b></td><td class="n"><b>${$(saldo)}</b></td></tr>
+      </tbody></table></body></html>`)
+    w.document.close(); w.focus(); w.print()
+  }
+  return (
+    <div onClick={e => e.stopPropagation()} style={{ marginTop: 12, cursor: 'default', color: S.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color }}>📋 {titulo}</div>
+        <label style={{ fontSize: 12, color: S.muted }}>Desde <input type="date" value={desde} onChange={e => setDesde(e.target.value)} style={{ fontSize: 12, padding: '3px 6px', border: `1px solid ${S.border}`, borderRadius: 4 }} /></label>
+        <button onClick={imprimir} style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 12, background: S.surface, border: `1px solid ${color}`, color, borderRadius: 5, cursor: 'pointer' }}>🖨 Imprimir</button>
+      </div>
+      <div style={{ maxHeight: 420, overflow: 'auto', border: `1px solid ${S.border}`, borderRadius: 6, background: S.surface }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr><th style={th}>Fecha</th><th style={th}>Descripción</th><th style={{ ...th, textAlign: 'right' }}>Ingreso</th><th style={{ ...th, textAlign: 'right' }}>Egreso</th><th style={{ ...th, textAlign: 'right' }}>Saldo</th></tr></thead>
+          <tbody>
+            <tr style={{ background: S.bg }}><td style={td} /><td style={{ ...td, fontWeight: 700 }}>Saldo inicial{desde ? ` (al ${fmtF(desde)})` : ''}</td><td style={num} /><td style={num} /><td style={{ ...num, fontWeight: 700 }}>{$(saldoInicial)}</td></tr>
+            {filas.map(f => (
+              <tr key={f.id}>
+                <td style={{ ...td, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{fmtF(f.fecha)}</td>
+                <td style={td}>{f.descripcion}</td>
+                <td style={{ ...num, color: S.green }}>{f.v > 0 ? $(f.v) : ''}</td>
+                <td style={{ ...num, color: S.red }}>{f.v < 0 ? $(-f.v) : ''}</td>
+                <td style={{ ...num, fontWeight: 600, color: f.saldo < 0 ? S.red : S.text }}>{$(f.saldo)}</td>
+              </tr>
+            ))}
+            <tr style={{ background: S.bg }}><td style={td} /><td style={{ ...td, fontWeight: 700 }}>Totales del período</td><td style={{ ...num, fontWeight: 700, color: S.green }}>{$(ing)}</td><td style={{ ...num, fontWeight: 700, color: S.red }}>{$(eg)}</td><td style={{ ...num, fontWeight: 700 }}>{$(saldo)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function TablaCheques({ items, filtro, setFiltro, filtroEstado, setFiltroEstado, cambiarEstadoCheque, eliminar }) {
     return (
       <div>
@@ -339,6 +402,8 @@ export default function Comercial({ usuario }) {
   const [showFormDep, setShowFormDep] = useState(false)
   const [formDep, setFormDep] = useState({ operacion: 'deposito', caja: 'oficial', fecha: hoyLocal(), monto: '', observaciones: '' })
   const [anclaCaja1, setAnclaCaja1] = useState(null)
+  const [ultimoCierre, setUltimoCierre] = useState({ oficial: null, paralela: null })
+  const [verResumen, setVerResumen] = useState(null) // 'oficial' | 'paralela' | null
   const [filtroCheque, setFiltroCheque] = useState('todos')
   const [filtroChequePar, setFiltroChequePar] = useState('todos')
   // Por defecto solo se ven los cheques "en cartera" — los ya entregados o
@@ -380,6 +445,8 @@ export default function Comercial({ usuario }) {
     setRetenciones(ret || [])
     // Último cierre de Caja 1 y el efectivo contado en su conciliación.
     const { data: cierre } = await supabase.from('cierres_caja').select('fecha').eq('caja', 'oficial').order('fecha', { ascending: false }).limit(1).maybeSingle()
+    const { data: cierre2 } = await supabase.from('cierres_caja').select('fecha').eq('caja', 'paralela').order('fecha', { ascending: false }).limit(1).maybeSingle()
+    setUltimoCierre({ oficial: cierre?.fecha || null, paralela: cierre2?.fecha || null })
     if (cierre?.fecha) {
       const { data: conc } = await supabase.from('conciliaciones_caja').select('datos').eq('fecha_corte', cierre.fecha).maybeSingle()
       const ef = conc?.datos?.efectivo1
@@ -815,6 +882,18 @@ export default function Comercial({ usuario }) {
             <div style={{ fontSize: 11, color: m.purple ? S.purple : S.hint, marginTop: 3 }}>{m.sub}</div>
             {abierta && m.detalleCaja1 && <DetalleCaja1 cajaOficial={cajaOficial} cheques={cheques} ancla={anclaCaja1} saldo={coIng - coEg} />}
             {abierta && m.detalleCaja2 && <DetalleCaja2 cheques={cheques} saldo={cpIng - cpEg} />}
+            {abierta && (m.detalleCaja1 || m.detalleCaja2) && (() => {
+              const cual = m.detalleCaja1 ? 'oficial' : 'paralela'
+              const col = m.detalleCaja1 ? S.accent : S.purple
+              return (<>
+                <button onClick={e => { e.stopPropagation(); setVerResumen(verResumen === cual ? null : cual) }}
+                  style={{ marginTop: 10, padding: '5px 12px', fontSize: 12, fontWeight: 600, background: S.surface, border: `1px solid ${col}`, color: col, borderRadius: 6, cursor: 'pointer' }}>
+                  {verResumen === cual ? '▴ Ocultar resumen de movimientos' : '📋 Ver resumen de movimientos (con saldo)'}
+                </button>
+                {verResumen === cual && <ResumenCaja key={cual + (ultimoCierre[cual] || '')} movimientos={cual === 'oficial' ? cajaOficial : cajaParalela}
+                  titulo={cual === 'oficial' ? 'Resumen de Caja 1' : 'Resumen de Caja 2'} desdeInicial={ultimoCierre[cual] || ''} color={col} />}
+              </>)
+            })()}
           </div>
           )
         })}
