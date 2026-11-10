@@ -473,6 +473,20 @@ export default function Ventas({ usuario, mobile, nav }) {
   const totalGastado = lotes.reduce((s, l) => s + ((l.kg_bascula || 0) * (l.precio_compra || 0)), 0)
   const totalAnimComprados = lotes.reduce((s, l) => s + (l.cantidad || 0), 0)
 
+  // Al corregir una venta que YA tiene la factura cargada (cambio de desbaste,
+  // de precio o de monto), la factura no cambia: lo que se ajusta es la parte
+  // en negro, que es lo que queda del total. Antes el negro quedaba con el
+  // valor viejo y aparecía una diferencia a cobrar que no existía, y además
+  // la venta volvía a "pendiente de factura".
+  function ajusteFacturaYa(fila, montoNuevo) {
+    const tieneFactura = (parseFloat(fila.monto_facturado) || 0) > 0 || ['facturado', 'cobrado'].includes(fila.estado_comercial)
+    if (!tieneFactura) return { estado_comercial: 'pendiente_factura' }
+    const fact = parseFloat(fila.monto_facturado) || 0, iva = parseFloat(fila.iva_monto) || 0
+    const out = { estado_comercial: fila.estado_comercial === 'pendiente_factura' ? 'facturado' : fila.estado_comercial }
+    if (montoNuevo != null && (fact > 0 || fila.monto_negro != null)) out.monto_negro = Math.max(0, Math.round(montoNuevo - fact - iva))
+    return out
+  }
+
   async function guardarDatosVenta(venta) {
     const ep = editandoVenta
     if (!ep?.precio_kg && !ep?.monto_total_con_iva && !Object.values(ep?.filaOverrides || {}).some(o => o.precio_kg)) {
@@ -524,7 +538,7 @@ export default function Ventas({ usuario, mobile, nav }) {
           monto_total_grupo: montoTotalGrupo,
           plazo_dias: plazo || null,
           fecha_vencimiento_cobro: fechaVto,
-          estado_comercial: 'pendiente_factura',
+          ...ajusteFacturaYa(gv, montoV),
           comprador: compradorFinal,
           observaciones: ep.observaciones || venta.observaciones || null,
           cantidad_sin_guia: sinGuiaV,
@@ -545,7 +559,7 @@ export default function Ventas({ usuario, mobile, nav }) {
         monto_total_con_iva: montoTotal,
         plazo_dias: plazo || null,
         fecha_vencimiento_cobro: fechaVto,
-        estado_comercial: 'pendiente_factura',
+        ...ajusteFacturaYa(venta, montoTotal),
         comprador: compradorFinal,
         observaciones: ep.observaciones || venta.observaciones || null,
         cantidad_sin_guia: sinGuiaSolo,
