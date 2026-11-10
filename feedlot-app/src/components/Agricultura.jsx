@@ -91,7 +91,7 @@ function Card({ children, titulo, style = {} }) {
 const CULTIVOS = ['Soja', 'Maiz', 'Trigo', 'Alfalfa', 'Girasol', 'Sorgo', 'Otro']
 // Labores en las que el personal cobra un % aparte (Mano de obra en Servicios)
 const LABORES_CON_MANO_OBRA = ['Siembra', 'Cosecha']
-const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'Labranza', 'Volteo', 'Rastrillado', 'Confeccion de rollo', 'Otro']
+const TIPOS_ORDEN = ['Siembra', 'Pulverizacion', 'Fertilizacion', 'Cosecha', 'Labranza', 'Volteo', 'Rastrillado', 'Confeccion de rollo', 'Confeccion de silo', 'Otro']
 // Qué productos del stock se ofrecen según el tipo de orden:
 //  - Siembra: semillas y fertilizantes.
 //  - Pulverización: todo menos semillas, fertilizantes y silobolsas
@@ -2245,7 +2245,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     )
   }
 
-  const TIPOS_ALFALFA = ['Volteo', 'Rastrillado', 'Confeccion de rollo']
+  const TIPOS_ALFALFA = ['Volteo', 'Rastrillado', 'Confeccion de rollo', 'Confeccion de silo']
   const ordenesFiltradas = ordenes.filter(o => {
     if (soloAlfalfa && !TIPOS_ALFALFA.includes(o.tipo)) return false
     if (filtroTipo && o.tipo !== filtroTipo) return false
