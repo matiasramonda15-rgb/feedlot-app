@@ -166,13 +166,40 @@ export function calcMesGDP(lotesData, ventasData, racionesData, fechaInicio, fec
   // arrancó a cargarse a mitad, no se mezclan movimientos de antes).
   let cabSinExplicar = null, cabMuertes = 0, cabAjusteConteo = 0
   if (diasOrdenados.length >= 2) {
-    const [d0, e0] = diasOrdenados[0], [d1, e1] = diasOrdenados[diasOrdenados.length - 1]
+    // El conteo de cada día se carga a la mañana, con la comida: refleja lo
+    // que pasó HASTA el día anterior (lo que se vende o entra ese día recién
+    // aparece en el conteo del día siguiente). Por eso se mide del conteo
+    // del primer día del mes al conteo del primer día del mes SIGUIENTE, con
+    // los movimientos del mes completo [inicio, fin). Antes se cortaba en el
+    // último día del mes y con (inicio, fin]: una compra del día 1 o una
+    // venta del último día quedaban afuera o adentro de más y aparecían como
+    // "cabezas sin explicar" (pasó en octubre: +25 = el lote de Minetti del
+    // 01/10; en septiembre: +16 = la venta a Bertea del 30/09).
+    const [d0, e0] = diasOrdenados[0]
+    let [d1, e1] = diasOrdenados[diasOrdenados.length - 1]
+    const d1Mes = d1
+    const finIso = `${fechaFin.getFullYear()}-${String(fechaFin.getMonth() + 1).padStart(2, '0')}-${String(fechaFin.getDate()).padStart(2, '0')}`
+    const limiteIso = (() => { const x = new Date(fechaFin); x.setDate(x.getDate() + 4); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` })()
+    const sig = {}
+    ;(racionesData || []).forEach(r => {
+      const dia = (r.creado_en || '').split('T')[0]
+      if (dia < finIso || dia > limiteIso || !r.corral_id || r.cantidad_animales == null) return
+      if (!sig[dia]) sig[dia] = { animalesReal: 0, vistos: new Set() }
+      if (sig[dia].vistos.has(r.corral_id)) return
+      sig[dia].vistos.add(r.corral_id); sig[dia].animalesReal += r.cantidad_animales
+    })
+    const primerDiaSig = Object.keys(sig).sort()[0]
+    if (primerDiaSig) { d1 = primerDiaSig; e1 = sig[primerDiaSig] }
     const local = f => { const x = new Date(f); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
-    const ing = lotesData.filter(l => l.fecha_ingreso > d0 && l.fecha_ingreso <= d1).reduce((t, l) => t + (l.cantidad || 0), 0)
-    const ven = ventasData.filter(v => { const f = local(v.creado_en); return f > d0 && f <= d1 }).reduce((t, v) => t + (v.cantidad || 0), 0)
+    const ing = lotesData.filter(l => l.fecha_ingreso >= d0 && l.fecha_ingreso < d1).reduce((t, l) => t + (l.cantidad || 0), 0)
+    const ven = ventasData.filter(v => { const f = local(v.creado_en); return f >= d0 && f < d1 }).reduce((t, v) => t + (v.cantidad || 0), 0)
     // Muertes (Sanidad) y ajustes por conteo físico (Corrales) del mismo tramo
     const muertes = (lookups?.mortalidad || []).filter(m => m.fecha >= d0 && m.fecha < d1).reduce((t, m) => t + (parseInt(m.cantidad) || 0), 0)
-    const ajustes = (lookups?.ajustesStock || []).filter(a => { const f = local(a.fecha); return f >= d0 && f < d1 }).reduce((t, a) => t + (parseInt(a.cantidad) || 0), 0)
+    // Los ajustes por conteo siguen con el tramo de antes (hasta el último
+    // conteo del mes): las correcciones de datos del 31/08 a la noche eran de
+    // corrales que no figuraban en los conteos, y con el tramo nuevo
+    // aparecían como diferencia falsa en agosto.
+    const ajustes = (lookups?.ajustesStock || []).filter(a => { const f = local(a.fecha); return f >= d0 && f < d1Mes }).reduce((t, a) => t + (parseInt(a.cantidad) || 0), 0)
     cabMuertes = muertes; cabAjusteConteo = ajustes
     cabSinExplicar = Math.round(e1.animalesReal - (e0.animalesReal + ing - ven - muertes + ajustes))
   }
