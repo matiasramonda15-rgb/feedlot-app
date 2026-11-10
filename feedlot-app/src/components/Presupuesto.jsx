@@ -342,16 +342,26 @@ export default function Presupuesto() {
     setLoading(true)
     setError(null)
     try {
-      const [m, p, { data: ch }, { data: li }, hac] = await Promise.all([
+      const [m, p, { data: ch }, { data: li }, hac, chMov] = await Promise.all([
         traerTodo(() => supabase.from('v_caja_movimientos').select('caja, id, fecha, tipo, monto, descripcion, origen, actividad, inferido').order('fecha').order('id')),
         cargarPendientes(),
-        supabase.from('cheques').select('id, tipo, estado, monto, fecha_cobro, fecha_vencimiento, es_paralelo'),
+        supabase.from('cheques').select('id, tipo, estado, monto, fecha_cobro, fecha_vencimiento, fecha_emision, creado_en, es_paralelo'),
         supabase.from('presupuesto_lineas').select('*').eq('es_proyeccion', true),
         cargarDatosHacienda(),
+        traerTodo(() => supabase.from('v_cheques_movimientos').select('cheque_id, rol, fecha')),
       ])
       setMovs(m)
       setPendientes(p)
-      setCheques(ch || [])
+      // Para los meses pasados hace falta saber cuándo entró y cuándo salió
+      // cada cheque: entra el día que se cobró la venta (o se cargó) y sale el
+      // día que se entregó para pagar algo (o su fecha de cobro, si se depositó).
+      const entregaDe = {}, origenDe = {}
+      ;(chMov || []).forEach(x => {
+        if (!x.fecha) return
+        if (x.rol === 'entregado') { if (!entregaDe[x.cheque_id] || x.fecha < entregaDe[x.cheque_id]) entregaDe[x.cheque_id] = x.fecha }
+        if (x.rol === 'origen') { if (!origenDe[x.cheque_id] || x.fecha < origenDe[x.cheque_id]) origenDe[x.cheque_id] = x.fecha }
+      })
+      setCheques((ch || []).map(c => ({ ...c, _entrega: entregaDe[c.id] || null, _origen: origenDe[c.id] || null })))
       setLineas(li || [])
       setHacienda(hac)
       setFormHac(Object.fromEntries(Object.entries(hac.fijado || {}).map(([k, v]) => [k, String(v)])))
@@ -609,7 +619,28 @@ export default function Presupuesto() {
 
   // Cheques todavía no cobrados (incluidos en el saldo de caja) a una fecha
   const chequesAl = c => {
-    const fin = c.fin
+    const fin = c.archivo ? c.ocultas?.[c.ocultas.length - 1]?.fin : c.fin
+    if (!fin) return { cartera: 0, propios: 0 }
+    // Mes ya cerrado: cómo estaban los cheques el último día de ese mes
+    if (!c.hoy && !c.proy) {
+      const dia = f => (f || '').slice(0, 10)
+      const cartera = cheques.filter(ch => {
+        if (ch.tipo !== 'recibido' || ['rechazado', 'anulado'].includes(ch.estado)) return false
+        const entra = ch._origen || dia(ch.creado_en)
+        if (!entra || entra > fin) return false
+        // Si no se sabe cuándo se entregó (cargas viejas), se toma su fecha
+        // de cobro: a más tardar ese día ya no estaba en la caja.
+        const sale = ch.estado === 'en_cartera' ? null : (ch._entrega || fechaCobroCheque(ch) || dia(ch.creado_en))
+        return !sale || sale > fin
+      })
+      const propios = cheques.filter(ch => {
+        if (ch.tipo !== 'emitido' || ['rechazado', 'anulado'].includes(ch.estado)) return false
+        const sale = ch.fecha_emision || dia(ch.creado_en)
+        const fc = fechaCobroCheque(ch)
+        return sale && sale <= fin && fc && fc > fin
+      })
+      return { cartera: cartera.reduce((t, x) => t + num(x.monto), 0), propios: propios.reduce((t, x) => t + num(x.monto), 0) }
+    }
     const cartera = cheques.filter(ch => ch.tipo === 'recibido' && ch.estado === 'en_cartera' && (c.hoy || (fechaCobroCheque(ch) || '') > fin))
     const propios = cheques.filter(ch => {
       if (ch.tipo !== 'emitido' || FINALES.includes(ch.estado)) return false
@@ -759,14 +790,14 @@ export default function Presupuesto() {
               {renderTotal('Total no resultado', c => NO_RESULTADO.reduce((s, b) => s + neto(filasDe(b.act), c), 0))}
 
               {renderTotal('Movimiento total del mes', c => balanceTotal(c))}
-              {renderTotal('Saldo de caja (acumulado)', c => acumulados[c.id], { bg: S.accentLight, colorFijo: S.accent })}
-              {renderTotal('↳ cheques de terceros en cartera', c => chequesAl(c).cartera, { bg: S.surface, colorFijo: S.muted, mostrarEn: c => c.hoy || c.proy })}
-              {renderTotal('↳ cheques propios sin debitar', c => -chequesAl(c).propios, { bg: S.surface, colorFijo: S.muted, mostrarEn: c => c.hoy || c.proy })}
-              {renderTotal('Disponible sin contar cheques', c => { const x = chequesAl(c); return acumulados[c.id] - x.cartera + x.propios }, { bg: S.accentLight, colorFijo: S.accent, mostrarEn: c => c.hoy || c.proy })}
+              {renderTotal('Saldo total CON cheques (acumulado)', c => acumulados[c.id], { bg: S.accentLight, colorFijo: S.accent })}
+              {renderTotal('↳ cheques de terceros en cartera', c => chequesAl(c).cartera, { bg: S.surface, colorFijo: S.muted })}
+              {renderTotal('↳ cheques propios sin debitar', c => -chequesAl(c).propios, { bg: S.surface, colorFijo: S.muted })}
+              {renderTotal('Disponible SIN contar cheques', c => { const x = chequesAl(c); return acumulados[c.id] - x.cartera + x.propios }, { bg: S.accentLight, colorFijo: S.accent })}
             </tbody>
           </>)}
           <div style={{ fontSize: 11, color: S.hint, marginTop: 8, maxWidth: 900 }}>
-            El saldo de la columna "hasta hoy" es el saldo de las cajas hoy. Igual que en la caja, un cheque cuenta el día que se recibe o se entrega; las dos filas de abajo muestran cuánto de ese saldo son cheques todavía no cobrados/debitados. Las cuotas en dólares se proyectan al dólar de hoy. Las compras pagadas con canje de grano no se proyectan (no salen de caja).
+            El saldo de la columna "hasta hoy" es el saldo de las cajas hoy. Igual que en la caja, un cheque cuenta el día que se recibe o se entrega, así que el "Saldo total CON cheques" ya los incluye; las dos filas de abajo muestran cuánto de ese saldo son cheques todavía no cobrados/debitados, y el "Disponible SIN contar cheques" es lo que queda sacándolos. En los meses pasados, es cómo estaban los cheques el último día del mes. Las cuotas en dólares se proyectan al dólar de hoy. Las compras pagadas con canje de grano no se proyectan (no salen de caja).
           </div>
         </>
       ) : (<>
