@@ -2572,6 +2572,60 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                         </tbody>
                       </table>
                     </div>
+                    {(() => {
+                      // Resumen para mandarle al contratista y que lo controle antes de liquidar
+                      const fmtF = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+                      const filas = ordenesDelProveedor.map(o => {
+                        const campoO = campos.find(c => c.id === o.campo_id)
+                        const loteO = campoO?.lotes_agricolas?.find(l => l.id === o.lote_id)
+                        const esRollo = o.tipo === 'Confeccion de rollo'
+                        return {
+                          fecha: fmtF(o.fecha), campo: campoO?.nombre || '—', lote: loteO ? `Lote ${loteO.numero}` : 'Todo el campo', tipo: o.tipo,
+                          cant: esRollo ? `${(parseFloat(o.cantidad_rollos) || 0).toLocaleString('es-AR')} rollos` : `${(parseFloat(o.superficie_ha_real) || 0).toLocaleString('es-AR')} ha`,
+                        }
+                      })
+                      const totalTxt = [totalHa > 0 ? `${totalHa.toLocaleString('es-AR')} ha` : '', totalRollos > 0 ? `${totalRollos.toLocaleString('es-AR')} rollos` : ''].filter(Boolean).join(' · ')
+                      const conTarifa = totalGeneral > 0
+                      const texto = [
+                        `*Resumen de trabajos — ${proveedorLiquidar}*`,
+                        'Ramonda Hnos S.A.',
+                        '',
+                        ...filas.map(f => `• ${f.fecha} · ${f.campo} · ${f.lote} · ${f.tipo} · *${f.cant}*`),
+                        '',
+                        `*TOTAL: ${totalTxt}* (${filas.length} trabajo${filas.length !== 1 ? 's' : ''})`,
+                        ...(conTarifa ? [
+                          tarifaNum ? `Tarifa: $${tarifaNum.toLocaleString('es-AR')}/ha` : '',
+                          tarifaRolloNum ? `Tarifa: $${tarifaRolloNum.toLocaleString('es-AR')}/rollo` : '',
+                          `*A pagar: $${totalGeneral.toLocaleString('es-AR')}*`,
+                        ].filter(Boolean) : []),
+                        '',
+                        '¿Me confirmás si está todo bien?',
+                      ].join('\n')
+                      const imprimir = () => {
+                        const w = window.open('', '_blank'); if (!w) return
+                        const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+                        w.document.write(`<html><head><title>Resumen ${esc(proveedorLiquidar)}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}td.n,th.n{text-align:right;font-family:monospace}h2{margin:0}</style></head><body>
+                          <h2>Resumen de trabajos — ${esc(proveedorLiquidar)}</h2><div>Ramonda Hnos S.A. · ${new Date().toLocaleDateString('es-AR')}</div>
+                          <table><thead><tr><th>Fecha</th><th>Campo</th><th>Lote</th><th>Trabajo</th><th class="n">Cantidad</th></tr></thead><tbody>
+                          ${filas.map(f => `<tr><td>${f.fecha}</td><td>${esc(f.campo)}</td><td>${esc(f.lote)}</td><td>${esc(f.tipo)}</td><td class="n">${f.cant}</td></tr>`).join('')}
+                          <tr><td colspan="4"><b>TOTAL — ${filas.length} trabajo${filas.length !== 1 ? 's' : ''}</b></td><td class="n"><b>${totalTxt}</b></td></tr>
+                          </tbody></table>
+                          ${conTarifa ? `<p>${tarifaNum ? `Tarifa: $${tarifaNum.toLocaleString('es-AR')}/ha. ` : ''}${tarifaRolloNum ? `Tarifa: $${tarifaRolloNum.toLocaleString('es-AR')}/rollo. ` : ''}<b>A pagar: $${totalGeneral.toLocaleString('es-AR')}</b></p>` : ''}
+                          </body></html>`)
+                        w.document.close(); w.focus(); w.print()
+                      }
+                      const btn = { padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', textDecoration: 'none', display: 'inline-block' }
+                      return (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                          <a href={`https://wa.me/?text=${encodeURIComponent(texto)}`} target="_blank" rel="noopener noreferrer"
+                            style={{ ...btn, background: '#25D366', color: '#fff', border: 'none' }}>📲 Mandar por WhatsApp</a>
+                          <button onClick={async () => { try { await navigator.clipboard.writeText(texto); alert('Resumen copiado — pegalo en WhatsApp.') } catch { alert(texto) } }}
+                            style={{ ...btn, background: S.surface, border: `1px solid ${S.border}`, color: S.text }}>📋 Copiar texto</button>
+                          <button onClick={imprimir} style={{ ...btn, background: S.surface, border: `1px solid ${S.border}`, color: S.text }}>🖨 Imprimir / PDF</button>
+                          <span style={{ fontSize: 11, color: S.hint }}>{conTarifa ? 'Incluye la tarifa y el total.' : 'Solo fechas, campos y hectáreas (todavía sin precio).'}</span>
+                        </div>
+                      )
+                    })()}
                     <div style={{ display: 'grid', gridTemplateColumns: totalRollos > 0 && totalHa > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: '1rem', marginBottom: 12 }}>
                       {totalHa > 0 && (
                         <div>
