@@ -2617,8 +2617,6 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                       const btn = { padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', textDecoration: 'none', display: 'inline-block' }
                       return (
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-                          <a href={`https://wa.me/?text=${encodeURIComponent(texto)}`} target="_blank" rel="noopener noreferrer"
-                            style={{ ...btn, background: '#25D366', color: '#fff', border: 'none' }}>📲 Mandar por WhatsApp</a>
                           <button onClick={async () => { try { await navigator.clipboard.writeText(texto); alert('Resumen copiado — pegalo en WhatsApp.') } catch { alert(texto) } }}
                             style={{ ...btn, background: S.surface, border: `1px solid ${S.border}`, color: S.text }}>📋 Copiar texto</button>
                           <button onClick={imprimir} style={{ ...btn, background: S.surface, border: `1px solid ${S.border}`, color: S.text }}>🖨 Imprimir / PDF</button>
