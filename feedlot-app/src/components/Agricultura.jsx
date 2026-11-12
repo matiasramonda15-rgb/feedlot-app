@@ -6144,14 +6144,19 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
 // ── TAB LLUVIAS ──
 const MESES_LLUVIA = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
+// Lugar por defecto de las lluvias: el campo donde está el feedlot (igual
+// que en el celular). Antes la PC usaba "Feedlot" y el celular "Bobo/Ramonda",
+// así que en la PC no aparecía lo que se cargaba desde el celular.
+const LUGAR_LLUVIA_DEF = 'Bobo/Ramonda'
+
 function TabLluvias({ usuario }) {
   const [lluvias, setLluvias] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ fecha: hoyLocal(), mm: '', lugar: 'Feedlot', observaciones: '' })
+  const [form, setForm] = useState({ fecha: hoyLocal(), mm: '', lugar: LUGAR_LLUVIA_DEF, observaciones: '' })
   // Cada lugar (feedlot y cada campo) tiene su pluviómetro: los totales son por lugar
-  const [lugares, setLugares] = useState(['Feedlot'])
-  const [filtroLugar, setFiltroLugar] = useState('Feedlot')
+  const [lugares, setLugares] = useState([LUGAR_LLUVIA_DEF])
+  const [filtroLugar, setFiltroLugar] = useState(LUGAR_LLUVIA_DEF)
   const [nombres, setNombres] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [filtroAnio, setFiltroAnio] = useState(new Date().getFullYear())
@@ -6166,17 +6171,17 @@ function TabLluvias({ usuario }) {
       supabase.from('usuarios').select('id, nombre'),
     ])
     setLluvias(data || [])
-    setLugares(['Feedlot', ...(ca || []).map(c => c.nombre)])
+    setLugares([LUGAR_LLUVIA_DEF, ...(ca || []).map(c => c.nombre).filter(n => n !== LUGAR_LLUVIA_DEF)])
     setNombres(Object.fromEntries((us || []).map(u => [u.id, u.nombre])))
     setLoading(false)
   }
 
   async function guardar() {
     if (!form.fecha || !form.mm) { alert('Completá la fecha y los milímetros'); return }
-    const yaExiste = lluvias.find(l => l.fecha === form.fecha && (l.lugar || 'Feedlot') === form.lugar)
+    const yaExiste = lluvias.find(l => l.fecha === form.fecha && (l.lugar || LUGAR_LLUVIA_DEF) === form.lugar)
     if (yaExiste && !confirm(`Ya hay un registro para el ${new Date(form.fecha+'T12:00:00').toLocaleDateString('es-AR')} (${yaExiste.mm} mm). ¿Agregar otro de todas formas?`)) return
     setGuardando(true)
-    await supabase.from('lluvias').insert({ fecha: form.fecha, mm: parseFloat(form.mm), lugar: form.lugar || 'Feedlot', observaciones: form.observaciones || null, registrado_por: usuario?.id })
+    await supabase.from('lluvias').insert({ fecha: form.fecha, mm: parseFloat(form.mm), lugar: form.lugar || LUGAR_LLUVIA_DEF, observaciones: form.observaciones || null, registrado_por: usuario?.id })
     await cargar()
     setShowForm(false)
     setForm({ fecha: hoyLocal(), mm: '', lugar: form.lugar, observaciones: '' })
@@ -6194,7 +6199,7 @@ function TabLluvias({ usuario }) {
   const anios = [...new Set(lluvias.map(l => new Date(l.fecha + 'T12:00:00').getFullYear()))].sort((a, b) => b - a)
   if (anios.length === 0) anios.push(new Date().getFullYear())
 
-  const lluviasL = lluvias.filter(l => !filtroLugar || (l.lugar || 'Feedlot') === filtroLugar)
+  const lluviasL = lluvias.filter(l => !filtroLugar || (l.lugar || LUGAR_LLUVIA_DEF) === filtroLugar)
   const delAnio = lluviasL.filter(l => new Date(l.fecha + 'T12:00:00').getFullYear() === filtroAnio)
   const totalAnio = delAnio.reduce((s, l) => s + (l.mm || 0), 0)
   const hoy = new Date()
@@ -6267,7 +6272,7 @@ function TabLluvias({ usuario }) {
         </select>
         <Label>Lugar</Label>
         <select value={filtroLugar} onChange={e => setFiltroLugar(e.target.value)} style={{ ...inputStyle, width: 220 }}>
-          {[...new Set([...lugares, ...lluvias.map(l => l.lugar || 'Feedlot')])].map(l => <option key={l} value={l}>{l}{lluvias.some(x => (x.lugar || 'Feedlot') === l) ? '' : ' (sin datos)'}</option>)}
+          {[...new Set([...lugares, ...lluvias.map(l => l.lugar || LUGAR_LLUVIA_DEF)])].map(l => <option key={l} value={l}>{l}{lluvias.some(x => (x.lugar || LUGAR_LLUVIA_DEF) === l) ? '' : ' (sin datos)'}</option>)}
         </select>
       </div>
 
@@ -6333,7 +6338,7 @@ function TabLluvias({ usuario }) {
             {lluvias.map(l => (
               <tr key={l.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                 <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 12 }}>{new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
-                <td style={{ padding: '7px 12px', fontSize: 12 }}>{l.lugar || 'Feedlot'}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12 }}>{l.lugar || LUGAR_LLUVIA_DEF}</td>
                 <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 700, color: S.accent }}>{l.mm} mm</td>
                 <td style={{ padding: '7px 12px', fontSize: 12, color: S.muted }}>{nombres[l.registrado_por] || '—'}</td>
                 <td style={{ padding: '7px 12px', color: S.muted, fontSize: 12 }}>{l.observaciones || '—'}</td>
