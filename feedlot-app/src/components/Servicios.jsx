@@ -52,15 +52,54 @@ const CULTIVOS = ['Maíz', 'Soja', 'Trigo', 'Sorgo', 'Girasol', 'Cebada', 'Otro'
 // registro, una por destino, creándose recién cuando hace falta.
 async function obtenerOCrearCosecha(reg, destino, campos) {
   const campoId = destino === 'acopio' ? 'cosecha_id_acopio' : 'cosecha_id'
-  if (reg[campoId]) return { id: reg[campoId], registro: reg }
+  if (reg[campoId]) { await completarCosecha(reg[campoId], reg, destino, campos); return { id: reg[campoId], registro: reg } }
   const { data: cos, error } = await supabase.from('cosechas').insert({
-    campo_id: reg.campo_id, cultivo: reg.cultivo || null, fecha: reg.fecha || hoyLocal(),
+    campo_id: reg.campo_id, cultivo: CULTIVO_AGRO[reg.cultivo] || reg.cultivo || null, fecha: reg.fecha || hoyLocal(),
     kg_totales: 0, destino: destino === 'acopio' ? 'acopio' : 'bolsa',
     observaciones: `Cargado desde registro de mercadería${reg.nro_lote ? ' — ' + reg.nro_lote : ''}`,
   }).select().single()
   if (error) return { error }
   await supabase.from('registros_mercaderia').update({ [campoId]: cos.id }).eq('id', reg.id)
+  await completarCosecha(cos.id, reg, destino, campos)
   return { id: cos.id, registro: { ...reg, [campoId]: cos.id } }
+}
+
+// La cosecha que nace de Mercadería tiene que quedar igual que una cargada
+// en Agricultura → Cosechas, para que aparezca en el stock de granos (🌾
+// Granos: necesita su ubicación, la silobolsa del campo o el acopio) y en la
+// rentabilidad por lote (necesita campaña, lote y el cultivo escrito igual que
+// en la siembra). Antes se creaba solo con campo y kg, y no aparecía en ningún
+// lado de Agricultura. Completa solo lo que falta.
+async function completarCosecha(cosechaId, reg, destino, campos) {
+  const { data: cos } = await supabase.from('cosechas').select('id, campo_id, cultivo, campana_id, lote_id, ubicacion_id, destino').eq('id', cosechaId).single()
+  if (!cos) return
+  const cultivo = CULTIVO_AGRO[cos.cultivo] || CULTIVO_AGRO[reg.cultivo] || cos.cultivo || reg.cultivo
+  const datos = {}
+  if (cultivo && cultivo !== cos.cultivo) datos.cultivo = cultivo
+  if (!cos.campana_id) {
+    const { data: camps } = await supabase.from('campanas').select('id, nombre').eq('activa', true).order('nombre', { ascending: false })
+    const ids = (camps || []).map(c => c.id)
+    let plan = null
+    if (ids.length && cos.campo_id && cultivo) {
+      const { data: planes } = await supabase.from('plan_cultivos').select('id, campana_id, lote_id').in('campana_id', ids).eq('campo_id', cos.campo_id).eq('cultivo', cultivo)
+      // la campaña más nueva que tenga ese cultivo sembrado en el campo
+      plan = (planes || []).sort((a, b) => ids.indexOf(a.campana_id) - ids.indexOf(b.campana_id))[0] || null
+    }
+    if (plan) { datos.campana_id = plan.campana_id; if (!cos.lote_id && plan.lote_id) datos.lote_id = plan.lote_id }
+    else if (ids.length) datos.campana_id = ids[0]
+  }
+  if (!cos.ubicacion_id && cultivo) {
+    const tipo = (destino || cos.destino) === 'acopio' ? 'acopio' : 'silobolsa'
+    const campo = (campos || []).find(c => c.id === cos.campo_id)
+    const nombre = tipo === 'silobolsa' ? `Silobolsa ${campo?.nombre || ''} · ${cultivo}` : `Acopio · ${cultivo}`
+    const { data: ex } = await supabase.from('ubicaciones_grano').select('id').eq('tipo', tipo).eq('cultivo', cultivo).eq('activa', true).eq('nombre', nombre).limit(1)
+    if (ex?.length) datos.ubicacion_id = ex[0].id
+    else {
+      const { data: nueva } = await supabase.from('ubicaciones_grano').insert({ nombre, tipo, cultivo, campo_id: tipo === 'silobolsa' ? cos.campo_id : null, campana_id: datos.campana_id || cos.campana_id || null }).select().single()
+      if (nueva) datos.ubicacion_id = nueva.id
+    }
+  }
+  if (Object.keys(datos).length) await supabase.from('cosechas').update(datos).eq('id', cos.id)
 }
 
 // Cambiar a dónde fue un camión (acopio o silo bolsa propio) después de
@@ -269,6 +308,14 @@ export default function Servicios({ usuario, mobile, nav }) {
     setChequesCartera(ch || [])
     setRegistros(regs || [])
     setCampos(cps || [])
+    // Cosechas ya creadas desde Mercadería a las que les falta campaña o
+    // ubicación (las de antes de este arreglo): se completan una sola vez.
+    ;(async () => {
+      const pares = (regs || []).filter(r => r.es_propio).flatMap(r => [[r.cosecha_id, 'bolsa_propia', r], [r.cosecha_id_acopio, 'acopio', r]]).filter(([id]) => id)
+      if (!pares.length) return
+      const { data: incompletas } = await supabase.from('cosechas').select('id').in('id', pares.map(p => p[0])).or('campana_id.is.null,ubicacion_id.is.null')
+      for (const c of incompletas || []) { const p = pares.find(x => x[0] === c.id); if (p) await completarCosecha(c.id, p[2], p[1], cps || []) }
+    })()
     setStockAgro(sa || [])
     // Cargar config mano de obra
     const { data: cmo } = await supabase.from('config_mano_obra').select('*').eq('activo', true).order('id')
