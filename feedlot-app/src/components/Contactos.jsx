@@ -1675,7 +1675,7 @@ export default function Contactos({ usuario }) {
                         const nuevos = e.target.checked ? [...actuales, t] : actuales.filter(x => x !== t)
                         setFormContacto({...formContacto, tipos: nuevos})
                       }} style={{ margin: 0 }} />
-                      {t.replace(/_/g, ' ')}
+                      {({ servicio: 'proveedor de servicios', cliente_servicios: 'cliente de servicios (le hacemos trabajos)' })[t] || t.replace(/_/g, ' ')}
                     </label>
                   )
                 })}

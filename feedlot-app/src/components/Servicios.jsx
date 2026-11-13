@@ -102,6 +102,15 @@ async function completarCosecha(cosechaId, reg, destino, campos) {
   if (Object.keys(datos).length) await supabase.from('cosechas').update(datos).eq('id', cos.id)
 }
 
+// Contactos que aparecen como CLIENTES en Servicios: los marcados como
+// "cliente servicios", y también los que tienen tildado "servicio" o están
+// asociados a la actividad Servicios (antes solo el primero, y un cliente
+// marcado de otra forma no aparecía en la lista).
+const esClienteServicios = c => {
+  const tipos = c.tipos || (c.tipo ? [c.tipo] : [])
+  return tipos.includes('cliente_servicios') || tipos.includes('servicio') || (c.actividades || []).includes('Servicios')
+}
+
 // Cambiar a dónde fue un camión (acopio o silo bolsa propio) después de
 // cargado: se sacan los kg de la cosecha del destino viejo y se suman a la
 // del nuevo. Sirve para los camiones que se cargaron sin destino.
@@ -883,7 +892,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <label style={lblM}>Cliente *</label>
                   <SelectBuscable value={formM.cliente} onChange={e => setFormM({...formM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Seleccioná —</option>
-                    {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    {contactos.filter(esClienteServicios).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </SelectBuscable>
                   <div style={{ fontSize: 10, color: CM.muted, marginTop: 3 }}>¿No aparece? Primero hay que cargarlo en Contactos, desde la PC.</div>
                 </>
@@ -1022,7 +1031,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                           <label style={lblM}>Cliente</label>
                           <SelectBuscable value={editSvcM.cliente} onChange={e => setEditSvcM({...editSvcM, cliente: e.target.value})} style={inpM}>
                             <option value="">— Sin especificar —</option>
-                            {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                            {contactos.filter(esClienteServicios).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                           </SelectBuscable>
                           <label style={lblM}>Servicio</label>
                           <select value={editSvcM.labor} onChange={e => setEditSvcM({...editSvcM, labor: e.target.value})} style={inpM}>
@@ -1113,7 +1122,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <label style={lblM}>Cliente/Propietario</label>
                   <SelectBuscable value={formRegM.cliente} onChange={e => setFormRegM({...formRegM, cliente: e.target.value})} style={inpM}>
                     <option value="">— Sin especificar —</option>
-                    {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    {contactos.filter(esClienteServicios).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </SelectBuscable>
                   <label style={lblM}>N° Lote</label>
                   <input type="text" value={formRegM.nro_lote} onChange={e => setFormRegM({...formRegM, nro_lote: e.target.value})} style={inpM} placeholder="ej. Lote 3" />
@@ -1398,7 +1407,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                     <Lbl>Cliente *</Lbl>
                     <SelectBuscable value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} style={inp}>
                       <option value="">— Seleccioná —</option>
-                      {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                      {contactos.filter(esClienteServicios).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                     </SelectBuscable>
                     <div style={{ fontSize: 10, color: S.hint, marginTop: 3 }}>¿No aparece? Cargalo primero en Contactos.</div>
                   </div>
@@ -1597,7 +1606,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                           <div><Lbl>Servicio</Lbl><select value={formEdit.labor} onChange={e => setFormEdit({ ...formEdit, labor: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{LABORES.map(l => <option key={l}>{l}</option>)}</select></div>
                           <div><Lbl>Cultivo</Lbl><select value={formEdit.cultivo} onChange={e => setFormEdit({ ...formEdit, cultivo: e.target.value })} style={{ ...inp, padding: '6px 8px' }}>{CULTIVOS.map(c => <option key={c}>{c}</option>)}</select></div>
                           <div><Lbl>Fecha</Lbl><input type="date" value={formEdit.fecha} onChange={e => setFormEdit({ ...formEdit, fecha: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
-                          <div><Lbl>Cliente</Lbl><SelectBuscable value={formEdit.cliente} onChange={e => setFormEdit({ ...formEdit, cliente: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Seleccioná —</option>{contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</SelectBuscable></div>
+                          <div><Lbl>Cliente</Lbl><SelectBuscable value={formEdit.cliente} onChange={e => setFormEdit({ ...formEdit, cliente: e.target.value })} style={{ ...inp, padding: '6px 8px' }}><option value="">— Seleccioná —</option>{contactos.filter(esClienteServicios).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</SelectBuscable></div>
                           <div><Lbl>Campo</Lbl><input type="text" value={formEdit.campo || ''} onChange={e => setFormEdit({ ...formEdit, campo: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>N° Lote</Lbl><input type="text" value={formEdit.nro_lote || ''} onChange={e => setFormEdit({ ...formEdit, nro_lote: e.target.value })} style={{ ...inp, padding: '6px 8px' }} /></div>
                           <div><Lbl>Hectáreas</Lbl><input type="number" value={formEdit.hectareas} onChange={e => setFormEdit({ ...formEdit, hectareas: e.target.value })} style={{ ...inpMono, padding: '6px 8px' }} /></div>
@@ -2439,7 +2448,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <Lbl>Cliente/Propietario</Lbl>
                   <SelectBuscable value={formReg.cliente} onChange={e => setFormReg({ ...formReg, cliente: e.target.value })} style={inp}>
                     <option value="">— Sin especificar —</option>
-                    {contactos.filter(c => c.tipos?.includes('cliente_servicios')).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    {contactos.filter(esClienteServicios).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </SelectBuscable>
                 </div>
                 <div><Lbl>N° Lote</Lbl><input type="text" value={formReg.nro_lote} onChange={e => setFormReg({ ...formReg, nro_lote: e.target.value })} placeholder="ej. Lote 3" style={inp} /></div>
