@@ -5778,10 +5778,30 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
   // cotización actual) y se avisa cuántos montos quedaron estimados.
   const [moneda, setMoneda] = useState('USD')
 
+  // Precio para proyectar cuando el lote está cosechado pero no vendido:
+  // contratos a futuro de ese cultivo, y si no hay, un precio de pizarra que
+  // se carga a mano (USD/tn por cultivo) y queda guardado.
+  const [contratos, setContratos] = useState([])
+  const [preciosManual, setPreciosManual] = useState({})
   useEffect(() => {
-    supabase.from('vencimientos_arriendo').select('*').eq('estado', 'pagado').order('fecha_vencimiento')
-      .then(({ data }) => { setVencimientos(data || []); setLoading(false) })
+    Promise.all([
+      supabase.from('vencimientos_arriendo').select('*').eq('estado', 'pagado').order('fecha_vencimiento'),
+      supabase.from('contratos_granos').select('*'),
+      supabase.from('configuracion').select('valor').eq('clave', 'precios_ref_granos').maybeSingle(),
+    ]).then(([{ data }, { data: ct }, { data: pr }]) => {
+      setVencimientos(data || [])
+      setContratos((ct || []).filter(c => c.estado !== 'anulado'))
+      try { setPreciosManual(pr?.valor ? JSON.parse(pr.valor) : {}) } catch { setPreciosManual({}) }
+      setLoading(false)
+    })
   }, [])
+  async function guardarPrecioManual(cultivo, valor) {
+    const v = parseFloat(String(valor).replace(',', '.'))
+    const nuevo = { ...preciosManual }
+    if (v > 0) nuevo[cultivo] = v; else delete nuevo[cultivo]
+    setPreciosManual(nuevo)
+    await supabase.from('configuracion').upsert({ clave: 'precios_ref_granos', valor: JSON.stringify(nuevo) }, { onConflict: 'clave' })
+  }
 
   if (loading) return <Loader />
 
@@ -5825,7 +5845,29 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     // precio, el total menos el IVA (10,5% en granos).
     const netoVenta = v => netoVentaGrano(v)
     const monTot = pool.reduce((s, v) => s + conv(netoVenta(v), v.fecha, v.cotizacion_usd), 0)
-    return kgTot > 0 ? (monTot / (kgTot / 1000)) : null
+    return precioInfo(cultivo, kgTot, monTot).precio
+  }
+  // De dónde sale el precio: lo vendido + lo que falta entregar de los
+  // contratos a futuro (a su precio en USD); si no hay nada de eso, el precio
+  // de pizarra cargado a mano. Así un lote trillado y sin vender ya muestra
+  // un resultado aproximado.
+  function precioInfo(cultivo, kgVend = 0, monVend = 0) {
+    const usdA = usd => moneda === 'USD' ? usd : usd * (cotizacionDolar || 0)
+    const entregadoDe = c => ventasGranos.filter(v => v.contrato_id === c.id).reduce((s, v) => s + (v.kg || 0), 0) / 1000
+    const pend = contratos.filter(c => c.cultivo === cultivo && (!filtroCampana || !c.campana_id || c.campana_id === parseInt(filtroCampana)))
+      .map(c => ({ tn: Math.max(0, (parseFloat(c.toneladas) || 0) - entregadoDe(c)), precio: usdA(parseFloat(c.precio_usd_tn) || 0) }))
+      .filter(c => c.tn > 0 && c.precio > 0)
+    const tnPend = pend.reduce((s, c) => s + c.tn, 0)
+    const monPend = pend.reduce((s, c) => s + c.tn * c.precio, 0)
+    const tnTot = kgVend / 1000 + tnPend
+    if (tnTot > 0) return { precio: (monVend + monPend) / tnTot, fuente: kgVend > 0 && tnPend > 0 ? 'vendido + contratos a futuro' : kgVend > 0 ? 'vendido' : 'contratos a futuro' }
+    const man = parseFloat(preciosManual[cultivo])
+    if (man > 0) return { precio: usdA(man), fuente: 'pizarra (cargado a mano)' }
+    return { precio: null, fuente: null }
+  }
+  const fuentePrecio = cultivo => {
+    const pool = ventasGranos.filter(v => v.cultivo === cultivo && v.estado !== 'pactada' && (!filtroCampana || v.campana_id === parseInt(filtroCampana)) && v.kg && v.total)
+    return precioInfo(cultivo, pool.reduce((s, v) => s + (v.kg || 0), 0), pool.reduce((s, v) => s + conv(netoVentaGrano(v), v.fecha, v.cotizacion_usd), 0)).fuente
   }
 
   // Cosechas que entran en el filtro actual, agrupadas por Campo + Lote + Cultivo
@@ -5978,6 +6020,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     const costosDirectos = costoInsumos + costoLabores + costoAlquiler + costoGastos
     const sinCosechaAun = g.kg === 0
     const precioTn = precioReferencia(g.cultivo)
+    const fuentePrecioTn = fuentePrecio(g.cultivo)
     const ingresos = (!sinCosechaAun && precioTn) ? (g.kg / 1000) * precioTn : 0
 
     const mb = sinCosechaAun ? null : ingresos - costosDirectos
@@ -5991,7 +6034,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
       campoNombre: campo?.nombre || '—', loteNombre: lote ? `Lote ${lote.numero}` : 'Todo el campo',
       campo_id: g.campo_id, lote_id: g.lote_id, cultivo: g.cultivo, sinCosechaAun,
       ha, kg: g.kg, rtoQqHa, costoInsumos, costoLabores, costoAlquiler, costoGastos, costosDirectos, pctAlquiler, esTrigo, hayTrigo,
-      precioTn, ingresos, mb, mbHa, mbCD, rentabilidadPct, rtoIndifTnHa, detalleInsumos, detalleOrdenes, detalleArriendo,
+      precioTn, fuentePrecioTn, ingresos, mb, mbHa, mbCD, rentabilidadPct, rtoIndifTnHa, detalleInsumos, detalleOrdenes, detalleArriendo,
     }
   }).filter(Boolean)
 
@@ -6040,6 +6083,34 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
         </div>
       </div>
 
+      {(() => {
+        const cultivosF = [...new Set(filas.map(f => f.cultivo).filter(Boolean))]
+        if (!cultivosF.length) return null
+        return (
+          <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: '1rem' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Precio para proyectar lo cosechado sin vender</div>
+            <div style={{ fontSize: 11, color: S.hint, marginBottom: 8 }}>Se usa primero lo vendido y los contratos a futuro de ese cultivo. Si no hay, el precio de pizarra que cargues acá (USD/tn, queda guardado).</div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              {cultivosF.map(c => {
+                const fte = fuentePrecio(c)
+                const usaManual = !fte || fte.startsWith('pizarra')
+                return (
+                  <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                    <strong>{c}</strong>
+                    <span style={{ color: S.muted }}>pizarra USD</span>
+                    <input key={c + (preciosManual[c] || '')} type="number" defaultValue={preciosManual[c] || ''} placeholder="ej. 210"
+                      onBlur={e => { if (String(e.target.value) !== String(preciosManual[c] || '')) guardarPrecioManual(c, e.target.value) }}
+                      style={{ width: 80, padding: '4px 6px', fontSize: 12, border: `1px solid ${S.border}`, borderRadius: 4, fontFamily: 'monospace' }} />
+                    <span style={{ color: S.muted }}>/tn</span>
+                    <span style={{ fontSize: 11, color: usaManual ? S.amber : S.green }}>{fte ? `· usa: ${fte}` : '· sin precio'}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {filas.length === 0 && (
         <div style={{ padding: '2rem', textAlign: 'center', color: S.hint, background: S.surface, border: `1px solid ${S.border}`, borderRadius: 8 }}>
           No hay cosechas cargadas que coincidan con estos filtros. Cargá la cosecha del lote en la pestaña "Cosechas" para que aparezca acá.
@@ -6070,7 +6141,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: abierto ? '1.25rem' : 0 }}>
               {[
                 { label: 'Rendimiento', val: f.sinCosechaAun ? 'Sin cosechar' : `${numAR(f.rtoQqHa, 1)} tn/ha`, sub: f.sinCosechaAun ? '—' : `${numAR(f.kg / 1000, 1)} tn totales` },
-                { label: 'Ingresos (proy.)', val: f.sinCosechaAun ? '—' : (f.precioTn ? `${M}${numAR(f.ingresos)}` : 'Sin precio ref.'), sub: f.sinCosechaAun ? 'todavía no hay cosecha' : (f.precioTn ? `${M}${numAR(f.precioTn)}/tn` : 'cargá una venta de este cultivo'), color: S.green },
+                { label: 'Ingresos (proy.)', val: f.sinCosechaAun ? '—' : (f.precioTn ? `${M}${numAR(f.ingresos)}` : 'Sin precio ref.'), sub: f.sinCosechaAun ? 'todavía no hay cosecha' : (f.precioTn ? `${M}${numAR(f.precioTn)}/tn · ${f.fuentePrecioTn}` : 'poné un precio de pizarra arriba'), color: S.green },
                 { label: 'Costos directos', val: `${M}${numAR(f.costosDirectos)}`, sub: `Insumos ${M}${numAR(f.costoInsumos)} · Labores ${M}${numAR(f.costoLabores)} · Alquiler ${M}${numAR(f.costoAlquiler)}${f.costoGastos ? ' · Gastos $' + numAR(f.costoGastos) : ''}`, color: S.red },
                 { label: 'Margen Bruto', val: f.mb === null ? '—' : `${M}${numAR(f.mb)}`, sub: f.mb === null ? 'a definir con la cosecha' : `${M}${numAR(f.mbHa)}/ha`, color: f.mb === null ? S.muted : (f.mb >= 0 ? S.green : S.red) },
               ].map((m, i) => (
