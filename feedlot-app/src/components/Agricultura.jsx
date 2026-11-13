@@ -5940,17 +5940,30 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
     })
     detalleOrdenes.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
 
-    // Arriendo del campo en el rango de años de la campaña, prorrateado por ha
+    // Arriendo del campo del año de la campaña (1° de julio a 30 de junio),
+    // prorrateado por ha. Antes tomaba los dos años calendario enteros de la
+    // campaña (ej. 2026/27 = ene-2026 a dic-2027) y cargaba dos años de
+    // alquiler a un solo cultivo.
+    const iniCamp = campana ? `${campana.año_inicio || 0}-07-01` : null
+    const finCamp = campana ? `${campana.año_fin || ((campana.año_inicio || 0) + 1)}-06-30` : null
     const arriendosCampo = vencimientos.filter(v => v.campo_id === g.campo_id && (!campana || (
-      new Date(v.fecha_vencimiento).getFullYear() >= (campana.año_inicio || 0) &&
-      new Date(v.fecha_vencimiento).getFullYear() <= (campana.año_fin || 9999)
+      (v.fecha_vencimiento || '') >= iniCamp && (v.fecha_vencimiento || '') <= finCamp
     )))
     // El alquiler se reparte según las ha de CONTRATO (es lo que se paga):
     // la parte de este lote es su contrato sobre el del campo entero.
     const partAlquiler = lote ? ((parseFloat(lote.superficie_ha) || 0) / (parseFloat(campo?.superficie_ha) || 1)) : 1
+    // Reparto del alquiler del año entre cultivos: si en ese lote se hace
+    // trigo, el trigo lleva el 30% y la gruesa que sigue (soja, maíz…) el
+    // 70%. Sin trigo, la gruesa lleva el 100%.
+    const mismoLugar = x => x.campo_id === g.campo_id && (!x.lote_id || !g.lote_id || x.lote_id === g.lote_id)
+    const enCamp = x => !campana || x.campana_id === campana.id
+    const cultivosLugar = [...(planes || []).filter(p => enCamp(p) && mismoLugar(p)).map(p => p.cultivo), ...(cosechas || []).filter(c => enCamp(c) && mismoLugar(c)).map(c => c.cultivo)]
+    const esTrigo = /trigo/i.test(g.cultivo || '')
+    const hayTrigo = cultivosLugar.some(c => /trigo/i.test(c || ''))
+    const pctAlquiler = esTrigo ? 0.30 : hayTrigo ? 0.70 : 1
     const detalleArriendo = arriendosCampo.map(v => {
       const montoTotal = conv(v.monto_total || 0, v.fecha_pago || v.fecha_vencimiento, v.cotizacion_usd)
-      return { fecha: v.fecha_vencimiento, montoTotal, estadoPago: v.estado, montoProrrateado: montoTotal * partAlquiler }
+      return { fecha: v.fecha_vencimiento, montoTotal, estadoPago: v.estado, montoProrrateado: montoTotal * partAlquiler * pctAlquiler }
     })
     const costoAlquiler = detalleArriendo.reduce((s, a) => s + a.montoProrrateado, 0)
 
@@ -5977,7 +5990,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
       key: `${g.campo_id}_${g.lote_id || 'campo'}_${g.cultivo}`,
       campoNombre: campo?.nombre || '—', loteNombre: lote ? `Lote ${lote.numero}` : 'Todo el campo',
       campo_id: g.campo_id, lote_id: g.lote_id, cultivo: g.cultivo, sinCosechaAun,
-      ha, kg: g.kg, rtoQqHa, costoInsumos, costoLabores, costoAlquiler, costoGastos, costosDirectos,
+      ha, kg: g.kg, rtoQqHa, costoInsumos, costoLabores, costoAlquiler, costoGastos, costosDirectos, pctAlquiler, esTrigo, hayTrigo,
       precioTn, ingresos, mb, mbHa, mbCD, rentabilidadPct, rtoIndifTnHa, detalleInsumos, detalleOrdenes, detalleArriendo,
     }
   }).filter(Boolean)
@@ -5989,7 +6002,7 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Rentabilidad por lote</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: '1.25rem' }}>
         <div style={{ fontSize: 12, color: S.muted }}>
-          Insumos desde las Órdenes de trabajo de cada lote · Alquiler prorrateado por hectárea · Precio de venta proyectado sobre lo efectivamente vendido
+          Insumos desde las Órdenes de trabajo de cada lote · Alquiler del año de campaña (jul–jun) prorrateado por hectárea: 30% al trigo y 70% a la gruesa que sigue (100% si no hay trigo) · Precio de venta proyectado sobre lo efectivamente vendido
           {moneda === 'USD' && <div style={{ marginTop: 4 }}>En dólares: cada monto se convierte con el dólar del día de su operación{estimados > 0 ? <span style={{ color: S.amber }}> · {estimados} monto{estimados !== 1 ? 's' : ''} sin dólar cargado (se usó el más cercano en fecha)</span> : ''}.</div>}
         </div>
         <div style={{ display: 'flex', border: `1px solid ${S.border}`, borderRadius: 6, overflow: 'hidden' }}>
@@ -6086,7 +6099,9 @@ function TabRentabilidad({ campos, campanas, campanaActiva, ordenes, cosechas, v
               <div style={{ marginTop: '1.25rem' }}>
                 {f.detalleArriendo.length > 0 && (
                   <div style={{ marginBottom: '1.25rem' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Alquiler del campo</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>
+                      Alquiler del campo · {Math.round(f.pctAlquiler * 100)}% del año {f.esTrigo ? '(trigo: el 70% va a la gruesa que sigue)' : f.hayTrigo ? '(gruesa después de trigo: el 30% lo lleva el trigo)' : '(sin trigo en la campaña: todo a este cultivo)'}
+                    </div>
                     <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'hidden' }}>
                       {f.detalleArriendo.map((a, i) => (
                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', fontSize: 12, borderBottom: i < f.detalleArriendo.length - 1 ? `1px solid ${S.border}` : 'none' }}>
