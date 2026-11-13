@@ -730,7 +730,9 @@ export default function Servicios({ usuario, mobile, nav }) {
   if (mobile) {
     const inpM = { width: '100%', padding: '12px 14px', border: `1px solid ${CM.border}`, borderRadius: 10, fontSize: 15, background: CM.surface2, boxSizing: 'border-box', fontFamily: CM.sans, color: CM.text, marginBottom: 12 }
     const lblM = { fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 5 }
-    const serviciosRecientesM = servicios.slice(0, 10)
+    // En el celular solo se ven los servicios de los últimos 60 días (los más viejos siguen en la PC)
+    const limite60M = (() => { const d = new Date(); d.setDate(d.getDate() - 60); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
+    const serviciosRecientesM = servicios.filter(s => (s.fecha || '').slice(0, 10) >= limite60M)
 
     async function guardarServicioM() {
       const nombreCliente = formM.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : formM.cliente
@@ -786,12 +788,13 @@ export default function Servicios({ usuario, mobile, nav }) {
       }
 
       setGuardandoM(false)
-      await cargar()
+      // Formulario en blanco para el próximo servicio (antes quedaban
+      // cargados labor, cultivo, tipo, fecha y se limpiaba recién a los 2 s).
+      setFormM({ campania: campanas[0]?.nombre || '', tipo_servicio: 'tercero', cliente: '', clienteNuevo: '', labor: 'Siembra', cultivo: 'Maíz', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }) } catch { /* nada */ }
       setOkM('servicio')
-      setTimeout(() => {
-        setOkM('')
-        setFormM(f => ({ ...f, cliente: '', campo: '', nro_lote: '', hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] }))
-      }, 2000)
+      setTimeout(() => setOkM(''), 2500)
+      await cargar()
     }
 
     async function guardarRegistroMercaderiaM() {
@@ -995,7 +998,7 @@ export default function Servicios({ usuario, mobile, nav }) {
               </button>
               {serviciosRecientesM.length > 0 && (
                 <div style={{ marginBottom: 32 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Últimos registros</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Últimos 60 días ({serviciosRecientesM.length})</div>
                   {serviciosRecientesM.map(s => (
                     <div key={s.id} style={{ background: CM.surface, border: `1px solid ${editandoSvcIdM === s.id ? CM.accent : CM.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
                       {editandoSvcIdM !== s.id ? (
