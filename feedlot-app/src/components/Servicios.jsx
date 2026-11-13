@@ -63,6 +63,28 @@ async function obtenerOCrearCosecha(reg, destino, campos) {
   return { id: cos.id, registro: { ...reg, [campoId]: cos.id } }
 }
 
+// Cambiar a dónde fue un camión (acopio o silo bolsa propio) después de
+// cargado: se sacan los kg de la cosecha del destino viejo y se suman a la
+// del nuevo. Sirve para los camiones que se cargaron sin destino.
+async function cambiarDestinoDescarga(reg, d, nuevo, campos) {
+  const kg = parseFloat(d.kg) || 0
+  if (reg.es_propio && d.destino) {
+    const viejoId = d.destino === 'acopio' ? reg.cosecha_id_acopio : reg.cosecha_id
+    if (viejoId) {
+      const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', viejoId).single()
+      await supabase.from('cosechas').update({ kg_totales: Math.max(0, (parseFloat(cos?.kg_totales) || 0) - kg) }).eq('id', viejoId)
+    }
+  }
+  if (reg.es_propio && nuevo) {
+    const res = await obtenerOCrearCosecha(reg, nuevo, campos)
+    if (res.error) return { error: res.error }
+    const { data: cos } = await supabase.from('cosechas').select('kg_totales').eq('id', res.id).single()
+    await supabase.from('cosechas').update({ kg_totales: (parseFloat(cos?.kg_totales) || 0) + kg }).eq('id', res.id)
+  }
+  const { error } = await supabase.from('descargas_mercaderia').update({ destino: nuevo || null }).eq('id', d.id)
+  return { error }
+}
+
 // Insumos que se pueden cargar según la labor (órdenes propias de Agricultura
 // cargadas desde Servicios): siembra → semillas y fertilizantes; cosecha →
 // silobolsas; el resto, todo.
@@ -2518,13 +2540,29 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <div style={{ borderTop: `1px solid ${S.border}`, padding: '1rem', background: S.bg }}>
                     {desc.length > 0 && (
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1rem' }}>
-                        <thead><tr>{['Fecha', 'Tipo', 'Patente/Detalle', 'Kg'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
+                        <thead><tr>{['Fecha', 'Tipo', 'Patente/Detalle', 'Destino', 'Kg'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}` }}>{h}</th>)}</tr></thead>
                         <tbody>
                           {desc.map(d => (
                             <tr key={d.id} style={{ borderBottom: `1px solid ${S.border}` }}>
                               <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: S.muted }}>{d.fecha ? new Date(d.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}</td>
                               <td style={{ padding: '7px 10px' }}><span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.tipo === 'camion' ? S.accentLight : d.tipo === 'bolsa' ? S.greenLight : S.amberLight, color: d.tipo === 'camion' ? S.accent : d.tipo === 'bolsa' ? S.green : S.amber }}>{d.tipo === 'camion' ? '🚛 Camión' : d.tipo === 'bolsa' ? '🌾 Bolsa' : '📦 Otro'}</span></td>
                               <td style={{ padding: '7px 10px', color: S.muted, fontFamily: 'monospace' }}>{d.patente || d.observaciones || '—'}</td>
+                              <td style={{ padding: '7px 10px' }}>
+                                {d.tipo === 'camion' && reg.es_propio ? (
+                                  <select value={d.destino || ''} onChange={async e => {
+                                    const nuevo = e.target.value
+                                    if (!nuevo || nuevo === d.destino) return
+                                    const { error } = await cambiarDestinoDescarga(reg, d, nuevo, campos)
+                                    if (error) { alert('No se pudo cambiar el destino: ' + error.message); return }
+                                    await cargar()
+                                    await cargarDescargasReg(reg.id)
+                                  }} style={{ fontSize: 12, padding: '3px 6px', border: `1px solid ${d.destino ? S.border : S.amber}`, borderRadius: 4, background: d.destino ? S.surface : S.amberLight, color: S.text }}>
+                                    <option value="">⚠ Sin destino</option>
+                                    <option value="acopio">🏭 Acopio</option>
+                                    <option value="bolsa_propia">🎒 Silo bolsa propio</option>
+                                  </select>
+                                ) : <span style={{ color: S.hint, fontSize: 12 }}>{d.destino === 'acopio' ? '🏭 Acopio' : d.destino === 'bolsa_propia' ? '🎒 Bolsa propia' : '—'}</span>}
+                              </td>
                               <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 700 }}>{(d.kg || 0).toLocaleString('es-AR')} kg</td>
                               <td style={{ padding: '7px 10px' }}>
                                 <button onClick={async () => {
@@ -2542,7 +2580,7 @@ export default function Servicios({ usuario, mobile, nav }) {
                         </tbody>
                         <tfoot>
                           <tr style={{ background: S.accentLight }}>
-                            <td colSpan={3} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 12 }}>
+                            <td colSpan={4} style={{ padding: '8px 10px', fontWeight: 600, fontSize: 12 }}>
                               {kgCamion > 0 && `🚛 ${kgCamion.toLocaleString('es-AR')} kg`}
                               {kgCamion > 0 && kgBolsa > 0 && ' · '}
                               {kgBolsa > 0 && `🌾 ${kgBolsa.toLocaleString('es-AR')} kg`}
