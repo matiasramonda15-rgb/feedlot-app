@@ -209,6 +209,7 @@ export default function Ventas({ usuario, mobile, nav }) {
   const [compradorM, setCompradorM] = useState('')
   const [observacionesM, setObservacionesM] = useState('')
   const [guardandoM, setGuardandoM] = useState(false)
+  const [vistaM, setVistaM] = useState('cargar') // celular: 'cargar' o 'negocio'
 
   async function guardarVentaMobile() {
     const validos = corralesVenta.filter(c => c.corral_id && c.cantidad && c.kg_vivo)
@@ -637,7 +638,108 @@ export default function Ventas({ usuario, mobile, nav }) {
     const totalCant = corralesVenta.reduce((s, c) => s + (parseInt(c.cantidad) || 0), 0)
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <MobileTopbar titulo="Carga venta" sub="Desbaste 8% · podés agregar varios corrales" onBack={() => nav && nav('home')} />
+        <MobileTopbar titulo={vistaM === 'cargar' ? 'Carga venta' : 'Negocio y resumen'} sub={vistaM === 'cargar' ? 'Desbaste 8% · podés agregar varios corrales' : 'Condiciones del negocio y resumen en PDF'} onBack={() => nav && nav('home')} />
+        <div style={{ display: 'flex', gap: 8, padding: '0 1rem', marginBottom: '.65rem' }}>
+          {[['cargar', '➕ Cargar venta'], ['negocio', '💼 Negocio / Resumen']].map(([k, lbl]) => (
+            <button key={k} onClick={() => { setVistaM(k); if (k === 'cargar') { setEditandoBanner(null); setEditandoVenta(null) } }}
+              style={{ flex: 1, padding: '9px 6px', fontSize: 13, fontWeight: 600, borderRadius: 9, cursor: 'pointer', fontFamily: CM.sans,
+                background: vistaM === k ? CM.green : 'transparent', color: vistaM === k ? '#0A1A0A' : CM.muted,
+                border: `1px solid ${vistaM === k ? CM.green : CM.border}` }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+        {vistaM === 'negocio' && (
+          <MobileScroll>
+            {ventasSinPrecio.length > 0 && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#E8A020', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>
+                ⚠ Falta completar el negocio ({ventasSinPrecio.length})
+              </div>
+            )}
+            {ventasSinPrecio.map(v => {
+              const vKey = v.grupo_venta_id || v.id
+              const grupo = v.grupo_venta_id ? (todasVentasSinPrecio.filter(vv => vv.grupo_venta_id === v.grupo_venta_id) || [v]) : [v]
+              const kgBrutoTotal = grupo.reduce((s, gv) => s + (gv.kg_vivo_total || 0), 0)
+              const animTotal = grupo.reduce((s, gv) => s + (gv.cantidad || 0), 0)
+              const corralesNums = grupo.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
+              const isEditing = editandoBanner === vKey
+              if (editandoBanner && editandoBanner !== vKey) return null
+              return (
+                <div key={vKey} style={{ background: isEditing ? '#FFFFFF' : CM.surface, border: `1px solid ${isEditing ? '#E8A020' : CM.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: isEditing ? '#1A2B3C' : CM.text }}>{corralesNums}{v.grupo_venta_id ? ' · Multi-corral' : ''} · {animTotal} anim.</div>
+                      <div style={{ fontSize: 12, color: isEditing ? '#667788' : CM.muted, marginTop: 2, fontFamily: CM.mono }}>
+                        {kgBrutoTotal.toLocaleString('es-AR')} kg brutos · {new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')}
+                      </div>
+                    </div>
+                    {!isEditing ? (
+                      <button onClick={() => { setEditandoBanner(vKey); setEditandoVenta({ id: v.id, grupo_venta_id: v.grupo_venta_id, precio_kg: '', monto_total_con_iva: '', comprador: v.comprador || '', compradorNuevo: '', observaciones: v.observaciones || '', desbaste: '8', plazo_dias: '' }) }}
+                        style={{ padding: '9px 13px', fontSize: 12, fontWeight: 600, background: CM.green, border: 'none', color: '#0A1A0A', borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans, whiteSpace: 'nowrap' }}>
+                        Completar
+                      </button>
+                    ) : (
+                      <button onClick={() => { setEditandoBanner(null); setEditandoVenta(null) }}
+                        style={{ padding: '9px 13px', fontSize: 12, background: 'transparent', border: '1px solid #CCCCCC', color: '#667788', borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans }}>
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                  {isEditing && <div style={{ marginTop: 12 }}>{renderFormVenta(v)}</div>}
+                </div>
+              )
+            })}
+            {ventasSinPrecio.length === 0 && (
+              <div style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '1rem', marginBottom: '.65rem', fontSize: 13, color: CM.muted, textAlign: 'center' }}>
+                ✓ No hay ventas con el negocio sin completar
+              </div>
+            )}
+            {!editandoBanner && (<>
+            <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '14px 0 10px' }}>Últimas ventas — resumen en PDF</div>
+            {(ventas || []).filter(v => v.precio_kg || v.total || v.monto_total_con_iva).slice(0, 10).map(v => {
+              const fechaV = new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
+              const totalV = v.monto_total_con_iva || v.total || 0
+              return (
+                <div key={v.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '0.85rem 1rem', marginBottom: '.55rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: CM.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>C-{v.corrales?.numero || v.corral_id} · {v.cantidad} anim. · {v.comprador || 'sin comprador'}</div>
+                    <div style={{ fontSize: 12, color: CM.muted, marginTop: 2, fontFamily: CM.mono }}>{fechaV}{totalV ? ` · $${totalV.toLocaleString('es-AR')}` : ''}{v.precio_kg ? ` · $${v.precio_kg.toLocaleString('es-AR')}/kg` : ''}</div>
+                  </div>
+                  <button onClick={async () => {
+                    const vto = v.fecha_vencimiento_cobro || calcularVencimiento(v.fecha || v.creado_en?.split('T')[0], v.plazo_dias)
+                    await generarPdfVenta(
+                      `Venta C-${v.corrales?.numero || v.corral_id}`,
+                      [
+                        ['Campo', 'Dato'],
+                        ['Fecha', fechaV],
+                        ['Corral', `C-${v.corrales?.numero || v.corral_id}`],
+                        ['Comprador', v.comprador || '—'],
+                        ['Cantidad', `${v.cantidad} animales`],
+                        ['Kg vivos', `${(v.kg_vivo_total || 0).toLocaleString('es-AR')} kg`],
+                        ['Desbaste', `${v.desbaste_pct || 8}%`],
+                        ['Kg netos', `${(v.kg_neto || 0).toLocaleString('es-AR')} kg`],
+                        ['$/kg', v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : '—'],
+                        ['Total', `$${totalV.toLocaleString('es-AR')}`],
+                        ...(vto ? [['Vencimiento', new Date(vto + 'T12:00:00').toLocaleDateString('es-AR')]] : []),
+                        ...(v.observaciones ? [['Observaciones', v.observaciones]] : []),
+                      ],
+                      [
+                        ['Comprador', v.comprador],
+                        ['Fecha', fechaV],
+                        ['Corral', `C-${v.corrales?.numero || v.corral_id}`],
+                      ]
+                    )
+                  }}
+                    style={{ padding: '8px 11px', fontSize: 12, fontWeight: 600, background: 'transparent', border: `1px solid ${CM.blue}`, color: CM.blue, borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans, whiteSpace: 'nowrap' }}>
+                    📄 PDF
+                  </button>
+                </div>
+              )
+            })}
+            </>)}
+          </MobileScroll>
+        )}
+        {vistaM === 'cargar' && (
         <MobileScroll>
           {corralesVenta.map((cv, i) => {
             const kgVivoCv = parseFloat(cv.kg_vivo) || 0
@@ -733,6 +835,7 @@ export default function Ventas({ usuario, mobile, nav }) {
             Cancelar
           </button>
         </MobileScroll>
+        )}
       </div>
     )
   }
