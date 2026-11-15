@@ -685,7 +685,7 @@ export default function Ventas({ usuario, mobile, nav }) {
                       </button>
                     )}
                   </div>
-                  {isEditing && <div style={{ marginTop: 12 }}>{renderFormVenta(v)}</div>}
+                  {isEditing && <div style={{ marginTop: 12, color: '#1A1916' }}>{renderFormVenta(v)}</div>}
                 </div>
               )
             })}
@@ -696,46 +696,75 @@ export default function Ventas({ usuario, mobile, nav }) {
             )}
             {!editandoBanner && (<>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '14px 0 10px' }}>Últimas ventas — resumen en PDF</div>
-            {(ventas || []).filter(v => v.precio_kg || v.total || v.monto_total_con_iva).slice(0, 10).map(v => {
-              const fechaV = new Date((v.fecha || v.creado_en?.split('T')[0] || v.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
-              const totalV = v.monto_total_con_iva || v.total || 0
-              return (
-                <div key={v.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '0.85rem 1rem', marginBottom: '.55rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: CM.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>C-{v.corrales?.numero || v.corral_id} · {v.cantidad} anim. · {v.comprador || 'sin comprador'}</div>
-                    <div style={{ fontSize: 12, color: CM.muted, marginTop: 2, fontFamily: CM.mono }}>{fechaV}{totalV ? ` · $${totalV.toLocaleString('es-AR')}` : ''}{v.precio_kg ? ` · $${v.precio_kg.toLocaleString('es-AR')}/kg` : ''}</div>
+            {(() => {
+              const conPrecio = (ventas || []).filter(v => v.precio_kg || v.total || v.monto_total_con_iva)
+              const vistosG = new Set()
+              const items = []
+              for (const v of conPrecio) {
+                if (v.grupo_venta_id) {
+                  if (vistosG.has(v.grupo_venta_id)) continue
+                  vistosG.add(v.grupo_venta_id)
+                  items.push(conPrecio.filter(x => x.grupo_venta_id === v.grupo_venta_id))
+                } else items.push([v])
+                if (items.length >= 10) break
+              }
+              return items.map(g => {
+                const v0 = g[0]
+                const esGrupo = g.length > 1
+                const totalKgVivo = g.reduce((s2, x) => s2 + (x.kg_vivo_total || 0), 0)
+                const totalKgNeto = Math.round(g.reduce((s2, x) => s2 + (x.kg_neto || 0), 0) * 10) / 10
+                const totalAnim = g.reduce((s2, x) => s2 + (x.cantidad || 0), 0)
+                const totalMonto = esGrupo ? g.reduce((s2, x) => s2 + (x.total || 0), 0) : (v0.monto_total_con_iva || v0.total || 0)
+                const corralesStr = g.map(gv => `C-${gv.corrales?.numero || gv.corral_id}`).join(', ')
+                const fechaV = new Date((v0.fecha || v0.creado_en?.split('T')[0] || v0.creado_en) + 'T12:00:00').toLocaleDateString('es-AR')
+                const desbastesUnicos = [...new Set(g.map(x => x.desbaste_pct).filter(d => d != null))]
+                const preciosUnicos = [...new Set(g.map(x => x.precio_kg).filter(pz => pz != null))]
+                const variosPrecios = desbastesUnicos.length > 1 || preciosUnicos.length > 1
+                return (
+                  <div key={v0.grupo_venta_id || v0.id} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 12, padding: '0.85rem 1rem', marginBottom: '.55rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: CM.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{corralesStr} · {totalAnim} anim. · {v0.comprador || 'sin comprador'}</div>
+                      <div style={{ fontSize: 12, color: CM.muted, marginTop: 2, fontFamily: CM.mono }}>{fechaV}{totalMonto ? ` · $${totalMonto.toLocaleString('es-AR')}` : ''}{!variosPrecios && v0.precio_kg ? ` · $${v0.precio_kg.toLocaleString('es-AR')}/kg` : ''}</div>
+                    </div>
+                    <button onClick={async () => {
+                      const vto0 = v0.fecha_vencimiento_cobro || calcularVencimiento(v0.fecha || v0.creado_en?.split('T')[0], v0.plazo_dias)
+                      await generarPdfVenta(
+                        `Venta ${corralesStr}`,
+                        [
+                          ['Campo', 'Dato'],
+                          ['Fecha', fechaV],
+                          [esGrupo ? 'Corrales' : 'Corral', corralesStr],
+                          ['Comprador', v0.comprador || '—'],
+                          ['Cantidad', `${totalAnim} animales`],
+                          ['Kg vivos', `${totalKgVivo.toLocaleString('es-AR')} kg`],
+                          ...(variosPrecios
+                            ? [
+                                ...g.map(gv => [`C-${gv.corrales?.numero || gv.corral_id}`, `${gv.cantidad} anim. · ${(gv.kg_vivo_total || 0).toLocaleString('es-AR')} kg · ${gv.desbaste_pct}% desb. · ${(gv.kg_neto || 0).toLocaleString('es-AR')} kg netos${gv.precio_kg ? ` · $${gv.precio_kg.toLocaleString('es-AR')}/kg` : ''}`]),
+                                ['Kg netos', `${totalKgNeto.toLocaleString('es-AR')} kg`],
+                              ]
+                            : [
+                                ['Desbaste', `${v0.desbaste_pct || 8}%`],
+                                ['Kg netos', `${totalKgNeto.toLocaleString('es-AR')} kg`],
+                                ['$/kg', v0.precio_kg ? `$${v0.precio_kg.toLocaleString('es-AR')}` : '—'],
+                              ]),
+                          ['Total', `$${totalMonto.toLocaleString('es-AR')}`],
+                          ...(vto0 ? [['Vencimiento', new Date(vto0 + 'T12:00:00').toLocaleDateString('es-AR')]] : []),
+                          ...(v0.observaciones ? [['Observaciones', v0.observaciones]] : []),
+                        ],
+                        [
+                          ['Comprador', v0.comprador],
+                          ['Fecha', fechaV],
+                          [esGrupo ? 'Corrales' : 'Corral', corralesStr],
+                        ]
+                      )
+                    }}
+                      style={{ padding: '8px 11px', fontSize: 12, fontWeight: 600, background: 'transparent', border: `1px solid ${CM.blue}`, color: CM.blue, borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans, whiteSpace: 'nowrap' }}>
+                      📄 PDF
+                    </button>
                   </div>
-                  <button onClick={async () => {
-                    const vto = v.fecha_vencimiento_cobro || calcularVencimiento(v.fecha || v.creado_en?.split('T')[0], v.plazo_dias)
-                    await generarPdfVenta(
-                      `Venta C-${v.corrales?.numero || v.corral_id}`,
-                      [
-                        ['Campo', 'Dato'],
-                        ['Fecha', fechaV],
-                        ['Corral', `C-${v.corrales?.numero || v.corral_id}`],
-                        ['Comprador', v.comprador || '—'],
-                        ['Cantidad', `${v.cantidad} animales`],
-                        ['Kg vivos', `${(v.kg_vivo_total || 0).toLocaleString('es-AR')} kg`],
-                        ['Desbaste', `${v.desbaste_pct || 8}%`],
-                        ['Kg netos', `${(v.kg_neto || 0).toLocaleString('es-AR')} kg`],
-                        ['$/kg', v.precio_kg ? `$${v.precio_kg.toLocaleString('es-AR')}` : '—'],
-                        ['Total', `$${totalV.toLocaleString('es-AR')}`],
-                        ...(vto ? [['Vencimiento', new Date(vto + 'T12:00:00').toLocaleDateString('es-AR')]] : []),
-                        ...(v.observaciones ? [['Observaciones', v.observaciones]] : []),
-                      ],
-                      [
-                        ['Comprador', v.comprador],
-                        ['Fecha', fechaV],
-                        ['Corral', `C-${v.corrales?.numero || v.corral_id}`],
-                      ]
-                    )
-                  }}
-                    style={{ padding: '8px 11px', fontSize: 12, fontWeight: 600, background: 'transparent', border: `1px solid ${CM.blue}`, color: CM.blue, borderRadius: 8, cursor: 'pointer', fontFamily: CM.sans, whiteSpace: 'nowrap' }}>
-                    📄 PDF
-                  </button>
-                </div>
-              )
-            })}
+                )
+              })
+            })()}
             </>)}
           </MobileScroll>
         )}
