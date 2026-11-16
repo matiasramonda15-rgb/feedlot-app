@@ -170,6 +170,99 @@ const SEVERIDAD_COLOR = { alta: S.red, media: S.amber, baja: S.muted }
 const SEVERIDAD_BG = { alta: S.redLight, media: S.amberLight, baja: S.bg }
 const SEVERIDAD_LABEL = { alta: '🔴 Alta', media: '🟡 Media', baja: '⚪ Baja' }
 
+// ── RESPALDO ────────────────────────────────────────────────────────────
+// Baja todas las tablas importantes a un archivo JSON. Si algún día pasa
+// algo con la base (se borra algo, se rompe, se pierde el acceso), con este
+// archivo están todos los datos para recuperar. Se registra la fecha del
+// último respaldo en configuración y el Inicio avisa si pasaron 14 días.
+const TABLAS_RESPALDO = [
+  'corrales', 'lotes', 'ingresos_stock', 'pesadas', 'pesada_animales', 'pesada_movimientos',
+  'ventas', 'movimientos', 'mortalidad', 'eventos_sanitarios', 'alertas_sanitarias', 'animales_enfermeria',
+  'compras_insumos', 'stock_insumos', 'retiros_insumos_log', 'formulas_mixer', 'raciones_diarias',
+  'caja_oficial', 'caja_paralela', 'caja_dolares', 'cheques', 'cierres_caja', 'conciliaciones_caja',
+  'gastos_generales', 'contactos', 'empleados', 'pagos_empleados', 'creditos', 'pagos_creditos',
+  'activos', 'ventas_activos', 'retiros_socios', 'anticipos_contactos',
+  'campos', 'campanas', 'plan_cultivos', 'lotes_agricolas', 'ordenes_trabajo', 'cosechas',
+  'ventas_granos', 'contratos_granos', 'ubicaciones_grano', 'camiones_granos',
+  'stock_agro', 'ajustes_stock_agro', 'uso_insumos_agro', 'gastos_campana', 'vencimientos_arriendo', 'vencimientos_compra',
+  'servicios_terceros', 'registros_mercaderia', 'descargas_mercaderia', 'fletes', 'liquidaciones', 'pagos_liquidaciones',
+  'lluvias', 'presupuesto_lineas', 'presupuestos_cultivo', 'maquinaria', 'trabajos_maquinaria', 'configuracion',
+]
+
+async function bajarTablaCompleta(tabla) {
+  // Supabase devuelve de a 1000 filas como mucho — se pagina hasta el final
+  const filas = []
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await supabase.from(tabla).select('*').range(desde, desde + 999)
+    if (error) throw new Error(`${tabla}: ${error.message}`)
+    filas.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+  return filas
+}
+
+function RespaldoCard() {
+  const [bajando, setBajando] = useState(false)
+  const [progresoResp, setProgresoResp] = useState('')
+  const [ultimoResp, setUltimoResp] = useState(null)
+
+  useEffect(() => {
+    supabase.from('configuracion').select('valor').eq('clave', 'ultimo_respaldo').maybeSingle()
+      .then(({ data }) => { if (data?.valor) setUltimoResp(data.valor) })
+  }, [])
+
+  async function bajarRespaldo() {
+    if (bajando) return
+    setBajando(true)
+    try {
+      const respaldo = { generado: new Date().toISOString(), tablas: {} }
+      let total = 0
+      for (const tabla of TABLAS_RESPALDO) {
+        setProgresoResp(tabla)
+        try {
+          respaldo.tablas[tabla] = await bajarTablaCompleta(tabla)
+          total += respaldo.tablas[tabla].length
+        } catch (e) {
+          respaldo.tablas[tabla] = { error: e.message }
+        }
+      }
+      const hoyStr = new Date().toISOString().split('T')[0]
+      const blob = new Blob([JSON.stringify(respaldo)], { type: 'application/json' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `respaldo-ramonda-${hoyStr}.json`
+      a.click()
+      URL.revokeObjectURL(a.href)
+      await supabase.from('configuracion').upsert({ clave: 'ultimo_respaldo', valor: hoyStr }, { onConflict: 'clave' })
+      setUltimoResp(hoyStr)
+      alert(`Respaldo descargado: ${total.toLocaleString('es-AR')} registros de ${TABLAS_RESPALDO.length} tablas.\n\nGuardá el archivo en un lugar seguro (Drive, pendrive) — con eso se puede recuperar todo si algún día pasa algo.`)
+    } finally {
+      setProgresoResp('')
+      setBajando(false)
+    }
+  }
+
+  const diasDesde = ultimoResp ? Math.floor((new Date() - new Date(ultimoResp + 'T12:00:00')) / 86400000) : null
+  const vencido = diasDesde === null || diasDesde > 14
+  return (
+    <div style={{ background: S.surface, border: `1px solid ${vencido ? S.amber : S.border}`, borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>💾 Respaldo de los datos</div>
+        <div style={{ fontSize: 12, color: vencido ? S.amber : S.muted, marginTop: 3 }}>
+          {ultimoResp
+            ? `Último respaldo: ${new Date(ultimoResp + 'T12:00:00').toLocaleDateString('es-AR')} (hace ${diasDesde} día${diasDesde !== 1 ? 's' : ''})`
+            : 'Nunca se descargó un respaldo'}
+          {vencido && ' — conviene bajar uno ahora'}
+        </div>
+      </div>
+      <button onClick={bajarRespaldo} disabled={bajando}
+        style={{ padding: '9px 16px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: bajando ? 0.7 : 1 }}>
+        {bajando ? `Bajando ${progresoResp}...` : '⬇ Descargar respaldo completo'}
+      </button>
+    </div>
+  )
+}
+
 export default function Diagnostico({ usuario }) {
   const [loading, setLoading] = useState(true)
   const [progreso, setProgreso] = useState('')
@@ -255,6 +348,8 @@ export default function Diagnostico({ usuario }) {
           {loading ? `Revisando: ${progreso}...` : '🔄 Volver a revisar'}
         </button>
       </div>
+
+      <RespaldoCard />
 
       {loading && problemas.length === 0 ? (
         <Loader />

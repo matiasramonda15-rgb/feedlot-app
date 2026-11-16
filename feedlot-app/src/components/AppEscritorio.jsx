@@ -70,6 +70,7 @@ function PantallaInicio({ usuario, setModulo }) {
         { data: stockNegAgro },
         { data: gastosPorVencer },
         { data: ultimoCierre },
+        { data: configResp },
       ] = await Promise.all([
         supabase.from('corrales').select('animales, rol').neq('rol', 'libre'),
         supabase.from('alertas').select('id').eq('resuelta', false),
@@ -92,6 +93,7 @@ function PantallaInicio({ usuario, setModulo }) {
         supabase.from('stock_agro').select('id, insumo, cantidad').lt('cantidad', 0),
         supabase.from('gastos_generales').select('id, proveedor, monto, fecha_vencimiento').eq('estado_pago', 'pendiente').not('fecha_vencimiento', 'is', null).lte('fecha_vencimiento', en7str),
         supabase.from('cierres_caja').select('fecha').order('fecha', { ascending: false }).limit(1),
+        supabase.from('configuracion').select('valor').eq('clave', 'ultimo_respaldo'),
       ])
 
       const totalAnimales = (corrales || []).reduce((a, c) => a + (c.animales || 0), 0)
@@ -116,6 +118,7 @@ function PantallaInicio({ usuario, setModulo }) {
         stockNegativo: [...(stockNegFeedlot || []).map(x => x.insumo), ...(stockNegAgro || []).map(x => x.insumo)],
         gastosPorVencer: gastosPorVencer || [],
         diasSinCierre: ultimoCierre?.[0]?.fecha ? Math.floor((hoy - new Date(ultimoCierre[0].fecha + 'T12:00:00')) / 86400000) : null,
+        diasSinRespaldo: configResp?.[0]?.valor ? Math.floor((hoy - new Date(configResp[0].valor + 'T12:00:00')) / 86400000) : null,
       })
     }
     cargar()
@@ -289,6 +292,7 @@ function PantallaInicio({ usuario, setModulo }) {
         if (datos.stockNegativo.length > 0) items.push({ icono: '⚠️', texto: `Stock negativo: ${datos.stockNegativo.join(', ')}`, modulo: 'insumos' })
         datos.gastosPorVencer.forEach(g => items.push({ icono: '💸', texto: `Pagar a ${g.proveedor}: $${(g.monto || 0).toLocaleString('es-AR')} (vence ${new Date(g.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')})`, modulo: 'gastos' }))
         if (datos.diasSinCierre !== null && datos.diasSinCierre > 30) items.push({ icono: '🧮', texto: `Hace ${datos.diasSinCierre} días que no se hace un cierre de caja`, modulo: 'comercial' })
+        if (datos.diasSinRespaldo === null || datos.diasSinRespaldo > 14) items.push({ icono: '💾', texto: datos.diasSinRespaldo === null ? 'Nunca se descargó un respaldo de los datos' : `Hace ${datos.diasSinRespaldo} días que no se descarga un respaldo`, modulo: 'diagnostico' })
         return (
           <div style={{ width: '100%', maxWidth: 1100, marginTop: '1.5rem', position: 'relative', zIndex: 1, background: S.surface, border: `2px solid ${items.length ? S.amber : S.green}`, borderRadius: 16, padding: '1.25rem 1.5rem' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: items.length ? S.amber : S.green, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: items.length ? '.75rem' : 0 }}>
