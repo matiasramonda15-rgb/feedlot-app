@@ -3818,7 +3818,14 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
             {cultivosConDatos.map(cultivo => {
               const d = porCultivo[cultivo]
               const vendido = d.vendido || 0
-              const disponible = Math.max(0, d.cosechado - vendido)
+              // Disponible real: lo contable (cosechado − vendido) topeado por lo
+              // que de verdad queda en bolsas y acopios. Si hubo mermas o ajustes
+              // de saldo, manda lo físico (ej.: soja ajustada a lo que hay en la
+              // bolsa). Si las bolsas no tienen los camiones cargados (histórico),
+              // manda lo contable.
+              const contable = Math.max(0, d.cosechado - vendido)
+              const fisico = Math.max(0, (d.bolsa || 0) + (d.acopio || 0))
+              const disponible = Math.min(contable, fisico)
               const comprometido = d.comprometido || 0
               const libre = disponible - comprometido
               return (
@@ -3832,6 +3839,11 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                     <span>📦 En bolsa: <strong style={{ color: S.text }}>{(d.bolsa / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong></span>
                     <span>🚛 Entregado: <strong style={{ color: S.text }}>{(d.acopio / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong></span>
                   </div>
+                  {contable - fisico > 1000 && (
+                    <div style={{ fontSize: 11, color: S.amber, marginTop: 6 }}>
+                      ⚠ Por cosechado − vendido serían {(contable / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn, pero en bolsas/acopio quedan {(fisico / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn (mermas o ajustes de saldo)
+                    </div>
+                  )}
                   {comprometido > 0 && (
                     <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, background: libre < 0 ? S.amberLight : S.bg, fontSize: 12 }}>
                       📑 Comprometido en contratos: <strong>{(comprometido / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn</strong>
