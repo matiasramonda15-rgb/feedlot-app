@@ -3841,7 +3841,7 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
                   </div>
                   {contable - fisico > 1000 && (
                     <div style={{ fontSize: 11, color: S.amber, marginTop: 6 }}>
-                      ⚠ Por cosechado − vendido serían {(contable / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn, pero en bolsas/acopio quedan {(fisico / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn (mermas o ajustes de saldo)
+                      Además hay {((contable - fisico) / 1000).toLocaleString('es-AR', { maximumFractionDigits: 2 })} tn apartadas para uso propio (semilla, feedlot) o mermas — ver ajustes de saldo y stock de insumos
                     </div>
                   )}
                   {comprometido > 0 && (
