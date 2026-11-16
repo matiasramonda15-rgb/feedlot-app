@@ -3227,6 +3227,22 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
   // pesos sale solo. Lo pendiente de entregar queda "comprometido" y se
   // descuenta del disponible para vender.
   const [contratos, setContratos] = useState([])
+  // Camiones y ubicaciones: para que "En bolsa"/"Entregado" descuenten lo que
+  // ya salió de cada bolsa (ventas, traspasos al feedlot, ajustes de saldo).
+  const [camionesGr, setCamionesGr] = useState([])
+  const [ubicGrTipos, setUbicGrTipos] = useState({})
+  useEffect(() => {
+    (async () => {
+      const [{ data: cg }, { data: ug }] = await Promise.all([
+        supabase.from('camiones_granos').select('cultivo, kg_neto, destino_tipo, ubicacion_origen_id, ubicacion_destino_id'),
+        supabase.from('ubicaciones_grano').select('id, tipo'),
+      ])
+      setCamionesGr(cg || [])
+      const m = {}
+      ;(ug || []).forEach(u => { m[u.id] = u.tipo })
+      setUbicGrTipos(m)
+    })()
+  }, [ventas, cosechas])
   const [showFormContrato, setShowFormContrato] = useState(false)
   const [editandoContrato, setEditandoContrato] = useState(null)
   const CONTRATO_INIT = { fecha: hoyLocal(), campana_id: campanaActiva?.id || '', cultivo: '', comprador: '', numero_contrato: '', toneladas: '', precio_usd_tn: '', entrega_desde: '', entrega_hasta: '', lugar_entrega: '', observaciones: '' }
@@ -3763,6 +3779,25 @@ function TabVentasGranos({ ventas, campos, campanas, campanaActiva, cosechas, or
           porCultivo[c.cultivo].cosechado += kg
           if (c.destino === 'bolsa') porCultivo[c.cultivo].bolsa += kg
           else if (c.destino === 'acopio') porCultivo[c.cultivo].acopio += kg
+        })
+        // Lo que salió de cada bolsa/acopio en camiones (ventas, feedlot,
+        // ajustes, traslados) se descuenta de donde salió — si no, "En bolsa"
+        // muestra lo cosechado histórico y no lo que de verdad queda adentro.
+        camionesGr.forEach(cg => {
+          const d = porCultivo[cg.cultivo]
+          if (!d) return
+          const kg = parseFloat(cg.kg_neto) || 0
+          const tOrigen = ubicGrTipos[cg.ubicacion_origen_id] || 'silobolsa'
+          if (cg.destino_tipo === 'ajuste') {
+            // El ajuste ya viene con signo (positivo suma, negativo resta)
+            if (tOrigen === 'acopio') d.acopio += kg; else d.bolsa += kg
+          } else if (cg.destino_tipo === 'traslado' && cg.ubicacion_destino_id) {
+            const tDestino = ubicGrTipos[cg.ubicacion_destino_id] || 'silobolsa'
+            if (tOrigen === 'acopio') d.acopio -= kg; else d.bolsa -= kg
+            if (tDestino === 'acopio') d.acopio += kg; else d.bolsa += kg
+          } else if (cg.ubicacion_origen_id) {
+            if (tOrigen === 'acopio') d.acopio -= kg; else d.bolsa -= kg
+          }
         })
         ventas.forEach(v => {
           if (!porCultivo[v.cultivo]) porCultivo[v.cultivo] = { bolsa: 0, acopio: 0, cosechado: 0 }
