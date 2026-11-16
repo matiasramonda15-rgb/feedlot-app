@@ -63,6 +63,13 @@ function PantallaInicio({ usuario, setModulo }) {
         { data: cajaOf },
         { data: cajaPar },
         { data: serviciosPend },
+        { data: ventasSinPrecio },
+        { data: cosechasSinUbic },
+        { data: comprasSinPrecio },
+        { data: stockNegFeedlot },
+        { data: stockNegAgro },
+        { data: gastosPorVencer },
+        { data: ultimoCierre },
       ] = await Promise.all([
         supabase.from('corrales').select('animales, rol').neq('rol', 'libre'),
         supabase.from('alertas').select('id').eq('resuelta', false),
@@ -77,6 +84,14 @@ function PantallaInicio({ usuario, setModulo }) {
         supabase.from('caja_oficial').select('tipo, monto'),
         supabase.from('caja_paralela').select('tipo, monto'),
         supabase.from('servicios_terceros').select('id, cliente, labor, hectareas').eq('estado_pago', 'pendiente'),
+        // Cargas incompletas: cosas guardadas a medias que después ensucian los números
+        supabase.from('ventas').select('id').is('precio_kg', null),
+        supabase.from('cosechas').select('id').is('ubicacion_id', null),
+        supabase.from('compras_insumos').select('id').is('total', null),
+        supabase.from('stock_insumos').select('id, insumo, cantidad_kg').lt('cantidad_kg', 0),
+        supabase.from('stock_agro').select('id, insumo, cantidad').lt('cantidad', 0),
+        supabase.from('gastos_generales').select('id, proveedor, monto, fecha_vencimiento').eq('estado_pago', 'pendiente').not('fecha_vencimiento', 'is', null).lte('fecha_vencimiento', en7str),
+        supabase.from('cierres_caja').select('fecha').order('fecha', { ascending: false }).limit(1),
       ])
 
       const totalAnimales = (corrales || []).reduce((a, c) => a + (c.animales || 0), 0)
@@ -95,6 +110,12 @@ function PantallaInicio({ usuario, setModulo }) {
         saldoOficial: ingresosOf - egresosOf,
         saldoParalelo: ingresosPar - egresosPar,
         serviciosPendientes: (serviciosPend || []).length,
+        ventasSinPrecio: (ventasSinPrecio || []).length,
+        cosechasSinUbic: (cosechasSinUbic || []).length,
+        comprasSinPrecio: (comprasSinPrecio || []).length,
+        stockNegativo: [...(stockNegFeedlot || []).map(x => x.insumo), ...(stockNegAgro || []).map(x => x.insumo)],
+        gastosPorVencer: gastosPorVencer || [],
+        diasSinCierre: ultimoCierre?.[0]?.fecha ? Math.floor((hoy - new Date(ultimoCierre[0].fecha + 'T12:00:00')) / 86400000) : null,
       })
     }
     cargar()
@@ -257,6 +278,34 @@ function PantallaInicio({ usuario, setModulo }) {
           </div>
         )}
       </div>
+
+      {/* Cargas incompletas — cosas guardadas a medias. Cada una lleva al
+          módulo donde se completa. Solo para admin. */}
+      {esAdmin && datos && (() => {
+        const items = []
+        if (datos.ventasSinPrecio > 0) items.push({ icono: '🐄', texto: `${datos.ventasSinPrecio} venta${datos.ventasSinPrecio > 1 ? 's' : ''} de hacienda sin precio ni condiciones`, modulo: 'ventas' })
+        if (datos.cosechasSinUbic > 0) items.push({ icono: '🌾', texto: `${datos.cosechasSinUbic} cosecha${datos.cosechasSinUbic > 1 ? 's' : ''} sin ubicación (¿a qué bolsa o acopio fue?)`, modulo: 'agricultura' })
+        if (datos.comprasSinPrecio > 0) items.push({ icono: '🧾', texto: `${datos.comprasSinPrecio} compra${datos.comprasSinPrecio > 1 ? 's' : ''} de insumos sin precio cargado`, modulo: 'insumos' })
+        if (datos.stockNegativo.length > 0) items.push({ icono: '⚠️', texto: `Stock negativo: ${datos.stockNegativo.join(', ')}`, modulo: 'insumos' })
+        datos.gastosPorVencer.forEach(g => items.push({ icono: '💸', texto: `Pagar a ${g.proveedor}: $${(g.monto || 0).toLocaleString('es-AR')} (vence ${new Date(g.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR')})`, modulo: 'gastos' }))
+        if (datos.diasSinCierre !== null && datos.diasSinCierre > 30) items.push({ icono: '🧮', texto: `Hace ${datos.diasSinCierre} días que no se hace un cierre de caja`, modulo: 'comercial' })
+        return (
+          <div style={{ width: '100%', maxWidth: 1100, marginTop: '1.5rem', position: 'relative', zIndex: 1, background: S.surface, border: `2px solid ${items.length ? S.amber : S.green}`, borderRadius: 16, padding: '1.25rem 1.5rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: items.length ? S.amber : S.green, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: items.length ? '.75rem' : 0 }}>
+              📋 Cargas incompletas {items.length === 0 && '· ✓ no hay nada pendiente'}
+            </div>
+            {items.map((it, i) => (
+              <div key={i} onClick={() => setModulo(it.modulo)}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: S.text, background: i % 2 ? 'transparent' : S.bg }}
+                onMouseEnter={e => e.currentTarget.style.background = S.amberLight}
+                onMouseLeave={e => e.currentTarget.style.background = i % 2 ? 'transparent' : S.bg}>
+                <span>{it.icono} {it.texto}</span>
+                <span style={{ fontSize: 11, color: S.accent, fontWeight: 600, whiteSpace: 'nowrap' }}>Completar →</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Bienvenida */}
       <div style={{ marginTop: '2rem', fontSize: 12, color: S.muted, position: 'relative', zIndex: 1 }}>
