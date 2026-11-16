@@ -233,6 +233,12 @@ export default function GranosUbicaciones({ S, Label, inputStyle, CULTIVOS, camp
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{u.tipo === 'acopio' ? '🏭' : '🛍'} {u.nombre}</div>
                   <button onClick={() => setFormUb({ id: u.id, nombre: u.nombre, tipo: u.tipo, cultivo: u.cultivo || '', campo_id: u.campo_id || '' })} style={{ ...btn('transparent', S.hint), padding: '0 4px', fontSize: 11 }}>✎</button>
                 </div>
+                {/* Qué es: cultivo + si está en bolsa o entregado — antes había que adivinarlo por el nombre */}
+                <div style={{ marginTop: 3 }}>
+                  <span style={{ display: 'inline-block', padding: '1px 8px', borderRadius: 10, fontSize: 10.5, fontWeight: 700, background: S.accentLight || '#E8EFF8', color: S.accent, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                    {u.cultivo || 'sin cultivo'} · {u.tipo === 'acopio' ? 'entregado en acopio' : 'en silo bolsa'}
+                  </span>
+                </div>
                 <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: m.saldo < 0 ? S.red : m.saldo > 0 ? S.green : S.hint, margin: '4px 0' }}>{tn(m.saldo)} tn</div>
                 <div style={{ height: 5, background: S.bg, borderRadius: 3, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: S.green }} /></div>
                 <div style={{ fontSize: 11, color: S.muted, marginTop: 5, lineHeight: 1.5 }}>
