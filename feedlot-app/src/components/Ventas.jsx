@@ -896,6 +896,37 @@ export default function Ventas({ usuario, mobile, nav }) {
     const hayPreciosPorFila = filasCalc.some(f => f.montoCv != null)
     const montoCalc = hayPreciosPorFila ? filasCalc.reduce((s, f) => s + (f.montoCv || 0), 0) : null
     const montoTotal = editandoVenta?.monto_total_con_iva ? parseFloat(editandoVenta.monto_total_con_iva) : montoCalc
+    // Precio ↔ monto total: se completa uno y el otro se calcula solo.
+    // calcCon recalcula kg netos y total con un precio/desbaste general
+    // distinto (respetando los corrales que tienen precio o desbaste propio).
+    const calcCon = (precioGen, desbGen) => {
+      let kgN = 0, monto = 0, kgNSinPrecioPropio = 0, montoConPrecioPropio = 0
+      grupo.forEach(gv => {
+        const ov = overrides[gv.id] || {}
+        const d = (ov.desbaste_pct !== undefined && ov.desbaste_pct !== '') ? parseFloat(ov.desbaste_pct) : desbGen
+        const kn = Math.round((gv.kg_vivo_total || 0) * (1 - d / 100) * 10) / 10
+        const tienePrecioPropio = ov.precio_kg !== undefined && ov.precio_kg !== ''
+        const pr = tienePrecioPropio ? parseFloat(ov.precio_kg) : precioGen
+        kgN += kn
+        monto += pr && kn ? Math.round(pr * kn) : 0
+        if (tienePrecioPropio) montoConPrecioPropio += Math.round(parseFloat(ov.precio_kg) * kn)
+        else kgNSinPrecioPropio += kn
+      })
+      return { kgN, monto, kgNSinPrecioPropio, montoConPrecioPropio }
+    }
+    const montoDesdePrecio = (precioStr, desbGen) => {
+      const pr = parseFloat(precioStr)
+      if (!pr) return ''
+      const { monto } = calcCon(pr, desbGen)
+      return monto ? String(Math.round(monto)) : ''
+    }
+    const precioDesdeMonto = (montoStr, desbGen) => {
+      const m = parseFloat(montoStr)
+      if (!m) return ''
+      const { kgNSinPrecioPropio, montoConPrecioPropio } = calcCon(0, desbGen)
+      if (!kgNSinPrecioPropio) return editandoVenta?.precio_kg || ''
+      return String(Math.round((m - montoConPrecioPropio) / kgNSinPrecioPropio * 100) / 100)
+    }
     const inp = { width: '100%', border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 13, background: S.surface, boxSizing: 'border-box', fontFamily: 'monospace' }
     const Lbl = ({ children }) => <label style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>{children}</label>
     return (
@@ -909,13 +940,16 @@ export default function Ventas({ usuario, mobile, nav }) {
             <Lbl>Desbaste % (general)</Lbl>
             <input type="number" placeholder="8" value={editandoVenta?.desbaste || ''} onChange={e => {
               const desb = e.target.value
-              setEditandoVenta({...editandoVenta, desbaste: desb, monto_total_con_iva: ''})
+              const desbNum = parseFloat(desb || 8)
+              if (editandoVenta?.precio_kg) setEditandoVenta({...editandoVenta, desbaste: desb, monto_total_con_iva: montoDesdePrecio(editandoVenta.precio_kg, desbNum)})
+              else if (editandoVenta?.monto_total_con_iva) setEditandoVenta({...editandoVenta, desbaste: desb, precio_kg: precioDesdeMonto(editandoVenta.monto_total_con_iva, desbNum)})
+              else setEditandoVenta({...editandoVenta, desbaste: desb})
             }} style={inp} />
           </div>
           <div>
             <Lbl>Precio $/kg final (general)</Lbl>
             <input type="number" placeholder="ej. 3100" value={editandoVenta?.precio_kg || ''} onChange={e => {
-              setEditandoVenta({...editandoVenta, precio_kg: e.target.value, monto_total_con_iva: ''})
+              setEditandoVenta({...editandoVenta, precio_kg: e.target.value, monto_total_con_iva: montoDesdePrecio(e.target.value, desbPctBase)})
             }} style={{ ...inp, border: `1px solid ${S.accent}`, fontWeight: 600 }} />
           </div>
         </div>
@@ -926,7 +960,7 @@ export default function Ventas({ usuario, mobile, nav }) {
             {filasCalc.map(({ gv, desbCv, precioCv, kgNetoCv }) => {
               const ov = overrides[gv.id] || {}
               const tieneOverride = ov.desbaste_pct !== undefined || ov.precio_kg !== undefined
-              const setOv = patch => setEditandoVenta({...editandoVenta, filaOverrides: {...overrides, [gv.id]: {...ov, ...patch}}})
+              const setOv = patch => setEditandoVenta({...editandoVenta, monto_total_con_iva: '', filaOverrides: {...overrides, [gv.id]: {...ov, ...patch}}})
               return (
                 <div key={gv.id} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '.65rem .85rem', marginBottom: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1023,7 +1057,7 @@ export default function Ventas({ usuario, mobile, nav }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
           <div>
             <Lbl>Monto Total Operación $ (IVA incluido)</Lbl>
-            <input type="number" value={editandoVenta?.monto_total_con_iva || ''} onChange={e => setEditandoVenta({...editandoVenta, monto_total_con_iva: e.target.value})}
+            <input type="number" value={editandoVenta?.monto_total_con_iva || ''} onChange={e => setEditandoVenta({...editandoVenta, monto_total_con_iva: e.target.value, precio_kg: precioDesdeMonto(e.target.value, desbPctBase)})}
               style={{ ...inp, border: `1px solid ${S.accent}`, fontWeight: 700 }} placeholder="Total que paga el frigorífico" />
           </div>
           <div>
