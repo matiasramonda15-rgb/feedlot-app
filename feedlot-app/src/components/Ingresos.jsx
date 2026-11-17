@@ -1060,7 +1060,13 @@ export default function Ingresos({ usuario, mobile, nav }) {
                               comision_es_paralela: l.comision_es_paralela || false,
                               procedencia: l.procedencia || '',
                               nuevaProcedencia: '',
+                              nro_factura: l.nro_factura || '',
+                              feria_nombre: l.feria_nombre || '',
                               cuotas_pago: (l.cuotas_pago || []).map(c => ({ nro_factura: c.nro_factura || '', fecha: c.fecha || '', monto: String(c.monto || '') })),
+                              // El desglose por proveedor/tropa también se carga al editar: sin esto
+                              // el formulario lo mostraba todo junto y al guardar lo borraba.
+                              sublotes: normalizarSublotes(l.sublotes),
+                              gastos_feria: l.gastos_feria || {},
                             }) }}
                               style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', marginRight: 4 }}>Editar</button>
                             <button onClick={() => eliminarLote(l.id)}
