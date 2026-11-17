@@ -1670,6 +1670,37 @@ function GestionComercial({ lotes, corrales, esDueno, cargarDatos, contactos, us
                   style={{ padding: '5px 8px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer' }}>✕ Quitar factura</button>
               </div>
 
+              {/* Lo que se cargó en Ingresos para este proveedor: cabezas, kg y precio
+                  de su tropa — para que quien carga la factura sepa qué le corresponde. */}
+              {(() => {
+                const sub = normalizarSublotes(l.sublotes).find(sl => (sl.vendedor || '').trim().toLowerCase() === (f.proveedor || '').trim().toLowerCase())
+                if (!sub) return null
+                const trs = (sub.tropas || []).filter(t => t.cabezas || t.kg)
+                if (!trs.length) return null
+                const cab = trs.reduce((a, t) => a + (parseFloat(t.cabezas) || 0), 0)
+                const kgT = trs.reduce((a, t) => a + (parseFloat(t.kg) || 0), 0)
+                const subT = trs.reduce((a, t) => a + (parseFloat(t.subtotal) || ((parseFloat(t.kg) || 0) * (parseFloat(t.precio_kg) || 0))), 0)
+                const precioProm = kgT > 0 ? Math.round(subT / kgT * 100) / 100 : 0
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: S.accentLight, border: `1px solid ${S.accent}`, borderRadius: 6, padding: '7px 10px', marginBottom: 8, fontSize: 12, color: S.text }}>
+                    <div>
+                      <span style={{ fontWeight: 600, color: S.accent }}>Según el ingreso: </span>
+                      <strong>{cab} cabezas</strong> · {kgT.toLocaleString('es-AR')} kg
+                      {trs.length === 1
+                        ? <> · ${(parseFloat(trs[0].precio_kg) || 0).toLocaleString('es-AR')}/kg</>
+                        : <> · {trs.map(t => `${t.cabezas} cab. a $${(parseFloat(t.precio_kg) || 0).toLocaleString('es-AR')}/kg`).join(' + ')}</>}
+                      {' '}= <strong>${Math.round(subT).toLocaleString('es-AR')}</strong> (sin IVA)
+                    </div>
+                    {!seDeclaroSinFacturar && (
+                      <button type="button" onClick={() => set({ kg_factura: String(kgT), precio_neto: String(precioProm) })}
+                        style={{ padding: '4px 10px', fontSize: 11, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        Usar estos kg y precio
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                 <input placeholder="Localidad (opcional)" value={f.localidad || ''} onChange={e => set({ localidad: e.target.value })} style={{...inp, fontSize: 12}} />
                 <input placeholder="Condición IVA (ej. Resp. Inscripto)" value={f.condicion_iva || ''} onChange={e => set({ condicion_iva: e.target.value })} style={{...inp, fontSize: 12}} />
