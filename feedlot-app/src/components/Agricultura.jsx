@@ -1408,6 +1408,89 @@ function generarRemitoOrden(orden, campo, campana, stockAgro) {
 }
 
 // ── TAB ÓRDENES DE TRABAJO ──
+// Cuadrito con lo que va saliendo la aplicación mientras se arma la orden:
+// cada producto (total a usar × precio de referencia del stock) más la labor,
+// en US$ y en $, total y por hectárea.
+function CostoAplicacion({ productos, stockAgro, superficie, cotizacionDolar, costoLaborArs, P }) {
+  const dolar = parseFloat(cotizacionDolar) || 0
+  const filas = (productos || []).filter(p => p.id).map(p => {
+    const item = stockAgro.find(s => String(s.id) === String(p.id))
+    const total = p.total ? parseFloat(p.total) : (p.dosis && superficie ? parseFloat(p.dosis) * superficie : 0)
+    const usd = parseFloat(item?.precio_referencia_usd) || (parseFloat(item?.precio_referencia) && dolar ? parseFloat(item.precio_referencia) / dolar : 0)
+    const ars = parseFloat(item?.precio_referencia) || (usd && dolar ? usd * dolar : 0)
+    return { nombre: (item?.insumo || 'Producto').trim(), unidad: p.unidad || item?.unidad || '', total: total || 0, usd, ars, contratista: !!p.aporta_contratista, sinPrecio: !usd && !ars }
+  })
+  if (!filas.length) return null
+  const cuenta = filas.filter(f => !f.contratista)
+  const totUsd = cuenta.reduce((a, f) => a + f.total * f.usd, 0)
+  const totArs = cuenta.reduce((a, f) => a + f.total * f.ars, 0)
+  const labArs = parseFloat(costoLaborArs) || 0
+  const labUsd = labArs && dolar ? labArs / dolar : 0
+  const ha = parseFloat(superficie) || 0
+  const fmtU = n => 'US$ ' + n.toLocaleString('es-AR', { maximumFractionDigits: n < 100 ? 2 : 0 })
+  const fmtP = n => '$ ' + Math.round(n).toLocaleString('es-AR')
+  const celda = { padding: '4px 6px', fontFamily: 'monospace', textAlign: 'right', whiteSpace: 'nowrap' }
+  return (
+    <div style={{ background: P.surface, border: `1.5px solid ${P.accent}`, borderRadius: 8, padding: '10px 12px', marginBottom: '1rem' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: P.accent, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>
+        💲 Lo que va saliendo esta aplicación{ha ? ` · ${ha} ha` : ''}
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: P.text }}>
+          <thead>
+            <tr style={{ color: P.muted, fontSize: 10, textTransform: 'uppercase' }}>
+              <th style={{ textAlign: 'left', padding: '4px 6px' }}>Producto</th>
+              <th style={{ ...celda, fontFamily: 'inherit' }}>Total</th>
+              <th style={{ ...celda, fontFamily: 'inherit' }}>US$/ha</th>
+              <th style={{ ...celda, fontFamily: 'inherit' }}>US$ total</th>
+              <th style={{ ...celda, fontFamily: 'inherit' }}>$ total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f, i) => (
+              <tr key={i} style={{ borderTop: `1px solid ${P.border}`, color: f.contratista ? P.muted : P.text }}>
+                <td style={{ padding: '4px 6px' }}>{f.nombre}{f.contratista ? ' (lo pone el contratista)' : ''}{f.sinPrecio && !f.contratista ? ' ⚠ sin precio' : ''}</td>
+                <td style={celda}>{f.total ? `${(Math.round(f.total * 100) / 100).toLocaleString('es-AR')} ${f.unidad}` : '—'}</td>
+                <td style={celda}>{f.contratista || !ha ? '—' : fmtU(f.total * f.usd / ha)}</td>
+                <td style={celda}>{f.contratista ? '—' : fmtU(f.total * f.usd)}</td>
+                <td style={celda}>{f.contratista ? '—' : fmtP(f.total * f.ars)}</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: `1.5px solid ${P.text}`, fontWeight: 700 }}>
+              <td style={{ padding: '5px 6px' }}>Productos</td>
+              <td style={celda}></td>
+              <td style={celda}>{ha ? fmtU(totUsd / ha) : '—'}</td>
+              <td style={celda}>{fmtU(totUsd)}</td>
+              <td style={celda}>{fmtP(totArs)}</td>
+            </tr>
+            {labArs > 0 && (
+              <>
+                <tr style={{ borderTop: `1px solid ${P.border}` }}>
+                  <td style={{ padding: '4px 6px' }}>Labor / aplicación</td>
+                  <td style={celda}></td>
+                  <td style={celda}>{ha && labUsd ? fmtU(labUsd / ha) : '—'}</td>
+                  <td style={celda}>{labUsd ? fmtU(labUsd) : '—'}</td>
+                  <td style={celda}>{fmtP(labArs)}</td>
+                </tr>
+                <tr style={{ borderTop: `1.5px solid ${P.text}`, fontWeight: 700, color: P.accent }}>
+                  <td style={{ padding: '5px 6px' }}>Total aplicación</td>
+                  <td style={celda}></td>
+                  <td style={celda}>{ha && dolar ? fmtU((totUsd + labUsd) / ha) : '—'}</td>
+                  <td style={celda}>{dolar ? fmtU(totUsd + labUsd) : '—'}</td>
+                  <td style={celda}>{fmtP(totArs + labArs)}</td>
+                </tr>
+              </>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 10.5, color: P.muted, marginTop: 6 }}>
+        Con el precio de referencia del stock{dolar ? ` (dólar $${dolar.toLocaleString('es-AR')})` : ''}. Los productos que pone el contratista no suman.
+      </div>
+    </div>
+  )
+}
+
 function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, cargar, contactos, usuario, mobile, nav, soloAlfalfa, planes = [], cotizacionDolar }) {
   // Los productos de agro se cargan y consumen en cantidades grandes — no
   // hace falta (ni tiene sentido en la práctica) manejar más de un decimal.
@@ -2200,6 +2283,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             )
           })}
 
+          <CostoAplicacion productos={form.productos} stockAgro={stockAgro} superficie={superficie} cotizacionDolar={cotizacionDolar}
+            costoLaborArs={parseFloat(form.costo_total) || 0} P={{ surface: CM.surface, border: CM.border, accent: CM.green, text: CM.text, muted: CM.muted }} />
+
           <div style={{ marginTop: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Observaciones</div>
             <input type="text" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})}
@@ -2446,6 +2532,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   )
                 })}
               </div>
+
+              <CostoAplicacion productos={form.productos} stockAgro={stockAgro} superficie={superficie} cotizacionDolar={cotizacionDolar}
+                costoLaborArs={parseFloat(form.costo_total) || ((parseFloat(form.costo_ha) || 0) * (parseFloat(superficie) || 0))} P={S} />
 
               {/* Costo */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
