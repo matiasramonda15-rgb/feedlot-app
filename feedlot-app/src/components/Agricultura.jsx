@@ -2789,7 +2789,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
               <thead><tr style={{ background: S.bg }}>
-                {['', 'Fecha', 'Campo', 'Lote', 'Tipo', 'Ejecución', 'Operario', 'Productos', 'Costo', 'Estado pago', ''].map(h => (
+                {['', 'Fecha hecha', 'Campo', 'Lote', 'Tipo', 'Ejecución', 'Operario', 'Productos', 'Costo', 'Estado pago', ''].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: S.muted, fontSize: 10, textTransform: 'uppercase', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr></thead>
@@ -2806,7 +2806,27 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                         <input type="checkbox" checked={ordenesParaCombinar.includes(o.id)}
                           onChange={e => setOrdenesParaCombinar(e.target.checked ? [...ordenesParaCombinar, o.id] : ordenesParaCombinar.filter(id => id !== o.id))} />
                       </td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{o.fecha ? new Date(o.fecha+'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          // Hecha: la fecha en que se realizó (al confirmarla se corrige a la real).
+                          // Emitida: todavía no se hizo, se muestra cuándo se emitió.
+                          // Debajo, cuándo se cargó la orden en el sistema, si es otro día.
+                          const f2 = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
+                          const hecha = o.fecha_realizada || o.fecha
+                          const cargada = o.creado_en ? String(o.creado_en).slice(0, 10) : null
+                          return emitida ? (
+                            <>
+                              <div style={{ color: S.accent }}>Emitida {f2(o.fecha)}</div>
+                              <div style={{ fontSize: 10, color: S.hint, fontFamily: 'inherit' }}>sin realizar</div>
+                            </>
+                          ) : (
+                            <>
+                              <div title="Fecha en que se hizo el trabajo">{f2(hecha)}</div>
+                              {cargada && cargada !== hecha && <div style={{ fontSize: 10, color: S.hint }}>cargada {f2(cargada)}</div>}
+                            </>
+                          )
+                        })()}
+                      </td>
                       <td style={{ padding: '8px 12px', fontWeight: 600 }}>{campoO?.nombre || '—'} <BotonMapa campoId={o.campo_id} titulo={`${campoO?.nombre || ''}${loteO ? ` · Lote ${loteO.numero}` : ''}`} /></td>
                       <td style={{ padding: '8px 12px', color: S.muted }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
