@@ -35,19 +35,44 @@ export default function GranosUbicaciones({ S, Label, inputStyle, CULTIVOS, camp
   const [formCamion, setFormCamion] = useState(null) // null | CAMION_INIT
   const [ajuste, setAjuste] = useState(null)        // { ub, saldoReal, obs }
   const [guardando, setGuardando] = useState(false)
+  // Camiones que entraron a cada ubicación (los de Mercadería: a acopio o a bolsa propia)
+  const [regsMerc, setRegsMerc] = useState([])
+  const [descMerc, setDescMerc] = useState([])
+  const [verEntradas, setVerEntradas] = useState(null) // id de la ubicación abierta
 
   async function cargarTodo() {
-    const [{ data: u }, { data: c }] = await Promise.all([
+    const [{ data: u }, { data: c }, { data: rm }, { data: dm }] = await Promise.all([
       supabase.from('ubicaciones_grano').select('*').order('activa', { ascending: false }).order('nombre'),
       supabase.from('camiones_granos').select('*').order('fecha', { ascending: false }).order('id', { ascending: false }),
+      supabase.from('registros_mercaderia').select('id, campo, cosecha_id, cosecha_id_acopio'),
+      supabase.from('descargas_mercaderia').select('id, registro_id, fecha, tipo, patente, kg, destino, observaciones').order('fecha').order('id'),
     ])
-    setUbicaciones(u || []); setCamiones(c || []); setCargando(false)
+    setUbicaciones(u || []); setCamiones(c || []); setRegsMerc(rm || []); setDescMerc(dm || []); setCargando(false)
   }
   useEffect(() => { cargarTodo() }, [])
 
   const enCampana = x => !campanaId || String(x.campana_id) === String(campanaId)
   const ubsCampana = ubicaciones.filter(u => !u.campana_id || enCampana(u))
   const camionesCampana = camiones.filter(enCampana)
+
+  // Camiones de Mercadería que llevaron grano a esta ubicación: los que fueron a
+  // acopio cuentan para la cosecha de acopio del registro, los de bolsa propia
+  // para la de bolsa. Se buscan por las cosechas que están en la ubicación.
+  const entradasCamiones = u => {
+    const ids = new Set(cosechas.filter(c => c.ubicacion_id === u.id).map(c => c.id))
+    if (!ids.size) return []
+    const out = []
+    regsMerc.forEach(r => {
+      const vaAcopio = r.cosecha_id_acopio && ids.has(r.cosecha_id_acopio)
+      const vaBolsa = r.cosecha_id && ids.has(r.cosecha_id)
+      if (!vaAcopio && !vaBolsa) return
+      descMerc.filter(d => d.registro_id === r.id).forEach(d => {
+        const dest = d.destino || ''
+        if ((vaAcopio && dest === 'acopio') || (vaBolsa && dest === 'bolsa_propia')) out.push({ ...d, campo: r.campo })
+      })
+    })
+    return out.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || a.id - b.id)
+  }
 
   // Saldo de cada ubicación: cosechas + traslados que entran − salidas (neto) + ajustes
   const movimientos = u => {
@@ -255,11 +280,52 @@ export default function GranosUbicaciones({ S, Label, inputStyle, CULTIVOS, camp
                   <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                     {u.activa && <button onClick={() => setFormCamion({ ...CAMION_INIT, ubicacion_origen_id: String(u.id) })} style={btn('transparent', S.accent, S.accent)}>🚛 Camión</button>}
                     <button onClick={() => setAjuste({ ub: u, saldoReal: String(Math.round(m.saldo) / 1000), obs: '' })} style={btn('transparent', S.amber, S.amber)}>Ajustar saldo</button>
+                    {(() => {
+                      const ent = entradasCamiones(u)
+                      if (!ent.length) return null
+                      const abierto = verEntradas === u.id
+                      return (
+                        <button onClick={() => setVerEntradas(abierto ? null : u.id)} style={btn(abierto ? S.accent : 'transparent', abierto ? '#fff' : S.accent, S.accent)}>
+                          📋 {u.tipo === 'acopio' ? 'Camiones entregados' : 'Camiones que entraron'} ({ent.length})
+                        </button>
+                      )
+                    })()}
                     {!u.activa
                       ? <button onClick={async () => { await supabase.from('ubicaciones_grano').update({ activa: true }).eq('id', u.id); cargarTodo() }} style={btn('transparent', S.muted, S.border)}>Reabrir</button>
                       : Math.abs(m.saldo) < 1 && <button onClick={async () => { await supabase.from('ubicaciones_grano').update({ activa: false }).eq('id', u.id); cargarTodo() }} style={btn('transparent', S.muted, S.border)}>Marcar vacía</button>}
                   </div>
                 )}
+                {verEntradas === u.id && (() => {
+                  const ent = entradasCamiones(u)
+                  const totalKg = ent.reduce((a, d) => a + n(d.kg), 0)
+                  const celda = { padding: '3px 5px', borderTop: `1px solid ${S.border}`, whiteSpace: 'nowrap' }
+                  return (
+                    <div style={{ marginTop: 8, overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                        <thead><tr style={{ color: S.muted, fontSize: 10, textTransform: 'uppercase' }}>
+                          <th style={{ textAlign: 'left', padding: '3px 5px' }}>Fecha</th>
+                          <th style={{ textAlign: 'left', padding: '3px 5px' }}>Campo</th>
+                          <th style={{ textAlign: 'left', padding: '3px 5px' }}>Patente</th>
+                          <th style={{ textAlign: 'right', padding: '3px 5px' }}>Kg</th>
+                        </tr></thead>
+                        <tbody>
+                          {ent.map(d => (
+                            <tr key={d.id}>
+                              <td style={{ ...celda, fontFamily: 'monospace' }}>{d.fecha ? new Date(d.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—'}</td>
+                              <td style={celda}>{d.campo || '—'}</td>
+                              <td style={{ ...celda, fontFamily: 'monospace' }}>{d.patente || (d.tipo === 'tolva' ? 'Tolva' : '—')}</td>
+                              <td style={{ ...celda, textAlign: 'right', fontFamily: 'monospace' }}>{n(d.kg).toLocaleString('es-AR')}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ fontWeight: 700 }}>
+                            <td style={{ ...celda, borderTop: `1.5px solid ${S.text}` }} colSpan={3}>{ent.length} {ent.length === 1 ? 'camión' : 'camiones'}</td>
+                            <td style={{ ...celda, borderTop: `1.5px solid ${S.text}`, textAlign: 'right', fontFamily: 'monospace' }}>{totalKg.toLocaleString('es-AR')}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}
