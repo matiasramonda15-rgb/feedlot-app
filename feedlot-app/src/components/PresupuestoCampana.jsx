@@ -28,6 +28,7 @@ const RUBROS = [
 // Tipo de insumo (Stock agro) → rubro
 const rubroDeInsumo = tipo => {
   const t = (tipo || '').toLowerCase()
+  if (t.includes('cura')) return 'agroquimicos' // curasemilla: es agroquímico, no semilla
   if (t.includes('semilla')) return 'semilla'
   if (t.includes('fertiliz')) return 'fertilizantes'
   if (t.includes('silobolsa')) return 'cosecha'

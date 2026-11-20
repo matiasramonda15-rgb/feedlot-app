@@ -113,6 +113,51 @@ function productosParaOrden(stockAgro, tipoOrden, idElegido) {
   return stockAgro.filter(s => pasa(s) || String(s.id) === String(idElegido))
 }
 
+// ── Curasemilla automático en las órdenes de siembra ──
+// Un curasemilla con "kg de semilla por unidad" cargado (ej. caja de 60 dosis
+// para 3.000 kg → 1 dosis = 50 kg) se agrega solo a la orden de siembra:
+// toma los kg de semilla (las semillas que se manejan en kg) y calcula
+// cuánto curasemilla hace falta. La línea queda marcada auto_cura y se
+// recalcula si cambian los kg de semilla; se descuenta del stock igual que
+// cualquier otro producto de la orden. Si se borra a mano, no se vuelve a
+// agregar en esa orden.
+const esCurasemilla = s => esTipoInsumo(s || {}, 'cura')
+const esSemillaEnKg = s => s && esTipoInsumo(s, 'semilla') && !esCurasemilla(s) && (s.unidad || '').toLowerCase() === 'kg'
+function kgSemillaDeProductos(productos, stockAgro) {
+  return (productos || []).reduce((acc, p) => {
+    if (p.auto_cura || p.aporta_contratista) return acc
+    const it = stockAgro.find(x => String(x.id) === String(p.id))
+    return esSemillaEnKg(it) ? acc + (parseFloat(String(p.total ?? '').replace(',', '.')) || 0) : acc
+  }, 0)
+}
+// Devuelve los productos con la línea de curasemilla al día (o el mismo array
+// si no hay nada que cambiar). agregar=false: solo actualiza una línea que ya
+// estaba (para la confirmación de una orden emitida).
+function sincronizarCurasemilla(productos, stockAgro, superficie, { agregar = true } = {}) {
+  const prods = productos || []
+  const curas = stockAgro.filter(x => esCurasemilla(x) && parseFloat(x.kg_semilla_por_unidad) > 0)
+  const idxAuto = prods.findIndex(p => p.auto_cura)
+  if (!curas.length && idxAuto < 0) return prods
+  const kgSem = kgSemillaDeProductos(prods, stockAgro)
+  if (kgSem <= 0) return idxAuto >= 0 ? prods.filter((_, i) => i !== idxAuto) : prods
+  if (idxAuto < 0 && !agregar) return prods
+  const curaId = idxAuto >= 0 && prods[idxAuto].id ? prods[idxAuto].id : String((curas.find(c => parseFloat(c.cantidad) > 0) || curas[0]).id)
+  const cura = stockAgro.find(x => String(x.id) === String(curaId))
+  const factor = parseFloat(cura?.kg_semilla_por_unidad) || parseFloat(curas[0]?.kg_semilla_por_unidad)
+  if (!factor) return prods
+  const tot = Math.round(kgSem / factor * 100) / 100
+  const total = String(tot)
+  if (idxAuto >= 0 && String(prods[idxAuto].id) === String(curaId) && prods[idxAuto].total === total) return prods
+  const ha = parseFloat(superficie) || 0
+  const linea = {
+    ...(idxAuto >= 0 ? prods[idxAuto] : {}),
+    id: String(curaId), unidad: cura?.unidad || '', total,
+    dosis: ha ? String(Math.round(tot / ha * 10000) / 10000) : '', dosis_exacta: ha ? tot / ha : null,
+    ancla: 'total', auto_cura: true,
+  }
+  return idxAuto >= 0 ? prods.map((p, i) => i === idxAuto ? linea : p) : [...prods, linea]
+}
+
 export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
   const [pantAgroM, setPantAgroM] = useState('home')
   const [ordenExpandidaM, setOrdenExpandidaM] = useState(null)
@@ -1663,7 +1708,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     const c = confirmando
     const ha = parseFloat(c.ha) || parseFloat(o.superficie_ha_real) || 0
     const productos = []
-    for (const p of c.productos) {
+    // Si en la confirmación cambiaron los kg de semilla, el curasemilla
+    // automático acompaña.
+    const prodsConf = sincronizarCurasemilla(c.productos, stockAgro, ha, { agregar: false })
+    for (const p of prodsConf) {
       const item = stockAgro.find(x => String(x.id) === String(p.id))
       const tot = parseFloat(String(p.total).replace(',', '.')) || 0
       let descontado
@@ -1739,7 +1787,16 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [superficie])
   function updProducto(idx, updates) { setForm(prev => ({...prev, productos: prev.productos.map((p, i) => i === idx ? {...p, ...updates} : p)})) }
-  function removeProducto(idx) { setForm({...form, productos: form.productos.filter((_, i) => i !== idx)}) }
+  function removeProducto(idx) { setForm({...form, productos: form.productos.filter((_, i) => i !== idx), ...(form.productos[idx]?.auto_cura ? { sin_cura: true } : {})}) }
+  // Curasemilla automático según los kg de semilla de la orden de siembra
+  useEffect(() => {
+    if ((form.tipo || '').toLowerCase() !== 'siembra' || form.sin_cura) return
+    setForm(prev => {
+      const productos = sincronizarCurasemilla(prev.productos, stockAgro, superficie)
+      return productos === prev.productos ? prev : { ...prev, productos }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.tipo, form.productos, form.sin_cura, superficie, stockAgro])
   function addGasto() { setForm({...form, gastos_propios: [...form.gastos_propios, { descripcion: '', monto: '' }]}) }
   function updGasto(idx, key, val) { setForm({...form, gastos_propios: form.gastos_propios.map((g, i) => i === idx ? {...g, [key]: val} : g)}) }
 
@@ -2243,6 +2300,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   </SelectBuscable>
                   <button onClick={() => removeProducto(idx)} style={{ background: 'none', border: 'none', color: CM.red, fontSize: 16, cursor: 'pointer', padding: '0 6px' }}>✕</button>
                 </div>
+                {p.auto_cura && <div style={{ fontSize: 11, color: CM.green, marginTop: 4 }}>🔗 Curasemilla automático según los kg de semilla</div>}
 
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                   {[{ v: 'dosis', l: 'Cargar por dosis/ha' }, { v: 'total', l: 'Cargar por cantidad total' }].map(o => (
@@ -2501,6 +2559,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           <option value="">— Seleccioná —</option>
                           {productosParaOrden(stockAgro, form.tipo, p.id).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.cantidad?.toLocaleString('es-AR')} {s.unidad})</option>)}
                         </SelectBuscable>
+                        {p.auto_cura && <div style={{ fontSize: 10, color: S.green, marginTop: 3 }}>🔗 Automático: {kgSemillaDeProductos(form.productos, stockAgro).toLocaleString('es-AR')} kg de semilla ÷ {(parseFloat(item?.kg_semilla_por_unidad) || 0).toLocaleString('es-AR')} kg por {item?.unidad === 'dosis' ? 'dosis' : 'unidad'}</div>}
                       </div>
                       <div><Label>Dosis/ha</Label><input type="number" value={p.dosis} onChange={e => {
                         const dosis = e.target.value
@@ -5122,6 +5181,9 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   const [guardando, setGuardando] = useState(false)
   const [pagarAhora, setPagarAhora] = useState(true)
   const [showPagosPend, setShowPagosPend] = useState(false)
+  // Compras pendientes de pago: arranca plegado en un solo renglón (con el
+  // total) para que no ocupe media pantalla cuando quedan pendientes viejos.
+  const [pendDesplegado, setPendDesplegado] = useState(false)
   const [seleccionadas, setSeleccionadas] = useState([])
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_AGRO }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
@@ -5138,8 +5200,8 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
     numero_factura: '', numero_remito: '', observaciones: '', pagos: [{ ...PAGO_INIT_AGRO }], retirado: true,
   })
 
-  const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Silobolsa', 'Otro']
-  const UNIDADES = ['litros', 'kg', 'bolsas', 'unidades']
+  const TIPOS = ['Herbicida', 'Fungicida', 'Insecticida', 'Curasemilla', 'Fertilizante', 'Coadyuvante', 'Semilla', 'Silobolsa', 'Otro']
+  const UNIDADES = ['litros', 'kg', 'bolsas', 'unidades', 'dosis']
 
   // ── MODO CELULAR: solo lectura ──
   if (mobile) {
@@ -5187,7 +5249,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   async function guardarStock() {
     if (!formStock.insumo) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, dosis_chica: !!formStock.dosis_chica, presentacion_cant: parseFloat(formStock.presentacion_cant) || null, presentacion_nombre: formStock.presentacion_nombre || null, actualizado_en: new Date().toISOString() }
+    const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, dosis_chica: !!formStock.dosis_chica, kg_semilla_por_unidad: esTipoInsumo(formStock, 'cura') ? (parseFloat(formStock.kg_semilla_por_unidad) || null) : null, presentacion_cant: parseFloat(formStock.presentacion_cant) || null, presentacion_nombre: formStock.presentacion_nombre || null, actualizado_en: new Date().toISOString() }
     // Si se cargó precio en dólares, el precio en pesos se calcula solo con
     // la cotización del momento — si se cargó directo en pesos, se respeta eso.
     if (formStock.precio_referencia_usd) {
@@ -5436,17 +5498,19 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
         }
 
         return (
-          <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: '1.25rem', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: S.amber }}>
-                ⏳ {pendientes.length} compra{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} de pago · ${pendientes.reduce((s,i)=>s+(i.total||0),0).toLocaleString('es-AR')}
+          <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 10, padding: pendDesplegado ? '1.25rem' : '0.6rem 1.25rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: pendDesplegado ? '1rem' : 0 }}>
+              <div onClick={() => { if (pendDesplegado) setShowPagosPend(false); setPendDesplegado(!pendDesplegado) }} title={pendDesplegado ? 'Plegar' : 'Ver las compras pendientes'}
+                style={{ fontSize: 13, fontWeight: 700, color: S.amber, cursor: 'pointer', flex: 1, userSelect: 'none' }}>
+                <span style={{ display: 'inline-block', width: 14 }}>{pendDesplegado ? '▾' : '▸'}</span>⏳ {pendientes.length} compra{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} de pago · ${pendientes.reduce((s,i)=>s+(i.total||0),0).toLocaleString('es-AR')}
                 {pendientes.some(i => !i.precio_unitario) && <span style={{ color: S.amber, fontWeight: 400 }}> · {pendientes.filter(i=>!i.precio_unitario).length} sin precio todavía</span>}
               </div>
-              <button onClick={() => setShowPagosPend(!showPagosPend)}
-                style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.amber, border: `1px solid ${S.amber}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
+              <button onClick={() => { if (!showPagosPend) setPendDesplegado(true); setShowPagosPend(!showPagosPend) }}
+                style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.amber, border: `1px solid ${S.amber}`, color: '#fff', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 {showPagosPend ? 'Cerrar' : 'Registrar pago'}
               </button>
             </div>
+            {pendDesplegado && <>
             {sinPrecioSel.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
                 <button onClick={guardarSoloPrecio} disabled={guardandoPago}
@@ -5515,6 +5579,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                 </button>
               </div>
             )}
+            </>}
           </div>
         )
       })()}
@@ -5594,6 +5659,17 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
               </div>
             </div>
           </div>
+          {esTipoInsumo(formStock, 'cura') && (
+            <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '10px 12px', marginBottom: '1rem' }}>
+              <Label>Kg de semilla que trata cada {formStock.unidad === 'dosis' ? 'dosis' : (formStock.unidad || 'unidad').replace(/s$/, '')}</Label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <input type="number" value={formStock.kg_semilla_por_unidad || ''} onChange={e => setFormStock({...formStock, kg_semilla_por_unidad: e.target.value})} placeholder="ej. 50" style={{ ...inputStyle, maxWidth: 140 }} />
+                <span style={{ fontSize: 12, color: S.muted }}>
+                  Ej.: caja de 60 dosis para 3.000 kg → unidad <strong>dosis</strong> y <strong>50</strong> kg por dosis. Con esto se agrega solo en las órdenes de siembra según los kg de semilla.
+                </span>
+              </div>
+            </div>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1rem', fontSize: 13, color: S.text, cursor: 'pointer', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: '8px 12px', width: 'fit-content' }}>
             <input type="checkbox" checked={!!formStock.dosis_chica} onChange={e => setFormStock({...formStock, dosis_chica: e.target.checked})} />
             Se usa en dosis chicas — no redondear al medio {formStock.unidad === 'kg' ? 'kg' : 'litro'} en las órdenes
@@ -5821,7 +5897,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     </td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ presentacion_cant: s.presentacion_cant || '', presentacion_nombre: s.presentacion_nombre || '', insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'', dosis_chica: s.dosis_chica || false }); setShowForm(true); setShowFormCompra(false) }}
+                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ kg_semilla_por_unidad: s.kg_semilla_por_unidad || '', presentacion_cant: s.presentacion_cant || '', presentacion_nombre: s.presentacion_nombre || '', insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'', dosis_chica: s.dosis_chica || false }); setShowForm(true); setShowFormCompra(false) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                         <button onClick={() => setAjustando(ajustando?.id === s.id ? null : { id: s.id, contado: String(s.cantidad ?? ''), motivo: 'Conteo físico', obs: '' })}
                           title="Ajustar por conteo físico (queda registrado)"
