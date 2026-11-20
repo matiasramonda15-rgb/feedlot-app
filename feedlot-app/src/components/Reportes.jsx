@@ -93,7 +93,7 @@ export default function Reportes({ usuario }) {
       supabase.from('movimientos').select('fecha, cantidad, tipo, motivo').in('tipo', ['ajuste_manual', 'conteo_fisico', 'correccion_datos']),
       supabase.from('fletes').select('lote_id, fecha, monto, cantidad'),
       supabase.from('configuracion').select('valor').eq('clave', 'cotizacion_dolar_agro').maybeSingle(),
-      supabase.from('ordenes_trabajo').select('fecha, costo_total, productos, es_propia, estado').eq('estado', 'completado'),
+      supabase.from('ordenes_trabajo').select('fecha, costo_total, iva_pct, productos, es_propia, estado').eq('estado', 'completado'),
       supabase.from('vencimientos_arriendo').select('fecha_vencimiento, pagado_en, monto_total, estado').eq('estado', 'pagado'),
     ])
     setOrdenesAgro(otAgro || [])
@@ -854,7 +854,8 @@ export default function Reportes({ usuario }) {
   ordenesAgro.forEach(o => {
     const key = mesKey(o.fecha); if (!key) return
     asegurarMesAgro(key)
-    rentabilidadPorMesAgro[key].costoLabores += parseFloat(o.costo_total) || 0
+    // Labor facturada: el IVA se recupera como crédito fiscal → costo neto
+    rentabilidadPorMesAgro[key].costoLabores += (parseFloat(o.costo_total) || 0) / (1 + (parseFloat(o.iva_pct) || 0) / 100)
     rentabilidadPorMesAgro[key].costoInsumos += (o.productos || []).filter(p => !p.aporta_contratista).reduce((t, p) => t + (parseFloat(p.total) || 0) * (parseFloat(p.precio_ars) || 0), 0)
   })
   arriendosAgro.forEach(a => {

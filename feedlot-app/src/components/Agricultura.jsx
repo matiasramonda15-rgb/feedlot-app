@@ -202,7 +202,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
       supabase.from('gastos_generales').select('*, campos(nombre), campanas(nombre)').eq('actividad', 'Agricultura').order('fecha', { ascending: false }),
       supabase.from('stock_agro').select('*').order('insumo'),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'agro').order('fecha', { ascending: false }).limit(200),
-      supabase.from('contactos').select('id, nombre, cuit').eq('activo', true).order('nombre'),
+      supabase.from('contactos').select('id, nombre, cuit, iva').eq('activo', true).order('nombre'),
       supabase.from('configuracion').select('clave, valor').eq('clave', 'cotizacion_dolar_agro'),
       supabase.from('stock_insumos').select('id, insumo, unidad, precio_referencia').order('insumo'),
     ])
@@ -1611,6 +1611,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const [tarifaLiquidar, setTarifaLiquidar] = useState('')
   const [tarifaRolloLiquidar, setTarifaRolloLiquidar] = useState('')
   const [guardandoLiquidar, setGuardandoLiquidar] = useState(false)
+  // IVA de la liquidación: '' = sin factura. Si el contacto es Responsable
+  // Inscripto arranca en 10,5% (labores agrícolas).
+  const [ivaLiquidar, setIvaLiquidar] = useState('')
   const [formPagoGrupal, setFormPagoGrupal] = useState({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN }], domicilio: '', localidad: '', cuit: '', iva: '', cbu: '' })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
@@ -2672,14 +2675,17 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             const totalRollos = ordenesRollo.reduce((s, o) => s + (parseFloat(o.cantidad_rollos) || 0), 0)
             const tarifaNum = parseFloat(tarifaLiquidar) || 0
             const tarifaRolloNum = parseFloat(tarifaRolloLiquidar) || 0
-            const totalGeneral = (totalHa * tarifaNum) + (totalRollos * tarifaRolloNum)
+            const netoGeneral = (totalHa * tarifaNum) + (totalRollos * tarifaRolloNum)
+            const ivaLiqNum = parseFloat(ivaLiquidar) || 0
+            const factorIvaLiq = 1 + ivaLiqNum / 100
+            const totalGeneral = Math.round(netoGeneral * factorIvaLiq)
             return (
               <Card>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>💰 Liquidar servicio por proveedor</div>
                 <div style={{ fontSize: 12, color: S.muted, marginBottom: '1rem' }}>Juntá todas las órdenes sin precio de un contratista, poné una tarifa y calculá el total de una — antes de arreglar el pago. La confección de rollo se cobra por rollo, el resto de las labores por hectárea.</div>
                 <div style={{ marginBottom: 12 }}>
                   <Label>Proveedor</Label>
-                  <select value={proveedorLiquidar} onChange={e => setProveedorLiquidar(e.target.value)} style={inputStyle}>
+                  <select value={proveedorLiquidar} onChange={e => { const p = e.target.value; setProveedorLiquidar(p); const ct = (contactos || []).find(c => c.nombre === p); setIvaLiquidar(/inscript/i.test(ct?.iva || '') ? '10.5' : '') }} style={inputStyle}>
                     <option value="">— Seleccioná —</option>
                     {proveedoresConPendientes.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
@@ -2744,6 +2750,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                         ...(conTarifa ? [
                           tarifaNum ? `Tarifa: $${tarifaNum.toLocaleString('es-AR')}/ha` : '',
                           tarifaRolloNum ? `Tarifa: $${tarifaRolloNum.toLocaleString('es-AR')}/rollo` : '',
+                          ivaLiqNum ? `Neto: $${Math.round(netoGeneral).toLocaleString('es-AR')} + IVA ${String(ivaLiqNum).replace('.', ',')}%: $${(totalGeneral - Math.round(netoGeneral)).toLocaleString('es-AR')}` : '',
                           `*A pagar: $${totalGeneral.toLocaleString('es-AR')}*`,
                         ].filter(Boolean) : []),
                         '',
@@ -2758,7 +2765,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           ${filas.map(f => `<tr><td>${f.fecha}</td><td>${esc(f.campo)}</td><td>${esc(f.lote)}</td><td>${esc(f.tipo)}</td><td class="n">${f.cant}</td></tr>`).join('')}
                           <tr><td colspan="4"><b>TOTAL — ${filas.length} trabajo${filas.length !== 1 ? 's' : ''}</b></td><td class="n"><b>${totalTxt}</b></td></tr>
                           </tbody></table>
-                          ${conTarifa ? `<p>${tarifaNum ? `Tarifa: $${tarifaNum.toLocaleString('es-AR')}/ha. ` : ''}${tarifaRolloNum ? `Tarifa: $${tarifaRolloNum.toLocaleString('es-AR')}/rollo. ` : ''}<b>A pagar: $${totalGeneral.toLocaleString('es-AR')}</b></p>` : ''}
+                          ${conTarifa ? `<p>${tarifaNum ? `Tarifa: $${tarifaNum.toLocaleString('es-AR')}/ha. ` : ''}${tarifaRolloNum ? `Tarifa: $${tarifaRolloNum.toLocaleString('es-AR')}/rollo. ` : ''}${ivaLiqNum ? `Neto $${Math.round(netoGeneral).toLocaleString('es-AR')} + IVA ${ivaLiqNum}% $${(totalGeneral - Math.round(netoGeneral)).toLocaleString('es-AR')}. ` : ''}<b>A pagar: $${totalGeneral.toLocaleString('es-AR')}</b></p>` : ''}
                           </body></html>`)
                         w.document.close(); w.focus(); w.print()
                       }
@@ -2772,24 +2779,33 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                         </div>
                       )
                     })()}
-                    <div style={{ display: 'grid', gridTemplateColumns: totalRollos > 0 && totalHa > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: '1rem', marginBottom: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: totalRollos > 0 && totalHa > 0 ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '1rem', marginBottom: 12 }}>
                       {totalHa > 0 && (
                         <div>
-                          <Label>Tarifa $/ha acordada</Label>
+                          <Label>Tarifa $/ha acordada{ivaLiqNum ? ' (sin IVA)' : ''}</Label>
                           <input type="number" value={tarifaLiquidar} onChange={e => setTarifaLiquidar(e.target.value)} placeholder="ej. 12000" style={inputStyle} />
                         </div>
                       )}
                       {totalRollos > 0 && (
                         <div>
-                          <Label>Tarifa $/rollo acordada</Label>
+                          <Label>Tarifa $/rollo acordada{ivaLiqNum ? ' (sin IVA)' : ''}</Label>
                           <input type="number" value={tarifaRolloLiquidar} onChange={e => setTarifaRolloLiquidar(e.target.value)} placeholder="ej. 8000" style={inputStyle} />
                         </div>
                       )}
                       <div>
-                        <Label>Total a pagar</Label>
+                        <Label>Factura</Label>
+                        <select value={ivaLiquidar} onChange={e => setIvaLiquidar(e.target.value)} style={inputStyle}>
+                          <option value="">Sin factura (sin IVA)</option>
+                          <option value="10.5">Con factura · IVA 10,5%</option>
+                          <option value="21">Con factura · IVA 21%</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label>Total a pagar{ivaLiqNum ? ' (con IVA)' : ''}</Label>
                         <div style={{ padding: '9px 12px', border: `1px solid ${S.border}`, borderRadius: 6, background: S.bg, fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: S.red }}>
                           ${totalGeneral.toLocaleString('es-AR')}
                         </div>
+                        {ivaLiqNum > 0 && netoGeneral > 0 && <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>Neto ${Math.round(netoGeneral).toLocaleString('es-AR')} + IVA ${(totalGeneral - Math.round(netoGeneral)).toLocaleString('es-AR')}</div>}
                       </div>
                     </div>
                   </>
@@ -2798,13 +2814,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <button disabled={!proveedorLiquidar || (!tarifaNum && !tarifaRolloNum) || guardandoLiquidar} onClick={async () => {
                     setGuardandoLiquidar(true)
                     for (const o of ordenesHa) {
-                      const costoOrden = Math.round((parseFloat(o.superficie_ha_real) || 0) * tarifaNum)
-                      const { error } = await supabase.from('ordenes_trabajo').update({ costo_ha: tarifaNum, costo_total: costoOrden }).eq('id', o.id)
+                      // costo_total = lo que se paga (con IVA si hay factura); el
+                      // neto para la rentabilidad sale de costo_total ÷ (1 + IVA).
+                      const costoOrden = Math.round((parseFloat(o.superficie_ha_real) || 0) * tarifaNum * factorIvaLiq)
+                      const { error } = await supabase.from('ordenes_trabajo').update({ costo_ha: Math.round(tarifaNum * factorIvaLiq * 100) / 100, costo_total: costoOrden, iva_pct: ivaLiqNum || null }).eq('id', o.id)
                       if (error) { alert('Error al actualizar la orden #' + o.id + ': ' + error.message); setGuardandoLiquidar(false); return }
                     }
                     for (const o of ordenesRollo) {
-                      const costoOrden = Math.round((parseFloat(o.cantidad_rollos) || 0) * tarifaRolloNum)
-                      const { error } = await supabase.from('ordenes_trabajo').update({ costo_total: costoOrden }).eq('id', o.id)
+                      const costoOrden = Math.round((parseFloat(o.cantidad_rollos) || 0) * tarifaRolloNum * factorIvaLiq)
+                      const { error } = await supabase.from('ordenes_trabajo').update({ costo_total: costoOrden, iva_pct: ivaLiqNum || null }).eq('id', o.id)
                       if (error) { alert('Error al actualizar la orden #' + o.id + ': ' + error.message); setGuardandoLiquidar(false); return }
                     }
                     setGuardandoLiquidar(false)
@@ -2812,6 +2830,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     setProveedorLiquidar('')
                     setTarifaLiquidar('')
                     setTarifaRolloLiquidar('')
+                    setIvaLiquidar('')
                     await cargar()
                     alert(`Listo — se aplicó la tarifa a las ${ordenesDelProveedor.length} órdenes de ${proveedorLiquidar}. Ya podés registrar el pago desde cada una, o seleccionarlas para pagarlas juntas.`)
                   }} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.amber, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: (!proveedorLiquidar || (!tarifaNum && !tarifaRolloNum)) ? 0.5 : 1 }}>

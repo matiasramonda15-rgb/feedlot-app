@@ -117,7 +117,8 @@ export default function PresupuestoCampana({ S, Label, inputStyle, CULTIVOS, cam
         const precioU = n(pr.precio_usd) || n(item?.precio_referencia_usd) || (n(item?.precio_referencia) / d)
         real[rubroDeInsumo(item?.tipo)] += qty * precioU
       })
-      real[/cosecha/i.test(o.tipo || '') ? 'cosecha' : 'labores'] += n(o.costo_total) * factor / d
+      // Labor facturada: el IVA se recupera → se toma el neto
+      real[/cosecha/i.test(o.tipo || '') ? 'cosecha' : 'labores'] += n(o.costo_total) / (1 + n(o.iva_pct) / 100) * factor / d
     })
     const partAlq = lote ? n(lote.superficie_ha) / (n(campo?.superficie_ha) || 1) : 1
     vencimientos.filter(v => v.campo_id === p.campo_id && (!campana || (new Date(v.fecha_vencimiento).getFullYear() >= (campana.año_inicio || 0) && new Date(v.fecha_vencimiento).getFullYear() <= (campana.año_fin || 9999))))
