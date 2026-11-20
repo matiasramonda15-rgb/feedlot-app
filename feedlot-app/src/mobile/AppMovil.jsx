@@ -1,5 +1,5 @@
 // AppMovil v2
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { confirmarVacunacionIngreso, registrarTratamientoSanitario, cargarStockSanitario, yaVacunadoIngreso } from '../shared/sanidadLogic'
 import { confirmarRacionesDia, agregarRolloExtra } from '../shared/alimentacionLogic'
@@ -28,6 +28,31 @@ export default function AppMovil({ usuario, onLogout }) {
   const esEncargado = ['dueno', 'encargado'].includes(usuario?.rol)
 
   useEffect(() => { cargarDatos() }, [])
+
+  // Botón "atrás" del celular (el de abajo en Samsung, o el gesto): en vez de
+  // salir de la app, hace lo mismo que la flechita ‹ de arriba a la izquierda
+  // de la pantalla que se está viendo. Se deja siempre una entrada extra en
+  // el historial del navegador para "atajar" el atrás. En el inicio, el
+  // primer atrás avisa y el segundo (dentro de 2 segundos) sale.
+  const contRef = useRef(null)
+  const [avisoSalir, setAvisoSalir] = useState(false)
+  useEffect(() => {
+    let ultimoAtrasInicio = 0
+    const empujar = () => { try { window.history.pushState({ feedlotApp: true }, '') } catch { /* nada */ } }
+    empujar()
+    const alVolver = () => {
+      const cont = contRef.current
+      const flecha = cont && [...cont.querySelectorAll('button')].find(b => b.textContent.trim() === '‹' && b.offsetParent !== null)
+      if (flecha) { flecha.click(); empujar(); return }
+      const ahora = Date.now()
+      if (ahora - ultimoAtrasInicio < 2000) { window.history.back(); return }
+      ultimoAtrasInicio = ahora
+      setAvisoSalir(true); setTimeout(() => setAvisoSalir(false), 2000)
+      empujar()
+    }
+    window.addEventListener('popstate', alVolver)
+    return () => window.removeEventListener('popstate', alVolver)
+  }, [])
 
   async function cargarDatos() {
     const [{ data: corrales }, { data: cfg }, { data: alertas }, { data: lotes }, { data: ventas }, { data: stockBajo }, { data: movimientos }, { data: stockSan }] = await Promise.all([
@@ -128,8 +153,13 @@ export default function AppMovil({ usuario, onLogout }) {
     lluvia:      <LluviaMovil usuario={usuario} nav={nav} />,
   }
   return (
-    <div style={{ maxWidth: 420, margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: C.sans, color: C.text, position: 'relative', overflow: 'hidden' }}>
+    <div ref={contRef} style={{ maxWidth: 420, margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, fontFamily: C.sans, color: C.text, position: 'relative', overflow: 'hidden' }}>
       {pantallas[pantalla] || pantallas.home}
+      {avisoSalir && (
+        <div style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#000C', color: '#fff', padding: '8px 16px', borderRadius: 20, fontSize: 13, zIndex: 9999, whiteSpace: 'nowrap' }}>
+          Tocá atrás de nuevo para salir
+        </div>
+      )}
     </div>
   )
 }
