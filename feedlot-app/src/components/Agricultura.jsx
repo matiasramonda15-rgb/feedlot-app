@@ -51,6 +51,35 @@ function enPresentaciones(cant, item) {
   return partes.join(' + ')
 }
 
+// "bidón 20 L", "bolsa 10 kg", "caja 60 dosis" — para mostrar junto al
+// nombre del producto en las órdenes y dosificar por envase cerrado.
+function textoPresentacion(item) {
+  const c = parseFloat(item?.presentacion_cant)
+  if (!c) return ''
+  const u = (item.unidad || '').toLowerCase()
+  const ab = u === 'litros' ? 'L' : u === 'kg' ? 'kg' : u
+  return `${item.presentacion_nombre || 'envase'} ${c.toLocaleString('es-AR')} ${ab}`.trim()
+}
+// Botones para llevar el total a envases cerrados (el de abajo y el de
+// arriba). Si ya es un número justo de envases, no muestra nada.
+function BotonesEnvaseCerrado({ total, item, onSet, C }) {
+  const pres = parseFloat(item?.presentacion_cant)
+  const q = parseFloat(total)
+  if (!pres || !q || q <= 0) return null
+  const n = q / pres
+  if (Math.abs(n - Math.round(n)) < 0.001) return <div style={{ fontSize: 10, color: C.ok, marginTop: 3 }}>✓ {Math.round(n)} {item.presentacion_nombre || 'envase'}{Math.round(n) !== 1 ? 's' : ''} cerrado{Math.round(n) !== 1 ? 's' : ''}</div>
+  const abajo = Math.floor(n), arriba = Math.ceil(n)
+  const u = (item.unidad || '').toLowerCase() === 'litros' ? 'L' : (item.unidad || '')
+  const nom = k => `${k} ${item.presentacion_nombre || 'envase'}${k !== 1 ? 's' : ''}`
+  const btn = { padding: '2px 7px', fontSize: 10, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.accent, whiteSpace: 'nowrap' }
+  return (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+      {abajo >= 1 && <button type="button" onClick={() => onSet(abajo * pres)} style={btn} title="Bajar a envases cerrados">⬇ {nom(abajo)} ({(abajo * pres).toLocaleString('es-AR')} {u})</button>}
+      <button type="button" onClick={() => onSet(arriba * pres)} style={btn} title="Subir a envases cerrados">⬆ {nom(arriba)} ({(arriba * pres).toLocaleString('es-AR')} {u})</button>
+    </div>
+  )
+}
+
 // Ingreso SIN IVA de una venta de granos (el total cargado es lo cobrado: con
 // IVA y con retenciones descontadas):
 //  1) el neto de la liquidación, si se cargó;
@@ -2351,7 +2380,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   }}
                     style={{ flex: 1, background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '9px 10px', fontSize: 13, color: CM.text, fontFamily: CM.sans }}>
                     <option value="">— Insumo —</option>
-                    {productosParaOrden(stockAgro, form.tipo, p.id).map(s => <option key={s.id} value={s.id}>{s.insumo} ({(s.cantidad||0).toLocaleString('es-AR')} {s.unidad} en stock)</option>)}
+                    {productosParaOrden(stockAgro, form.tipo, p.id).map(s => <option key={s.id} value={s.id}>{s.insumo}{textoPresentacion(s) ? ` · ${textoPresentacion(s)}` : ''} ({(s.cantidad||0).toLocaleString('es-AR')} {s.unidad} en stock)</option>)}
                   </SelectBuscable>
                   <button onClick={() => removeProducto(idx)} style={{ background: 'none', border: 'none', color: CM.red, fontSize: 16, cursor: 'pointer', padding: '0 6px' }}>✕</button>
                 </div>
@@ -2391,6 +2420,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     )}
                   </div>
                 </div>
+                {!p.auto_cura && <BotonesEnvaseCerrado total={totalUsado} item={item} C={{ accent: CM.green, border: CM.border, ok: CM.green }} onSet={t => {
+                  setModoProductoM({ ...modoProductoM, [idx]: 'total' })
+                  updProducto(idx, { total: String(t), dosis: supProd ? String(redondearDosis(t / supProd, item)) : p.dosis, dosis_exacta: supProd ? t / supProd : null, ancla: 'total' })
+                }} />}
                 {!alcanza && <div style={{ fontSize: 11, color: CM.red, marginTop: 6 }}>⚠ Stock insuficiente (hay {(item?.cantidad||0).toLocaleString('es-AR')} {item?.unidad})</div>}
               </div>
             )
@@ -2613,7 +2646,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                       <div><Label>Producto</Label>
                         <SelectBuscable value={p.id} onChange={e => { const s = stockAgro.find(x => x.id === parseInt(e.target.value)); updProducto(idx, { id: e.target.value, unidad: s?.unidad || '' }) }} style={inputStyle}>
                           <option value="">— Seleccioná —</option>
-                          {productosParaOrden(stockAgro, form.tipo, p.id).map(s => <option key={s.id} value={s.id}>{s.insumo} ({s.cantidad?.toLocaleString('es-AR')} {s.unidad})</option>)}
+                          {productosParaOrden(stockAgro, form.tipo, p.id).map(s => <option key={s.id} value={s.id}>{s.insumo}{textoPresentacion(s) ? ` · ${textoPresentacion(s)}` : ''} ({s.cantidad?.toLocaleString('es-AR')} {s.unidad})</option>)}
                         </SelectBuscable>
                         {p.auto_cura && <div style={{ fontSize: 10, color: S.green, marginTop: 3 }}>🔗 Automático: {kgSemillaDeProductos(form.productos, stockAgro).toLocaleString('es-AR')} kg de semilla ÷ {(parseFloat(item?.kg_semilla_por_unidad) || 0).toLocaleString('es-AR')} kg por {item?.unidad === 'dosis' ? 'dosis' : 'unidad'}</div>}
                       </div>
@@ -2641,6 +2674,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                           }}
                           style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 600, color: S.green }}
                           placeholder={supProd ? `ej. ${supProd}` : '—'} />
+                        {!p.auto_cura && !p.aporta_contratista && <BotonesEnvaseCerrado total={totalUso} item={item} C={{ accent: S.accent, border: S.border, ok: S.green }} onSet={t => updProducto(idx, { total: String(t), dosis: supProd ? String(redondearDosis(t / supProd, item)) : p.dosis, dosis_exacta: supProd ? t / supProd : null, ancla: 'total' })} />}
                       </div>
                       <button onClick={() => removeProducto(idx)} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginBottom: 2 }}>✕</button>
                     </div>
