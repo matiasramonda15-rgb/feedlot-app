@@ -4563,6 +4563,40 @@ function TabGastos({ gastos, campos, campanas, campanaActiva, cargar, contactos 
 
 // ── TAB ARRIENDOS ──
 
+// Período (meses) que cubre un pago de arriendo, para que figure en el recibo.
+// Se guarda al pagar (periodo_desde = día 1 del primer mes, periodo_meses).
+// Para pagos viejos que no lo tienen se deduce: arranca en el mes del
+// vencimiento y la cantidad de meses sale de las tn/ha pagadas sobre las
+// tn/ha anuales del contrato (o de la forma de pago del campo).
+const MESES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const MESES_POR_FORMA = { mensual: 1, bimestral: 2, trimestral: 3, cuatrimestral: 4, semestral: 6, anual: 12 }
+const capitalizar = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t
+function periodoArriendo(v, campo) {
+  const desde = (v.periodo_desde || v.fecha_vencimiento || '').slice(0, 7)
+  let n = parseInt(v.periodo_meses) || 0
+  if (!n && v.tn_ha && campo?.arrendamiento_tn_ha) n = Math.round(parseFloat(v.tn_ha) * 12 / parseFloat(campo.arrendamiento_tn_ha))
+  if (!n) n = MESES_POR_FORMA[campo?.forma_pago_arriendo] || 1
+  return { desde, meses: Math.max(1, Math.min(n, 24)) }
+}
+function listaMesesPeriodo(desde, meses) {
+  if (!desde || !/^\d{4}-\d{2}$/.test(desde)) return []
+  let [a, m] = desde.split('-').map(Number)
+  const out = []
+  for (let i = 0; i < meses; i++) { out.push({ mes: m, anio: a }); m++; if (m > 12) { m = 1; a++ } }
+  return out
+}
+// "Noviembre 2026" · "Noviembre 2026 a Enero 2027 (3 meses: noviembre, diciembre y enero)"
+function textoPeriodoArriendo(desde, meses) {
+  const lista = listaMesesPeriodo(desde, meses)
+  if (!lista.length) return ''
+  const nom = x => `${capitalizar(MESES_LARGO[x.mes - 1])} ${x.anio}`
+  if (lista.length === 1) return nom(lista[0])
+  const primero = lista[0], ultimo = lista[lista.length - 1]
+  const nombres = lista.map(x => MESES_LARGO[x.mes - 1])
+  const enumerados = nombres.slice(0, -1).join(', ') + ' y ' + nombres[nombres.length - 1]
+  return `${nom(primero)} a ${nom(ultimo)} (${lista.length} meses: ${enumerados})`
+}
+
 async function generarReciboArriendo(v, campo, pagos) {
   const numero = await siguienteNumeroRecibo(supabase)
   const fecha = v.pagado_en ? new Date(v.pagado_en + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-AR')
@@ -4583,7 +4617,10 @@ async function generarReciboArriendo(v, campo, pagos) {
   const centavos = Math.round((totalMonto - entero) * 100)
   const enLetras = nAL(entero) + ' PESOS' + (centavos > 0 ? ' CON ' + nAL(centavos) + ' CENTAVOS' : '') + '.-'
   const fechaVenc = v.fecha_vencimiento ? new Date(v.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
-  const concepto = `Arriendo — ${campo?.nombre || ''} · ${v.tn_ha || ''} tn/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/tn` : ''}`
+  const per = periodoArriendo(v, campo)
+  const periodoTxt = textoPeriodoArriendo(per.desde, per.meses)
+  const tnHaTxt = v.tn_ha ? (Math.round(parseFloat(v.tn_ha) * 1000) / 1000).toLocaleString('es-AR') : ''
+  const concepto = `Arriendo — ${campo?.nombre || ''} · ${tnHaTxt} tn/ha · ${campo?.superficie_ha || ''} ha · Venc. ${fechaVenc}${v.precio_pizarra ? ` · $${v.precio_pizarra.toLocaleString('es-AR')}/tn` : ''}`
   const celda = 'padding:6px 8px;border-bottom:1px solid #eee;'
   const fmtPeso = m => '$' + (parseFloat(m) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })
   const filasPago = pagos.flatMap(p => {
@@ -4619,6 +4656,7 @@ async function generarReciboArriendo(v, campo, pagos) {
     <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
       <tr><td colspan="2" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Concepto</td></tr>
       <tr><td colspan="2" style="padding:6px 8px;">${concepto}</td></tr>
+      ${periodoTxt ? `<tr><td colspan="2" style="padding:6px 8px;border-top:1px solid #ccc;">${per.meses > 1 ? 'Meses que se pagan' : 'Mes que se paga'}: <strong style="font-size:13px;">${periodoTxt}</strong></td></tr>` : ''}
     </table>
     <table style="width:100%;border:1px solid #333;border-top:none;border-collapse:collapse;">
       <tr><td colspan="4" style="padding:4px 8px;font-weight:bold;background:#f5f5f5;border-bottom:1px solid #333;">Medio de pago</td></tr>
@@ -4648,7 +4686,7 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
   const [guardando, setGuardando] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pagoAbierto, setPagoAbierto] = useState(null) // id del vencimiento
-  const [formPago, setFormPago] = useState({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
+  const [formPago, setFormPago] = useState({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, desde: '', pagos: [{ ...PAGO_INIT_ARR }] })
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [chequesCartera, setChequesCartera] = useState([])
 
@@ -4737,16 +4775,19 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
       cotizacion_usd: cotizacionDolar || null,
       pagos_detalle: reg.lineas,
       forma_pago: reg.lineas.map(p => p.subtipo_cheque || p.tipo).join('+'),
+      periodo_desde: formPago.desde ? formPago.desde + '-01' : null,
+      periodo_meses: meses,
     }).eq('id', v.id)
 
     const pagosFinal = [...reg.lineas]
     const fechaPago = formPago.fecha
     setPagoAbierto(null)
-    setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, pagos: [{ ...PAGO_INIT_ARR }] })
+    const periodoGuardado = { periodo_desde: formPago.desde ? formPago.desde + '-01' : null, periodo_meses: meses, tn_ha: tnPagado || v.tn_ha }
+    setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: 1, desde: '', pagos: [{ ...PAGO_INIT_ARR }] })
     setGuardandoPago(false)
     await cargarVencimientos()
     await cargar()
-    generarReciboArriendo({ ...v, pagado_en: fechaPago, pagos_detalle: pagosFinal }, campo, pagosFinal)
+    generarReciboArriendo({ ...v, ...periodoGuardado, pagado_en: fechaPago, pagos_detalle: pagosFinal }, campo, pagosFinal)
   }
 
   if (loading) return <div style={{ padding: '2rem', color: S.hint }}>Cargando...</div>
@@ -4871,6 +4912,7 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
                           {v.monto_total ? ` · Total: $${v.monto_total.toLocaleString('es-AR')}` : ''}
                           {v.observaciones ? ` · ${v.observaciones}` : ''}
                         </div>
+                        {v.estado === 'pagado' && (() => { const per = periodoArriendo(v, campo); const t = textoPeriodoArriendo(per.desde, per.meses); return t ? <div style={{ fontSize: 12, color: S.green, marginTop: 2, fontWeight: 600 }}>📅 {per.meses > 1 ? 'Meses pagados' : 'Mes pagado'}: {t}</div> : null })()}
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         {v.estado === 'pagado'
@@ -4879,7 +4921,7 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
                               {v.pagos_detalle && <button onClick={() => generarReciboArriendo(v, campo, v.pagos_detalle)}
                                 style={{ padding: '3px 10px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>🖨️ Recibo</button>}
                             </div>
-                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: ({ mensual: 1, trimestral: 3, cuatrimestral: 4, semestral: 6, anual: 12 })[campo?.forma_pago_arriendo] || 1, pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
+                          : <button onClick={() => { setPagoAbierto(isPagoAbierto ? null : v.id); setFormPago({ fecha: hoyLocal(), precio_pizarra: '', meses: MESES_POR_FORMA[campo?.forma_pago_arriendo] || 1, desde: (v.fecha_vencimiento || hoyLocal()).slice(0, 7), pagos: [{ ...PAGO_INIT_ARR, monto: '' }] }) }}
                               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
                               💳 Registrar pago
                             </button>
@@ -4954,9 +4996,20 @@ function TabArriendos({ campos, cargar, contactos, usuario, cotizacionDolar }) {
                             )}
                           </div>
                         </div>
-                        <div style={{ marginBottom: 10 }}>
-                          <Label>Fecha de pago</Label>
-                          <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 10 }}>
+                          <div>
+                            <Label>Fecha de pago</Label>
+                            <input type="date" value={formPago.fecha} onChange={e => setFormPago({...formPago, fecha: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
+                          </div>
+                          <div>
+                            <Label>{(formPago.meses || 1) > 1 ? 'Primer mes que se paga' : 'Mes que se paga'}</Label>
+                            <input type="month" value={formPago.desde || ''} onChange={e => setFormPago({...formPago, desde: e.target.value})} style={{ ...inputStyle, maxWidth: 200 }} />
+                          </div>
+                          {formPago.desde && (
+                            <div style={{ fontSize: 12, color: S.green, fontWeight: 600, paddingBottom: 9 }}>
+                              📅 En el recibo: {textoPeriodoArriendo(formPago.desde, formPago.meses || 1)}
+                            </div>
+                          )}
                         </div>
                         <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: 8 }}>Formas de pago</div>
                         <ListaPagos pagos={formPago.pagos} onChangePagos={n => setFormPago({...formPago, pagos: n})} chequesCartera={chequesCartera} S={S} soloTerceroSiParalelo
