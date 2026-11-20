@@ -121,6 +121,42 @@ function productosParaOrden(stockAgro, tipoOrden, idElegido) {
 // recalcula si cambian los kg de semilla; se descuenta del stock igual que
 // cualquier otro producto de la orden. Si se borra a mano, no se vuelve a
 // agregar en esa orden.
+function BloqueWD({ form, setForm, superficie, supProd, C }) {
+  if (!(form.tipo || '').toLowerCase().startsWith('pulveriz')) return null
+  const activo = form.cobertura_pct !== undefined && form.cobertura_pct !== null && form.cobertura_pct !== ''
+  const pct = parseFloat(form.cobertura_pct)
+  return (
+    <div style={{ background: activo ? C.bgOn : 'transparent', border: `1px ${activo ? 'solid' : 'dashed'} ${activo ? C.accent : C.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: activo ? C.accent : C.muted, cursor: 'pointer' }}>
+        <input type="checkbox" checked={activo} onChange={e => setForm({ ...form, cobertura_pct: e.target.checked ? '20' : '' })} />
+        🎯 Aplicación selectiva (WD / sensores)
+      </label>
+      {activo && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+          <span style={{ fontSize: 12, color: C.text }}>Se aplica producto en el</span>
+          <input type="number" min="1" max="99" value={form.cobertura_pct} onChange={e => setForm({ ...form, cobertura_pct: e.target.value })}
+            style={{ width: 70, padding: '6px 8px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 14, fontWeight: 700, textAlign: 'center' }} />
+          <span style={{ fontSize: 12, color: C.text }}>% de la superficie</span>
+          {pct > 0 && pct < 100 && superficie > 0 && (
+            <span style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>
+              → productos sobre {(Math.round(supProd * 10) / 10).toLocaleString('es-AR')} ha de {superficie.toLocaleString('es-AR')} ha
+            </span>
+          )}
+          <div style={{ fontSize: 11, color: C.muted, width: '100%' }}>
+            La dosis es la del caldo donde se aplica. El trabajo (ha y costo del contratista) va por las {superficie ? superficie.toLocaleString('es-AR') : ''} ha totales. Al confirmar la orden podés corregir con lo que realmente gastó el equipo.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Aplicación selectiva (WD): factor de superficie con producto (0-1). Solo
+// pulverizaciones con un % cargado entre 0 y 100; si no, 1 (toda la superficie).
+const coberturaDe = o => {
+  const pct = parseFloat(o?.cobertura_pct)
+  return (o?.tipo || '').toLowerCase().startsWith('pulveriz') && pct > 0 && pct < 100 ? pct / 100 : 1
+}
 const esCurasemilla = s => esTipoInsumo(s || {}, 'cura')
 const esSemillaEnKg = s => s && esTipoInsumo(s, 'semilla') && !esCurasemilla(s) && (s.unidad || '').toLowerCase() === 'kg'
 function kgSemillaDeProductos(productos, stockAgro) {
@@ -984,11 +1020,15 @@ function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const superficie = orden.superficie_ha_real || haTrabajables(lote) || haTrabajables(campo) || '—'
   const productos = orden.productos || []
+  // Aplicación selectiva (WD): productos y caldo sobre las ha con producto
+  const cobO = coberturaDe(orden)
+  const haProdO = cobO < 1 && parseFloat(superficie) ? Math.round(parseFloat(superficie) * cobO * 10) / 10 : null
+  const supProdO = haProdO || superficie
 
   const filasProductos = productos.map(p => {
     const item = stockAgro.find(s => String(s.id) === String(p.id))
-    const totalUso = totalProducto(p, superficie)
-    const dosisVer = dosisProducto(p, superficie)
+    const totalUso = totalProducto(p, supProdO)
+    const dosisVer = dosisProducto(p, supProdO)
     const pres = totalUso ? enPresentaciones(totalUso, item) : ''
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
@@ -1025,6 +1065,7 @@ function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
       ${orden.proveedor ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Operario / Equipo:</span> <strong>${orden.proveedor}</strong></div>` : ''}
       ${mapaUrl ? `<div style="margin-bottom:18px;border:1px solid #e5e5e5;border-radius:6px;padding:6px;"><img src="${mapaUrl}" style="width:100%;display:block;" alt="Mapa del campo"></div>` : ''}
       ${orden.descripcion ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Descripción:</span> ${orden.descripcion}</div>` : ''}
+      ${haProdO ? `<div style="margin-bottom:16px;padding:10px 14px;background:#FFF6E0;border:1px solid #E0B040;border-radius:6px;font-size:13px;">🎯 <b>Aplicación selectiva (WD)</b>: se estima producto en el <b>${Math.round(cobO * 1000) / 10}%</b> de la superficie → <b>${haProdO.toLocaleString('es-AR')} ha</b> de ${superficie} ha. Dosis = la del caldo donde se aplica; totales y tanques calculados sobre ${haProdO.toLocaleString('es-AR')} ha.</div>` : ''}
       ${productos.length > 0 ? `
       <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos aplicados</div>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -1033,11 +1074,11 @@ function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
             <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Producto</th>
             <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Tipo</th>
             <th style="padding:8px 12px;text-align:center;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Dosis/ha</th>
-            <th style="padding:8px 12px;text-align:right;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Total (${superficie} ha)</th>
+            <th style="padding:8px 12px;text-align:right;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Total (${supProdO} ha${haProdO ? ' c/producto' : ''})</th>
           </tr>
         </thead>
         <tbody>${filasProductos}</tbody>
-      </table>${htmlCaldoTanques(orden.caldo_l_ha, orden.capacidad_tanque_l, superficie, productos, stockAgro)}` : '<div style="color:#999;font-size:13px;">Sin productos asignados.</div>'}
+      </table>${htmlCaldoTanques(orden.caldo_l_ha, orden.capacidad_tanque_l, supProdO, productos, stockAgro)}` : '<div style="color:#999;font-size:13px;">Sin productos asignados.</div>'}
       ${orden.observaciones ? `<div style="margin-top:16px;padding:10px 14px;background:#f9f9f9;border-radius:6px;font-size:13px;color:#555;">${orden.observaciones}</div>` : ''}
     </div>
     <!-- Footer -->
@@ -1122,6 +1163,8 @@ function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
   const primera = ordenes[0]
   const fecha = primera.fecha ? new Date(primera.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const superficieTotal = ordenes.reduce((s, o) => s + (parseFloat(o.superficie_ha_real) || 0), 0)
+  // WD: ha que reciben producto (cada orden con su %)
+  const supProdTotal = Math.round(ordenes.reduce((s, o) => s + (parseFloat(o.superficie_ha_real) || 0) * coberturaDe(o), 0) * 10) / 10
 
   const filasLotes = ordenes.map(o => {
     const campo = camposLista.find(c => c.id === o.campo_id)
@@ -1142,7 +1185,7 @@ function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
   const filasProductos = Object.values(productosMapa).map(p => {
     const item = stockAgro.find(s => String(s.id) === String(p.id))
     const pres = enPresentaciones(p.total, item)
-    const dosisVer = numOk(p.dosis) ?? (superficieTotal ? Math.round(p.total / superficieTotal * 100) / 100 : null)
+    const dosisVer = numOk(p.dosis) ?? (supProdTotal ? Math.round(p.total / supProdTotal * 100) / 100 : null)
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}</td>
@@ -1194,7 +1237,7 @@ function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
           <th style="padding:8px 12px;text-align:right;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Total a cargar</th>
         </tr></thead>
         <tbody>${filasProductos}</tbody>
-      </table>${htmlCaldoTanques(primera.caldo_l_ha, primera.capacidad_tanque_l, superficieTotal, Object.values(productosMapa), stockAgro)}
+      </table>${supProdTotal < superficieTotal ? `<div style="margin-top:10px;padding:8px 12px;background:#FFF6E0;border:1px solid #E0B040;border-radius:6px;font-size:12px;">🎯 Aplicación selectiva (WD): producto estimado sobre <b>${supProdTotal.toLocaleString('es-AR')} ha</b> de ${superficieTotal.toLocaleString('es-AR')} ha.</div>` : ''}${htmlCaldoTanques(primera.caldo_l_ha, primera.capacidad_tanque_l, supProdTotal, Object.values(productosMapa), stockAgro)}
       <div style="margin-top:16px;padding:10px 14px;background:#FDF0E0;border-radius:6px;font-size:12px;color:#7A4500;">Esta hoja es solo para la carga de la máquina — en el sistema, este trabajo queda registrado por separado en cada lote, con su propio costo y superficie.</div>
     </div>
     <div style="text-align:right;font-size:10px;color:#aaa;margin-top:8px;">RAMONDA HNOS S.A. · Pedro Barciocco 1221 · TEL: 3574-442656</div>
@@ -1558,7 +1601,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   // antes se recalculaba desde la dosis y, si la dosis había quedado de otro
   // momento (otro producto u otras hectáreas), se descontaba otra cantidad
   // (ej. avisaba que hacían falta 2,5 L con 0,5 cargado).
-  const dosisCalc = p => (parseFloat(p.total) > 0 && superficie > 0) ? parseFloat(p.total) / superficie : (parseFloat(p.dosis_exacta) || parseFloat(p.dosis) || 0)
+  const dosisCalc = p => (parseFloat(p.total) > 0 && supProd > 0) ? parseFloat(p.total) / supProd : (parseFloat(p.dosis_exacta) || parseFloat(p.dosis) || 0)
   const redondearDosis = (n, item) => (item?.dosis_chica || Math.abs(n) < 0.01) ? Math.round(n * 10000) / 10000 : Math.round(n * 1000) / 1000
   const [tabInner, setTabInner] = useState('ordenes')
   const [showForm, setShowForm] = useBorrador('agro-orden-abierta', false)
@@ -1668,6 +1711,11 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   })
   const superficieBase = destinos.reduce((sum, d) => sum + d.haDefault, 0)
   const superficie = destinos.reduce((sum, d) => sum + d.ha, 0)
+  // Aplicación selectiva (WD / sensores): el producto se tira solo en un %
+  // estimado de la superficie. Las hectáreas de la orden (labor, costo) son
+  // las totales; los productos se calculan sobre superficie × %.
+  const coberturaFactor = coberturaDe(form)
+  const supProd = superficie * coberturaFactor
   const setHaDestino = (key, valor) => setForm(prev => ({ ...prev, ha_por_destino: { ...(prev.ha_por_destino || {}), [key]: valor } }))
   // Tabla de hectáreas por destino (la usan el formulario de PC y el del celular)
   const tablaHectareas = (est = {}) => {
@@ -1729,7 +1777,8 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       const dolar = parseFloat(o.cotizacion_usd) || cotizacionDolar || null
       const precioArs = parseFloat(item?.precio_referencia) || null
       const precioUsd = parseFloat(item?.precio_referencia_usd) || (precioArs && dolar ? Math.round(precioArs / dolar * 10000) / 10000 : null)
-      productos.push({ ...p, total: String(tot), dosis: ha ? String(redondearDosis(tot / ha, item)) : p.dosis, dosis_exacta: ha ? tot / ha : p.dosis_exacta, descontado_real: descontado, precio_ars: precioArs, precio_usd: precioUsd })
+      const haProd = ha * coberturaDe(o)
+      productos.push({ ...p, total: String(tot), dosis: haProd ? String(redondearDosis(tot / haProd, item)) : p.dosis, dosis_exacta: haProd ? tot / haProd : p.dosis_exacta, descontado_real: descontado, precio_ars: precioArs, precio_usd: precioUsd })
     }
     let cajaId = o.caja_oficial_id || null
     const gp = (o.gastos_propios || []).reduce((s, g) => s + (parseFloat(g.monto) || 0), 0)
@@ -1768,18 +1817,18 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
   function addProducto() { setForm(prev => ({...prev, productos: [...prev.productos, { id: '', dosis: '', unidad: '', total: '' }]})) }
   useEffect(() => {
-    if (!(superficie > 0)) return
+    if (!(supProd > 0)) return
     setForm(prev => {
       let cambio = false
       const productos = (prev.productos || []).map(p => {
         const it = stockAgro.find(x => String(x.id) === String(p.id))
         if (p.ancla === 'total' && parseFloat(p.total) > 0) {
-          const d = String(redondearDosis(parseFloat(p.total) / superficie, it))
+          const d = String(redondearDosis(parseFloat(p.total) / supProd, it))
           if (d === p.dosis) return p
-          cambio = true; return { ...p, dosis: d, dosis_exacta: parseFloat(p.total) / superficie }
+          cambio = true; return { ...p, dosis: d, dosis_exacta: parseFloat(p.total) / supProd }
         }
         if (parseFloat(p.dosis) > 0) {
-          const t = String((parseFloat(p.dosis) * superficie).toFixed(2))
+          const t = String((parseFloat(p.dosis) * supProd).toFixed(2))
           if (t === p.total) return p
           cambio = true; return { ...p, total: t, dosis_exacta: null }
         }
@@ -1788,18 +1837,18 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       return cambio ? { ...prev, productos } : prev
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [superficie])
+  }, [supProd])
   function updProducto(idx, updates) { setForm(prev => ({...prev, productos: prev.productos.map((p, i) => i === idx ? {...p, ...updates} : p)})) }
   function removeProducto(idx) { setForm({...form, productos: form.productos.filter((_, i) => i !== idx), ...(form.productos[idx]?.auto_cura ? { sin_cura: true } : {})}) }
   // Curasemilla automático según los kg de semilla de la orden de siembra
   useEffect(() => {
     if ((form.tipo || '').toLowerCase() !== 'siembra' || form.sin_cura) return
     setForm(prev => {
-      const productos = sincronizarCurasemilla(prev.productos, stockAgro, superficie)
+      const productos = sincronizarCurasemilla(prev.productos, stockAgro, supProd)
       return productos === prev.productos ? prev : { ...prev, productos }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.tipo, form.productos, form.sin_cura, superficie, stockAgro])
+  }, [form.tipo, form.productos, form.sin_cura, supProd, stockAgro])
   function addGasto() { setForm({...form, gastos_propios: [...form.gastos_propios, { descripcion: '', monto: '' }]}) }
   function updGasto(idx, key, val) { setForm({...form, gastos_propios: form.gastos_propios.map((g, i) => i === idx ? {...g, [key]: val} : g)}) }
 
@@ -1824,7 +1873,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       productos: (o.productos || []).map(p => ({ ...p })), gastos_propios: o.gastos_propios || [],
       costo_total: str(o.costo_total), costo_ha: str(o.costo_ha), observaciones: o.observaciones || '',
       usa_maquinaria_servicios: !!o.usa_maquinaria_servicios, cantidad_rollos: str(o.cantidad_rollos), kg_silo: str(o.kg_silo), emitir: true,
-      caldo_l_ha: str(o.caldo_l_ha), capacidad_tanque_l: str(o.capacidad_tanque_l),
+      caldo_l_ha: str(o.caldo_l_ha), capacidad_tanque_l: str(o.capacidad_tanque_l), cobertura_pct: str(o.cobertura_pct),
       empleado1: o.empleado1 || '', empleado2: o.empleado2 || '', cotizacion_usd: str(o.cotizacion_usd),
     })
     setShowForm(true)
@@ -1852,12 +1901,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     const dolar = parseFloat(form.cotizacion_usd) || cotizacionDolar || null
     const productos = (form.productos || []).filter(p => p.id).map(p => {
       const item = stockAgro.find(x => String(x.id) === String(p.id))
-      const total = p.dosis && ha ? String(redondearMedio(dosisCalc(p) * ha, item?.dosis_chica)) : p.total
+      const total = p.dosis && ha ? String(redondearMedio(dosisCalc(p) * ha * coberturaFactor, item?.dosis_chica)) : p.total
       // Precio: el que ya tenía la orden para ese producto; si es un producto nuevo, el del día
       const antes = (o.productos || []).find(x => String(x.id) === String(p.id))
       const precioArs = parseFloat(antes?.precio_ars) || parseFloat(item?.precio_referencia) || null
       const precioUsd = parseFloat(antes?.precio_usd) || parseFloat(item?.precio_referencia_usd) || (precioArs && dolar ? Math.round(precioArs / dolar * 10000) / 10000 : null)
-      return { ...p, total, dosis_exacta: ha && parseFloat(total) ? parseFloat(total) / ha : p.dosis_exacta, descontado_real: undefined, precio_ars: precioArs, precio_usd: precioUsd }
+      return { ...p, total, dosis_exacta: ha && parseFloat(total) ? parseFloat(total) / (ha * coberturaFactor) : p.dosis_exacta, descontado_real: undefined, precio_ars: precioArs, precio_usd: precioUsd }
     })
     const { data: actualizada, error } = await supabase.from('ordenes_trabajo').update({
       campo_id: d.campoId, lote_id: d.lote ? d.lote.id : null, campana_id: parseInt(form.campana_id) || null,
@@ -1868,6 +1917,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
       gastos_propios: form.gastos_propios.length ? form.gastos_propios : null,
       costo_total: costoNum, costo_ha: costoHa,
       caldo_l_ha: parseFloat(form.caldo_l_ha) || null, capacidad_tanque_l: parseFloat(form.capacidad_tanque_l) || null,
+      cobertura_pct: coberturaFactor < 1 ? Math.round(coberturaFactor * 1000) / 10 : null,
       cantidad_rollos: form.tipo === 'Confeccion de rollo' && form.cantidad_rollos ? parseFloat(form.cantidad_rollos) : null,
       kg_silo: form.tipo === 'Confeccion de silo' && form.kg_silo ? parseFloat(form.kg_silo) : null,
       observaciones: form.observaciones || null,
@@ -1926,10 +1976,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
     for (const p of form.productos) {
       // No se descuenta: orden emitida (se descuenta al confirmarla) o
       // producto que pone el contratista (no sale de nuestro stock).
-      if (!p.id || !p.dosis || !superficie || form.emitir || p.aporta_contratista) continue
+      if (!p.id || !p.dosis || !supProd || form.emitir || p.aporta_contratista) continue
       const stockItem = stockAgro.find(s => String(s.id) === String(p.id))
       const dosisChica = stockItem?.dosis_chica
-      const usado = redondearMedio(dosisCalc(p) * superficie, dosisChica)
+      const usado = redondearMedio(dosisCalc(p) * supProd, dosisChica)
       const stockDisponible = parseFloat(stockItem?.cantidad) || 0
       if (usado > stockDisponible) {
         if (!confirm(`Ojo: no hay suficiente stock de ${stockItem?.insumo || 'este producto'} — hacían falta ${usado.toLocaleString('es-AR')} y solo hay ${stockDisponible.toLocaleString('es-AR')}. El stock va a quedar en negativo hasta que lo repongas. ¿Seguir igual?`)) { setGuardando(false); return }
@@ -1976,7 +2026,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         const dolarOrden = parseFloat(form.cotizacion_usd) || cotizacionDolar || null
         const precioArs = parseFloat(itemStock?.precio_referencia) || null
         const precioUsd = parseFloat(itemStock?.precio_referencia_usd) || (precioArs && dolarOrden ? Math.round(precioArs / dolarOrden * 10000) / 10000 : null)
-        return { ...p, total: p.dosis ? String(redondearMedio(dosisCalc(p) * superficieItem, dosisChica)) : p.total, descontado_real: descontadoRealItem, precio_ars: precioArs, precio_usd: precioUsd }
+        return { ...p, total: p.dosis ? String(redondearMedio(dosisCalc(p) * superficieItem * coberturaFactor, dosisChica)) : p.total, descontado_real: descontadoRealItem, precio_ars: precioArs, precio_usd: precioUsd }
       })
       const { data: ordenInsertada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
         campo_id: campoId, campana_id: parseInt(form.campana_id) || null,
@@ -1990,6 +2040,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         costo_total: costoItem, costo_ha: costoHa, estado: form.emitir ? 'emitida' : 'completado',
         fecha_realizada: form.emitir ? null : form.fecha,
         caldo_l_ha: parseFloat(form.caldo_l_ha) || null, capacidad_tanque_l: parseFloat(form.capacidad_tanque_l) || null,
+      cobertura_pct: coberturaFactor < 1 ? Math.round(coberturaFactor * 1000) / 10 : null,
         cantidad_rollos: form.tipo === 'Confeccion de rollo' && form.cantidad_rollos ? parseFloat(form.cantidad_rollos) : null,
         kg_silo: form.tipo === 'Confeccion de silo' && form.kg_silo ? parseFloat(form.kg_silo) : null,
         observaciones: form.observaciones || null,
@@ -2277,6 +2328,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             )}
           </div>
 
+          <BloqueWD form={form} setForm={setForm} superficie={superficie} supProd={supProd} C={{ accent: CM.green, border: CM.border, muted: CM.muted, text: CM.text, bgOn: CM.surface2 }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase' }}>Insumos aplicados</div>
             <button onClick={addProducto} style={{ padding: '4px 10px', fontSize: 12, background: 'transparent', border: `1px solid ${CM.green}`, color: CM.green, borderRadius: 6, cursor: 'pointer' }}>+ Agregar</button>
@@ -2286,9 +2338,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
             const modo = modoProductoM[idx] || 'dosis'
             const dosis = parseFloat(p.dosis) || 0
             const totalUsado = modo === 'dosis'
-              ? (superficie ? Math.round(dosis * superficie * 100) / 100 : 0)
+              ? (supProd ? Math.round(dosis * supProd * 100) / 100 : 0)
               : (parseFloat(p.total) || 0)
-            const dosisCalculada = modo === 'total' && superficie ? redondearDosis(totalUsado / superficie, item) : dosis
+            const dosisCalculada = modo === 'total' && supProd ? redondearDosis(totalUsado / supProd, item) : dosis
             const alcanza = item ? (item.cantidad || 0) >= totalUsado : true
             return (
               <div key={idx} style={{ background: CM.surface, border: `1px solid ${CM.border}`, borderRadius: 10, padding: '.85rem', marginBottom: 8 }}>
@@ -2318,18 +2370,18 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <div>
                     <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Dosis / ha{modo === 'total' ? ' (calculada)' : ''}</div>
                     {modo === 'dosis' ? (
-                      <input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value, dosis_exacta: null, total: superficie && e.target.value ? String((parseFloat(e.target.value) * superficie).toFixed(2)) : '', ancla: 'dosis' })}
+                      <input type="number" value={p.dosis} onChange={e => updProducto(idx, { dosis: e.target.value, dosis_exacta: null, total: supProd && e.target.value ? String((parseFloat(e.target.value) * supProd).toFixed(2)) : '', ancla: 'dosis' })}
                         placeholder="ej. 1.5" style={{ width: '100%', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.green, boxSizing: 'border-box' }} />
                     ) : (
                       <div style={{ padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: CM.muted, background: CM.surface2, borderRadius: 6, border: `1px solid ${CM.border}` }}>
-                        {superficie ? dosisCalculada.toLocaleString('es-AR') : '— sin superficie —'}
+                        {supProd ? dosisCalculada.toLocaleString('es-AR') : '— sin superficie —'}
                       </div>
                     )}
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: CM.muted, marginBottom: 3 }}>Total a usar{modo === 'dosis' ? ' (calculado)' : ''}</div>
                     {modo === 'total' ? (
-                      <input type="number" value={p.total} onChange={e => updProducto(idx, { total: e.target.value, dosis: superficie ? String(redondearDosis((parseFloat(e.target.value)||0) / superficie, item)) : p.dosis, dosis_exacta: superficie ? (parseFloat(e.target.value) || 0) / superficie : null, ancla: 'total' })}
+                      <input type="number" value={p.total} onChange={e => updProducto(idx, { total: e.target.value, dosis: supProd ? String(redondearDosis((parseFloat(e.target.value)||0) / supProd, item)) : p.dosis, dosis_exacta: supProd ? (parseFloat(e.target.value) || 0) / supProd : null, ancla: 'total' })}
                         placeholder={`ej. 30 ${p.unidad || item?.unidad || ''}`}
                         style={{ width: '100%', background: CM.surface2, border: `1px solid ${alcanza ? CM.green : CM.red}`, borderRadius: 6, padding: '8px 10px', fontSize: 14, fontFamily: CM.mono, fontWeight: 600, color: alcanza ? CM.green : CM.red, boxSizing: 'border-box' }} />
                     ) : (
@@ -2547,14 +2599,15 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
 
               {/* Productos */}
               <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 8, padding: '12px', marginBottom: '1rem' }}>
+                <BloqueWD form={form} setForm={setForm} superficie={superficie} supProd={supProd} C={{ accent: S.accent, border: S.border, muted: S.muted, text: S.text, bgOn: S.accentLight }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Productos a usar{superficie ? ` · ${superficie} ha` : ''}</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: S.muted, textTransform: 'uppercase' }}>Productos a usar{supProd ? ` · ${Math.round(supProd * 10) / 10} ha${coberturaFactor < 1 ? ' con producto (WD)' : ''}` : ''}</div>
                   <button onClick={addProducto} style={{ padding: '4px 12px', fontSize: 12, background: 'transparent', border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 6, cursor: 'pointer' }}>+ Agregar producto</button>
                 </div>
                 {form.productos.length === 0 && <div style={{ fontSize: 13, color: S.hint }}>Sin productos asignados.</div>}
                 {form.productos.map((p, idx) => {
                   const item = stockAgro.find(s => s.id === parseInt(p.id))
-                  const totalUso = p.total ? parseFloat(p.total) : (p.dosis && superficie ? parseFloat(p.dosis) * superficie : null)
+                  const totalUso = p.total ? parseFloat(p.total) : (p.dosis && supProd ? parseFloat(p.dosis) * supProd : null)
                   return (
                     <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end', marginBottom: 8 }}>
                       <div><Label>Producto</Label>
@@ -2566,7 +2619,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                       </div>
                       <div><Label>Dosis/ha</Label><input type="number" value={p.dosis} onChange={e => {
                         const dosis = e.target.value
-                        const total = dosis && superficie ? String((parseFloat(dosis) * superficie).toFixed(2)) : ''
+                        const total = dosis && supProd ? String((parseFloat(dosis) * supProd).toFixed(2)) : ''
                         updProducto(idx, { dosis, total, dosis_exacta: null, ancla: 'dosis' })
                       }} style={inputStyle} placeholder="ej. 1.5" /></div>
                       <div><Label>Unidad</Label><input type="text" value={p.unidad || item?.unidad || ''} onChange={e => updProducto(idx, { unidad: e.target.value })} style={inputStyle} />
@@ -2575,19 +2628,19 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                             <input type="checkbox" checked={!!p.aporta_contratista} onChange={e => updProducto(idx, { aporta_contratista: e.target.checked })} /> Lo pone el contratista
                           </label>
                         )}
-                        {item && (p.total || (p.dosis && superficie)) && !p.aporta_contratista && enPresentaciones(p.total || parseFloat(p.dosis) * superficie, item) && (
-                          <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>≈ {enPresentaciones(p.total || parseFloat(p.dosis) * superficie, item)}</div>
+                        {item && (p.total || (p.dosis && supProd)) && !p.aporta_contratista && enPresentaciones(p.total || parseFloat(p.dosis) * supProd, item) && (
+                          <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>≈ {enPresentaciones(p.total || parseFloat(p.dosis) * supProd, item)}</div>
                         )}
                       </div>
                       <div><Label>Total {p.unidad || item?.unidad || ''}</Label>
-                        <input type="number" value={p.total || (p.dosis && superficie ? (parseFloat(p.dosis) * superficie).toFixed(2) : '')}
+                        <input type="number" value={p.total || (p.dosis && supProd ? (parseFloat(p.dosis) * supProd).toFixed(2) : '')}
                           onChange={e => {
                             const total = e.target.value
-                            const dosis = total && superficie ? String(redondearDosis(parseFloat(total) / superficie, item)) : ''
-                            updProducto(idx, { total, dosis, dosis_exacta: total && superficie ? parseFloat(total) / superficie : null, ancla: 'total' })
+                            const dosis = total && supProd ? String(redondearDosis(parseFloat(total) / supProd, item)) : ''
+                            updProducto(idx, { total, dosis, dosis_exacta: total && supProd ? parseFloat(total) / supProd : null, ancla: 'total' })
                           }}
                           style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 600, color: S.green }}
-                          placeholder={superficie ? `ej. ${superficie}` : '—'} />
+                          placeholder={supProd ? `ej. ${supProd}` : '—'} />
                       </div>
                       <button onClick={() => removeProducto(idx)} style={{ padding: '7px 10px', fontSize: 11, background: S.redLight, border: '1px solid #F09595', color: S.red, borderRadius: 5, cursor: 'pointer', marginBottom: 2 }}>✕</button>
                     </div>
@@ -2634,7 +2687,7 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                   <div style={{ width: 190 }}><Label>Tanque del equipo (L)</Label><input type="number" value={form.capacidad_tanque_l} onChange={e => setForm({ ...form, capacidad_tanque_l: e.target.value })} placeholder="ej. 3000" style={inputStyle} /></div>
                   {parseFloat(form.caldo_l_ha) > 0 && parseFloat(form.capacidad_tanque_l) > 0 && superficie > 0 && (
                     <div style={{ alignSelf: 'flex-end', fontSize: 12, color: S.accent, paddingBottom: 8 }}>
-                      {(parseFloat(form.capacidad_tanque_l) / parseFloat(form.caldo_l_ha)).toLocaleString('es-AR', { maximumFractionDigits: 1 })} ha por tanque · {Math.ceil(superficie * parseFloat(form.caldo_l_ha) / parseFloat(form.capacidad_tanque_l))} tanques en total (sale en la orden de aplicación)
+                      {(parseFloat(form.capacidad_tanque_l) / parseFloat(form.caldo_l_ha)).toLocaleString('es-AR', { maximumFractionDigits: 1 })} ha por tanque · {Math.ceil(supProd * parseFloat(form.caldo_l_ha) / parseFloat(form.capacidad_tanque_l))} tanques en total (sale en la orden de aplicación)
                     </div>
                   )}
                 </div>
