@@ -5500,8 +5500,12 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
           // que lo que había ANTES es el total actual menos esta compra.
           // Eso, valuado al precio promedio viejo, más esta compra al
           // precio nuevo, da el promedio ponderado correcto.
-          const cantidadEstaCompra = parseFloat(i.cantidad) || 0
+          // Ojo: si de esta compra ya se usó una parte (stock actual menor
+          // que lo comprado), lo que queda en stock es todo de esta compra.
+          // Antes se dividía el total de la compra por el stock que quedaba
+          // (ej. 25 L comprados, 3 L en stock → precio × 8,3).
           const cantidadTotal = parseFloat(item?.cantidad) || 0
+          const cantidadEstaCompra = Math.min(parseFloat(i.cantidad) || 0, cantidadTotal)
           const cantidadAnterior = Math.max(0, cantidadTotal - cantidadEstaCompra)
           const precioAnterior = parseFloat(item?.precio_referencia) || precioFinal
           const nuevoPromedio = cantidadTotal > 0
