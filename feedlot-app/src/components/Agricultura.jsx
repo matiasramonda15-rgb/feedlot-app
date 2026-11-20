@@ -267,7 +267,7 @@ export default function Agricultura({ usuario, mobile, nav, soloAlfalfa }) {
       supabase.from('gastos_generales').select('*, campos(nombre), campanas(nombre)').eq('actividad', 'Agricultura').order('fecha', { ascending: false }),
       supabase.from('stock_agro').select('*').order('insumo'),
       supabase.from('compras_insumos').select('*').eq('insumo_tipo', 'agro').order('fecha', { ascending: false }).limit(200),
-      supabase.from('contactos').select('id, nombre, cuit, iva').eq('activo', true).order('nombre'),
+      supabase.from('contactos').select('id, nombre, cuit, iva, localidad, cbu').eq('activo', true).order('nombre'),
       supabase.from('configuracion').select('clave, valor').eq('clave', 'cotizacion_dolar_agro'),
       supabase.from('stock_insumos').select('id, insumo, unidad, precio_referencia').order('insumo'),
     ])
@@ -2897,8 +2897,12 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     </div>
                   </>
                 )}
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button disabled={!proveedorLiquidar || (!tarifaNum && !tarifaRolloNum) || guardandoLiquidar} onClick={async () => {
+                {(() => {
+                  // Aplica la tarifa (y el IVA) a todas las órdenes del proveedor.
+                  // Con "y pagar ahora" pasa directo a la pestaña Pagos con esas
+                  // órdenes ya marcadas, el monto cargado y los datos del contacto
+                  // para el recibo — se paga y sale el recibo sin buscar nada.
+                  const aplicarTarifa = async (pagarAhora) => {
                     setGuardandoLiquidar(true)
                     for (const o of ordenesHa) {
                       // costo_total = lo que se paga (con IVA si hay factura); el
@@ -2912,6 +2916,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                       const { error } = await supabase.from('ordenes_trabajo').update({ costo_total: costoOrden, iva_pct: ivaLiqNum || null }).eq('id', o.id)
                       if (error) { alert('Error al actualizar la orden #' + o.id + ': ' + error.message); setGuardandoLiquidar(false); return }
                     }
+                    const ids = ordenesDelProveedor.filter(o => o.estado !== 'emitida' && o.estado_pago !== 'pagado').map(o => o.id)
+                    const prov = proveedorLiquidar
+                    const total = totalGeneral
                     setGuardandoLiquidar(false)
                     setShowLiquidar(false)
                     setProveedorLiquidar('')
@@ -2919,14 +2926,33 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
                     setTarifaRolloLiquidar('')
                     setIvaLiquidar('')
                     await cargar()
-                    alert(`Listo — se aplicó la tarifa a las ${ordenesDelProveedor.length} órdenes de ${proveedorLiquidar}. Ya podés registrar el pago desde cada una, o seleccionarlas para pagarlas juntas.`)
-                  }} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.amber, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: (!proveedorLiquidar || (!tarifaNum && !tarifaRolloNum)) ? 0.5 : 1 }}>
-                    {guardandoLiquidar ? 'Aplicando...' : '✓ Aplicar tarifa a todas'}
+                    if (pagarAhora && ids.length) {
+                      const ct = (contactos || []).find(c => c.nombre === prov)
+                      setSeleccionadas(ids)
+                      setFormPagoGrupal({ fecha: hoyLocal(), pagos: [{ ...PAGO_INIT_ORDEN, monto: String(total) }], domicilio: '', localidad: ct?.localidad || '', cuit: ct?.cuit || '', iva: ct?.iva || '', cbu: ct?.cbu || '' })
+                      setTabInner('pagos')
+                      try { window.scrollTo({ top: 0, behavior: 'smooth' }) } catch { /* nada */ }
+                    } else {
+                      alert(`Listo — se aplicó la tarifa a las ${ordenesDelProveedor.length} órdenes de ${prov}. Para pagarlas: pestaña Pagos, marcalas y pagá (sale el recibo).`)
+                    }
+                  }
+                  const deshab = !proveedorLiquidar || (!tarifaNum && !tarifaRolloNum) || guardandoLiquidar
+                  return (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button disabled={deshab} onClick={() => aplicarTarifa(true)}
+                    style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, background: S.green, border: 'none', color: '#fff', borderRadius: 6, cursor: 'pointer', opacity: deshab ? 0.5 : 1 }}>
+                    {guardandoLiquidar ? 'Aplicando...' : '💳 Aplicar tarifa y pagar ahora'}
+                  </button>
+                  <button disabled={deshab} onClick={() => aplicarTarifa(false)}
+                    style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: S.amberLight, border: `1px solid ${S.amber}`, color: S.amber, borderRadius: 6, cursor: 'pointer', opacity: deshab ? 0.5 : 1 }}>
+                    ✓ Solo aplicar tarifa (pagar después)
                   </button>
                   <button onClick={() => { setShowLiquidar(false); setProveedorLiquidar(''); setTarifaLiquidar(''); setTarifaRolloLiquidar('') }} style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>
                     Cancelar
                   </button>
                 </div>
+                  )
+                })()}
               </Card>
             )
           })()}
