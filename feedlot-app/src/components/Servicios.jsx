@@ -7,6 +7,7 @@ import { generarReciboDeCobro } from '../shared/reciboLogic'
 import SelectBuscable from './SelectBuscable'
 import { useBorrador } from '../shared/useBorrador'
 import { confirmarSiHayOrdenParecida, TIPO_ORDEN_DE_LABOR } from '../shared/ordenesDuplicadas'
+import { opcionesUnidades, destinosUnidad, esUnidad, formsPorDestino } from '../shared/unidadesProductivas'
 
 const CM = { bg: '#0D1B2A', surface: '#1A2D3D', surface2: '#243447', border: '#2D4357', text: '#E8F0F8', muted: '#7A9AB8', accent: '#5BB8F5', green: '#4CAF82', greenLight: '#1A3D2E', amber: '#F5A623', amberLight: '#3D2E1A', red: '#F55B5B', mono: "'IBM Plex Mono', monospace", sans: "'IBM Plex Sans', sans-serif" }
 function MobileTopbar({ titulo, sub, onBack }) {
@@ -401,40 +402,55 @@ export default function Servicios({ usuario, mobile, nav }) {
     if (!form.labor || !form.hectareas) { alert('Completá labor y hectáreas'); return }
     if (form.tipo_servicio === 'tercero' && !form.cliente) { alert('Ingresá el cliente'); return }
     if (form.esParaAgricultura && !form.campo_id) { alert('Seleccioná el campo de Agricultura'); return }
-    if (form.esParaAgricultura && !(await confirmarSiHayOrdenParecida(supabase, { tipo: TIPO_ORDEN_DE_LABOR[form.labor] || 'Otro', fecha: form.fecha, destinos: [{ campoId: parseInt(form.campo_id), loteId: form.lote_id ? parseInt(form.lote_id) : null }], campos }))) return
+    // Unidad productiva (ej. Bobo): se arma un formulario por campo/lote
+    const formsAGuardar = form.esParaAgricultura ? formsPorDestino(form, campos) : [form]
+    if (!formsAGuardar.length) { alert('Elegí el lote de nuevo'); return }
+    if (form.esParaAgricultura && !(await confirmarSiHayOrdenParecida(supabase, { tipo: TIPO_ORDEN_DE_LABOR[form.labor] || 'Otro', fecha: form.fecha, destinos: formsAGuardar.map(f => ({ campoId: parseInt(f.campo_id), loteId: f.lote_id ? parseInt(f.lote_id) : null })), campos }))) return
     setGuardando(true)
-    const clienteTexto = form.tipo_servicio === 'propio' ? null : form.cliente
-    const costoNum = form.esParaAgricultura ? (parseFloat(form.costo_total) || null) : null
+    for (const f of formsAGuardar) {
+      if (!(await guardarServicioUno(f))) { setGuardando(false); return }
+    }
+    setShowForm(false)
+    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
+    setGuardando(false)
+    await cargar()
+  }
+
+  // Guarda UN servicio (un campo/lote): servicio + orden en Agricultura +
+  // siembra en la campaña + descuento de stock.
+  async function guardarServicioUno(f) {
+    const clienteTexto = f.tipo_servicio === 'propio' ? null : f.cliente
+    const costoNum = f.esParaAgricultura ? (parseFloat(f.costo_total) || null) : null
     const { data: servicioCreado, error } = await registrarServicioTercero(supabase, {
-      campania: form.campania, tipoServicio: form.tipo_servicio, cliente: clienteTexto,
-      labor: form.labor, cultivo: form.cultivo,
-      campo: form.esParaAgricultura ? (campos.find(c => c.id === parseInt(form.campo_id))?.nombre || '') : form.campo,
-      nroLote: form.esParaAgricultura ? (campos.find(c => c.id === parseInt(form.campo_id))?.lotes_agricolas?.find(l => l.id === parseInt(form.lote_id))?.numero || '') : form.nro_lote,
-      fecha: form.fecha, hectareas: form.hectareas,
-      empleado1: form.empleado1, empleado2: form.empleado2, observaciones: form.observaciones,
-      total: costoNum, precioHa: (costoNum && form.hectareas) ? Math.round(costoNum / parseFloat(form.hectareas)) : null,
+      campania: f.campania, tipoServicio: f.tipo_servicio, cliente: clienteTexto,
+      labor: f.labor, cultivo: f.cultivo,
+      campo: f.esParaAgricultura ? (campos.find(c => c.id === parseInt(f.campo_id))?.nombre || '') : f.campo,
+      nroLote: f.esParaAgricultura ? (campos.find(c => c.id === parseInt(f.campo_id))?.lotes_agricolas?.find(l => l.id === parseInt(f.lote_id))?.numero || '') : f.nro_lote,
+      fecha: f.fecha, hectareas: f.hectareas,
+      empleado1: f.empleado1, empleado2: f.empleado2, observaciones: f.observaciones,
+      total: costoNum, precioHa: (costoNum && f.hectareas) ? Math.round(costoNum / parseFloat(f.hectareas)) : null,
       // El precio no siempre lo carga quien registra el trabajo — si todavía
       // no se sabe, queda pendiente para completarlo después desde la oficina.
-      estadoPago: (form.esParaAgricultura && costoNum) ? 'pagado' : 'pendiente',
+      estadoPago: (f.esParaAgricultura && costoNum) ? 'pagado' : 'pendiente',
     })
-    if (error) { alert('Error: ' + error.message); setGuardando(false); return }
+    if (error) { alert('Error: ' + error.message); return false }
 
     // Si es para un lote de Agricultura, se refleja del otro lado como una
     // orden de trabajo — con el mismo costo (sin duplicar caja: acá no se
     // registró ningún movimiento) y descontando del stock los productos usados.
     // Si todavía no hay precio, los dos quedan "pendiente" hasta completarlo.
-    if (form.esParaAgricultura) {
+    if (f.esParaAgricultura) {
       const tipoOrdenMap = { 'Siembra': 'Siembra', 'Cosecha': 'Cosecha', 'Pulverización': 'Pulverizacion', 'Fertilización': 'Fertilizacion', 'Roturación': 'Labranza', 'Rastreo': 'Labranza', 'Flete': 'Otro', 'Otro': 'Otro' }
-      const productosValidos = form.productos.filter(p => p.id && parseFloat(p.total) > 0)
+      const productosValidos = f.productos.filter(p => p.id && parseFloat(p.total) > 0)
       const { data: ordenCreada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
-        campo_id: parseInt(form.campo_id), lote_id: form.lote_id ? parseInt(form.lote_id) : null,
-        campana_id: form.campana_id ? parseInt(form.campana_id) : null,
-        tipo: tipoOrdenMap[form.labor] || 'Otro', fecha: form.fecha,
-        descripcion: `Cargado desde Servicios — ${form.labor}`,
+        campo_id: parseInt(f.campo_id), lote_id: f.lote_id ? parseInt(f.lote_id) : null,
+        campana_id: f.campana_id ? parseInt(f.campana_id) : null,
+        tipo: tipoOrdenMap[f.labor] || 'Otro', fecha: f.fecha,
+        descripcion: `Cargado desde Servicios — ${f.labor}`,
         proveedor: null, es_propia: true,
-        superficie_ha_real: parseFloat(form.hectareas) || null,
-        productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(form.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(form.hectareas) * 1000) / 1000) : null, ...precioDelDia(stockAgro, p.id) })),
-        costo_total: costoNum, costo_ha: (costoNum && form.hectareas) ? Math.round(costoNum / parseFloat(form.hectareas)) : null,
+        superficie_ha_real: parseFloat(f.hectareas) || null,
+        productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(f.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(f.hectareas) * 1000) / 1000) : null, ...precioDelDia(stockAgro, p.id) })),
+        costo_total: costoNum, costo_ha: (costoNum && f.hectareas) ? Math.round(costoNum / parseFloat(f.hectareas)) : null,
         estado: 'completado', estado_pago: costoNum ? 'pagado' : 'pendiente',
         observaciones: `Servicio interno #${servicioCreado?.id} — usa maquinaria de Servicios`,
         registrado_por: usuario?.id,
@@ -444,10 +460,10 @@ export default function Servicios({ usuario, mobile, nav }) {
       } else {
         // Vincular servicio ↔ orden para poder completar el precio después, en los dos a la vez
         await supabase.from('servicios_terceros').update({ orden_trabajo_id: ordenCreada?.id }).eq('id', servicioCreado?.id)
-        if (form.labor === 'Siembra') await registrarSiembraEnCampana(supabase, {
-          ordenId: ordenCreada?.id, campanaId: form.campana_id ? parseInt(form.campana_id) : null, campoId: parseInt(form.campo_id),
-          loteId: form.lote_id ? parseInt(form.lote_id) : null, cultivo: form.cultivo, ha: parseFloat(form.hectareas) || null,
-          fecha: form.fecha, productos: productosValidos, stockAgro,
+        if (f.labor === 'Siembra') await registrarSiembraEnCampana(supabase, {
+          ordenId: ordenCreada?.id, campanaId: f.campana_id ? parseInt(f.campana_id) : null, campoId: parseInt(f.campo_id),
+          loteId: f.lote_id ? parseInt(f.lote_id) : null, cultivo: f.cultivo, ha: parseFloat(f.hectareas) || null,
+          fecha: f.fecha, productos: productosValidos, stockAgro,
         })
         // Descontar del stock de Agricultura cada producto usado (esto pasa
         // siempre, tenga precio o no — el insumo se usó físicamente igual)
@@ -457,10 +473,7 @@ export default function Servicios({ usuario, mobile, nav }) {
       }
     }
 
-    setShowForm(false)
-    setForm({ campania: campanas[0]?.nombre || '2025/26', cliente: '', labor: 'Siembra', cultivo: 'Maíz', tipo_servicio: 'tercero', campo: '', nro_lote: '', fecha: hoyLocal(), hectareas: '', empleado1: '', empleado2: '', observaciones: '', esParaAgricultura: false, campo_id: '', lote_id: '', campana_id: '', costo_total: '', productos: [] })
-    setGuardando(false)
-    await cargar()
+    return true
   }
 
   async function guardarEdit() {
@@ -738,36 +751,42 @@ export default function Servicios({ usuario, mobile, nav }) {
       const nombreCliente = formM.tipo_servicio === 'propio' ? 'Ramonda Hnos SA' : formM.cliente
       if (!nombreCliente || !formM.labor || !formM.hectareas) { alert('Completá cliente, labor y hectáreas'); return }
       if (formM.esParaAgricultura && !formM.campo_id) { alert('Seleccioná el campo de Agricultura'); return }
-      if (formM.esParaAgricultura && !(await confirmarSiHayOrdenParecida(supabase, { tipo: TIPO_ORDEN_DE_LABOR[formM.labor] || 'Otro', fecha: formM.fecha, destinos: [{ campoId: parseInt(formM.campo_id), loteId: formM.lote_id ? parseInt(formM.lote_id) : null }], campos }))) return
+      const formsAGuardar = formM.esParaAgricultura ? formsPorDestino(formM, campos) : [formM]
+      if (!formsAGuardar.length) { alert('Elegí el lote de nuevo'); return }
+      if (formM.esParaAgricultura && !(await confirmarSiHayOrdenParecida(supabase, { tipo: TIPO_ORDEN_DE_LABOR[formM.labor] || 'Otro', fecha: formM.fecha, destinos: formsAGuardar.map(f => ({ campoId: parseInt(f.campo_id), loteId: f.lote_id ? parseInt(f.lote_id) : null })), campos }))) return
       setGuardandoM(true)
-      const costoNum = formM.esParaAgricultura ? (parseFloat(formM.costo_total) || null) : null
+      for (const f of formsAGuardar) {
+        if (!(await guardarServicioUnoM(f))) { setGuardandoM(false); return }
+      }
+      async function guardarServicioUnoM(f) {
+      const costoNum = f.esParaAgricultura ? (parseFloat(f.costo_total) || null) : null
       const { data: servicioCreado, error } = await registrarServicioTercero(supabase, {
-        campania: formM.campania, tipoServicio: formM.tipo_servicio,
-        cliente: formM.tipo_servicio === 'propio' ? null : nombreCliente,
-        labor: formM.labor, cultivo: formM.cultivo,
-        campo: formM.esParaAgricultura ? (campos.find(c => c.id === parseInt(formM.campo_id))?.nombre || '') : formM.campo,
-        nroLote: formM.esParaAgricultura ? (campos.find(c => c.id === parseInt(formM.campo_id))?.lotes_agricolas?.find(l => l.id === parseInt(formM.lote_id))?.numero || '') : formM.nro_lote,
-        fecha: formM.fecha, hectareas: formM.hectareas,
-        empleado1: formM.empleado1, empleado2: formM.empleado2, observaciones: formM.observaciones,
-        total: costoNum, precioHa: (costoNum && formM.hectareas) ? Math.round(costoNum / parseFloat(formM.hectareas)) : null,
-        estadoPago: (formM.esParaAgricultura && costoNum) ? 'pagado' : 'pendiente',
+        campania: f.campania, tipoServicio: f.tipo_servicio,
+        cliente: f.tipo_servicio === 'propio' ? null : f.cliente,
+        labor: f.labor, cultivo: f.cultivo,
+        campo: f.esParaAgricultura ? (campos.find(c => c.id === parseInt(f.campo_id))?.nombre || '') : f.campo,
+        nroLote: f.esParaAgricultura ? (campos.find(c => c.id === parseInt(f.campo_id))?.lotes_agricolas?.find(l => l.id === parseInt(f.lote_id))?.numero || '') : f.nro_lote,
+        fecha: f.fecha, hectareas: f.hectareas,
+        empleado1: f.empleado1, empleado2: f.empleado2, observaciones: f.observaciones,
+        total: costoNum, precioHa: (costoNum && f.hectareas) ? Math.round(costoNum / parseFloat(f.hectareas)) : null,
+        estadoPago: (f.esParaAgricultura && costoNum) ? 'pagado' : 'pendiente',
       })
-      if (error) { alert('Error: ' + error.message); setGuardandoM(false); return }
+      if (error) { alert('Error: ' + error.message); return false }
 
       // Si es para un lote de Agricultura, se refleja del otro lado como una
       // orden de trabajo — mismo criterio que en la versión de escritorio.
-      if (formM.esParaAgricultura) {
+      if (f.esParaAgricultura) {
         const tipoOrdenMap = { 'Siembra': 'Siembra', 'Cosecha': 'Cosecha', 'Pulverización': 'Pulverizacion', 'Fertilización': 'Fertilizacion', 'Roturación': 'Labranza', 'Rastreo': 'Labranza', 'Flete': 'Otro', 'Otro': 'Otro' }
-        const productosValidos = formM.productos.filter(p => p.id && parseFloat(p.total) > 0)
+        const productosValidos = f.productos.filter(p => p.id && parseFloat(p.total) > 0)
         const { data: ordenCreada, error: errOrden } = await supabase.from('ordenes_trabajo').insert({
-          campo_id: parseInt(formM.campo_id), lote_id: formM.lote_id ? parseInt(formM.lote_id) : null,
-          campana_id: formM.campana_id ? parseInt(formM.campana_id) : null,
-          tipo: tipoOrdenMap[formM.labor] || 'Otro', fecha: formM.fecha,
-          descripcion: `Cargado desde Servicios (celular) — ${formM.labor}`,
+          campo_id: parseInt(f.campo_id), lote_id: f.lote_id ? parseInt(f.lote_id) : null,
+          campana_id: f.campana_id ? parseInt(f.campana_id) : null,
+          tipo: tipoOrdenMap[f.labor] || 'Otro', fecha: f.fecha,
+          descripcion: `Cargado desde Servicios (celular) — ${f.labor}`,
           proveedor: null, es_propia: true,
-          superficie_ha_real: parseFloat(formM.hectareas) || null,
-          productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(formM.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(formM.hectareas) * 1000) / 1000) : null, ...precioDelDia(stockAgro, p.id) })),
-          costo_total: costoNum, costo_ha: (costoNum && formM.hectareas) ? Math.round(costoNum / parseFloat(formM.hectareas)) : null,
+          superficie_ha_real: parseFloat(f.hectareas) || null,
+          productos: productosValidos.map(p => ({ id: p.id, total: p.total, dosis: parseFloat(f.hectareas) > 0 ? String(Math.round(parseFloat(p.total) / parseFloat(f.hectareas) * 1000) / 1000) : null, ...precioDelDia(stockAgro, p.id) })),
+          costo_total: costoNum, costo_ha: (costoNum && f.hectareas) ? Math.round(costoNum / parseFloat(f.hectareas)) : null,
           estado: 'completado', estado_pago: costoNum ? 'pagado' : 'pendiente',
           observaciones: `Servicio interno #${servicioCreado?.id} — usa maquinaria de Servicios`,
           registrado_por: usuario?.id,
@@ -776,10 +795,10 @@ export default function Servicios({ usuario, mobile, nav }) {
           alert('El servicio se guardó, pero no se pudo reflejar en Agricultura: ' + errOrden.message)
         } else {
           await supabase.from('servicios_terceros').update({ orden_trabajo_id: ordenCreada?.id }).eq('id', servicioCreado?.id)
-          if (formM.labor === 'Siembra') await registrarSiembraEnCampana(supabase, {
-            ordenId: ordenCreada?.id, campanaId: formM.campana_id ? parseInt(formM.campana_id) : null, campoId: parseInt(formM.campo_id),
-            loteId: formM.lote_id ? parseInt(formM.lote_id) : null, cultivo: formM.cultivo, ha: parseFloat(formM.hectareas) || null,
-            fecha: formM.fecha, productos: productosValidos, stockAgro,
+          if (f.labor === 'Siembra') await registrarSiembraEnCampana(supabase, {
+            ordenId: ordenCreada?.id, campanaId: f.campana_id ? parseInt(f.campana_id) : null, campoId: parseInt(f.campo_id),
+            loteId: f.lote_id ? parseInt(f.lote_id) : null, cultivo: f.cultivo, ha: parseFloat(f.hectareas) || null,
+            fecha: f.fecha, productos: productosValidos, stockAgro,
           })
           for (const p of productosValidos) {
             await supabase.rpc('incrementar_stock_agro', { p_id: parseInt(p.id), p_delta: -parseFloat(p.total) })
@@ -787,6 +806,8 @@ export default function Servicios({ usuario, mobile, nav }) {
         }
       }
 
+        return true
+      }
       setGuardandoM(false)
       // Formulario en blanco para el próximo servicio (antes quedaban
       // cargados labor, cultivo, tipo, fecha y se limpiaba recién a los 2 s).
@@ -913,12 +934,14 @@ export default function Servicios({ usuario, mobile, nav }) {
                   <label style={lblM}>Campo *</label>
                   <select value={formM.campo_id} onChange={e => setFormM({...formM, campo_id: e.target.value, lote_id: ''})} style={inpM}>
                     <option value="">— Seleccioná —</option>
-                    {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    {opcionesUnidades(campos).map(u => <option key={u.key} value={u.esUnidad && u.ids.length > 1 ? 'u:' + u.nombre : u.ids[0]}>{u.nombre}{u.detalle ? ` (${u.detalle})` : ''}</option>)}
                   </select>
                   <label style={lblM}>Lote</label>
                   <select value={formM.lote_id} onChange={e => setFormM({...formM, lote_id: e.target.value})} style={inpM}>
-                    <option value="">— Todo el campo —</option>
-                    {(campos.find(c => c.id === parseInt(formM.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero}</option>)}
+                    <option value="">{esUnidad(formM.campo_id) ? '— Toda la unidad —' : '— Todo el campo —'}</option>
+                    {esUnidad(formM.campo_id)
+                      ? destinosUnidad(campos, String(formM.campo_id).slice(2)).map(d => <option key={d.value} value={d.value}>{d.etiqueta}</option>)
+                      : (campos.find(c => c.id === parseInt(formM.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero}</option>)}
                   </select>
                   <label style={lblM}>Campaña</label>
                   <select value={formM.campana_id} onChange={e => setFormM({...formM, campana_id: e.target.value})} style={inpM}>
@@ -1425,14 +1448,16 @@ export default function Servicios({ usuario, mobile, nav }) {
                       <Lbl>Campo *</Lbl>
                       <select value={form.campo_id} onChange={e => setForm({ ...form, campo_id: e.target.value, lote_id: '' })} style={inp}>
                         <option value="">— Seleccioná —</option>
-                        {campos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                        {opcionesUnidades(campos).map(u => <option key={u.key} value={u.esUnidad && u.ids.length > 1 ? 'u:' + u.nombre : u.ids[0]}>{u.nombre}{u.detalle ? ` (${u.detalle})` : ''}</option>)}
                       </select>
                     </div>
                     <div>
                       <Lbl>Lote</Lbl>
                       <select value={form.lote_id} onChange={e => setForm({ ...form, lote_id: e.target.value })} style={inp}>
-                        <option value="">— Todo el campo —</option>
-                        {(campos.find(c => c.id === parseInt(form.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero}</option>)}
+                        <option value="">{esUnidad(form.campo_id) ? '— Toda la unidad —' : '— Todo el campo —'}</option>
+                        {esUnidad(form.campo_id)
+                          ? destinosUnidad(campos, String(form.campo_id).slice(2)).map(d => <option key={d.value} value={d.value}>{d.etiqueta}</option>)
+                          : (campos.find(c => c.id === parseInt(form.campo_id))?.lotes_agricolas || []).map(l => <option key={l.id} value={l.id}>Lote {l.numero}</option>)}
                       </select>
                     </div>
                     <div>

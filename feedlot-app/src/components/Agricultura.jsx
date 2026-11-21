@@ -13,6 +13,7 @@ import PlanTanques from './PlanTanques'
 import MapasCampos, { BotonMapa, mapaPintadoDataURL } from './MapasCampos'
 import { useBorrador } from '../shared/useBorrador'
 import { confirmarSiHayOrdenParecida } from '../shared/ordenesDuplicadas'
+import { opcionesUnidades, unidadMarcada, toggleUnidad } from '../shared/unidadesProductivas'
 import { pedirRemitoRetiro, confirmarRemitoNuevo } from '../shared/retiroRemito'
 
 const S = {
@@ -1725,7 +1726,10 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
   const camposConLoteSel = new Set(lotesSeleccionados.map(l => l.campo_id))
   const destinos = [
     ...lotesSeleccionados.map(l => ({ campoId: l.campo_id, lote: l })),
-    ...camposSeleccionados.filter(c => !camposConLoteSel.has(c.id)).map(c => ({ campoId: c.id, lote: null })),
+    // Unidad productiva (ej. Bobo = Bobo/Ramonda + Bobo/García): si se marcó
+    // algún lote de la unidad, van solo los lotes marcados — los otros campos
+    // de la misma unidad NO entran enteros.
+    ...camposSeleccionados.filter(c => !camposConLoteSel.has(c.id) && !(c.unidad_productiva && lotesSeleccionados.some(l => campos.find(x => x.id === l.campo_id)?.unidad_productiva === c.unidad_productiva))).map(c => ({ campoId: c.id, lote: null })),
   ].map(d => {
     const campoD = campos.find(c => c.id === d.campoId)
     const key = `${d.campoId}-${d.lote ? d.lote.id : 'todo'}`
@@ -2271,15 +2275,14 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: CM.muted, textTransform: 'uppercase', marginBottom: 4 }}>Campo(s) *</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {campos.map(c => {
-                const marcado = (form.campo_ids || []).includes(String(c.id))
+              {opcionesUnidades(campos).map(u => {
+                const marcado = unidadMarcada(u, form.campo_ids)
                 return (
-                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: CM.surface, border: `1px solid ${marcado ? CM.blue : CM.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 14, color: CM.text, cursor: 'pointer' }}>
+                  <label key={u.key} style={{ display: 'flex', alignItems: 'center', gap: 8, background: CM.surface, border: `1px solid ${marcado ? CM.blue : CM.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 14, color: CM.text, cursor: 'pointer' }}>
                     <input type="checkbox" checked={marcado} onChange={e => {
-                      const ids = e.target.checked ? [...(form.campo_ids || []), String(c.id)] : (form.campo_ids || []).filter(x => x !== String(c.id))
-                      setForm({...form, campo_ids: ids, lote_ids: []})
+                      setForm({...form, campo_ids: toggleUnidad(u, form.campo_ids, e.target.checked), lote_ids: []})
                     }} />
-                    {c.nombre}
+                    <span>{u.nombre}{u.detalle && <span style={{ fontSize: 11, color: CM.muted }}> · {u.detalle}</span>}</span>
                   </label>
                 )
               })}
@@ -2532,15 +2535,14 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1rem' }}>
                 <div style={{ gridColumn: 'span 3' }}><Label>Campo(s) *</Label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {campos.map(c => {
-                      const marcado = (form.campo_ids || []).includes(String(c.id))
+                    {opcionesUnidades(campos).map(u => {
+                      const marcado = unidadMarcada(u, form.campo_ids)
                       return (
-                        <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: marcado ? S.accentLight : S.surface, border: `1px solid ${marcado ? S.accent : S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, color: S.text, cursor: 'pointer' }}>
+                        <label key={u.key} title={u.detalle || undefined} style={{ display: 'flex', alignItems: 'center', gap: 6, background: marcado ? S.accentLight : S.surface, border: `1px solid ${marcado ? S.accent : S.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, color: S.text, cursor: 'pointer' }}>
                           <input type="checkbox" checked={marcado} onChange={e => {
-                            const ids = e.target.checked ? [...(form.campo_ids || []), String(c.id)] : (form.campo_ids || []).filter(x => x !== String(c.id))
-                            setForm({...form, campo_ids: ids, lote_ids: []})
+                            setForm({...form, campo_ids: toggleUnidad(u, form.campo_ids, e.target.checked), lote_ids: []})
                           }} />
-                          {c.nombre} ({c.superficie_ha} ha)
+                          {u.nombre} ({u.ha} ha){u.detalle && <span style={{ fontSize: 11, color: S.muted }}>· {u.detalle}</span>}
                         </label>
                       )
                     })}
