@@ -50,6 +50,11 @@ async function chequearPagosSinCaja() {
     if (error) continue
     for (const row of (data || [])) {
       if (t.tabla === 'compras_insumos' && idsConCredito.has(row.id)) continue
+      // Movimientos internos entre actividades (traspasos Agricultura →
+      // Feedlot, semilla propia, servicios propios, etc.): el "proveedor"
+      // es la misma empresa, así que nunca mueven caja. No es un error.
+      const prov = t.proveedorCol ? String(row[t.proveedorCol] || '') : ''
+      if (/ramonda\s*hnos/i.test(prov)) continue
       const tieneCaja = row.caja_oficial_id || row.caja_paralela_id
       const esCanje = (row.pagos_detalle || []).some(p => p.tipo === 'canje') || row.pagos_detalle === null && row.forma_pago === 'canje'
       const noAfectaCaja = row.no_afecta_caja === true
