@@ -132,17 +132,38 @@ async function chequearSobrepagos() {
       problemas.push({ categoria: 'Cobrado de más', severidad: 'media', tabla: 'ventas_granos', id: v.id, mensaje: `Venta de ${v.cultivo} a ${v.comprador || 'sin comprador'} — se cobró $${pagado.toLocaleString('es-AR')} pero el total es $${v.total.toLocaleString('es-AR')} (${(pagado-v.total).toLocaleString('es-AR')} de más).` })
     }
   }
-  const { data: lotes } = await supabase.from('lotes').select('id, procedencia, monto_total_con_iva')
+  const { data: lotes } = await supabase.from('lotes').select('id, procedencia, monto_total_con_iva, monto_negro, facturas_feria, estado_pago, marcado_resuelto')
   const { data: pagosCompras } = await supabase.from('pagos_compras').select('lote_id, monto')
   const pagadoPorLote = {}
   for (const p of (pagosCompras || [])) pagadoPorLote[p.lote_id] = (pagadoPorLote[p.lote_id] || 0) + (parseFloat(p.monto) || 0)
+  const fmt = n => Math.round(n).toLocaleString('es-AR')
   for (const l of (lotes || [])) {
     const pagado = pagadoPorLote[l.id] || 0
-    if (l.monto_total_con_iva && pagado - l.monto_total_con_iva > TOLERANCIA) {
-      problemas.push({ categoria: 'Pagado de más', severidad: 'media', tabla: 'lotes', id: l.id, mensaje: `Compra de hacienda a ${l.procedencia || 'sin procedencia'} — se pagó $${pagado.toLocaleString('es-AR')} pero el total es $${l.monto_total_con_iva.toLocaleString('es-AR')} (${(pagado-l.monto_total_con_iva).toLocaleString('es-AR')} de más).` })
+    const total = totalRealLote(l)
+    if (!total) continue
+    if (pagado - total > TOLERANCIA) {
+      problemas.push({ categoria: 'Pagado de más', severidad: 'media', tabla: 'lotes', id: l.id, mensaje: `Compra de hacienda a ${l.procedencia || 'sin procedencia'} — se pagó $${fmt(pagado)} pero el total (facturas con IVA y gastos${parseFloat(l.monto_negro) > 0 ? ' + parte en negro' : ''}) es $${fmt(total)} ($${fmt(pagado - total)} de más). Revisar si hay un pago cargado dos veces.` })
+    } else if (l.estado_pago === 'pagado' && !l.marcado_resuelto && total - pagado > TOLERANCIA) {
+      // Marcada como pagada pero los pagos cargados no llegan al total —
+      // falta registrar un pago o quedó un saldo sin pagar. Si se marcó
+      // "resuelto" en Cuentas a pagar, se respeta esa decisión.
+      problemas.push({ categoria: 'Pagado con saldo pendiente', severidad: 'media', tabla: 'lotes', id: l.id, mensaje: `Compra de hacienda a ${l.procedencia || 'sin procedencia'} — está marcada como pagada pero los pagos cargados suman $${fmt(pagado)} y el total es $${fmt(total)} (faltan $${fmt(total - pagado)}).` })
     }
   }
   return problemas
+}
+
+// Total que realmente hay que pagar por un ingreso de hacienda. El campo
+// monto_total_con_iva, pese al nombre, guarda solo neto + negro (sin IVA ni
+// gastos de feria/comisión), así que comparar contra él hacía saltar como
+// "pagado de más" toda compra pagada completa. Cuando el ingreso tiene
+// facturas cargadas, se usa la suma de sus totales (que ya incluyen IVA y
+// gastos) más la parte en negro; si no tiene, se cae al campo viejo.
+function totalRealLote(l) {
+  const facturas = Array.isArray(l.facturas_feria) ? l.facturas_feria : []
+  const totFacturas = facturas.reduce((s, f) => s + (parseFloat(f.total_factura_manual ?? f.total_factura) || 0), 0)
+  if (totFacturas > 0) return totFacturas + (parseFloat(l.monto_negro) || 0)
+  return parseFloat(l.monto_total_con_iva) || 0
 }
 
 // Umbrales pensados para un feedlot/campo de este tamaño — no son un límite
