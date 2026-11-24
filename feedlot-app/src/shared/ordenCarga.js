@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const FORMULACIONES = [
-  { id: 'corrector', paso: 1, nombre: 'Corrector de agua', corto: 'Corrector' },
+  { id: 'corrector', paso: 1, nombre: 'Corrector de agua / compatibilizador', corto: 'Corrector' },
   { id: 'solido',    paso: 2, nombre: 'Sólido (WG / WP / SG)', corto: 'WG/WP' },
   { id: 'sc',        paso: 3, nombre: 'Suspensión (SC / flow / OD)', corto: 'SC' },
   { id: 'ec',        paso: 4, nombre: 'Emulsionable (EC / EW)', corto: 'EC' },
