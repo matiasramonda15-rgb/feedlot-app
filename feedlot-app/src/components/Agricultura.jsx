@@ -15,6 +15,7 @@ import { useBorrador } from '../shared/useBorrador'
 import { confirmarSiHayOrdenParecida } from '../shared/ordenesDuplicadas'
 import { opcionesUnidades, unidadMarcada, toggleUnidad } from '../shared/unidadesProductivas'
 import { pedirRemitoRetiro, confirmarRemitoNuevo } from '../shared/retiroRemito'
+import { FORMULACIONES, ordenarPorCarga, infoFormulacion, adivinarFormulacion } from '../shared/ordenCarga'
 
 const S = {
   bg: '#F7F5F0', surface: '#fff', border: '#E2DDD6',
@@ -1005,6 +1006,7 @@ const PAGO_INIT_ARR = PAGO_INIT
 // Caldo y tanques para la orden de aplicación: cuántas hectáreas entran por
 // tanque y cuánto de cada producto va en cada tanque.
 function htmlCaldoTanques(caldo, tanque, ha, productos, stockAgro) {
+  productos = ordenarPorCarga(productos, stockAgro)   // en el orden de carga de la máquina
   caldo = parseFloat(caldo); tanque = parseFloat(tanque); ha = parseFloat(ha)
   if (!caldo || !ha) return ''
   const totalCaldo = caldo * ha
@@ -1013,10 +1015,10 @@ function htmlCaldoTanques(caldo, tanque, ha, productos, stockAgro) {
   const haResto = tanque ? Math.round((ha - llenos * haTanque) * 100) / 100 : 0
   const n = tanque ? llenos + (haResto > 0.01 ? 1 : 0) : 0
   // Cantidades de cada producto para X hectáreas (dosis exacta si la hay)
-  const tabla = haX => `<table style="width:100%;border-collapse:collapse;margin-top:4px;">${productos.filter(p => p.dosis).map(p => {
+  const tabla = haX => `<table style="width:100%;border-collapse:collapse;margin-top:4px;">${productos.filter(p => p.dosis).map((p, i) => {
     const item = stockAgro.find(x => String(x.id) === String(p.id))
     const d = parseFloat(p.dosis_exacta) || parseFloat(p.dosis)
-    return `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee;">${item?.insumo || '—'}</td><td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:700;">${(d * haX).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${item?.unidad || p.unidad || ''}</td></tr>`
+    return `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee;"><b style="color:#1A3D6B;">${i + 1}.</b> ${item?.insumo || '—'}</td><td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:700;">${(d * haX).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${item?.unidad || p.unidad || ''}</td></tr>`
   }).join('')}</table>`
   // Según cuántos tanques hacen falta: uno solo que no se llena, todos
   // llenos, o llenos + un último tanque con lo que falta. (Antes siempre
@@ -1049,20 +1051,22 @@ const fmtDosis = n => n != null ? n.toLocaleString('es-AR', { maximumFractionDig
 function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
   const fecha = orden.fecha ? new Date(orden.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
   const superficie = orden.superficie_ha_real || haTrabajables(lote) || haTrabajables(campo) || '—'
-  const productos = orden.productos || []
+  // Pulverización: los productos van en el orden de carga de la máquina
+  const esAplic = ['Pulverizacion', 'Fertilizacion'].includes(orden.tipo)
+  const productos = esAplic ? ordenarPorCarga(orden.productos, stockAgro) : (orden.productos || [])
   // Aplicación selectiva (WD): productos y caldo sobre las ha con producto
   const cobO = coberturaDe(orden)
   const haProdO = cobO < 1 && parseFloat(superficie) ? Math.round(parseFloat(superficie) * cobO * 10) / 10 : null
   const supProdO = haProdO || superficie
 
-  const filasProductos = productos.map(p => {
+  const filasProductos = productos.map((p, i) => {
     const item = stockAgro.find(s => String(s.id) === String(p.id))
     const totalUso = totalProducto(p, supProdO)
     const dosisVer = dosisProducto(p, supProdO)
     const pres = totalUso ? enPresentaciones(totalUso, item) : ''
     return `<tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${esAplic ? `<b style="color:#1E5C2E;">${i + 1}.</b> ` : ''}${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}${esAplic && infoFormulacion(item) ? `<div style="font-size:10px;color:#666;">${infoFormulacion(item).corto}</div>` : ''}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${fmtDosis(dosisVer)} ${p.unidad || item?.unidad || ''}/ha</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:right;font-weight:700;color:#1E5C2E;">${totalUso ? totalUso.toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' ' + (item?.unidad || '') : '—'}</td>
     </tr>`
@@ -1097,7 +1101,8 @@ function htmlOrdenTrabajo(orden, campo, lote, stockAgro, mapaUrl = null) {
       ${orden.descripcion ? `<div style="margin-bottom:16px;font-size:13px;"><span style="color:#666;">Descripción:</span> ${orden.descripcion}</div>` : ''}
       ${haProdO ? `<div style="margin-bottom:16px;padding:10px 14px;background:#FFF6E0;border:1px solid #E0B040;border-radius:6px;font-size:13px;">🎯 <b>Aplicación selectiva (WD)</b>: se estima producto en el <b>${Math.round(cobO * 1000) / 10}%</b> de la superficie → <b>${haProdO.toLocaleString('es-AR')} ha</b> de ${superficie} ha. Dosis = la del caldo donde se aplica; totales y tanques calculados sobre ${haProdO.toLocaleString('es-AR')} ha.</div>` : ''}
       ${productos.length > 0 ? `
-      <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos aplicados</div>
+      <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos aplicados${esAplic ? ' — en orden de carga' : ''}</div>
+      ${esAplic ? `<div style="font-size:11px;color:#666;margin:-6px 0 10px;">Con la máquina por la mitad o 3/4 de agua y el agitador andando, cargar de arriba para abajo; al final completar con agua.</div>` : ''}
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
           <tr style="background:#f0f7f1;">
@@ -1212,13 +1217,14 @@ function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
     if (!productosMapa[p.id]) productosMapa[p.id] = { ...p, total: 0 }
     productosMapa[p.id].total += parseFloat(p.total) || 0
   }))
-  const filasProductos = Object.values(productosMapa).map(p => {
+  const esAplic = ['Pulverizacion', 'Fertilizacion'].includes(primera.tipo)
+  const filasProductos = (esAplic ? ordenarPorCarga(Object.values(productosMapa), stockAgro) : Object.values(productosMapa)).map((p, i) => {
     const item = stockAgro.find(s => String(s.id) === String(p.id))
     const pres = enPresentaciones(p.total, item)
     const dosisVer = numOk(p.dosis) ?? (supProdTotal ? Math.round(p.total / supProdTotal * 100) / 100 : null)
     return `<tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;font-weight:500;">${esAplic ? `<b style="color:#1E5C2E;">${i + 1}.</b> ` : ''}${item?.insumo || p.nombre || '—'}${p.aporta_contratista ? '<div style="font-size:11px;color:#1A3D6B;">lo pone el contratista</div>' : ''}${pres ? `<div style="font-size:11px;color:#666;">≈ ${pres}</div>` : ''}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;">${item?.tipo || '—'}${esAplic && infoFormulacion(item) ? `<div style="font-size:10px;color:#666;">${infoFormulacion(item).corto}</div>` : ''}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:600;">${fmtDosis(dosisVer)} ${p.unidad || item?.unidad || ''}/ha</td>
       <td style="padding:8px 12px;border-bottom:1px solid #ddd;text-align:right;font-weight:700;color:#1E5C2E;">${p.total.toLocaleString('es-AR', { maximumFractionDigits: 1 })} ${item?.unidad || p.unidad || ''}</td>
     </tr>`
@@ -1258,7 +1264,8 @@ function generarOrdenAplicacionCombinada(ordenes, camposLista, stockAgro) {
           <tr style="background:#f0eafb;font-weight:700;"><td colspan="2" style="padding:8px 12px;">TOTAL</td><td style="padding:8px 12px;text-align:right;">${superficieTotal.toLocaleString('es-AR')} ha</td></tr>
         </tbody>
       </table>
-      <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos a cargar en la máquina (total combinado)</div>
+      <div style="font-size:11px;font-weight:700;color:#1E5C2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Insumos a cargar en la máquina (total combinado)${esAplic ? ' — en orden de carga' : ''}</div>
+      ${esAplic ? `<div style="font-size:11px;color:#666;margin:-6px 0 10px;">Con la máquina por la mitad o 3/4 de agua y el agitador andando, cargar de arriba para abajo; al final completar con agua.</div>` : ''}
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead><tr style="background:#f0f7f1;">
           <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #1E5C2E;font-size:11px;text-transform:uppercase;color:#1E5C2E;">Producto</th>
@@ -2232,9 +2239,9 @@ function TabOrdenes({ ordenes, campos, campanas, campanaActiva, stockAgro, carga
         o.superficie_ha_real ? `Superficie: ${o.superficie_ha_real} ha` : null,
         !o.es_propia && o.proveedor ? `Contratista: ${o.proveedor}` : null,
         (o.productos || []).length > 0 ? '\nInsumos aplicados:' : null,
-        ...(o.productos || []).map(p => {
+        ...(['Pulverizacion', 'Fertilizacion'].includes(o.tipo) ? ordenarPorCarga(o.productos, stockAgro) : (o.productos || [])).map((p, i) => {
           const item = stockAgro.find(s => s.id === parseInt(p.id))
-          return `• ${item?.insumo || '—'}: ${fmtDosis(dosisProducto(p, o.superficie_ha_real))} ${item?.unidad || ''}/ha (${fmtCant(totalProducto(p, o.superficie_ha_real))} ${item?.unidad || ''} total)`
+          return `${['Pulverizacion', 'Fertilizacion'].includes(o.tipo) ? `${i + 1}.` : '•'} ${item?.insumo || '—'}: ${fmtDosis(dosisProducto(p, o.superficie_ha_real))} ${item?.unidad || ''}/ha (${fmtCant(totalProducto(p, o.superficie_ha_real))} ${item?.unidad || ''} total)`
         }),
         o.observaciones ? `\nObs: ${o.observaciones}` : null,
       ].filter(Boolean).join('\n')
@@ -5383,7 +5390,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
   async function guardarStock() {
     if (!formStock.insumo) { alert('Ingresá el nombre'); return }
     setGuardando(true)
-    const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, dosis_chica: !!formStock.dosis_chica, kg_semilla_por_unidad: esTipoInsumo(formStock, 'cura') ? (parseFloat(formStock.kg_semilla_por_unidad) || null) : null, presentacion_cant: parseFloat(formStock.presentacion_cant) || null, presentacion_nombre: formStock.presentacion_nombre || null, actualizado_en: new Date().toISOString() }
+    const data = { insumo: formStock.insumo, tipo: formStock.tipo || null, cantidad: parseFloat(formStock.cantidad) || 0, unidad: formStock.unidad, minimo_stock: parseFloat(formStock.minimo_stock) || 0, dosis_chica: !!formStock.dosis_chica, kg_semilla_por_unidad: esTipoInsumo(formStock, 'cura') ? (parseFloat(formStock.kg_semilla_por_unidad) || null) : null, presentacion_cant: parseFloat(formStock.presentacion_cant) || null, presentacion_nombre: formStock.presentacion_nombre || null, formulacion: formStock.formulacion || null, actualizado_en: new Date().toISOString() }
     // Si se cargó precio en dólares, el precio en pesos se calcula solo con
     // la cotización del momento — si se cargó directo en pesos, se respeta eso.
     if (formStock.precio_referencia_usd) {
@@ -5796,6 +5803,14 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                 <input type="number" value={formStock.presentacion_cant} onChange={e => setFormStock({...formStock, presentacion_cant: e.target.value})} placeholder={`${formStock.unidad === 'kg' ? 'kg' : 'L'} c/u`} style={{ ...inputStyle, width: 80 }} />
               </div>
             </div>
+            {['Herbicida', 'Insecticida', 'Fungicida', 'Coadyuvante', 'Otro'].includes(formStock.tipo) && (
+              <div><Label>Formulación (orden de carga)</Label>
+                <select value={formStock.formulacion || ''} onChange={e => setFormStock({...formStock, formulacion: e.target.value})} style={inputStyle}>
+                  <option value="">Automática ({FORMULACIONES.find(f => f.id === adivinarFormulacion(formStock))?.nombre})</option>
+                  {FORMULACIONES.map(f => <option key={f.id} value={f.id}>{f.paso}º · {f.nombre}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           {esTipoInsumo(formStock, 'cura') && (
             <div style={{ background: S.greenLight, border: '1px solid #97C459', borderRadius: 8, padding: '10px 12px', marginBottom: '1rem' }}>
@@ -6035,7 +6050,7 @@ function TabStockAgro({ stock, ingresos, contactos, cargar, usuario, mobile, nav
                     </td>
                     <td style={{ padding: '8px 12px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ kg_semilla_por_unidad: s.kg_semilla_por_unidad || '', presentacion_cant: s.presentacion_cant || '', presentacion_nombre: s.presentacion_nombre || '', insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'', dosis_chica: s.dosis_chica || false }); setShowForm(true); setShowFormCompra(false) }}
+                        <button onClick={() => { setEditandoStock(s.id); setFormStock({ formulacion: s.formulacion || '', kg_semilla_por_unidad: s.kg_semilla_por_unidad || '', presentacion_cant: s.presentacion_cant || '', presentacion_nombre: s.presentacion_nombre || '', insumo: s.insumo, tipo: s.tipo||'', cantidad: s.cantidad||'', unidad: s.unidad||'litros', minimo_stock: s.minimo_stock||'', precio_referencia: s.precio_referencia||'', precio_referencia_usd: s.precio_referencia_usd||'', dosis_chica: s.dosis_chica || false }); setShowForm(true); setShowFormCompra(false) }}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid ${S.accent}`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>Editar</button>
                         <button onClick={() => setAjustando(ajustando?.id === s.id ? null : { id: s.id, contado: String(s.cantidad ?? ''), motivo: 'Conteo físico', obs: '' })}
                           title="Ajustar por conteo físico (queda registrado)"

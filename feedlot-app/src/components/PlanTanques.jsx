@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../supabase'
+import { ordenarPorCarga } from '../shared/ordenCarga'
 import { BotonMapa, useMapas, mapasDeCampo, archivoDeMapa, generarHojaConMapa, compartirArchivos } from './MapasCampos'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,8 +114,10 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
       if (!g[key]) g[key] = { key, tipo: o.tipo, prods: prods.map(p => ({ ...p, dosisMostrar: p.dosis, dosis: p.exacta })), ordenes: [] }
       g[key].ordenes.push(o)
     })
+    // En la hoja los productos van en el orden de carga de la máquina
+    Object.values(g).forEach(gr => { gr.prods = ordenarPorCarga(gr.prods, stockAgro) })
     return Object.values(g).sort((a, b) => b.ordenes.length - a.ordenes.length)
-  }, [ordenes, incluirRealizadas])
+  }, [ordenes, incluirRealizadas, stockAgro])
 
   const idsDe = gr => elegidas[gr.key] ?? gr.ordenes.map(o => o.id)
   const setIds = (gr, ids) => setElegidas({ ...elegidas, [gr.key]: ids })
@@ -148,14 +151,14 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
       L('RECORRIDO', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
       destinos.forEach((d, i) => L(`${i + 1}. ${d.nombre} — ${fmt(d.ha)} ha`, { gap: 4, check: true }))
       filas[filas.length - 1].gap = 26
-      L(modo === 'iguales' ? 'CARGA DE CADA TANQUE (todos iguales)' : 'CARGA DE CADA TANQUE LLENO', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
-      grupo.prods.forEach(p => L(`${item(p.id)?.insumo || '—'}:  ${fmtCant(p.dosis * haCarga)} ${unidad(p)}${p.contratista ? ' (lo pone el contratista)' : ''}`, { size: 32, peso: 'bold', gap: 4 }))
+      L(modo === 'iguales' ? 'CARGA DE CADA TANQUE (todos iguales) — en este orden' : 'CARGA DE CADA TANQUE LLENO — en este orden', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
+      grupo.prods.forEach((p, i) => L(`${i + 1}. ${item(p.id)?.insumo || '—'}:  ${fmtCant(p.dosis * haCarga)} ${unidad(p)}${p.contratista ? ' (lo pone el contratista)' : ''}`, { size: 32, peso: 'bold', gap: 4 }))
       filas[filas.length - 1].gap = 26
       L('TANQUE POR TANQUE', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 8 })
       plan.tanques.forEach((t, i) => {
         L(`Tanque ${i + 1}${t.parcial ? ' — PARCIAL (carga distinta)' : ''} · ${fmt(t.ha)} ha · ${fmt(t.litros, 0)} L`, { size: 30, peso: 'bold', color: t.parcial ? '#B26B00' : '#222', gap: 2, barra: t.parcial ? '#B26B00' : '#1A3D6B', check: true })
         L(t.partes.map(x => `${x.nombre} ${fmt(x.ha)} ha`).join(' → '), { size: 27, color: '#555', gap: t.parcial ? 2 : 14, barra: t.parcial ? '#B26B00' : '#1A3D6B' })
-        if (t.parcial) { grupo.prods.forEach(p => L(`${item(p.id)?.insumo || '—'}: ${fmtCant(p.dosis * t.ha)} ${unidad(p)}`, { size: 27, color: '#B26B00', gap: 2, barra: '#B26B00' })); filas[filas.length - 1].gap = 14 }
+        if (t.parcial) { grupo.prods.forEach((p, i) => L(`${i + 1}. ${item(p.id)?.insumo || '—'}: ${fmtCant(p.dosis * t.ha)} ${unidad(p)}`, { size: 27, color: '#B26B00', gap: 2, barra: '#B26B00' })); filas[filas.length - 1].gap = 14 }
       })
       filas[filas.length - 1].gap = 26
       L('PARA LLEVAR DEL GALPÓN', { size: 26, peso: 'bold', color: '#1A3D6B', gap: 6 })
@@ -231,7 +234,7 @@ export default function PlanTanques({ ordenes, campos, stockAgro, S, Label, inpu
   function imprimir() {
     if (!grupo || !plan.tanques.length) return
     const prods = grupo.prods
-    const filaProd = (h) => prods.map(p => `<tr><td>${item(p.id)?.insumo || '—'}${p.contratista ? ' <i>(lo pone el contratista)</i>' : ''}</td><td class="n">${fmtCant(p.dosis * h)} ${item(p.id)?.unidad || ''}</td></tr>`).join('')
+    const filaProd = (h) => prods.map((p, i) => `<tr><td><b>${i + 1}.</b> ${item(p.id)?.insumo || '—'}${p.contratista ? ' <i>(lo pone el contratista)</i>' : ''}</td><td class="n">${fmtCant(p.dosis * h)} ${item(p.id)?.unidad || ''}</td></tr>`).join('')
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Plan de tanques</title>
 <style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto;color:#222;font-size:13px}h1{font-size:20px;margin:0}h2{font-size:14px;margin:18px 0 6px;color:#1A3D6B;text-transform:uppercase;letter-spacing:.05em}
 table{width:100%;border-collapse:collapse}td,th{padding:5px 8px;border-bottom:1px solid #ddd;text-align:left}.n{text-align:right;font-family:monospace;font-weight:bold}
