@@ -106,6 +106,10 @@ export default function Gastos({ usuario }) {
   const [form, setForm] = useBorrador('gasto-form', FORM_INIT)
   const [pagarAhora, setPagarAhora] = useBorrador('gasto-pagar-ahora', true)
   const [editandoId, setEditandoId] = useBorrador('gasto-editando', null)
+  // Edición de datos de un gasto ya cargado (sin tocar pagos ni cajas).
+  // 'pendiente' = se puede cambiar todo, incluido el monto.
+  // 'pagado' = el monto queda bloqueado porque ya salió de caja.
+  const [editarDatos, setEditarDatos] = useBorrador('gasto-editar-datos', null)
 
   useEffect(() => { cargar() }, [])
 
@@ -169,6 +173,7 @@ export default function Gastos({ usuario }) {
 
   async function guardar() {
     if (!form.categoria) { alert('Completá la categoría'); return }
+    if (editandoId && editarDatos) { await guardarEdicionDatos(); return }
     if (pagarAhora && !form.monto) { alert('Completá el monto'); return }
     if (pagarAhora && Math.abs(diferencia) > 0.5) { alert(`El total de pagos ($${totalPagos.toLocaleString('es-AR')}) no coincide con el monto ($${montoTotal.toLocaleString('es-AR')})`); return }
     setGuardando(true)
@@ -342,6 +347,46 @@ export default function Gastos({ usuario }) {
     setGuardando(false)
   }
 
+  // Solo actualiza los datos del gasto. No crea ni borra movimientos de caja,
+  // cheques ni créditos: si el gasto ya está pagado, el monto no se toca.
+  async function guardarEdicionDatos() {
+    const esPendiente = editarDatos === 'pendiente'
+    if (esPendiente && form.monto !== '' && isNaN(parseFloat(form.monto))) { alert('El monto no es válido'); return }
+    setGuardando(true)
+    const datos = {
+      actividad: form.actividad,
+      activo_id: form.activo_id ? parseInt(form.activo_id) : null,
+      categoria: form.categoria,
+      descripcion: form.descripcion || null,
+      fecha: form.fecha,
+      ...camposTipoCosto(form.tipo_costo || (form.no_recurrente ? 'inversion' : 'operativo')),
+      proveedor: form.proveedor || null,
+      comprobante: form.comprobante || null,
+      domicilio: form.domicilio || null,
+      localidad: form.localidad || null,
+      cuit: form.cuit || null,
+      iva: form.iva || null,
+      cbu: form.cbu || null,
+    }
+    if (esPendiente) {
+      datos.monto = form.monto !== '' ? parseFloat(form.monto) : null
+      datos.fecha_vencimiento = form.fecha_vencimiento || null
+    }
+    const { error } = await supabase.from('gastos_generales').update(datos).eq('id', editandoId)
+    setGuardando(false)
+    if (error) { alert('No se pudo guardar: ' + error.message); return }
+    await cargar()
+    setShowForm(false); setForm(FORM_INIT); setPagarAhora(true); setEditandoId(null); setEditarDatos(null)
+  }
+
+  function abrirEdicion(g) {
+    setEditandoId(g.id)
+    setEditarDatos(g.estado_pago === 'pendiente' ? 'pendiente' : 'pagado')
+    setForm({ ...FORM_INIT, actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: g.monto != null ? String(g.monto) : '', activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, fecha_vencimiento: g.fecha_vencimiento || '', proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', no_recurrente: !!g.no_recurrente, tipo_costo: tipoCostoDe(g), detalleOcasional: '' })
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   async function eliminar(g) {
     // Antes de tocar nada: ¿se puede deshacer sin dejar algo a medias?
     // (un anticipo que ya se usó en otros gastos, un crédito con cuotas pagadas...)
@@ -438,7 +483,7 @@ export default function Gastos({ usuario }) {
             {Object.keys(CATEGORIAS_GASTO).map(a => <option key={a}>{a}</option>)}
           </select>
         </div>
-        <button onClick={() => { setShowForm(!showForm); setEditandoId(null); setForm(FORM_INIT); setPagarAhora(true) }}
+        <button onClick={() => { setShowForm(!showForm); setEditandoId(null); setEditarDatos(null); setForm(FORM_INIT); setPagarAhora(true) }}
           style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.accent, border: `1px solid ${S.accent}`, color: '#fff', borderRadius: 6, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           + Registrar gasto
         </button>
@@ -461,7 +506,12 @@ export default function Gastos({ usuario }) {
       {/* Formulario */}
       {showForm && (
         <Card>
-          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>{editandoId ? 'Completar pago' : 'Nuevo gasto'}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: S.muted, textTransform: 'uppercase', marginBottom: '1rem' }}>{editarDatos ? 'Editar gasto' : editandoId ? 'Completar pago' : 'Nuevo gasto'}</div>
+          {editarDatos === 'pagado' && (
+            <div style={{ background: S.amberLight, border: '1px solid #EF9F27', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: S.amber, marginBottom: 12 }}>
+              Este gasto ya está pagado: podés cambiar fecha, actividad, categoría, descripción y proveedor, pero no el monto (ya salió de caja). Si el monto está mal, eliminalo y cargalo de nuevo.
+            </div>
+          )}
 
           {/* Datos del gasto */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -474,12 +524,12 @@ export default function Gastos({ usuario }) {
             <div>
               <Label>Categoría</Label>
               <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} style={inputStyle}>
-                {(CATEGORIAS_GASTO[form.actividad] || []).map(c => <option key={c}>{c}</option>)}
+                {[...(CATEGORIAS_GASTO[form.actividad] || []), ...(form.categoria && !(CATEGORIAS_GASTO[form.actividad] || []).includes(form.categoria) ? [form.categoria] : [])].map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <Label>Monto total $</Label>
-              <input type="number" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} />
+              <input type="number" value={form.monto} disabled={editarDatos === 'pagado'} onChange={e => setForm({...form, monto: e.target.value})} style={{ ...inputStyle, ...(editarDatos === 'pagado' ? { background: S.bg, color: S.muted, cursor: 'not-allowed' } : {}) }} />
             </div>
             <div style={{ gridColumn: '1/-1' }}>
               <Label>¿Cómo cuenta en la rentabilidad?</Label>
@@ -594,7 +644,16 @@ export default function Gastos({ usuario }) {
             </div>
           </div>
 
+          {editarDatos === 'pendiente' && (
+            <div style={{ maxWidth: 240, marginBottom: '1rem' }}>
+              <Label>Fecha de vencimiento (opcional)</Label>
+              <input type="date" value={form.fecha_vencimiento || ''} onChange={e => setForm({ ...form, fecha_vencimiento: e.target.value })} style={inputStyle} />
+              <div style={{ fontSize: 11, color: S.hint, marginTop: 4 }}>Sigue pendiente de pago: el pago se completa después con "💳 Completar pago".</div>
+            </div>
+          )}
+
           {/* Formas de pago */}
+          {!editarDatos && (
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
               <input type="checkbox" checked={pagarAhora} onChange={e => setPagarAhora(e.target.checked)} />
@@ -644,9 +703,10 @@ export default function Gastos({ usuario }) {
             </>
             )}
           </div>
+          )}
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={() => { setShowForm(false); setEditandoId(null); setForm(FORM_INIT); setPagarAhora(true) }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={() => { setShowForm(false); setEditandoId(null); setEditarDatos(null); setForm(FORM_INIT); setPagarAhora(true) }} style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', border: `1px solid ${S.border}`, color: S.muted, borderRadius: 6, cursor: 'pointer' }}>Cancelar</button>
             <button onClick={guardar} disabled={guardando} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: S.green, border: `1px solid ${S.green}`, color: '#fff', borderRadius: 6, cursor: 'pointer' }}>
               {guardando ? 'Guardando...' : '💾 Guardar'}
             </button>
@@ -707,13 +767,18 @@ export default function Gastos({ usuario }) {
                         {g.estado_pago === 'pendiente' && (
                           <button onClick={() => {
                             setEditandoId(g.id)
-                            setForm({ actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: String(g.monto || ''), activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, fecha_vencimiento: g.fecha_vencimiento || '', proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', no_recurrente: !!g.no_recurrente, tipo_costo: tipoCostoDe(g), pagos: [{ ...PAGO_INIT, monto: String(g.monto || '') }] })
+                            setEditarDatos(null)
+                            setForm({ ...FORM_INIT, actividad: g.actividad, categoria: g.categoria, descripcion: g.descripcion || '', monto: String(g.monto || ''), activo_id: g.activo_id ? String(g.activo_id) : '', fecha: g.fecha, fecha_vencimiento: g.fecha_vencimiento || '', proveedor: g.proveedor || '', comprobante: g.comprobante || '', domicilio: g.domicilio || '', localidad: g.localidad || '', cuit: g.cuit || '', iva: g.iva || '', cbu: g.cbu || '', no_recurrente: !!g.no_recurrente, tipo_costo: tipoCostoDe(g), pagos: [{ ...PAGO_INIT, monto: String(g.monto || '') }] })
                             setPagarAhora(true)
                             setShowForm(true)
                           }} style={{ padding: '3px 8px', fontSize: 11, background: S.greenLight, border: `1px solid ${S.green}`, color: S.green, borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}>
                             💳 Completar pago
                           </button>
                         )}
+                        <button onClick={() => abrirEdicion(g)} title="Editar datos del gasto"
+                          style={{ padding: '3px 8px', fontSize: 11, background: S.surface, border: `1px solid ${S.border}`, color: S.text || '#333', borderRadius: 5, cursor: 'pointer' }}>
+                          ✏️ Editar
+                        </button>
                         <button onClick={() => generarRecibo(supabase, g, g.pagos_detalle || [])}
                           style={{ padding: '3px 8px', fontSize: 11, background: S.accentLight, border: `1px solid #85B7EB`, color: S.accent, borderRadius: 5, cursor: 'pointer' }}>
                           🖨️ Recibo
